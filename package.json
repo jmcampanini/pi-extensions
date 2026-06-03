@@ -1,0 +1,25 @@
+{
+  "name": "@jmcampanini/pi-extensions",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Custom Pi extensions for jmcampanini's Pi setup.",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/jmcampanini/pi-extensions.git"
+  },
+  "license": "UNLICENSED",
+  "pi": {
+    "extensions": [
+      "./*/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}
