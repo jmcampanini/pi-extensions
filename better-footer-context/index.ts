@@ -35,6 +35,7 @@ export default function (pi: ExtensionAPI) {
 					let totalCacheRead = 0;
 					let totalCacheWrite = 0;
 					let totalCost = 0;
+					let latestCacheHitRate: number | undefined;
 
 					for (const entry of ctx.sessionManager.getEntries()) {
 						if (entry.type !== "message" || entry.message.role !== "assistant") continue;
@@ -45,6 +46,11 @@ export default function (pi: ExtensionAPI) {
 						totalCacheRead += message.usage.cacheRead;
 						totalCacheWrite += message.usage.cacheWrite;
 						totalCost += message.usage.cost.total;
+
+						const latestPromptTokens =
+							message.usage.input + message.usage.cacheRead + message.usage.cacheWrite;
+						latestCacheHitRate =
+							latestPromptTokens > 0 ? (message.usage.cacheRead / latestPromptTokens) * 100 : undefined;
 					}
 
 					const contextUsage = ctx.getContextUsage();
@@ -79,6 +85,9 @@ export default function (pi: ExtensionAPI) {
 					if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
 					if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
 					if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
+					if ((totalCacheRead || totalCacheWrite) && latestCacheHitRate !== undefined) {
+						statsParts.push(`CH${Math.round(latestCacheHitRate)}%`);
+					}
 
 					const usingSubscription = ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false;
 					if (totalCost || usingSubscription) {

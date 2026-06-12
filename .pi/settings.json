@@ -1,3 +1,12 @@
 {
-  "packages": [".."]
+  "packages": [
+    {
+      "source": "git:github.com/jmcampanini/pi-extensions",
+      "extensions": [],
+      "prompts": [],
+      "skills": [],
+      "themes": []
+    },
+    ".."
+  ]
 }
