@@ -174,11 +174,7 @@ function saveConfig(config: FastOpenAIConfig): void {
 }
 
 function isUsingOAuth(ctx: Pick<ExtensionContext, "modelRegistry">, model: PiModel): boolean {
-	try {
-		return ctx.modelRegistry.isUsingOAuth(model);
-	} catch {
-		return false;
-	}
+	return ctx.modelRegistry.isUsingOAuth(model);
 }
 
 function getFastEligibility(
