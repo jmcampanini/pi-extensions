@@ -13,6 +13,7 @@ import {
 	type Context,
 	type Model,
 	type SimpleStreamOptions,
+	type StreamOptions,
 } from "@earendil-works/pi-ai";
 
 type FastOpenAIConfig = {
@@ -37,9 +38,12 @@ type ConfigLoadResult = {
 
 type SupportedApi = "openai-codex-responses" | "openai-responses";
 
-type NativeOpenAIStreamOptions = SimpleStreamOptions & {
+type NativeOpenAIStreamOptions = StreamOptions & {
 	reasoningEffort?: string;
-	serviceTier?: "priority";
+	reasoningSummary?: string | null;
+	serviceTier?: unknown;
+	textVerbosity?: string;
+	[key: string]: unknown;
 };
 
 type NativeOpenAIStream = (
@@ -62,16 +66,16 @@ function registerApiWrappers(): void {
 	registerApiProvider(
 		{
 			api: "openai-responses",
-			stream: (model, context, options) => streamFastOpenAIResponses(model, context, options as SimpleStreamOptions),
-			streamSimple: streamFastOpenAIResponses,
+			stream: streamFastOpenAIResponses,
+			streamSimple: streamSimpleFastOpenAIResponses,
 		},
 		"fast-openai:openai-responses",
 	);
 	registerApiProvider(
 		{
 			api: "openai-codex-responses",
-			stream: (model, context, options) => streamFastOpenAICodexResponses(model, context, options as SimpleStreamOptions),
-			streamSimple: streamFastOpenAICodexResponses,
+			stream: streamFastOpenAICodexResponses,
+			streamSimple: streamSimpleFastOpenAICodexResponses,
 		},
 		"fast-openai:openai-codex-responses",
 	);
@@ -89,7 +93,7 @@ function streamNativeOpenAI(
 	lazyNativeStream: NativeOpenAIStream,
 	model: Model<Api>,
 	context: Context,
-	options: NativeOpenAIStreamOptions,
+	options?: NativeOpenAIStreamOptions,
 ): AssistantMessageEventStream {
 	const nativeStream = nativeOpenAIStreams[api];
 	if (nativeStream) return nativeStream(model, context, options);
@@ -200,6 +204,9 @@ function parseConfigObject(value: Record<string, unknown>): ConfigLoadResult {
 
 function loadConfigResult(readResult = readConfigFile()): ConfigLoadResult {
 	if (readResult.status === "missing") return { config: defaultConfig() };
+	// Invalid fast-mode config should not fail the model request. Fast mode is an
+	// optional latency/cost preference, so warn and fall back to disabled rather
+	// than blocking normal model usage.
 	if (readResult.status === "invalid") return { config: defaultConfig(), diagnostic: readResult.diagnostic };
 	return parseConfigObject(readResult.object);
 }
@@ -227,14 +234,14 @@ function shouldUseFast(model: Model<Api>, config: FastOpenAIConfig): boolean {
 	return config.enabled && isSupportedApi(model.api) && config.providers.includes(model.provider);
 }
 
-function withoutServiceTier<TOptions extends SimpleStreamOptions>(options: TOptions | undefined): TOptions | undefined {
+function withoutServiceTier<TOptions extends object>(options: TOptions | undefined): TOptions | undefined {
 	if (!options) return undefined;
 	const rest = { ...options } as TOptions & { serviceTier?: unknown };
 	delete rest.serviceTier;
 	return rest as TOptions;
 }
 
-function withFastOptions<TOptions extends SimpleStreamOptions>(
+function withFastOptions<TOptions extends object>(
 	model: Model<Api>,
 	options: TOptions | undefined,
 	config: FastOpenAIConfig,
@@ -254,12 +261,28 @@ function reasoningEffortFor(model: Model<Api>, options?: SimpleStreamOptions) {
 function streamFastOpenAIResponses(
 	model: Model<Api>,
 	context: Context,
+	options?: NativeOpenAIStreamOptions,
+): AssistantMessageEventStream {
+	const config = loadConfig();
+	const fastOptions = withFastOptions(model, options, config);
+	return streamNativeOpenAI(
+		"openai-responses",
+		streamOpenAIResponses as NativeOpenAIStream,
+		model,
+		context,
+		fastOptions as NativeOpenAIStreamOptions,
+	);
+}
+
+function streamSimpleFastOpenAIResponses(
+	model: Model<Api>,
+	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
 	const config = loadConfig();
 	const fastOptions = withFastOptions(model, options, config);
 	return streamNativeOpenAI("openai-responses", streamOpenAIResponses as NativeOpenAIStream, model, context, {
-		...fastOptions,
+		...(fastOptions as NativeOpenAIStreamOptions | undefined),
 		reasoningEffort: reasoningEffortFor(model, options),
 	});
 }
@@ -267,12 +290,28 @@ function streamFastOpenAIResponses(
 function streamFastOpenAICodexResponses(
 	model: Model<Api>,
 	context: Context,
+	options?: NativeOpenAIStreamOptions,
+): AssistantMessageEventStream {
+	const config = loadConfig();
+	const fastOptions = withFastOptions(model, options, config);
+	return streamNativeOpenAI(
+		"openai-codex-responses",
+		streamOpenAICodexResponses as NativeOpenAIStream,
+		model,
+		context,
+		fastOptions as NativeOpenAIStreamOptions,
+	);
+}
+
+function streamSimpleFastOpenAICodexResponses(
+	model: Model<Api>,
+	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
 	const config = loadConfig();
 	const fastOptions = withFastOptions(model, options, config);
 	return streamNativeOpenAI("openai-codex-responses", streamOpenAICodexResponses as NativeOpenAIStream, model, context, {
-		...fastOptions,
+		...(fastOptions as NativeOpenAIStreamOptions | undefined),
 		reasoningEffort: reasoningEffortFor(model, options),
 	});
 }
@@ -320,18 +359,10 @@ function showUsage(ctx: ExtensionCommandContext): void {
 }
 
 export default function (pi: ExtensionAPI) {
-	pi.registerProvider("fast-openai-openai-responses", {
-		api: "openai-responses",
-		streamSimple: streamFastOpenAIResponses,
-	});
-
-	pi.registerProvider("fast-openai-openai-codex-responses", {
-		api: "openai-codex-responses",
-		streamSimple: streamFastOpenAICodexResponses,
-	});
 	registerApiWrappers();
 
 	pi.on("agent_start", (_event, ctx) => {
+		registerApiWrappers();
 		if (!ctx.hasUI) return;
 		const model = ctx.model;
 		if (!model || !isSupportedApi(model.api)) return;
