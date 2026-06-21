@@ -2,9 +2,7 @@
 
 ## Purpose
 
-Define a minimal Pi extension for enabling OpenAI/Codex fast mode through Pi's native provider option, while keeping behavior explicit, config-driven, and easy to reason about.
-
-This plan is design-only. Implementation should not add extra UI/status concepts or broader provider support beyond what is described here.
+Define a minimal Pi extension for enabling OpenAI Codex Fast mode through a simple provider-request payload hook, while keeping behavior explicit, conservative, config-driven, and easy to reason about.
 
 ## Extension Layout
 
@@ -25,27 +23,33 @@ The repo `package.json` already loads extensions via:
 }
 ```
 
-So `fast-openai/index.ts` will be discovered like the existing sibling extensions.
+So `fast-openai/index.ts` is discovered like the existing sibling extensions.
 
 ## Core Behavior
 
-Fast mode is a single global on/off setting. It applies to every model whose `model.provider` is listed in config.
+Fast mode is a single global on/off setting. It only injects OpenAI Codex priority service tier for a narrow, conservative set of eligible requests.
 
-No model-level allow-list. No per-provider on/off toggle. No footer/status display.
+No footer/status display. No bare `/fast` toggle.
 
 Runtime rule:
 
 ```text
 config.enabled === true
-AND model.provider is in config.providers
-AND model.api is one of the supported native service-tier APIs
-→ pass serviceTier: "priority"
+AND model.provider is listed in config.providers
+AND model.provider === "openai-codex"
+AND model.api === "openai-codex-responses"
+AND model.id is "gpt-5.4" or "gpt-5.5"
+AND modelRegistry reports OAuth/ChatGPT auth for the model
+AND provider request payload is an object
+AND payload does not already contain service_tier
+AND payload.model is absent or matches the current model id
+→ inject service_tier: "priority"
 
 otherwise
-→ pass no serviceTier
+→ leave payload unchanged
 ```
 
-When fast mode is off, omit `serviceTier` entirely. Do not send `serviceTier: "default"`.
+When fast mode is off, omit `service_tier` entirely. Do not send `service_tier: "default"`.
 
 ## Config
 
@@ -57,7 +61,7 @@ Use a dedicated extension config file:
 
 Missing config means fast mode is disabled.
 
-Effective default when the config file is absent or incomplete:
+Effective default when the config file is absent or invalid:
 
 ```json
 {
@@ -75,14 +79,7 @@ Persisted config shape:
 }
 ```
 
-`providers` contains Pi model provider IDs, not API handler names.
-
-Examples:
-
-```text
-openai-codex/gpt-5.5 → model.provider = "openai-codex", model.api = "openai-codex-responses"
-openai/gpt-5.5       → model.provider = "openai",       model.api = "openai-responses"
-```
+`providers` contains Pi model provider IDs, not API handler names. In this conservative version, only `openai-codex` can actually inject priority.
 
 ## Commands
 
@@ -105,37 +102,33 @@ Command behavior:
   - write config with `enabled: false`
   - preserve existing provider list if valid; otherwise use default providers
 - `/fast status`
-  - show current effective config and whether fast mode would apply to the current model/provider
+  - show current effective config
+  - show conservative eligibility checks for the current model/provider/auth state
+  - warn that raw `service_tier` injection may not apply Pi's native priority cost multiplier
 - any other args, including empty args
   - show usage/help and do not change config
 
-## Native Provider Wrapping
+## Provider Request Hook
 
-Use Pi's native `serviceTier` option, not raw `before_provider_request` payload injection.
+Use Pi's `before_provider_request` hook and inject OpenAI's wire-level payload field:
 
-Wrap/register stream handlers for these Pi API handlers:
+```ts
+service_tier: "priority"
+```
 
-- `openai-codex-responses`
-- `openai-responses`
+Why this approach:
 
-Why these two:
-
-- Installed Pi-AI source shows native `serviceTier` support and service-tier cost adjustment for `openai-responses`.
-- Installed Pi-AI source shows native `serviceTier` support and service-tier cost adjustment for `openai-codex-responses`.
-- `openai-completions` does not appear to support native `serviceTier` or service-tier cost adjustment.
-- `azure-openai-responses` does not appear to support native `serviceTier` or service-tier cost adjustment.
-
-Relationship between config and wrappers:
-
-- Wrappers are keyed by `model.api`.
-- Config is keyed by/listed as `model.provider`.
-- The wrapper runs for supported API handlers, then checks whether the current model's provider is listed in config.
+- It is simpler than provider registry wrapping.
+- It avoids the lazy-provider capture/cold-start race that can happen with wrapper-based delegation.
+- It matches the common public Pi extension pattern for Fast mode/service-tier extensions.
 
 ## Cost Accounting
 
-Using native `serviceTier` lets Pi-AI apply its built-in service-tier pricing.
+Raw payload injection may not trigger Pi-AI's internal service-tier cost multiplier, because installed Pi-AI applies that multiplier from native `serviceTier` stream options.
 
-Observed installed Pi-AI behavior:
+The extension intentionally does not patch usage or rewrite costs. `/fast status` surfaces this warning instead.
+
+Observed installed Pi-AI native behavior, for context:
 
 ```text
 priority: 2x cost for most models
@@ -144,10 +137,10 @@ flex:     0.5x cost
 other:    1x cost
 ```
 
-This plan only uses:
+This implementation only injects:
 
 ```ts
-serviceTier: "priority"
+service_tier: "priority"
 ```
 
 No custom cost rewriting should be added.
@@ -164,8 +157,6 @@ ctx.ui.setStatus(...)
 
 The only user-visible state display is `/fast status`.
 
-This keeps the extension behavior-only and avoids coupling to the existing footer extension. A future change can add exported helpers if needed, but v1 should not include a status concept.
-
 ## Expected Implementation Shape
 
 `fast-openai/index.ts` should contain:
@@ -174,51 +165,34 @@ This keeps the extension behavior-only and avoids coupling to the existing foote
 - config path resolution using the Pi agent config dir
 - config load with default fallback
 - config save for `/fast on/off`
-- provider/API support helpers
+- strict Codex eligibility helpers
 - command parser for exactly `on`, `off`, `status`
-- provider stream wrappers for:
-  - `openai-codex-responses`
-  - `openai-responses`
+- `before_provider_request` handler that returns a copied payload with `service_tier: "priority"` only when eligible
 
-Pseudo-flow:
-
-```ts
-const DEFAULT_CONFIG = {
-  enabled: false,
-  providers: ["openai-codex"],
-};
-
-function shouldUseFast(model, config) {
-  return config.enabled && config.providers.includes(model.provider);
-}
-
-function withFastOptions(model, options, config) {
-  if (!shouldUseFast(model, config)) return options;
-  return { ...options, serviceTier: "priority" };
-}
-```
-
-Each wrapper should reload/read config near request time so `/fast on/off` affects subsequent requests without requiring `/reload`.
+Each request should reload/read config near request time so `/fast on/off` affects subsequent requests without requiring `/reload`.
 
 ## Non-Goals
 
-- No raw `service_tier` injection through `before_provider_request`.
+- No native provider wrapping in v1 of this simplified implementation.
 - No footer/status indicator.
 - No bare `/fast` toggle.
-- No model allow-list.
-- No per-provider enabled flags.
-- No support for `openai-completions` unless Pi later exposes native cost-aware `serviceTier` there.
-- No Azure OpenAI support unless Pi later exposes native cost-aware `serviceTier` there.
+- No support for regular `openai` provider requests.
+- No support for API-key OpenAI Codex requests.
+- No support for models other than `gpt-5.4` and `gpt-5.5`.
+- No support for `openai-completions`.
+- No Azure OpenAI support.
 - No multiple service tiers in v1.
 - No custom cost calculation or message usage rewriting.
 
 ## Source-Resolved Decisions
 
 - We used this repo's `package.json` to answer extension layout: use `<dir>/index.ts`, specifically `fast-openai/index.ts`.
-- We used installed Pi-AI source to answer whether native `serviceTier` costs correctly: yes for `openai-responses` and `openai-codex-responses`.
-- We used installed Pi-AI source to answer why only those API wrappers are in scope: they are the OpenAI API handlers with native service-tier support and cost adjustment.
-- We used installed Pi model registry to answer provider/API mapping: `openai-codex` models use `openai-codex-responses`; `openai` models use `openai-responses`.
-- We used Pi extension docs to answer command/provider-extension mechanics: use a Pi extension with `registerCommand` and provider registration/wrapping.
+- We used existing `fast-openai/index.ts` to answer command/config conventions: keep `/fast on`, `/fast off`, `/fast status`, `~/.pi/agent/extensions/fast-openai.json`, and default providers `['openai-codex']`.
+- We used installed Pi extension type definitions and public implementations to answer hook mechanics: use `before_provider_request` to replace the outgoing payload.
+- We used `diegopetrucci/pi-extensions/extensions/openai-fast/index.ts` to answer conservative eligibility checks: Codex provider/API, exact model IDs, OAuth auth, payload object, no existing `service_tier`, and payload model matching.
+- We used installed Pi-AI source to answer cost-accounting trade-off: native `serviceTier` options apply priority cost multipliers, while raw payload injection may not.
+- We used the decision workflow to answer whether to keep broader provider support: no, implement literal strict Codex-only checks.
+- We used the decision workflow to answer how to handle cost accounting: do not patch costs; warn in `/fast status` and document the trade-off in code comments.
 
 ## Open Questions
 

@@ -1,20 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { getAgentDir, type ExtensionAPI, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
-	clampThinkingLevel,
-	createAssistantMessageEventStream,
-	getApiProvider,
-	registerApiProvider,
-	streamOpenAICodexResponses,
-	streamOpenAIResponses,
-	type Api,
-	type AssistantMessageEventStream,
-	type Context,
-	type Model,
-	type SimpleStreamOptions,
-	type StreamOptions,
-} from "@earendil-works/pi-ai";
+	getAgentDir,
+	type ExtensionAPI,
+	type ExtensionCommandContext,
+	type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 
 type FastOpenAIConfig = {
 	enabled: boolean;
@@ -36,21 +27,17 @@ type ConfigLoadResult = {
 	diagnostic?: ConfigDiagnostic;
 };
 
-type SupportedApi = "openai-codex-responses" | "openai-responses";
+type PayloadRecord = Record<string, unknown>;
+type PiModel = NonNullable<ExtensionContext["model"]>;
 
-type NativeOpenAIStreamOptions = StreamOptions & {
-	reasoningEffort?: string;
-	reasoningSummary?: string | null;
-	serviceTier?: unknown;
-	textVerbosity?: string;
-	[key: string]: unknown;
+type FastEligibility = {
+	eligible: boolean;
+	providerListed: boolean;
+	providerSupported: boolean;
+	apiSupported: boolean;
+	modelSupported: boolean;
+	usingOAuth: boolean;
 };
-
-type NativeOpenAIStream = (
-	model: Model<Api>,
-	context: Context,
-	options?: NativeOpenAIStreamOptions,
-) => AssistantMessageEventStream;
 
 const DEFAULT_CONFIG: FastOpenAIConfig = {
 	enabled: false,
@@ -58,67 +45,12 @@ const DEFAULT_CONFIG: FastOpenAIConfig = {
 };
 
 const CONFIG_FILE = path.join(getAgentDir(), "extensions", "fast-openai.json");
-const SUPPORTED_APIS = new Set<Api>(["openai-codex-responses", "openai-responses"]);
+const SUPPORTED_PROVIDER = "openai-codex" as const;
+const SUPPORTED_API = "openai-codex-responses" as const;
+const SUPPORTED_MODELS = new Set(["gpt-5.4", "gpt-5.5"]);
 const PRIORITY_SERVICE_TIER = "priority" as const;
-const nativeOpenAIStreams: Partial<Record<SupportedApi, NativeOpenAIStream>> = {};
-
-function registerApiWrappers(): void {
-	registerApiProvider(
-		{
-			api: "openai-responses",
-			stream: streamFastOpenAIResponses,
-			streamSimple: streamSimpleFastOpenAIResponses,
-		},
-		"fast-openai:openai-responses",
-	);
-	registerApiProvider(
-		{
-			api: "openai-codex-responses",
-			stream: streamFastOpenAICodexResponses,
-			streamSimple: streamSimpleFastOpenAICodexResponses,
-		},
-		"fast-openai:openai-codex-responses",
-	);
-}
-
-function captureNativeOpenAIStream(api: SupportedApi): void {
-	const provider = getApiProvider(api);
-	if (!provider) return;
-	nativeOpenAIStreams[api] = provider.stream as NativeOpenAIStream;
-	registerApiWrappers();
-}
-
-function streamNativeOpenAI(
-	api: SupportedApi,
-	lazyNativeStream: NativeOpenAIStream,
-	model: Model<Api>,
-	context: Context,
-	options?: NativeOpenAIStreamOptions,
-): AssistantMessageEventStream {
-	const nativeStream = nativeOpenAIStreams[api];
-	if (nativeStream) return nativeStream(model, context, options);
-
-	const stream = createAssistantMessageEventStream();
-	(async () => {
-		let captured = false;
-		// TODO(fast-openai): Pi-AI's lazy OpenAI providers re-register the native
-		// provider globally before this extension re-wraps it. A concurrent cold-start
-		// request can briefly resolve the native provider directly and skip serviceTier.
-		// Replace this registry-capture path with concrete provider delegation when a
-		// stable extension-loader-compatible import path is available.
-		const inner = lazyNativeStream(model, context, options);
-		for await (const event of inner) {
-			if (!captured) {
-				captureNativeOpenAIStream(api);
-				captured = true;
-			}
-			stream.push(event);
-		}
-		if (!captured) captureNativeOpenAIStream(api);
-		stream.end();
-	})();
-	return stream;
-}
+const COST_ACCOUNTING_WARNING =
+	"warning: raw service_tier injection may not apply Pi's native priority cost multiplier; actual billed cost can be higher than Pi displays";
 
 function defaultConfig(): FastOpenAIConfig {
 	return {
@@ -206,9 +138,9 @@ function loadConfigResult(readResult = readConfigFile()): ConfigLoadResult {
 	if (readResult.status === "missing") return { config: defaultConfig() };
 	// Invalid fast-mode config should not fail the model request. Fast mode is an
 	// optional latency/cost preference, so fall back to disabled rather than
-	// blocking normal model usage. Request-time stream wrappers intentionally use
-	// only the returned config, so non-UI runs may just omit serviceTier; interactive
-	// paths surface the diagnostic via /fast status and agent_start.
+	// blocking normal model usage. Request-time payload injection intentionally
+	// uses only the returned config, so non-UI runs may just omit service_tier;
+	// interactive paths surface the diagnostic via /fast status and agent_start.
 	if (readResult.status === "invalid") return { config: defaultConfig(), diagnostic: readResult.diagnostic };
 	return parseConfigObject(readResult.object);
 }
@@ -228,94 +160,76 @@ function saveConfig(config: FastOpenAIConfig): void {
 	fs.writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
 }
 
-function isSupportedApi(api: Api): api is SupportedApi {
-	return SUPPORTED_APIS.has(api);
+function isSupportedApi(api: unknown): boolean {
+	return api === SUPPORTED_API;
 }
 
-function shouldUseFast(model: Model<Api>, config: FastOpenAIConfig): boolean {
-	return config.enabled && isSupportedApi(model.api) && config.providers.includes(model.provider);
+function isSupportedModelId(id: unknown): boolean {
+	return typeof id === "string" && SUPPORTED_MODELS.has(id);
 }
 
-function withoutServiceTier<TOptions extends object>(options: TOptions | undefined): TOptions | undefined {
-	if (!options) return undefined;
-	const rest = { ...options } as TOptions & { serviceTier?: unknown };
-	delete rest.serviceTier;
-	return rest as TOptions;
+function isPayloadRecord(payload: unknown): payload is PayloadRecord {
+	return typeof payload === "object" && payload !== null && !Array.isArray(payload);
 }
 
-function withFastOptions<TOptions extends object>(
-	model: Model<Api>,
-	options: TOptions | undefined,
-	config: FastOpenAIConfig,
-): TOptions | (TOptions & { serviceTier: typeof PRIORITY_SERVICE_TIER }) | undefined {
-	const baseOptions = withoutServiceTier(options);
-	if (!shouldUseFast(model, config)) return baseOptions;
-	return { ...baseOptions, serviceTier: PRIORITY_SERVICE_TIER } as TOptions & {
-		serviceTier: typeof PRIORITY_SERVICE_TIER;
+function isUsingOAuth(ctx: Pick<ExtensionContext, "modelRegistry">, model: PiModel): boolean {
+	try {
+		return ctx.modelRegistry.isUsingOAuth(model);
+	} catch {
+		return false;
+	}
+}
+
+function getFastEligibility(ctx: Pick<ExtensionContext, "model" | "modelRegistry">, config: FastOpenAIConfig): FastEligibility {
+	const model = ctx.model;
+	if (!model) {
+		return {
+			eligible: false,
+			providerListed: false,
+			providerSupported: false,
+			apiSupported: false,
+			modelSupported: false,
+			usingOAuth: false,
+		};
+	}
+
+	const providerListed = config.providers.includes(model.provider);
+	const providerSupported = model.provider === SUPPORTED_PROVIDER;
+	const apiSupported = isSupportedApi(model.api);
+	const modelSupported = isSupportedModelId(model.id);
+	const usingOAuth = isUsingOAuth(ctx, model);
+
+	return {
+		eligible: config.enabled && providerListed && providerSupported && apiSupported && modelSupported && usingOAuth,
+		providerListed,
+		providerSupported,
+		apiSupported,
+		modelSupported,
+		usingOAuth,
 	};
 }
 
-function reasoningEffortFor(model: Model<Api>, options?: SimpleStreamOptions) {
-	const clampedReasoning = options?.reasoning ? clampThinkingLevel(model, options.reasoning) : undefined;
-	return clampedReasoning === "off" ? undefined : clampedReasoning;
+function payloadMatchesModel(payload: PayloadRecord, model: PiModel): boolean {
+	return payload.model === undefined || payload.model === model.id;
 }
 
-function streamFastOpenAIResponses(
-	model: Model<Api>,
-	context: Context,
-	options?: NativeOpenAIStreamOptions,
-): AssistantMessageEventStream {
-	const config = loadConfig();
-	const fastOptions = withFastOptions(model, options, config);
-	return streamNativeOpenAI(
-		"openai-responses",
-		streamOpenAIResponses as NativeOpenAIStream,
-		model,
-		context,
-		fastOptions as NativeOpenAIStreamOptions,
-	);
-}
+function injectFastServiceTier(payload: unknown, ctx: ExtensionContext): PayloadRecord | undefined {
+	const model = ctx.model;
+	if (!model) return undefined;
 
-function streamSimpleFastOpenAIResponses(
-	model: Model<Api>,
-	context: Context,
-	options?: SimpleStreamOptions,
-): AssistantMessageEventStream {
 	const config = loadConfig();
-	const fastOptions = withFastOptions(model, options, config);
-	return streamNativeOpenAI("openai-responses", streamOpenAIResponses as NativeOpenAIStream, model, context, {
-		...(fastOptions as NativeOpenAIStreamOptions | undefined),
-		reasoningEffort: reasoningEffortFor(model, options),
-	});
-}
+	const eligibility = getFastEligibility(ctx, config);
+	if (!eligibility.eligible) return undefined;
+	if (!isPayloadRecord(payload)) return undefined;
+	if ("service_tier" in payload) return undefined;
+	if (!payloadMatchesModel(payload, model)) return undefined;
 
-function streamFastOpenAICodexResponses(
-	model: Model<Api>,
-	context: Context,
-	options?: NativeOpenAIStreamOptions,
-): AssistantMessageEventStream {
-	const config = loadConfig();
-	const fastOptions = withFastOptions(model, options, config);
-	return streamNativeOpenAI(
-		"openai-codex-responses",
-		streamOpenAICodexResponses as NativeOpenAIStream,
-		model,
-		context,
-		fastOptions as NativeOpenAIStreamOptions,
-	);
-}
-
-function streamSimpleFastOpenAICodexResponses(
-	model: Model<Api>,
-	context: Context,
-	options?: SimpleStreamOptions,
-): AssistantMessageEventStream {
-	const config = loadConfig();
-	const fastOptions = withFastOptions(model, options, config);
-	return streamNativeOpenAI("openai-codex-responses", streamOpenAICodexResponses as NativeOpenAIStream, model, context, {
-		...(fastOptions as NativeOpenAIStreamOptions | undefined),
-		reasoningEffort: reasoningEffortFor(model, options),
-	});
+	// We intentionally use the simpler before_provider_request hook instead of
+	// native serviceTier provider wrapping. Raw service_tier injection avoids the
+	// lazy-provider capture race, but Pi-AI's priority cost multiplier is tied to
+	// native serviceTier options, so /fast status warns about possible displayed
+	// cost undercounting.
+	return { ...payload, service_tier: PRIORITY_SERVICE_TIER };
 }
 
 function formatConfig(config: FastOpenAIConfig): string {
@@ -323,36 +237,41 @@ function formatConfig(config: FastOpenAIConfig): string {
 }
 
 function formatConfigWarning(diagnostic: ConfigDiagnostic): string {
-	return `warning: ignored config at ${diagnostic.path}: ${diagnostic.message}; using disabled fallback and omitting serviceTier`;
+	return `warning: ignored config at ${diagnostic.path}: ${diagnostic.message}; using disabled fallback and omitting service_tier`;
 }
 
 function hasConfigDiagnostic(loadResult: ConfigLoadResult): loadResult is ConfigLoadResult & { diagnostic: ConfigDiagnostic } {
 	return Boolean(loadResult.diagnostic);
 }
 
-function formatCurrentModelStatus(model: Model<Api> | undefined, loadResult: ConfigLoadResult): string {
+function formatCurrentModelStatus(ctx: Pick<ExtensionContext, "model" | "modelRegistry">, loadResult: ConfigLoadResult): string {
 	const { config, diagnostic } = loadResult;
+	const model = ctx.model;
 	const lines = [
 		...(diagnostic ? [formatConfigWarning(diagnostic)] : []),
 		`effective config: ${formatConfig(config)}`,
 	];
 
 	if (!model) {
-		lines.push("current model: none", "would apply: no", `config path: ${CONFIG_FILE}`);
+		lines.push("current model: none", "would inject: no", `config path: ${CONFIG_FILE}`);
+		if (config.enabled) lines.push(COST_ACCOUNTING_WARNING);
 		return lines.join("\n");
 	}
 
-	const providerListed = config.providers.includes(model.provider);
-	const apiSupported = isSupportedApi(model.api);
-	const applies = shouldUseFast(model, config);
+	const eligibility = getFastEligibility(ctx, config);
 	lines.push(
 		`current model: ${model.provider}/${model.id}`,
 		`current api: ${model.api}`,
-		`provider listed: ${providerListed ? "yes" : "no"}`,
-		`api supported: ${apiSupported ? "yes" : "no"}`,
-		`would apply: ${applies ? "yes (serviceTier: priority)" : "no"}`,
+		`provider listed: ${eligibility.providerListed ? "yes" : "no"}`,
+		`provider supported: ${eligibility.providerSupported ? "yes" : `no (requires ${SUPPORTED_PROVIDER})`}`,
+		`api supported: ${eligibility.apiSupported ? "yes" : `no (requires ${SUPPORTED_API})`}`,
+		`model supported: ${eligibility.modelSupported ? "yes" : "no (requires gpt-5.4 or gpt-5.5)"}`,
+		`using OAuth: ${eligibility.usingOAuth ? "yes" : "no (required)"}`,
+		"request payload check: must be an object, match the current model when payload.model is present, and omit service_tier",
+		`would inject: ${eligibility.eligible ? "yes (service_tier: priority)" : "no"}`,
 		`config path: ${CONFIG_FILE}`,
 	);
+	if (config.enabled) lines.push(COST_ACCOUNTING_WARNING);
 	return lines.join("\n");
 }
 
@@ -361,10 +280,7 @@ function showUsage(ctx: ExtensionCommandContext): void {
 }
 
 export default function (pi: ExtensionAPI) {
-	registerApiWrappers();
-
 	pi.on("agent_start", (_event, ctx) => {
-		registerApiWrappers();
 		if (!ctx.hasUI) return;
 		const model = ctx.model;
 		if (!model || !isSupportedApi(model.api)) return;
@@ -373,8 +289,10 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify(`${formatConfigWarning(loadResult.diagnostic)} for ${model.provider}/${model.id}`, "warning");
 	});
 
+	pi.on("before_provider_request", (event, ctx) => injectFastServiceTier(event.payload, ctx));
+
 	pi.registerCommand("fast", {
-		description: "Enable, disable, or inspect OpenAI priority service tier",
+		description: "Enable, disable, or inspect OpenAI Codex Fast mode",
 		handler: async (args, ctx) => {
 			const parts = args.trim() ? args.trim().split(/\s+/) : [];
 			if (parts.length !== 1) {
@@ -410,7 +328,10 @@ export default function (pi: ExtensionAPI) {
 
 			if (action === "status") {
 				const loadResult = loadConfigResult();
-				ctx.ui.notify(formatCurrentModelStatus(ctx.model, loadResult), loadResult.diagnostic ? "warning" : "info");
+				ctx.ui.notify(
+					formatCurrentModelStatus(ctx, loadResult),
+					loadResult.diagnostic || loadResult.config.enabled ? "warning" : "info",
+				);
 				return;
 			}
 
