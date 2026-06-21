@@ -97,6 +97,11 @@ function streamNativeOpenAI(
 	const stream = createAssistantMessageEventStream();
 	(async () => {
 		let captured = false;
+		// TODO(fast-openai): Pi-AI's lazy OpenAI providers re-register the native
+		// provider globally before this extension re-wraps it. A concurrent cold-start
+		// request can briefly resolve the native provider directly and skip serviceTier.
+		// Replace this registry-capture path with concrete provider delegation when a
+		// stable extension-loader-compatible import path is available.
 		const inner = lazyNativeStream(model, context, options);
 		for await (const event of inner) {
 			if (!captured) {
@@ -277,7 +282,11 @@ function formatConfig(config: FastOpenAIConfig): string {
 }
 
 function formatConfigWarning(diagnostic: ConfigDiagnostic): string {
-	return `warning: ignored config at ${diagnostic.path}: ${diagnostic.message}`;
+	return `warning: ignored config at ${diagnostic.path}: ${diagnostic.message}; using disabled fallback and omitting serviceTier`;
+}
+
+function hasConfigDiagnostic(loadResult: ConfigLoadResult): loadResult is ConfigLoadResult & { diagnostic: ConfigDiagnostic } {
+	return Boolean(loadResult.diagnostic);
 }
 
 function formatCurrentModelStatus(model: Model<Api> | undefined, loadResult: ConfigLoadResult): string {
@@ -321,6 +330,15 @@ export default function (pi: ExtensionAPI) {
 		streamSimple: streamFastOpenAICodexResponses,
 	});
 	registerApiWrappers();
+
+	pi.on("agent_start", (_event, ctx) => {
+		if (!ctx.hasUI) return;
+		const model = ctx.model;
+		if (!model || !isSupportedApi(model.api)) return;
+		const loadResult = loadConfigResult();
+		if (!hasConfigDiagnostic(loadResult)) return;
+		ctx.ui.notify(`${formatConfigWarning(loadResult.diagnostic)} for ${model.provider}/${model.id}`, "warning");
+	});
 
 	pi.registerCommand("fast", {
 		description: "Enable, disable, or inspect OpenAI priority service tier",
