@@ -159,10 +159,6 @@ function loadConfigResult(readResult = readConfigFile()): ConfigLoadResult {
 	return parseConfigObject(readResult.object);
 }
 
-function loadConfig(): FastOpenAIConfig {
-	return loadConfigResult().config;
-}
-
 function providersForSave(readResult: ConfigFileReadResult): string[] {
 	if (readResult.status !== "ok") return defaultProviders();
 	return normalizeProviders(readResult.object.providers) ?? defaultProviders();
@@ -171,10 +167,6 @@ function providersForSave(readResult: ConfigFileReadResult): string[] {
 function saveConfig(config: FastOpenAIConfig): void {
 	fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
 	fs.writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
-}
-
-function isUsingOAuth(ctx: Pick<ExtensionContext, "modelRegistry">, model: PiModel): boolean {
-	return ctx.modelRegistry.isUsingOAuth(model);
 }
 
 function getFastEligibility(
@@ -197,7 +189,7 @@ function getFastEligibility(
 	const providerSupported = model.provider === SUPPORTED_PROVIDER;
 	const apiSupported = model.api === SUPPORTED_API;
 	const modelSupported = SUPPORTED_MODELS.has(model.id);
-	const usingOAuth = isUsingOAuth(ctx, model);
+	const usingOAuth = ctx.modelRegistry.isUsingOAuth(model);
 
 	const eligible =
 		config.enabled && providerListed && providerSupported && apiSupported && modelSupported && usingOAuth;
@@ -220,7 +212,7 @@ function injectFastServiceTier(payload: unknown, ctx: ExtensionContext): Payload
 	const model = ctx.model;
 	if (!model) return undefined;
 
-	const config = loadConfig();
+	const config = loadConfigResult().config;
 	const eligibility = getFastEligibility(ctx, config);
 	if (!eligibility.eligible) return undefined;
 	if (!isObjectRecord(payload)) return undefined;
@@ -340,17 +332,17 @@ export default function (pi: ExtensionAPI): void {
 			}
 
 			const action = parts[0];
-			if (action === "on" || action === "off") {
-				setFastMode(action, ctx);
-				return;
+			switch (action) {
+				case "on":
+				case "off":
+					setFastMode(action, ctx);
+					return;
+				case "status":
+					showFastStatus(ctx);
+					return;
+				default:
+					showUsage(ctx);
 			}
-
-			if (action === "status") {
-				showFastStatus(ctx);
-				return;
-			}
-
-			showUsage(ctx);
 		},
 	});
 }
