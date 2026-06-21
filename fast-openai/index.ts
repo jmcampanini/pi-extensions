@@ -12,6 +12,8 @@ type FastOpenAIConfig = {
 	providers: string[];
 };
 
+type FastAction = "on" | "off";
+
 type ConfigDiagnostic = {
 	path: string;
 	message: string;
@@ -52,10 +54,14 @@ const PRIORITY_SERVICE_TIER = "priority" as const;
 const COST_ACCOUNTING_WARNING =
 	"warning: raw service_tier injection may not apply Pi's native priority cost multiplier; actual billed cost can be higher than Pi displays";
 
+function defaultProviders(): string[] {
+	return [...DEFAULT_CONFIG.providers];
+}
+
 function defaultConfig(): FastOpenAIConfig {
 	return {
 		enabled: DEFAULT_CONFIG.enabled,
-		providers: [...DEFAULT_CONFIG.providers],
+		providers: defaultProviders(),
 	};
 }
 
@@ -88,7 +94,7 @@ function configDiagnostic(message: string): ConfigDiagnostic {
 	return { path: CONFIG_FILE, message };
 }
 
-function isJsonObject(value: unknown): value is Record<string, unknown> {
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
@@ -98,17 +104,23 @@ function readConfigFile(): ConfigFileReadResult {
 		contents = fs.readFileSync(CONFIG_FILE, "utf-8");
 	} catch (error) {
 		if (isNodeError(error) && error.code === "ENOENT") return { status: "missing" };
-		return { status: "invalid", diagnostic: configDiagnostic(`could not read config: ${formatError(error)}`) };
+		return {
+			status: "invalid",
+			diagnostic: configDiagnostic(`could not read config: ${formatError(error)}`),
+		};
 	}
 
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(contents) as unknown;
 	} catch (error) {
-		return { status: "invalid", diagnostic: configDiagnostic(`could not parse JSON: ${formatError(error)}`) };
+		return {
+			status: "invalid",
+			diagnostic: configDiagnostic(`could not parse JSON: ${formatError(error)}`),
+		};
 	}
 
-	if (!isJsonObject(parsed)) {
+	if (!isObjectRecord(parsed)) {
 		return { status: "invalid", diagnostic: configDiagnostic("config must be a JSON object") };
 	}
 
@@ -141,7 +153,9 @@ function loadConfigResult(readResult = readConfigFile()): ConfigLoadResult {
 	// blocking normal model usage. Request-time payload injection intentionally
 	// uses only the returned config, so non-UI runs may just omit service_tier;
 	// interactive paths surface the diagnostic via /fast status and agent_start.
-	if (readResult.status === "invalid") return { config: defaultConfig(), diagnostic: readResult.diagnostic };
+	if (readResult.status === "invalid") {
+		return { config: defaultConfig(), diagnostic: readResult.diagnostic };
+	}
 	return parseConfigObject(readResult.object);
 }
 
@@ -150,26 +164,13 @@ function loadConfig(): FastOpenAIConfig {
 }
 
 function providersForSave(readResult: ConfigFileReadResult): string[] {
-	return readResult.status === "ok"
-		? (normalizeProviders(readResult.object.providers) ?? [...DEFAULT_CONFIG.providers])
-		: [...DEFAULT_CONFIG.providers];
+	if (readResult.status !== "ok") return defaultProviders();
+	return normalizeProviders(readResult.object.providers) ?? defaultProviders();
 }
 
 function saveConfig(config: FastOpenAIConfig): void {
 	fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
 	fs.writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
-}
-
-function isSupportedApi(api: unknown): boolean {
-	return api === SUPPORTED_API;
-}
-
-function isSupportedModelId(id: unknown): boolean {
-	return typeof id === "string" && SUPPORTED_MODELS.has(id);
-}
-
-function isPayloadRecord(payload: unknown): payload is PayloadRecord {
-	return typeof payload === "object" && payload !== null && !Array.isArray(payload);
 }
 
 function isUsingOAuth(ctx: Pick<ExtensionContext, "modelRegistry">, model: PiModel): boolean {
@@ -180,7 +181,10 @@ function isUsingOAuth(ctx: Pick<ExtensionContext, "modelRegistry">, model: PiMod
 	}
 }
 
-function getFastEligibility(ctx: Pick<ExtensionContext, "model" | "modelRegistry">, config: FastOpenAIConfig): FastEligibility {
+function getFastEligibility(
+	ctx: Pick<ExtensionContext, "model" | "modelRegistry">,
+	config: FastOpenAIConfig,
+): FastEligibility {
 	const model = ctx.model;
 	if (!model) {
 		return {
@@ -195,12 +199,15 @@ function getFastEligibility(ctx: Pick<ExtensionContext, "model" | "modelRegistry
 
 	const providerListed = config.providers.includes(model.provider);
 	const providerSupported = model.provider === SUPPORTED_PROVIDER;
-	const apiSupported = isSupportedApi(model.api);
-	const modelSupported = isSupportedModelId(model.id);
+	const apiSupported = model.api === SUPPORTED_API;
+	const modelSupported = SUPPORTED_MODELS.has(model.id);
 	const usingOAuth = isUsingOAuth(ctx, model);
 
+	const eligible =
+		config.enabled && providerListed && providerSupported && apiSupported && modelSupported && usingOAuth;
+
 	return {
-		eligible: config.enabled && providerListed && providerSupported && apiSupported && modelSupported && usingOAuth,
+		eligible,
 		providerListed,
 		providerSupported,
 		apiSupported,
@@ -220,7 +227,7 @@ function injectFastServiceTier(payload: unknown, ctx: ExtensionContext): Payload
 	const config = loadConfig();
 	const eligibility = getFastEligibility(ctx, config);
 	if (!eligibility.eligible) return undefined;
-	if (!isPayloadRecord(payload)) return undefined;
+	if (!isObjectRecord(payload)) return undefined;
 	if ("service_tier" in payload) return undefined;
 	if (!payloadMatchesModel(payload, model)) return undefined;
 
@@ -240,17 +247,16 @@ function formatConfigWarning(diagnostic: ConfigDiagnostic): string {
 	return `warning: ignored config at ${diagnostic.path}: ${diagnostic.message}; using disabled fallback and omitting service_tier`;
 }
 
-function hasConfigDiagnostic(loadResult: ConfigLoadResult): loadResult is ConfigLoadResult & { diagnostic: ConfigDiagnostic } {
-	return Boolean(loadResult.diagnostic);
-}
-
-function formatCurrentModelStatus(ctx: Pick<ExtensionContext, "model" | "modelRegistry">, loadResult: ConfigLoadResult): string {
+function formatCurrentModelStatus(
+	ctx: Pick<ExtensionContext, "model" | "modelRegistry">,
+	loadResult: ConfigLoadResult,
+): string {
 	const { config, diagnostic } = loadResult;
 	const model = ctx.model;
-	const lines = [
-		...(diagnostic ? [formatConfigWarning(diagnostic)] : []),
-		`effective config: ${formatConfig(config)}`,
-	];
+	const lines: string[] = [];
+
+	if (diagnostic) lines.push(formatConfigWarning(diagnostic));
+	lines.push(`effective config: ${formatConfig(config)}`);
 
 	if (!model) {
 		lines.push("current model: none", "would inject: no", `config path: ${CONFIG_FILE}`);
@@ -279,13 +285,49 @@ function showUsage(ctx: ExtensionCommandContext): void {
 	ctx.ui.notify("Usage: /fast on | /fast off | /fast status", "info");
 }
 
-export default function (pi: ExtensionAPI) {
+function setFastMode(action: FastAction, ctx: ExtensionCommandContext): void {
+	const readResult = readConfigFile();
+	const previousDiagnostic = loadConfigResult(readResult).diagnostic;
+	const nextConfig: FastOpenAIConfig = {
+		enabled: action === "on",
+		providers: providersForSave(readResult),
+	};
+
+	try {
+		saveConfig(nextConfig);
+	} catch (error) {
+		ctx.ui.notify(`fast-openai config write failed: ${formatError(error)}`, "error");
+		return;
+	}
+
+	if (previousDiagnostic) {
+		ctx.ui.notify(
+			[
+				`warning: previous config at ${previousDiagnostic.path} was invalid/unreadable and has been overwritten: ${previousDiagnostic.message}`,
+				`fast-openai ${action}: ${formatConfig(nextConfig)}`,
+			].join("\n"),
+			"warning",
+		);
+		return;
+	}
+
+	ctx.ui.notify(`fast-openai ${action}: ${formatConfig(nextConfig)}`, "info");
+}
+
+function showFastStatus(ctx: ExtensionCommandContext): void {
+	const loadResult = loadConfigResult();
+	const hasWarning = Boolean(loadResult.diagnostic) || loadResult.config.enabled;
+	ctx.ui.notify(formatCurrentModelStatus(ctx, loadResult), hasWarning ? "warning" : "info");
+}
+
+export default function (pi: ExtensionAPI): void {
 	pi.on("agent_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		const model = ctx.model;
-		if (!model || !isSupportedApi(model.api)) return;
+		if (!model || model.api !== SUPPORTED_API) return;
+
 		const loadResult = loadConfigResult();
-		if (!hasConfigDiagnostic(loadResult)) return;
+		if (!loadResult.diagnostic) return;
 		ctx.ui.notify(`${formatConfigWarning(loadResult.diagnostic)} for ${model.provider}/${model.id}`, "warning");
 	});
 
@@ -294,7 +336,8 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("fast", {
 		description: "Enable, disable, or inspect OpenAI Codex Fast mode",
 		handler: async (args, ctx) => {
-			const parts = args.trim() ? args.trim().split(/\s+/) : [];
+			const trimmedArgs = args.trim();
+			const parts = trimmedArgs ? trimmedArgs.split(/\s+/) : [];
 			if (parts.length !== 1) {
 				showUsage(ctx);
 				return;
@@ -302,36 +345,12 @@ export default function (pi: ExtensionAPI) {
 
 			const action = parts[0];
 			if (action === "on" || action === "off") {
-				const readResult = readConfigFile();
-				const previous = loadConfigResult(readResult);
-				const nextConfig = {
-					enabled: action === "on",
-					providers: providersForSave(readResult),
-				};
-				try {
-					saveConfig(nextConfig);
-				} catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
-					ctx.ui.notify(`fast-openai config write failed: ${message}`, "error");
-					return;
-				}
-
-				const messages = previous.diagnostic
-					? [
-							`warning: previous config at ${previous.diagnostic.path} was invalid/unreadable and has been overwritten: ${previous.diagnostic.message}`,
-							`fast-openai ${action}: ${formatConfig(nextConfig)}`,
-						]
-					: [`fast-openai ${action}: ${formatConfig(nextConfig)}`];
-				ctx.ui.notify(messages.join("\n"), previous.diagnostic ? "warning" : "info");
+				setFastMode(action, ctx);
 				return;
 			}
 
 			if (action === "status") {
-				const loadResult = loadConfigResult();
-				ctx.ui.notify(
-					formatCurrentModelStatus(ctx, loadResult),
-					loadResult.diagnostic || loadResult.config.enabled ? "warning" : "info",
-				);
+				showFastStatus(ctx);
 				return;
 			}
 
