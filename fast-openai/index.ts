@@ -205,8 +205,10 @@ function parseConfigObject(value: Record<string, unknown>): ConfigLoadResult {
 function loadConfigResult(readResult = readConfigFile()): ConfigLoadResult {
 	if (readResult.status === "missing") return { config: defaultConfig() };
 	// Invalid fast-mode config should not fail the model request. Fast mode is an
-	// optional latency/cost preference, so warn and fall back to disabled rather
-	// than blocking normal model usage.
+	// optional latency/cost preference, so fall back to disabled rather than
+	// blocking normal model usage. Request-time stream wrappers intentionally use
+	// only the returned config, so non-UI runs may just omit serviceTier; interactive
+	// paths surface the diagnostic via /fast status and agent_start.
 	if (readResult.status === "invalid") return { config: defaultConfig(), diagnostic: readResult.diagnostic };
 	return parseConfigObject(readResult.object);
 }
