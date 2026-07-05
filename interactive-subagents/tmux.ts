@@ -214,6 +214,20 @@ export function createPane(title: string): string {
 	return paneId;
 }
 
+/**
+ * Move the user's focus to a pane — even one in another window: tmux resolves
+ * a pane target to its window, so select-window brings that window to the
+ * front first. `zoom` additionally toggles tmux's pane zoom (prefix+z
+ * un-zooms). Throws if the pane no longer exists.
+ */
+export function focusPane(paneId: string, options?: { zoom?: boolean }): void {
+	tmux(["select-window", "-t", paneId]);
+	tmux(["select-pane", "-t", paneId]);
+	if (options?.zoom) {
+		tmux(["resize-pane", "-Z", "-t", paneId]);
+	}
+}
+
 /** Kill a pane. Ignores failures (the pane may already be gone). */
 export function closePane(paneId: string): void {
 	try {

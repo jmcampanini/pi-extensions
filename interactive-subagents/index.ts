@@ -24,9 +24,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import {
 	createPane,
 	closePane,
+	focusPane,
 	isTmuxAvailable,
 	pollForExit,
 	refreshLayout,
@@ -301,7 +303,7 @@ function updateWidget(): void {
 		return;
 	}
 
-	const lines = [`── subagents · ${running.size} running ──`];
+	const lines = [`── subagents · ${running.size} running · ctrl+q to jump ──`];
 	for (const child of running.values()) {
 		const elapsed = formatMMSS(Math.round((Date.now() - child.startTime) / 1000));
 		const agentTag = child.agent ? ` (${child.agent})` : "";
@@ -821,6 +823,69 @@ export default function (pi: ExtensionAPI) {
 		if (overviewShownAt !== null && Date.now() - overviewShownAt > 500) {
 			hideOverview();
 		}
+	});
+
+	// ── ctrl+q: jump to a running sub-agent's pane ─────────────────────────
+	// Opens a focused picker over the running children. Up/down to choose,
+	// Enter jumps to the pane (switching windows if needed), z jumps AND
+	// zooms it (tmux prefix+z un-zooms), Escape cancels. Key choice: ctrl+q
+	// is the only ctrl key that is (a) unbound in pi's defaults, (b) unused
+	// by the editor's emacs-style bindings, (c) not the tmux prefix (ctrl+b),
+	// and (d) unambiguous in legacy terminal encoding (unlike ctrl+j/m/i/h).
+	pi.registerShortcut("ctrl+q", {
+		description: "Jump to a running sub-agent's pane",
+		handler: async (ctx) => {
+			if (running.size === 0) {
+				ctx.ui.notify("No sub-agents running.", "info");
+				return;
+			}
+			const choice = await ctx.ui.custom<{ child: RunningSubagent; zoom: boolean } | undefined>(
+				(tui, theme, _keybindings, done) => {
+					const children = [...running.values()];
+					let cursor = 0;
+					return {
+						handleInput(data: string): void {
+							if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+								done(undefined);
+							} else if (matchesKey(data, "up")) {
+								cursor = (cursor - 1 + children.length) % children.length;
+								tui.requestRender();
+							} else if (matchesKey(data, "down")) {
+								cursor = (cursor + 1) % children.length;
+								tui.requestRender();
+							} else if (matchesKey(data, "enter") || matchesKey(data, "return")) {
+								done({ child: children[cursor], zoom: false });
+							} else if (data === "z") {
+								done({ child: children[cursor], zoom: true });
+							}
+						},
+						invalidate(): void {},
+						render(width: number): string[] {
+							const th = theme;
+							const lines: string[] = [""];
+							lines.push(truncateToWidth(th.fg("accent", " Jump to sub-agent "), width));
+							for (let i = 0; i < children.length; i++) {
+								const child = children[i];
+								const elapsed = formatMMSS(Math.round((Date.now() - child.startTime) / 1000));
+								const agentTag = child.agent ? ` (${child.agent})` : "";
+								const row = `${i === cursor ? "→" : " "} ${elapsed}  ${child.name}${agentTag}`;
+								lines.push(truncateToWidth(i === cursor ? th.fg("accent", row) : th.fg("text", row), width));
+							}
+							lines.push(truncateToWidth(th.fg("dim", " enter: go · z: go + zoom · esc: cancel"), width));
+							lines.push("");
+							return lines;
+						},
+					};
+				},
+			);
+
+			if (!choice) return;
+			try {
+				focusPane(choice.child.paneId, { zoom: choice.zoom });
+			} catch {
+				ctx.ui.notify(`Pane for "${choice.child.name}" is gone.`, "warning");
+			}
+		},
 	});
 
 	// ── tool: subagents_list ───────────────────────────────────────────────

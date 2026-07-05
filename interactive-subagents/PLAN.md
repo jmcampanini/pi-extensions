@@ -53,7 +53,7 @@ User-facing configuration (config.ts) resolves defaults < config file < env:
 
 | Config key (file) | Env override | Default | Purpose |
 |---|---|---|---|
-| `layout` | `PI_SUBAGENT_LAYOUT` | `main` | Pane layout: `main` (main-vertical — parent stays big, children stack in a side rail, re-flows on spawn/exit), `window` (all children in a dedicated tiled sibling window named `<current window>-subagents`), `off` (plain right-split in place, no re-flow) |
+| `layout` | `PI_SUBAGENT_LAYOUT` | `window` | Pane layout: `main` (main-vertical — parent stays big, children stack in a side rail, re-flows on spawn/exit), `window` (all children in a dedicated tiled sibling window named `<current window>-subagents`), `off` (plain right-split in place, no re-flow) |
 | `mainWidth` | `PI_SUBAGENT_MAIN_WIDTH` | `60%` | Width of the parent pane in `main` layout (a tmux width: `60%` or an absolute column count) |
 | `shellReadyDelayMs` | `PI_SUBAGENT_SHELL_READY_DELAY_MS` | `500` | Pause after creating a pane before typing the launch command (raise it if a slow shell drops the command) |
 
@@ -97,7 +97,8 @@ run a fresh shell and inherit nothing):
 
 - `index.ts` — orchestrator: `subagent`, `subagents_list`, `subagent_resume`
   tools; per-child registry + watcher; steer-back delivery; dumb widget
-  (name + elapsed time, no state machine).
+  (name + elapsed time, no state machine); ctrl+q jump picker (Enter = go to
+  the child's pane across windows, z = go + zoom).
 - `tmux.ts` — pane create/type/read/close; bash-script command transport;
   the exit poller (sidecar → screen sentinel → pane-closed grace).
 - `session.ts` — fork seeding; summary extraction (last assistant message,

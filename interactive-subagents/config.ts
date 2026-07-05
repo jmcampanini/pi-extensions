@@ -32,7 +32,7 @@ export interface SubagentsConfig {
 }
 
 const DEFAULTS: SubagentsConfig = {
-	layout: "main",
+	layout: "window",
 	mainWidth: "60%",
 	shellReadyDelayMs: 500,
 };
