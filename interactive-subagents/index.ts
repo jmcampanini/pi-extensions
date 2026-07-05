@@ -29,6 +29,7 @@ import {
 	closePane,
 	isTmuxAvailable,
 	pollForExit,
+	refreshLayout,
 	sendLongCommand,
 	shellQuote,
 	type ExitResult,
@@ -398,6 +399,8 @@ export default function (pi: ExtensionAPI) {
 		running.delete(child.id);
 		updateWidget();
 		closePane(child.paneId);
+		// Re-flow the remaining subagent panes so they reclaim this one's space.
+		if (running.size > 0) refreshLayout();
 
 		// Session is shutting down — nobody left to tell.
 		if (result.reason === "aborted") return;

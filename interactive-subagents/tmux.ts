@@ -51,17 +51,164 @@ export function shellQuote(value: string): string {
 	return "'" + value.replace(/'/g, "'\\''") + "'";
 }
 
+// ── pane layout ──────────────────────────────────────────────────────────
+// How subagent panes are arranged. Naively splitting the parent's column every
+// time makes each pane progressively narrower; these strategies keep things
+// readable. Switch with PI_SUBAGENT_LAYOUT (default "main"):
+//
+//   off     Split a plain pane to the right in the current window. No re-flow.
+//   main    Split in the current window, then main-vertical: the parent pi
+//           stays a fixed-width pane on the left, children stack on the right.
+//   window  Put every subagent in a dedicated sibling window named
+//           "<current window>-subagents", kept tiled.
+
+type Layout = "off" | "main" | "window";
+
+/** Which layout to use (default "main"). */
+function getLayout(): Layout {
+	const raw = (process.env.PI_SUBAGENT_LAYOUT ?? "main").trim().toLowerCase();
+	if (raw === "off" || raw === "window") return raw;
+	return "main";
+}
+
+/**
+ * Width of the parent ("main") pane in the "main" layout. A tmux width:
+ * a percentage like "60%" (default, scales with the terminal) or an absolute
+ * column count like "120".
+ */
+function getMainWidth(): string {
+	const raw = (process.env.PI_SUBAGENT_MAIN_WIDTH ?? "60%").trim();
+	return /^\d+%?$/.test(raw) ? raw : "60%";
+}
+
+/** Give a pane a title (shown by `tmux display-panes` / status lines). */
+function titlePane(paneId: string, title: string): void {
+	try {
+		tmux(["select-pane", "-t", paneId, "-T", title]);
+	} catch {
+		// cosmetic — best effort
+	}
+}
+
+/**
+ * Re-flow the window containing `anchorPane` into main-vertical: the parent pi
+ * (leftmost, oldest pane) becomes the fixed-width "main" pane, everything else
+ * stacks in the right column. Layout is cosmetic — never fail a spawn over it.
+ */
+function applyMainVertical(anchorPane: string): void {
+	try {
+		tmux(["setw", "-t", anchorPane, "main-pane-width", getMainWidth()]);
+		tmux(["select-layout", "-t", anchorPane, "main-vertical"]);
+	} catch {
+		// keep the raw split if the layout command fails
+	}
+}
+
+// ── the dedicated subagents window ("window" layout) ───────────────────────
+// The window id is parked on globalThis (like our timers) so it survives a
+// /reload: we reuse the same window across spawns instead of leaking a new one.
+
+const AGENTS_WINDOW_KEY = Symbol.for("interactive-subagents/agents-window");
+
+/** Does a window with this id still exist anywhere in the server? */
+function windowExists(windowId: string): boolean {
+	try {
+		return tmux(["list-windows", "-a", "-F", "#{window_id}"])
+			.split("\n")
+			.some((line) => line.trim() === windowId);
+	} catch {
+		return false;
+	}
+}
+
+/** The dedicated subagents window id if it still exists, else null. */
+function agentsWindow(): string | null {
+	const id = (globalThis as any)[AGENTS_WINDOW_KEY];
+	if (typeof id === "string" && windowExists(id)) return id;
+	(globalThis as any)[AGENTS_WINDOW_KEY] = null;
+	return null;
+}
+
+/**
+ * Create the dedicated subagents window as a sibling right after the parent
+ * pi's window, named "<parent window>-subagents", and return the pane id of
+ * its initial pane (which the first subagent uses). Auto-rename is disabled so
+ * the running subagents can't rename the window away from "-subagents".
+ */
+function createAgentsWindow(title: string): string {
+	const parentPane = process.env.TMUX_PANE;
+
+	// Base the name on the parent pi's window; fall back to "pi".
+	let base = "pi";
+	let parentWindow: string | undefined;
+	if (parentPane) {
+		try {
+			base = tmux(["display-message", "-p", "-t", parentPane, "#{window_name}"]).trim() || "pi";
+			parentWindow = tmux(["display-message", "-p", "-t", parentPane, "#{window_id}"]).trim();
+		} catch {
+			// keep defaults
+		}
+	}
+
+	// -d = don't switch to it; -a -t <window> = insert right after the parent.
+	const args = ["new-window", "-d", "-P", "-F", "#{pane_id}"];
+	if (parentWindow) args.push("-a", "-t", parentWindow);
+	args.push("-n", `${base}-subagents`);
+
+	const paneId = tmux(args).trim();
+	if (!paneId.startsWith("%")) {
+		throw new Error(`tmux new-window returned an unexpected pane id: "${paneId}"`);
+	}
+
+	const windowId = tmux(["display-message", "-p", "-t", paneId, "#{window_id}"]).trim();
+	(globalThis as any)[AGENTS_WINDOW_KEY] = windowId;
+	try {
+		tmux(["set-window-option", "-t", windowId, "automatic-rename", "off"]);
+		tmux(["set-window-option", "-t", windowId, "allow-rename", "off"]);
+	} catch {
+		// cosmetic
+	}
+
+	titlePane(paneId, title);
+	return paneId;
+}
+
+/** Re-tile the dedicated subagents window (best effort). */
+function tileAgentsWindow(windowId: string): void {
+	try {
+		tmux(["select-layout", "-t", windowId, "tiled"]);
+	} catch {
+		// cosmetic
+	}
+}
+
 // ── panes ────────────────────────────────────────────────────────────────
 
 /**
  * Create a new pane for a subagent and return its tmux pane id (e.g. "%12").
- *
- * -d  = don't focus the new pane (never steal the user's keyboard)
- * -h  = horizontal split (side by side)
- * -t  = split the parent pi's own pane, not the currently focused one
- * -P -F '#{pane_id}' = print the new pane's id so we can target it later
+ * Never steals the user's focus (`-d`).
  */
 export function createPane(title: string): string {
+	const layout = getLayout();
+
+	// "window": all subagents live in one dedicated, tiled sibling window.
+	if (layout === "window") {
+		const existing = agentsWindow();
+		if (!existing) {
+			// First subagent: create the window and use its initial pane.
+			return createAgentsWindow(title);
+		}
+		// Subsequent: add a pane to that window and re-tile.
+		const paneId = tmux(["split-window", "-d", "-t", existing, "-P", "-F", "#{pane_id}"]).trim();
+		if (!paneId.startsWith("%")) {
+			throw new Error(`tmux split-window returned an unexpected pane id: "${paneId}"`);
+		}
+		tileAgentsWindow(existing);
+		titlePane(paneId, title);
+		return paneId;
+	}
+
+	// "off" and "main" split a new pane off the parent pi's pane, in place.
 	const args = ["split-window", "-d", "-h"];
 	if (process.env.TMUX_PANE) {
 		args.push("-t", process.env.TMUX_PANE);
@@ -73,14 +220,9 @@ export function createPane(title: string): string {
 		throw new Error(`tmux split-window returned an unexpected pane id: "${paneId}"`);
 	}
 
-	// Give the pane a title so `tmux display-panes` / status lines can show
-	// which subagent lives where. Cosmetic only — ignore failures.
-	try {
-		tmux(["select-pane", "-t", paneId, "-T", title]);
-	} catch {
-		// best effort
-	}
-
+	// "main" re-flows into main-vertical; "off" leaves the raw split alone.
+	if (layout === "main") applyMainVertical(paneId);
+	titlePane(paneId, title);
 	return paneId;
 }
 
@@ -91,6 +233,26 @@ export function closePane(paneId: string): void {
 	} catch {
 		// already closed — fine
 	}
+}
+
+/**
+ * Re-apply the layout after a child pane closes, so survivors reclaim the freed
+ * space evenly (tmux doesn't re-flow a named layout on its own when a pane
+ * dies). No-op for "off", and for "window" once the whole window is gone.
+ */
+export function refreshLayout(): void {
+	const layout = getLayout();
+	if (layout === "off") return;
+
+	if (layout === "window") {
+		const win = agentsWindow();
+		if (win) tileAgentsWindow(win);
+		return;
+	}
+
+	// main — anchored on the parent pi's own pane.
+	const anchor = process.env.TMUX_PANE;
+	if (anchor) applyMainVertical(anchor);
 }
 
 // ── typing into panes ────────────────────────────────────────────────────

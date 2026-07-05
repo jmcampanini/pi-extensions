@@ -49,6 +49,14 @@ Files, per child:
 | `artifacts/<sid>/interactive-subagents/…` | parent | task files (`@file` delivery), system prompts, launch scripts |
 | pane screen | child's shell | `__SUBAGENT_DONE_<code>__` sentinel — crash net |
 
+User-facing env knobs (read by the parent):
+
+| Var | Default | Purpose |
+|---|---|---|
+| `PI_SUBAGENT_LAYOUT` | `main` | Pane layout: `main` (main-vertical — parent stays big, children stack in a side rail, re-flows on spawn/exit), `window` (all children in a dedicated tiled sibling window named `<current window>-subagents`), `off` (plain right-split in place, no re-flow) |
+| `PI_SUBAGENT_MAIN_WIDTH` | `60%` | Width of the parent pane in `main` layout (a tmux width: `60%` or an absolute column count) |
+| `PI_SUBAGENT_SHELL_READY_DELAY_MS` | `500` | Pause after creating a pane before typing the launch command (raise it if a slow shell drops the command) |
+
 Env vars (parent → child, prefixed onto the launch command because tmux panes
 run a fresh shell and inherit nothing):
 
