@@ -35,6 +35,7 @@ import {
 	type ExitResult,
 } from "./tmux.ts";
 import { countEntries, extractSummary, readSessionCwd, seedForkSession } from "./session.ts";
+import { resolveUsableModel } from "./models.ts";
 
 // ── am I running inside a subagent? ──────────────────────────────────────
 // This extension is installed globally, so it also loads inside every child
@@ -67,9 +68,17 @@ function agentDefsDir(): string {
 interface AgentDefinition {
 	name: string;
 	description?: string;
-	/** e.g. "anthropic/claude-haiku-4-5" — passed to `pi --model`. */
-	model?: string;
-	/** Thinking level, appended to the model as `model:thinking`. */
+	/**
+	 * Ordered model candidates, each fully qualified as "provider/model"
+	 * (e.g. "openai-codex/gpt-5.5"). At spawn time the FIRST entry that is
+	 * both known to pi and whose provider has credentials on this machine
+	 * wins — that's what makes one agent file portable across computers
+	 * with different provider setups.
+	 */
+	models?: string[];
+	/** True when the file still uses the removed `model:` key (spawn errors). */
+	legacyModelKey?: boolean;
+	/** Thinking level, appended to the winning model as `model:thinking`. */
 	thinking?: string;
 	/** Comma-separated tool allowlist for `pi --tools`. */
 	tools?: string;
@@ -98,11 +107,15 @@ function parseAgentMarkdown(name: string, markdown: string): AgentDefinition {
 
 	const rawMode = frontmatterValue(frontmatter, "mode");
 	const rawAutoExit = frontmatterValue(frontmatter, "auto-exit");
+	const rawModels = frontmatterValue(frontmatter, "models");
 
 	return {
 		name,
 		description: frontmatterValue(frontmatter, "description"),
-		model: frontmatterValue(frontmatter, "model"),
+		models: rawModels
+			? rawModels.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "")
+			: undefined,
+		legacyModelKey: frontmatterValue(frontmatter, "model") !== undefined,
 		thinking: frontmatterValue(frontmatter, "thinking"),
 		tools: frontmatterValue(frontmatter, "tools"),
 		mode: rawMode === "fork" || rawMode === "fresh" ? rawMode : undefined,
@@ -326,7 +339,13 @@ const SubagentParams = Type.Object({
 				"'fresh' = clean context (default). Overrides the agent definition.",
 		}),
 	),
-	model: Type.Optional(Type.String({ description: "Model override, e.g. 'anthropic/claude-haiku-4-5' (overrides the agent default)" })),
+	model: Type.Optional(
+		Type.String({
+			description:
+				"Model override, fully qualified as 'provider/model' (e.g. 'openai-codex/gpt-5.5'). " +
+				"Must be known to pi with credentials configured, or the call errors. Overrides the agent's models list.",
+		}),
+	),
 	tools: Type.Optional(Type.String({ description: "Comma-separated tool allowlist, e.g. 'read,bash' (overrides the agent default)" })),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the subagent (defaults to this session's cwd)" })),
 	autoExit: Type.Optional(
@@ -516,9 +535,24 @@ export default function (pi: ExtensionAPI) {
 						`Unknown agent "${params.agent}" — no ${params.agent}.md in ${agentDefsDir()}. Use subagents_list to see available agents.`,
 					);
 				}
+				if (agentDef.legacyModelKey) {
+					throw new Error(
+						`Agent "${params.agent}" uses the removed \`model:\` key — replace it with \`models:\` (comma-separated provider/model entries, first usable one wins).`,
+					);
+				}
 			}
 			const mode = params.mode ?? agentDef?.mode ?? "fresh";
-			const model = params.model ?? agentDef?.model;
+			// An explicit param is just a one-entry candidate list — same
+			// resolution path as the agent's `models:` list, so a bad override
+			// fails fast with the same clear error. No candidates at all means
+			// the child inherits pi's default model.
+			const modelCandidates = params.model ? [params.model] : (agentDef?.models ?? []);
+			const model =
+				modelCandidates.length > 0 ? resolveUsableModel(modelCandidates, ctx.modelRegistry) : undefined;
+			// Thinking level rides as pi's `model:level` suffix, and only when
+			// the model came from the agent file — an explicit param override
+			// is taken exactly as given.
+			const thinking = params.model ? undefined : agentDef?.thinking;
 			const tools = params.tools ?? agentDef?.tools;
 			const autoExit = params.autoExit ?? agentDef?.autoExit ?? true;
 
@@ -598,7 +632,7 @@ export default function (pi: ExtensionAPI) {
 				PI_SUBAGENT_NAME: params.name,
 				PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
 			});
-			const modelArg = model ? `--model ${shellQuote(agentDef?.thinking && !params.model ? `${model}:${agentDef.thinking}` : model)}` : "";
+			const modelArg = model ? `--model ${shellQuote(thinking ? `${model}:${thinking}` : model)}` : "";
 			const toolsArg = tools ? `--tools ${shellQuote(withControlTools(tools))}` : "";
 			const command =
 				[
@@ -620,12 +654,12 @@ export default function (pi: ExtensionAPI) {
 
 			// Launch-metadata sidecar: records the child's identity settings so
 			// subagent_resume can reapply them later (system prompt, tools,
-			// model, auto-exit). Without this, a resumed agent silently loses
-			// its system prompt and restrictions — they live on the command
-			// line, not in the conversation.
+			// model, thinking, auto-exit). Without this, a resumed agent
+			// silently loses its system prompt and restrictions — they live on
+			// the command line, not in the conversation.
 			writeFileSync(
 				`${childSessionFile}.meta`,
-				JSON.stringify({ name: params.name, agent: params.agent, tools, model, systemPromptFile, autoExit }),
+				JSON.stringify({ name: params.name, agent: params.agent, tools, model, thinking, systemPromptFile, autoExit }),
 				"utf8",
 			);
 
@@ -669,7 +703,7 @@ export default function (pi: ExtensionAPI) {
 		label: "List Subagent Definitions",
 		description: "List the available agent definitions (global <name>.md files) usable as the `agent` parameter of the subagent tool.",
 		parameters: Type.Object({}),
-		async execute() {
+		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			const defs = listAgentDefinitions();
 			if (defs.length === 0) {
 				return {
@@ -678,14 +712,25 @@ export default function (pi: ExtensionAPI) {
 							type: "text",
 							text:
 								`No agent definitions found in ${agentDefsDir()}. ` +
-								"Create <name>.md files there with optional frontmatter (description, model, thinking, tools, mode, auto-exit) and a system-prompt body. The subagent tool also works without an agent definition.",
+								"Create <name>.md files there with optional frontmatter (description, models, thinking, tools, mode, auto-exit) and a system-prompt body. The subagent tool also works without an agent definition.",
 						},
 					],
 					details: {},
 				};
 			}
 			const lines = defs.map((def) => {
-				const model = def.model ? ` [${def.model}]` : "";
+				// Show which model actually wins on THIS machine — the whole
+				// point of the candidate list — or a loud warning when none do.
+				let model = "";
+				if (def.legacyModelKey) {
+					model = " [⚠ uses removed `model:` key — rename to `models:`]";
+				} else if (def.models && def.models.length > 0) {
+					try {
+						model = ` [${resolveUsableModel(def.models, ctx.modelRegistry)}]`;
+					} catch {
+						model = " [⚠ no usable model on this machine]";
+					}
+				}
 				const interactive = def.autoExit === false ? " (interactive)" : "";
 				return `• ${def.name}${model}${interactive} — ${def.description ?? "(no description)"}`;
 			});
@@ -758,6 +803,7 @@ export default function (pi: ExtensionAPI) {
 				name?: string;
 				tools?: string;
 				model?: string;
+				thinking?: string;
 				systemPromptFile?: string;
 				autoExit?: boolean;
 			} = {};
@@ -770,7 +816,13 @@ export default function (pi: ExtensionAPI) {
 			const name = params.name ?? meta.name ?? "Resumed";
 			const autoExit = params.autoExit ?? meta.autoExit ?? true;
 			const tools = params.tools ?? meta.tools;
-			const model = params.model ?? meta.model;
+			// Re-resolve the model on THIS machine (an old session may name a
+			// provider this computer has no credentials for — fail fast here,
+			// not in the pane). Param overrides go through the same check.
+			const modelCandidates = params.model ? [params.model] : meta.model ? [meta.model] : [];
+			const model =
+				modelCandidates.length > 0 ? resolveUsableModel(modelCandidates, ctx.modelRegistry) : undefined;
+			const thinking = params.model ? undefined : meta.thinking;
 
 			// An autonomous resume with no message would open an idle session
 			// that never completes: nothing prompts the child, so no turn runs,
@@ -813,7 +865,7 @@ export default function (pi: ExtensionAPI) {
 					env,
 					`pi --session ${shellQuote(sessionPath)}`,
 					`-e ${shellQuote(IMPLANT_PATH)}`,
-					model ? `--model ${shellQuote(model)}` : "",
+					model ? `--model ${shellQuote(thinking ? `${model}:${thinking}` : model)}` : "",
 					systemPromptFile ? `--append-system-prompt ${shellQuote(systemPromptFile)}` : "",
 					tools ? `--tools ${shellQuote(withControlTools(tools))}` : "",
 					messageArg,

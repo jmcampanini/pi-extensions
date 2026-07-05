@@ -70,6 +70,14 @@ run a fresh shell and inherit nothing):
 
 ## Known v1 limitations
 
+- **"Credentials configured" ≠ "calls will succeed."** Model selection
+  (`models:` list) picks the first entry whose provider has auth configured
+  (`modelRegistry.hasConfiguredAuth`), but an account-level problem — e.g.
+  Anthropic subscription OAuth without extra usage enabled — passes that
+  check and only fails at request time, leaving the child pane showing the
+  provider error. v2's stall watchdog will surface that; v1 can't detect it
+  locally.
+
 - **Auto-exit children exit on the first errored turn.** pi's own auto-retry
   might have recovered a transient provider error (429/overload), but the
   implant can't see pi's retry decision from `agent_end`, so it reports the

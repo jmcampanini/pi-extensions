@@ -20,7 +20,7 @@ The extension registers three caller-side tools:
 | `task` | The task prompt — required |
 | `agent` | Agent definition to load defaults from (see `subagents_list`) |
 | `mode` | `"fork"` or `"fresh"` (default `"fresh"`) |
-| `model` | Model override, e.g. `anthropic/claude-haiku-4-5` |
+| `model` | Model override — `provider/model`, or a bare id if unambiguous among configured providers; validated like the agent's `models` list (errors fast otherwise) |
 | `tools` | Comma-separated tool allowlist, e.g. `read,bash` |
 | `cwd` | Child working directory (default: parent session's cwd) |
 | `autoExit` | `true` (default) = exit when its turn completes; `false` = stay open for a human |
@@ -62,8 +62,8 @@ An agent definition is a Markdown file: optional frontmatter for settings, and a
 | Frontmatter key | Meaning |
 |---|---|
 | `description` | Shown by `subagents_list` |
-| `model` | Passed to `pi --model` |
-| `thinking` | Appended to the model as `model:thinking` (dropped if the call overrides `model`) |
+| `models` | Ordered, comma-separated model candidates; the first one usable **on this machine** wins, so one agent file works across computers. An entry is `provider/model` (exact) or a bare id like `gpt-5.5` — a bare id wins only when exactly one configured provider offers it (ambiguity fails that entry; no guessing, no fuzzy matching). If nothing is usable, the spawn errors immediately with per-entry reasons. Omit to inherit pi's default model. |
+| `thinking` | Effort level, appended to the winning model as `model:thinking` (dropped if the call overrides `model`) |
 | `tools` | Comma-separated allowlist for `pi --tools` |
 | `mode` | `fork` or `fresh` (default `fresh`) |
 | `auto-exit` | `true` (default) or `false` |
@@ -75,6 +75,8 @@ Example (`~/.pi/agent/agents/scout.md`):
 ```markdown
 ---
 description: Fast read-only codebase recon with file:line pointers.
+models: openai-codex/gpt-5.5, anthropic/claude-haiku-4-5
+thinking: low
 tools: read, grep, find, ls
 auto-exit: true
 ---
