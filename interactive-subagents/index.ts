@@ -20,9 +20,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "@sinclair/typebox";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	createPane,
@@ -87,6 +87,9 @@ function frontmatterValue(frontmatter: string, key: string): string | undefined 
 }
 
 function parseAgentMarkdown(name: string, markdown: string): AgentDefinition {
+	// Normalize Windows line endings first — otherwise the fence regex below
+	// silently fails to match and the whole frontmatter is treated as body.
+	markdown = markdown.replace(/\r\n/g, "\n");
 	// Frontmatter = the block between the leading `---` fences (optional).
 	const match = markdown.match(/^---\n([\s\S]*?)\n---\n?/);
 	const frontmatter = match ? match[1] : "";
@@ -143,6 +146,14 @@ interface RunningSubagent {
 
 /** All children currently running, keyed by their 8-char run id. */
 const running = new Map<string, RunningSubagent>();
+
+/**
+ * Every child this session has ever tracked (running or finished), so
+ * subagent_resume can accept a short id instead of a long session path.
+ * The path fallback still exists because this ledger is in-memory only —
+ * it dies with the parent process, but the session file doesn't.
+ */
+const ledger = new Map<string, { sessionFile: string; name: string }>();
 
 // ── /reload survival ─────────────────────────────────────────────────────
 // pi's /reload re-imports this module, but timers and watcher loops from the
@@ -328,7 +339,12 @@ const SubagentParams = Type.Object({
 type SubagentParamsType = Static<typeof SubagentParams>;
 
 const ResumeParams = Type.Object({
-	sessionPath: Type.String({ description: "Path to the child session .jsonl file (from the result/ping message)" }),
+	id: Type.Optional(
+		Type.String({ description: "The sub-agent's short id from a result/ping message (preferred). Use sessionPath instead if pi was restarted since." }),
+	),
+	sessionPath: Type.Optional(
+		Type.String({ description: "Path to the child session .jsonl file — fallback when the id is no longer known (e.g. after a pi restart)" }),
+	),
 	message: Type.Optional(Type.String({ description: "Follow-up prompt or answer to send to the resumed subagent" })),
 	name: Type.Optional(Type.String({ description: "Display name for the resumed subagent (default: 'Resumed')" })),
 	autoExit: Type.Optional(Type.Boolean({ description: "true (default) = exit after finishing the follow-up; false = stay open for a human" })),
@@ -398,9 +414,10 @@ export default function (pi: ExtensionAPI) {
 				{
 					customType: "subagent_ping",
 					content:
-						`Sub-agent "${result.pingName ?? child.name}" needs help: ${result.pingMessage}\n\n` +
-						`Answer by calling subagent_resume({ sessionPath: "${child.sessionFile}", message: "<your answer>" }). ` +
-						"Its original system prompt, tools, and model are reapplied automatically.",
+						`Sub-agent "${result.pingName ?? child.name}" (id ${child.id}) needs help: ${result.pingMessage}\n\n` +
+						`Answer with subagent_resume({ id: "${child.id}", message: "<your answer>" }). ` +
+						"Its original system prompt, tools, and model are reapplied automatically.\n" +
+						`Session: ${child.sessionFile} (pass as sessionPath instead of id if the id is no longer known)`,
 					display: true,
 					details: { id: child.id, name: child.name, sessionFile: child.sessionFile },
 				},
@@ -418,9 +435,9 @@ export default function (pi: ExtensionAPI) {
 		let content: string;
 		if (!failed) {
 			content =
-				`Sub-agent "${child.name}" completed (${elapsed}).\n\n` +
+				`Sub-agent "${child.name}" (id ${child.id}) completed (${elapsed}).\n\n` +
 				`${summary ?? "(the subagent produced no final message)"}\n\n` +
-				`Session: ${child.sessionFile}`;
+				`For follow-up work: subagent_resume({ id: "${child.id}", message: "..." }). Session: ${child.sessionFile}`;
 		} else {
 			const reasonText =
 				result.reason === "error"
@@ -429,10 +446,9 @@ export default function (pi: ExtensionAPI) {
 						? result.errorMessage
 						: `exit code ${result.exitCode}`;
 			content =
-				`Sub-agent "${child.name}" failed after ${elapsed} (${reasonText}).\n\n` +
+				`Sub-agent "${child.name}" (id ${child.id}) failed after ${elapsed} (${reasonText}).\n\n` +
 				(summary ? `Last output:\n${summary}\n\n` : "") +
-				`Session: ${child.sessionFile}\n` +
-				`You can retry with subagent_resume({ sessionPath: "${child.sessionFile}", message: "<guidance>" }).`;
+				`You can retry with subagent_resume({ id: "${child.id}", message: "<guidance>" }). Session: ${child.sessionFile}`;
 		}
 
 		pi.sendMessage(
@@ -458,6 +474,7 @@ export default function (pi: ExtensionAPI) {
 	/** Register a child and start its supervision machinery. */
 	function trackChild(child: RunningSubagent): void {
 		running.set(child.id, child);
+		ledger.set(child.id, { sessionFile: child.sessionFile, name: child.name });
 		ensureWidgetTimer();
 		updateWidget();
 		void watchSubagent(child);
@@ -501,7 +518,18 @@ export default function (pi: ExtensionAPI) {
 			const model = params.model ?? agentDef?.model;
 			const tools = params.tools ?? agentDef?.tools;
 			const autoExit = params.autoExit ?? agentDef?.autoExit ?? true;
-			const cwd = params.cwd ?? ctx.cwd;
+
+			// Resolve the working directory to an absolute path up front — it
+			// feeds the launch script's `cd`, the session-dir naming, and the
+			// fork header, all of which need a real absolute path. Relative
+			// paths resolve against this session's cwd; a leading ~ expands.
+			const rawCwd = params.cwd ?? ctx.cwd;
+			const tildeExpanded =
+				rawCwd === "~" ? homedir() : rawCwd.startsWith("~/") ? join(homedir(), rawCwd.slice(2)) : rawCwd;
+			const cwd = resolve(ctx.cwd, tildeExpanded);
+			if (!existsSync(cwd)) {
+				throw new Error(`Subagent cwd does not exist: ${cwd}`);
+			}
 
 			// Fork needs the parent's session file on disk. pi buffers a brand-new
 			// session in memory until the first assistant reply, so a fork on the
@@ -517,33 +545,39 @@ export default function (pi: ExtensionAPI) {
 			const slug = slugify(params.name);
 			const childSessionFile = generateChildSessionFile(cwd);
 			mkdirSync(dirname(childSessionFile), { recursive: true });
+			// Fresh UUID paths make a leftover sidecar impossible today, but the
+			// poller trusts this path completely — keep it provably clean.
+			rmSync(`${childSessionFile}.exit`, { force: true });
 
 			// Fork mode: write the child's session file ourselves, seeded with the
 			// parent's conversation. Fresh mode: seed nothing — pi creates it.
+			// The seed's entry count is recorded so the eventual summary can only
+			// come from turns the CHILD added — without this, a copied parent
+			// assistant message could be reported as the child's "result".
+			let skipEntries = 0;
 			if (mode === "fork") {
 				seedForkSession({ parentSessionFile, childSessionFile, childCwd: cwd });
+				skipEntries = countEntries(childSessionFile);
 			}
 
-			// The task the child receives. Fork children already carry the
-			// conversation, so the raw task reads like the next user message.
-			// Fresh children get instructions about how their run ends.
-			let taskArg: string;
-			if (mode === "fork") {
-				taskArg = shellQuote(params.task);
-			} else {
-				const modeHint = autoExit
-					? "Complete your task autonomously. When you finish your final reply, this session closes automatically."
-					: "When your task is complete, write a final summary message and then call the subagent_done tool. If you are blocked, call caller_ping.";
-				const fullTask =
-					`# Your task\n\n${params.task}\n\n---\n${modeHint} ` +
-					"Your final assistant message is reported back to the caller as your result.";
-				// Delivered as an @file so multi-KB tasks never touch the shell
-				// command line (and stay inspectable under artifacts/).
-				const taskFile = join(base, "tasks", `${slug}-${id}.md`);
-				mkdirSync(dirname(taskFile), { recursive: true });
-				writeFileSync(taskFile, fullTask, "utf8");
-				taskArg = shellQuote(`@${taskFile}`);
-			}
+			// The task the child receives — always delivered as an @file: multi-KB
+			// tasks never touch the shell command line, tasks starting with "-" or
+			// "@" can't be misparsed as CLI flags, and the exact text stays
+			// inspectable under artifacts/. Fork children already carry the
+			// conversation so they get the raw task; fresh children also get
+			// instructions about how their run ends.
+			const fullTask =
+				mode === "fork"
+					? params.task
+					: `# Your task\n\n${params.task}\n\n---\n` +
+						(autoExit
+							? "Complete your task autonomously. When you finish your final reply, this session closes automatically. "
+							: "When your task is complete, write a final summary message and then call the subagent_done tool. If you are blocked, call caller_ping. ") +
+						"Your final assistant message is reported back to the caller as your result.";
+			const taskFile = join(base, "tasks", `${slug}-${id}.md`);
+			mkdirSync(dirname(taskFile), { recursive: true });
+			writeFileSync(taskFile, fullTask, "utf8");
+			const taskArg = shellQuote(`@${taskFile}`);
 
 			// The agent's body becomes an appended system prompt. We pass a FILE
 			// PATH — pi auto-reads existing paths for --append-system-prompt —
@@ -606,7 +640,7 @@ export default function (pi: ExtensionAPI) {
 				paneId,
 				sessionFile: childSessionFile,
 				startTime: Date.now(),
-				skipEntries: 0,
+				skipEntries,
 				tools,
 				model,
 				autoExit,
@@ -667,15 +701,50 @@ export default function (pi: ExtensionAPI) {
 		name: "subagent_resume",
 		label: "Resume Subagent",
 		description:
-			"Resume a previous sub-agent session (from a result or ping message) with an optional follow-up message. " +
+			"Resume a previous sub-agent session with an optional follow-up message. Pass the `id` from a " +
+			"result/ping message (preferred), or `sessionPath` if the id is no longer known (e.g. after a restart). " +
 			"ASYNC — returns immediately; the result steers back automatically. Do not poll.",
 		parameters: ResumeParams,
 		async execute(_toolCallId, params: ResumeParamsType, _signal, _onUpdate, ctx) {
 			if (!isTmuxAvailable()) {
 				throw new Error("Subagents need tmux: start pi inside a tmux session.");
 			}
-			if (!existsSync(params.sessionPath)) {
-				throw new Error(`No session file at ${params.sessionPath}`);
+
+			// Resolve which session to reopen: short id via this session's
+			// ledger (preferred — no long path to copy around), else an
+			// explicit path (survives parent restarts, when the ledger is gone).
+			let sessionPath = params.sessionPath;
+			if (!sessionPath && params.id) {
+				sessionPath = ledger.get(params.id)?.sessionFile;
+				if (!sessionPath) {
+					throw new Error(
+						`Unknown sub-agent id "${params.id}" — pass the sessionPath from the result/ping message instead.`,
+					);
+				}
+			}
+			if (!sessionPath) {
+				throw new Error("subagent_resume needs either `id` (from a result/ping message) or `sessionPath`.");
+			}
+			if (!existsSync(sessionPath)) {
+				throw new Error(`No session file at ${sessionPath}`);
+			}
+
+			// A leftover .exit sidecar from a previous run of this session would
+			// be consumed by the poller's first tick and instantly fake a
+			// completion (killing the fresh child). Clear it before launching.
+			rmSync(`${sessionPath}.exit`, { force: true });
+
+			// Refuse to attach a second pi process to a session that is still
+			// running — two processes appending to one .jsonl corrupts it.
+			// Checked synchronously (before any await) so parallel resume calls
+			// cannot race past each other.
+			const targetPath = resolve(sessionPath);
+			for (const child of running.values()) {
+				if (resolve(child.sessionFile) === targetPath) {
+					throw new Error(
+						`Sub-agent "${child.name}" (id ${child.id}) is still running on this session — wait for its result or ping before resuming.`,
+					);
+				}
 			}
 
 			// Reapply the child's original launch settings from the `.meta`
@@ -690,7 +759,7 @@ export default function (pi: ExtensionAPI) {
 				autoExit?: boolean;
 			} = {};
 			try {
-				meta = JSON.parse(readFileSync(`${params.sessionPath}.meta`, "utf8"));
+				meta = JSON.parse(readFileSync(`${sessionPath}.meta`, "utf8"));
 			} catch {
 				// no metadata — resume with plain defaults
 			}
@@ -699,6 +768,15 @@ export default function (pi: ExtensionAPI) {
 			const autoExit = params.autoExit ?? meta.autoExit ?? true;
 			const tools = params.tools ?? meta.tools;
 			const model = params.model ?? meta.model;
+
+			// An autonomous resume with no message would open an idle session
+			// that never completes: nothing prompts the child, so no turn runs,
+			// so auto-exit never fires and the watcher polls forever.
+			if (autoExit && !params.message) {
+				throw new Error(
+					"subagent_resume needs a `message` when the child is autonomous (autoExit) — pass your answer/follow-up, or set autoExit: false to hand the pane to a human.",
+				);
+			}
 			const systemPromptFile =
 				meta.systemPromptFile && existsSync(meta.systemPromptFile) ? meta.systemPromptFile : undefined;
 			const id = randomUUID().slice(0, 8);
@@ -706,7 +784,7 @@ export default function (pi: ExtensionAPI) {
 			const slug = slugify(name);
 
 			// Only entries added AFTER this point count toward the new summary.
-			const skipEntries = countEntries(params.sessionPath);
+			const skipEntries = countEntries(sessionPath);
 
 			// The follow-up message rides in as an @file, like task delivery.
 			let messageArg = "";
@@ -719,10 +797,10 @@ export default function (pi: ExtensionAPI) {
 
 			// Run in the directory the original child used (recorded in its
 			// session header) so relative paths and tools behave the same.
-			const sessionCwd = readSessionCwd(params.sessionPath);
+			const sessionCwd = readSessionCwd(sessionPath);
 
 			const env = buildChildEnv({
-				PI_SUBAGENT_SESSION: params.sessionPath,
+				PI_SUBAGENT_SESSION: sessionPath,
 				PI_SUBAGENT_NAME: name,
 				PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
 			});
@@ -730,7 +808,7 @@ export default function (pi: ExtensionAPI) {
 				[
 					sessionCwd ? `cd ${shellQuote(sessionCwd)} &&` : "",
 					env,
-					`pi --session ${shellQuote(params.sessionPath)}`,
+					`pi --session ${shellQuote(sessionPath)}`,
 					`-e ${shellQuote(IMPLANT_PATH)}`,
 					model ? `--model ${shellQuote(model)}` : "",
 					systemPromptFile ? `--append-system-prompt ${shellQuote(systemPromptFile)}` : "",
@@ -749,7 +827,7 @@ export default function (pi: ExtensionAPI) {
 				id,
 				name,
 				paneId,
-				sessionFile: params.sessionPath,
+				sessionFile: sessionPath,
 				startTime: Date.now(),
 				skipEntries,
 				tools,
@@ -764,7 +842,7 @@ export default function (pi: ExtensionAPI) {
 						text: `Resumed sub-agent "${name}" (id ${id}). Its result will arrive automatically — do not poll.`,
 					},
 				],
-				details: { id, sessionFile: params.sessionPath, paneId },
+				details: { id, sessionFile: sessionPath, paneId },
 			};
 		},
 	});

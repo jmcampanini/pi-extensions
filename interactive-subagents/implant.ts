@@ -30,9 +30,14 @@ export default function (pi: ExtensionAPI) {
 	// Not launched as a subagent — do nothing.
 	if (!sessionFile) return;
 
+	/** True once any sidecar has been written this run. The first write is
+	 * the child's verdict — nothing may overwrite it (see agent_end below). */
+	let sidecarWritten = false;
+
 	/** Write the one-shot `.exit` sidecar. Best effort: if the write fails,
 	 * the parent still detects our exit via the screen sentinel. */
 	function writeExitSidecar(data: Record<string, unknown>): void {
+		sidecarWritten = true;
 		try {
 			writeFileSync(`${sessionFile}.exit`, JSON.stringify(data));
 		} catch {
@@ -91,13 +96,25 @@ export default function (pi: ExtensionAPI) {
 	//
 	//   stopReason "aborted"  → user pressed Escape: stay open so they can
 	//                           inspect or redirect the child.
-	//   stopReason "error"    → provider failure after pi exhausted retries:
-	//                           write an `error` sidecar first, so the parent
-	//                           reports a real failure instead of mistaking
-	//                           exit-code 0 + a stale message for success.
+	//   stopReason "error"    → the LLM call errored. We exit on the FIRST
+	//                           error and write an `error` sidecar, so the
+	//                           parent reports a real failure instead of
+	//                           mistaking exit-code 0 + a stale message for
+	//                           success. (Known v1 tradeoff: pi might have
+	//                           auto-retried a transient error; the parent
+	//                           can always resume. See PLAN.md.)
 	//   anything else         → clean completion: write a `done` sidecar.
 	if (autoExit) {
 		pi.on("agent_end", (event, ctx) => {
+			// If a tool (subagent_done / caller_ping) already wrote a sidecar,
+			// the verdict is decided. pi defers our shutdown while the model is
+			// still streaming, so this handler can fire again afterwards — it
+			// must never overwrite a ping with a "done". Just finish exiting.
+			if (sidecarWritten) {
+				ctx.shutdown();
+				return;
+			}
+
 			// Find the last assistant message of the turn that just ended.
 			const messages = (event as { messages?: Array<Record<string, unknown>> }).messages;
 			let lastAssistant: Record<string, unknown> | null = null;

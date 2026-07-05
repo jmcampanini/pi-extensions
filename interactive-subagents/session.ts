@@ -81,12 +81,19 @@ export function seedForkSession(options: {
 	const raw = readFileSync(options.parentSessionFile, "utf8");
 	const lines = raw.split("\n").filter((line) => line.trim() !== "");
 
-	// Walk backwards to find the last user message, then cut there.
+	// Walk backwards to find where the in-flight turn STARTED, then cut there.
+	// A turn can be started by a plain user message OR by a custom message —
+	// our own steered subagent results/pings are persisted as
+	// `{type: "custom_message"}` entries and trigger turns that contain no
+	// user message at all. Cutting only at user messages would, on such a
+	// turn, land on the PREVIOUS turn's user message and silently drop the
+	// whole completed exchange in between.
 	let cutAt = lines.length;
 	for (let i = lines.length - 1; i >= 0; i--) {
 		try {
 			const entry = JSON.parse(lines[i]);
-			if (entry.type === "message" && entry.message?.role === "user") {
+			const isUserMessage = entry.type === "message" && entry.message?.role === "user";
+			if (isUserMessage || entry.type === "custom_message") {
 				cutAt = i;
 				break;
 			}
@@ -103,6 +110,24 @@ export function seedForkSession(options: {
 			return true; // keep lines we can't parse — pi tolerates them
 		}
 	});
+
+	// Safety net: never let the seed END on an assistant message that makes
+	// tool calls — its tool RESULTS were cut away with the in-flight turn,
+	// and providers reject a conversation that stops on an unanswered tool
+	// call. Trim such trailing entries.
+	while (copied.length > 0) {
+		try {
+			const last = JSON.parse(copied[copied.length - 1]);
+			const isAssistant = last.type === "message" && last.message?.role === "assistant";
+			const makesToolCalls =
+				isAssistant &&
+				(last.message.content ?? []).some((block: { type?: string }) => block.type === "toolCall");
+			if (!makesToolCalls) break;
+			copied.pop();
+		} catch {
+			break;
+		}
+	}
 
 	// Fresh header. version 3 must match pi's CURRENT_SESSION_VERSION, and
 	// cwd matters because pi adopts the header's cwd when opening the file.

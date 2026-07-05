@@ -60,6 +60,15 @@ run a fresh shell and inherit nothing):
 | `PI_CODING_AGENT_DIR` | propagated when the parent has a custom config root |
 | `PI_SUBAGENT_ID`, `PI_SUBAGENT_ACTIVITY_FILE` | *(reserved for v2 liveness)* |
 
+## Known v1 limitations
+
+- **Auto-exit children exit on the first errored turn.** pi's own auto-retry
+  might have recovered a transient provider error (429/overload), but the
+  implant can't see pi's retry decision from `agent_end`, so it reports the
+  failure immediately; the parent can always `subagent_resume` to retry.
+  Revisit in v2, where the stall watchdog makes waiting out retries safe.
+- **No recursion, by design** — children never get spawn tools in v1.
+
 ## Versions
 
 ### v1 — the primitive (this version)
@@ -92,6 +101,10 @@ Deliberate improvements over the reference implementation:
   model, and auto-exit, and resume restores them automatically (the reference
   silently dropped all of it, so resumed agents lost their identity and
   restrictions).
+- **Resume by short id.** Results and pings say `subagent_resume({ id:
+  "a55ba067", … })` — resolved through an in-session ledger — instead of
+  making the model copy a long session path out of prose (the reference's
+  approach, kept only as the `sessionPath` fallback for after restarts).
 - Watchers **skip steering after shutdown abort** (reference attempted to
   steer into a dying session).
 
