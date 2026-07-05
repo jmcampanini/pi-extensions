@@ -1,0 +1,98 @@
+# interactive-subagents
+
+A pi extension that spawns sub-agents as real pi sessions in tmux panes: the parent model calls a tool that returns immediately, and the child's result is steered back into the conversation asynchronously.
+
+**Requirements:** pi running *inside* tmux (e.g. `tmux new -A -s pi 'pi'`). tmux merely being installed is not enough — the tools error out otherwise.
+
+## Calling
+
+The extension registers three caller-side tools:
+
+- **`subagent`** — spawn a child pi session in a new tmux pane to work on a task.
+- **`subagents_list`** — list the available agent definitions usable as the `agent` param.
+- **`subagent_resume`** — reopen a finished child (by `id`, or `sessionPath` after a pi restart) to answer a question, retry, or send follow-up work.
+
+`subagent` and `subagent_resume` are **fire-and-forget**: they return immediately with a "started" status, and the child's result arrives as a steered message when it exits. The model must never poll — no sleeping, no reading the child's session file.
+
+| `subagent` param | Meaning |
+|---|---|
+| `name` | Display name (widget + pane title) — required |
+| `task` | The task prompt — required |
+| `agent` | Agent definition to load defaults from (see `subagents_list`) |
+| `mode` | `"fork"` or `"fresh"` (default `"fresh"`) |
+| `model` | Model override, e.g. `anthropic/claude-haiku-4-5` |
+| `tools` | Comma-separated tool allowlist, e.g. `read,bash` |
+| `cwd` | Child working directory (default: parent session's cwd) |
+| `autoExit` | `true` (default) = exit when its turn completes; `false` = stay open for a human |
+
+Explicit params beat agent-definition frontmatter, which beats built-in defaults.
+
+```js
+subagent({
+  name: "recon",
+  task: "Map where exit detection lives in ./src; report file:line pointers.",
+  agent: "scout",
+})
+// → Sub-agent "recon" started (id 3f2a91bc, fresh mode).
+//   Its result will arrive automatically — do not poll.
+```
+
+**The help loop:** a blocked child calls `caller_ping` and exits; the parent is woken with the question and answers via `subagent_resume({ id, message })` — the child's original system prompt, tools, and model are restored automatically from its launch metadata. The `id` is in-memory only; after a pi restart, pass `sessionPath` from the result/ping message instead.
+
+## Session context: fork vs fresh
+
+`mode: "fresh"` (the default) starts the child with a clean context. `mode: "fork"` seeds the child's session file with a snapshot of the parent conversation, so the child starts knowing everything the parent knows and reuses the provider prompt cache — good for follow-up work on the current discussion. Forking needs the parent's session file on disk, so it fails on the very first turn of a brand-new session (pi hasn't written the file yet).
+
+## Pane layout (tmux)
+
+Children are always created detached — a spawning child never steals your focus. Arrangement is controlled by `PI_SUBAGENT_LAYOUT`:
+
+| Value | Behavior |
+|---|---|
+| `main` (default) | tmux `main-vertical`: parent pi stays a fixed-width pane on the left, children stack in a right rail. Re-flows on every spawn and exit so survivors reclaim freed space. |
+| `window` | All children live in a dedicated tiled sibling window named `<parent window>-subagents`, reused across spawns (survives `/reload`). |
+| `off` | Plain right-split off the parent pi's pane. No re-flow — each spawn just narrows the row. |
+
+In `main`, `PI_SUBAGENT_MAIN_WIDTH` sets the parent pane's width — a percentage like `60%` (default) or absolute columns like `120`. Layout application is best-effort: if a tmux layout command fails, the spawn still succeeds with a raw split.
+
+## Agent definitions
+
+An agent definition is a Markdown file: optional frontmatter for settings, and a body that becomes the child's appended system prompt (`pi --append-system-prompt`). Definitions load from the **global** agents dir only — `$PI_CODING_AGENT_DIR/agents/`, defaulting to `~/.pi/agent/agents/`. No project-local lookup, nothing bundled. The **filename is the agent name** (`scout.md` → `agent: "scout"`); there is no `name:` key.
+
+| Frontmatter key | Meaning |
+|---|---|
+| `description` | Shown by `subagents_list` |
+| `model` | Passed to `pi --model` |
+| `thinking` | Appended to the model as `model:thinking` (dropped if the call overrides `model`) |
+| `tools` | Comma-separated allowlist for `pi --tools` |
+| `mode` | `fork` or `fresh` (default `fresh`) |
+| `auto-exit` | `true` (default) or `false` |
+
+All keys are optional; a file without `---` fences is treated as all body. Parsing is line-based `key: value`, not full YAML.
+
+Example (`~/.pi/agent/agents/scout.md`):
+
+```markdown
+---
+description: Fast read-only codebase recon with file:line pointers.
+tools: read, grep, find, ls
+auto-exit: true
+---
+
+You are a scout: investigate the codebase and return structured findings
+another agent can use without re-reading everything. Every claim needs an
+exact file path, with line numbers when you cite code.
+```
+
+## Also worth knowing
+
+- **Live widget.** While children run, a plain-text status block above the parent's editor lists each sub-agent with elapsed time (presence + elapsed only in v1).
+- **No recursion.** Children never get the spawn tools — the extension detects child mode via `PI_SUBAGENT_SESSION` and registers nothing. Depth is hard-capped at 1.
+- **How children end.** Auto-exit children close when their turn completes; interactive ones (`autoExit: false`) stay open until the model calls `subagent_done`. Either can `caller_ping` the parent.
+- **Watch or take over.** Every child is a real pi process in a visible pane — watch it, or just start typing to steer it. Escape in an auto-exit child keeps its pane open for inspection.
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `PI_SUBAGENT_LAYOUT` | `main` | Pane layout: `main`, `window`, or `off` |
+| `PI_SUBAGENT_MAIN_WIDTH` | `60%` | Parent pane width in `main` layout (tmux width: percentage or columns) |
+| `PI_SUBAGENT_SHELL_READY_DELAY_MS` | `500` | Pause after opening a pane before typing the launch command — raise it if a slow shell (direnv etc.) drops the command |
