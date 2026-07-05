@@ -144,7 +144,7 @@ function listAgentDefinitions(): AgentDefinition[] {
 // Everything a consumer could want to know about each agent, loaded once:
 // identity, source file, what would actually run on THIS machine, and any
 // problems that would break a spawn. The model-facing subagents_list tool
-// and the human-facing /subagents-list command are both views over this —
+// and the human-facing /subagents-available command are both views over this —
 // they differ only in how much of it they show.
 
 interface AgentInfo {
@@ -199,7 +199,7 @@ function collectAgentInventory(registry: ExtensionContext["modelRegistry"]): Age
 	});
 }
 
-/** The human-facing rendering of the inventory (used by /subagents-list). */
+/** The human-facing rendering of the inventory (used by /subagents-available). */
 function formatAgentOverviewLines(inventory: AgentInfo[], dir: string): string[] {
 	if (inventory.length === 0) {
 		return [
@@ -220,7 +220,7 @@ function formatAgentOverviewLines(inventory: AgentInfo[], dir: string): string[]
 		lines.push(`    ${agent.filePath}`);
 	}
 	lines.push("");
-	lines.push("  (run /subagents-list again or send a message to dismiss)");
+	lines.push("  (run /subagents-available again or send a message to dismiss)");
 	return lines;
 }
 
@@ -303,7 +303,7 @@ function updateWidget(): void {
 		return;
 	}
 
-	const lines = [`── subagents · ${running.size} running · ctrl+q to jump ──`];
+	const lines = [`── subagents · ${running.size} running · /subagents-running to jump ──`];
 	for (const child of running.values()) {
 		const elapsed = formatMMSS(Math.round((Date.now() - child.startTime) / 1000));
 		const agentTag = child.agent ? ` (${child.agent})` : "";
@@ -317,7 +317,7 @@ function ensureWidgetTimer(): void {
 	(globalThis as any)[TIMER_KEY] = setInterval(updateWidget, 1000);
 }
 
-// ── the /subagents-list overview widget ─────────────────────────────────
+// ── the /subagents-available overview widget ────────────────────────────
 // The human-facing agent overview is shown as a WIDGET, not a message or
 // session entry: it lives only on screen, so it never enters the model's
 // context and costs zero tokens. (pi 0.80.x has no renderer for display-only
@@ -796,12 +796,12 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// ── command: /subagents-list (human-facing) ────────────────────────────
+	// ── command: /subagents-available (human-facing) ───────────────────────
 	// Shows the full inventory in the overview widget above the editor —
 	// human-only and zero-token (see the widget section). Toggles: run it
 	// again to hide, or it clears on your next submitted message.
-	pi.registerCommand("subagents-list", {
-		description: "List known sub-agent definitions and their details",
+	pi.registerCommand("subagents-available", {
+		description: "List the available sub-agent definitions and their details",
 		handler: async (_args, ctx) => {
 			if (overviewShownAt !== null) {
 				hideOverview();
@@ -825,16 +825,13 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	// ── ctrl+q: jump to a running sub-agent's pane ─────────────────────────
+	// ── command: /subagents-running (human-facing) ─────────────────────────
 	// Opens a focused picker over the running children. Up/down to choose,
 	// Enter jumps to the pane (switching windows if needed), z jumps AND
-	// zooms it (tmux prefix+z un-zooms), Escape cancels. Key choice: ctrl+q
-	// is the only ctrl key that is (a) unbound in pi's defaults, (b) unused
-	// by the editor's emacs-style bindings, (c) not the tmux prefix (ctrl+b),
-	// and (d) unambiguous in legacy terminal encoding (unlike ctrl+j/m/i/h).
-	pi.registerShortcut("ctrl+q", {
-		description: "Jump to a running sub-agent's pane",
-		handler: async (ctx) => {
+	// zooms it (tmux prefix+z un-zooms), Escape cancels.
+	pi.registerCommand("subagents-running", {
+		description: "Pick a running sub-agent and jump to its pane (z = jump + zoom)",
+		handler: async (_args, ctx) => {
 			if (running.size === 0) {
 				ctx.ui.notify("No sub-agents running.", "info");
 				return;

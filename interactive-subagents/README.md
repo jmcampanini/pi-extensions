@@ -89,10 +89,10 @@ exact file path, with line numbers when you cite code.
 
 ## Also worth knowing
 
-- **`/subagents-list` (human command).** Shows every known agent with full details — description, the model that wins on this machine, thinking, tools, mode, validity problems, and the source file path — in a widget above the editor. Human-only and zero-token: it never touches the session or the model's context. Run it again (or send a message) to dismiss. The model's `subagents_list` tool is a terse view over the same inventory.
+- **`/subagents-available` (human command).** Shows every known agent with full details — description, the model that wins on this machine, thinking, tools, mode, validity problems, and the source file path — in a widget above the editor. Human-only and zero-token: it never touches the session or the model's context. Run it again (or send a message) to dismiss. The model's `subagents_list` tool is a terse view over the same inventory.
 
 - **Live widget.** While children run, a plain-text status block above the parent's editor lists each sub-agent with elapsed time (presence + elapsed only in v1).
-- **`ctrl+q` — jump to a sub-agent.** Opens a picker over the running children: up/down to choose, **Enter** jumps to its pane (switching tmux windows if needed), **z** jumps *and* zooms the pane (`prefix+z` un-zooms), Escape cancels.
+- **`/subagents-running` (human command).** Opens a picker over the running children: up/down to choose, **Enter** jumps to its pane (switching tmux windows if needed), **z** jumps *and* zooms the pane (`prefix+z` un-zooms), Escape cancels.
 - **No recursion.** Children never get the spawn tools — the extension detects child mode via `PI_SUBAGENT_SESSION` and registers nothing. Depth is hard-capped at 1.
 - **How children end.** Auto-exit children close when their turn completes; interactive ones (`autoExit: false`) stay open until the model calls `subagent_done`. Either can `caller_ping` the parent.
 - **Watch or take over.** Every child is a real pi process in a visible pane — watch it, or just start typing to steer it. Escape in an auto-exit child keeps its pane open for inspection.

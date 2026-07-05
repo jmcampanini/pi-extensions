@@ -97,8 +97,9 @@ run a fresh shell and inherit nothing):
 
 - `index.ts` — orchestrator: `subagent`, `subagents_list`, `subagent_resume`
   tools; per-child registry + watcher; steer-back delivery; dumb widget
-  (name + elapsed time, no state machine); ctrl+q jump picker (Enter = go to
-  the child's pane across windows, z = go + zoom).
+  (name + elapsed time, no state machine); /subagents-running jump picker (Enter =
+  go to the child's pane across windows, z = go + zoom) and
+  /subagents-available overview widget.
 - `tmux.ts` — pane create/type/read/close; bash-script command transport;
   the exit poller (sidecar → screen sentinel → pane-closed grace).
 - `session.ts` — fork seeding; summary extraction (last assistant message,
