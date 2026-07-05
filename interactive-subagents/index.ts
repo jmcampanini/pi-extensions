@@ -142,6 +142,90 @@ function listAgentDefinitions(): AgentDefinition[] {
 	}
 }
 
+// ── the agent inventory: one loader, many presenters ─────────────────────
+// Everything a consumer could want to know about each agent, loaded once:
+// identity, source file, what would actually run on THIS machine, and any
+// problems that would break a spawn. The model-facing subagents_list tool
+// and the human-facing /subagents-list command are both views over this —
+// they differ only in how much of it they show.
+
+interface AgentInfo {
+	name: string;
+	description?: string;
+	/** The definition file this agent came from. */
+	filePath: string;
+	/** The model that wins on this machine (canonical provider/model), if the agent lists any. */
+	resolvedModel?: string;
+	thinking?: string;
+	tools?: string;
+	mode: "fork" | "fresh";
+	autoExit: boolean;
+	/** Anything that would break or degrade spawning this agent. Empty = valid. */
+	problems: string[];
+}
+
+function collectAgentInventory(registry: ExtensionContext["modelRegistry"]): AgentInfo[] {
+	return listAgentDefinitions().map((def) => {
+		const problems: string[] = [];
+		let resolvedModel: string | undefined;
+
+		if (def.legacyModelKey) {
+			problems.push("uses the removed `model:` key — rename to `models:`");
+		}
+		if (def.models && def.models.length > 0) {
+			try {
+				resolvedModel = resolveUsableModel(def.models, registry);
+			} catch {
+				problems.push("no usable model on this machine");
+			}
+		}
+		if (def.thinking) {
+			try {
+				assertValidThinkingLevel(def.thinking);
+			} catch (error) {
+				problems.push(error instanceof Error ? error.message : String(error));
+			}
+		}
+
+		return {
+			name: def.name,
+			description: def.description,
+			filePath: join(agentDefsDir(), `${def.name}.md`),
+			resolvedModel,
+			thinking: def.thinking,
+			tools: def.tools,
+			mode: def.mode ?? "fresh",
+			autoExit: def.autoExit ?? true,
+			problems,
+		};
+	});
+}
+
+/** The human-facing rendering of the inventory (used by /subagents-list). */
+function formatAgentOverviewLines(inventory: AgentInfo[], dir: string): string[] {
+	if (inventory.length === 0) {
+		return [
+			`Sub-agents · none found in ${dir}`,
+			"  Create <name>.md files there (frontmatter: description, models, thinking, tools, mode, auto-exit; body = system prompt).",
+		];
+	}
+	const lines: string[] = [`Sub-agents · ${inventory.length} in ${dir}`];
+	for (const agent of inventory) {
+		const thinking = agent.thinking ? ` · thinking ${agent.thinking}` : "";
+		lines.push("");
+		lines.push(`  ${agent.name} — ${agent.resolvedModel ?? "default model"}${thinking}`);
+		for (const problem of agent.problems) {
+			lines.push(`    ⚠ ${problem}`);
+		}
+		if (agent.description) lines.push(`    ${agent.description}`);
+		lines.push(`    tools: ${agent.tools ?? "(all)"} · ${agent.mode} · ${agent.autoExit ? "auto-exit" : "interactive"}`);
+		lines.push(`    ${agent.filePath}`);
+	}
+	lines.push("");
+	lines.push("  (run /subagents-list again or send a message to dismiss)");
+	return lines;
+}
+
 // ── per-child bookkeeping ────────────────────────────────────────────────
 
 interface RunningSubagent {
@@ -233,6 +317,25 @@ function updateWidget(): void {
 function ensureWidgetTimer(): void {
 	if ((globalThis as any)[TIMER_KEY]) return;
 	(globalThis as any)[TIMER_KEY] = setInterval(updateWidget, 1000);
+}
+
+// ── the /subagents-list overview widget ─────────────────────────────────
+// The human-facing agent overview is shown as a WIDGET, not a message or
+// session entry: it lives only on screen, so it never enters the model's
+// context and costs zero tokens. (pi 0.80.x has no renderer for display-only
+// session entries yet; when registerEntryRenderer ships, this could become a
+// persistent transcript entry instead.)
+
+const OVERVIEW_WIDGET_KEY = "interactive-subagents-overview";
+
+/** When the overview was shown; null = hidden. */
+let overviewShownAt: number | null = null;
+
+function hideOverview(): void {
+	overviewShownAt = null;
+	if (latestCtx?.hasUI) {
+		latestCtx.ui.setWidget(OVERVIEW_WIDGET_KEY, undefined as unknown as string[]);
+	}
 }
 
 function stopWidgetTimer(): void {
@@ -391,6 +494,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", () => {
 		stopWidgetTimer();
+		overviewShownAt = null;
 		((globalThis as any)[ABORT_KEY] as AbortController).abort(); // stop all watchers
 		(globalThis as any)[ABORT_KEY] = new AbortController();
 		running.clear();
@@ -705,6 +809,35 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// ── command: /subagents-list (human-facing) ────────────────────────────
+	// Shows the full inventory in the overview widget above the editor —
+	// human-only and zero-token (see the widget section). Toggles: run it
+	// again to hide, or it clears on your next submitted message.
+	pi.registerCommand("subagents-list", {
+		description: "List known sub-agent definitions and their details",
+		handler: async (_args, ctx) => {
+			if (overviewShownAt !== null) {
+				hideOverview();
+				return;
+			}
+			if (!latestCtx?.hasUI) {
+				ctx.ui.notify("The sub-agent overview needs the interactive TUI.", "warning");
+				return;
+			}
+			const lines = formatAgentOverviewLines(collectAgentInventory(ctx.modelRegistry), agentDefsDir());
+			latestCtx.ui.setWidget(OVERVIEW_WIDGET_KEY, lines, { placement: "aboveEditor" });
+			overviewShownAt = Date.now();
+		},
+	});
+
+	// Dismiss the overview on the next submitted input. The grace period
+	// keeps the command's own submission from hiding it instantly.
+	pi.on("input", () => {
+		if (overviewShownAt !== null && Date.now() - overviewShownAt > 500) {
+			hideOverview();
+		}
+	});
+
 	// ── tool: subagents_list ───────────────────────────────────────────────
 	pi.registerTool({
 		name: "subagents_list",
@@ -712,39 +845,32 @@ export default function (pi: ExtensionAPI) {
 		description: "List the available agent definitions (global <name>.md files) usable as the `agent` parameter of the subagent tool.",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-			const defs = listAgentDefinitions();
-			if (defs.length === 0) {
+			const inventory = collectAgentInventory(ctx.modelRegistry);
+			if (inventory.length === 0) {
 				return {
 					content: [
 						{
 							type: "text",
 							text:
 								`No agent definitions found in ${agentDefsDir()}. ` +
-								"Create <name>.md files there with optional frontmatter (description, models, thinking, tools, mode, auto-exit) and a system-prompt body. The subagent tool also works without an agent definition.",
+								"The subagent tool also works without an agent definition.",
 						},
 					],
 					details: {},
 				};
 			}
-			const lines = defs.map((def) => {
-				// Show which model actually wins on THIS machine — the whole
-				// point of the candidate list — or a loud warning when none do.
-				let model = "";
-				if (def.legacyModelKey) {
-					model = " [⚠ uses removed `model:` key — rename to `models:`]";
-				} else if (def.models && def.models.length > 0) {
-					try {
-						model = ` [${resolveUsableModel(def.models, ctx.modelRegistry)}]`;
-					} catch {
-						model = " [⚠ no usable model on this machine]";
-					}
-				}
-				const interactive = def.autoExit === false ? " (interactive)" : "";
-				return `• ${def.name}${model}${interactive} — ${def.description ?? "(no description)"}`;
+			// Terse on purpose: the model only needs enough to CHOOSE an agent
+			// (name + description), plus whether the result comes back on its
+			// own (interactive agents wait for a human), plus a warning when a
+			// spawn would fail. Tools/model/paths stay in the human view.
+			const lines = inventory.map((agent) => {
+				const interactive = agent.autoExit ? "" : " (interactive — a human drives it)";
+				const warning = agent.problems.length > 0 ? ` [⚠ not spawnable: ${agent.problems.join("; ")}]` : "";
+				return `• ${agent.name}${interactive}${warning} — ${agent.description ?? "(no description)"}`;
 			});
 			return {
 				content: [{ type: "text", text: lines.join("\n") }],
-				details: { count: defs.length },
+				details: { count: inventory.length },
 			};
 		},
 	});
