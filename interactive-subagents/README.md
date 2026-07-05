@@ -21,6 +21,7 @@ The extension registers three caller-side tools:
 | `agent` | Agent definition to load defaults from (see `subagents_list`) |
 | `mode` | `"fork"` or `"fresh"` (default `"fresh"`) |
 | `model` | Model override — `provider/model`, or a bare id if unambiguous among configured providers; validated like the agent's `models` list (errors fast otherwise) |
+| `thinking` | Thinking/effort level override (`off`–`xhigh`); defaults to the agent definition's `thinking:` value |
 | `tools` | Comma-separated tool allowlist, e.g. `read,bash` |
 | `cwd` | Child working directory (default: parent session's cwd) |
 | `autoExit` | `true` (default) = exit when its turn completes; `false` = stay open for a human |
@@ -63,7 +64,7 @@ An agent definition is a Markdown file: optional frontmatter for settings, and a
 |---|---|
 | `description` | Shown by `subagents_list` |
 | `models` | Ordered, comma-separated model candidates; the first one usable **on this machine** wins, so one agent file works across computers. An entry is `provider/model` (exact) or a bare id like `gpt-5.5` — a bare id wins only when exactly one configured provider offers it (ambiguity fails that entry; no guessing, no fuzzy matching). If nothing is usable, the spawn errors immediately with per-entry reasons. Omit to inherit pi's default model. |
-| `thinking` | Effort level, appended to the winning model as `model:thinking` (dropped if the call overrides `model`) |
+| `thinking` | Thinking/effort level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`), passed via `pi --thinking`. Works with or without `models`; the call's `thinking` param overrides it. Typos fail the spawn immediately. |
 | `tools` | Comma-separated allowlist for `pi --tools` |
 | `mode` | `fork` or `fresh` (default `fresh`) |
 | `auto-exit` | `true` (default) or `false` |

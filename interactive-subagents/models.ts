@@ -21,6 +21,16 @@
  * testable with a plain fake object.
  */
 
+/** Pi's thinking/effort levels (mirrors pi's ModelThinkingLevel). */
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+
+/** Fail fast on a typo'd thinking level instead of letting the child pane error. */
+export function assertValidThinkingLevel(level: string): void {
+	if (!(THINKING_LEVELS as readonly string[]).includes(level)) {
+		throw new Error(`Invalid thinking level "${level}" — valid levels: ${THINKING_LEVELS.join(", ")}.`);
+	}
+}
+
 interface KnownModel {
 	provider: string;
 	id: string;

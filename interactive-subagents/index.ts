@@ -35,7 +35,7 @@ import {
 	type ExitResult,
 } from "./tmux.ts";
 import { countEntries, extractSummary, readSessionCwd, seedForkSession } from "./session.ts";
-import { resolveUsableModel } from "./models.ts";
+import { assertValidThinkingLevel, resolveUsableModel } from "./models.ts";
 
 // ── am I running inside a subagent? ──────────────────────────────────────
 // This extension is installed globally, so it also loads inside every child
@@ -78,7 +78,8 @@ interface AgentDefinition {
 	models?: string[];
 	/** True when the file still uses the removed `model:` key (spawn errors). */
 	legacyModelKey?: boolean;
-	/** Thinking level, appended to the winning model as `model:thinking`. */
+	/** Thinking/effort level, passed to the child via `pi --thinking` (works
+	 * with or without a models list). */
 	thinking?: string;
 	/** Comma-separated tool allowlist for `pi --tools`. */
 	tools?: string;
@@ -347,6 +348,12 @@ const SubagentParams = Type.Object({
 		}),
 	),
 	tools: Type.Optional(Type.String({ description: "Comma-separated tool allowlist, e.g. 'read,bash' (overrides the agent default)" })),
+	thinking: Type.Optional(
+		Type.String({
+			description:
+				"Thinking/effort level override: off, minimal, low, medium, high, or xhigh. Defaults to the agent definition's `thinking:` value.",
+		}),
+	),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the subagent (defaults to this session's cwd)" })),
 	autoExit: Type.Optional(
 		Type.Boolean({
@@ -549,10 +556,12 @@ export default function (pi: ExtensionAPI) {
 			const modelCandidates = params.model ? [params.model] : (agentDef?.models ?? []);
 			const model =
 				modelCandidates.length > 0 ? resolveUsableModel(modelCandidates, ctx.modelRegistry) : undefined;
-			// Thinking level rides as pi's `model:level` suffix, and only when
-			// the model came from the agent file — an explicit param override
-			// is taken exactly as given.
-			const thinking = params.model ? undefined : agentDef?.thinking;
+			// Thinking/effort level: param beats frontmatter. Passed to the
+			// child as pi's standalone `--thinking` flag so it works with or
+			// without a resolved model. Validated here so a typo fails the
+			// tool call instead of erroring later inside the child's pane.
+			const thinking = params.thinking ?? agentDef?.thinking;
+			if (thinking) assertValidThinkingLevel(thinking);
 			const tools = params.tools ?? agentDef?.tools;
 			const autoExit = params.autoExit ?? agentDef?.autoExit ?? true;
 
@@ -632,17 +641,16 @@ export default function (pi: ExtensionAPI) {
 				PI_SUBAGENT_NAME: params.name,
 				PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
 			});
-			const modelArg = model ? `--model ${shellQuote(thinking ? `${model}:${thinking}` : model)}` : "";
-			const toolsArg = tools ? `--tools ${shellQuote(withControlTools(tools))}` : "";
 			const command =
 				[
 					`cd ${shellQuote(cwd)} &&`,
 					env,
 					`pi --session ${shellQuote(childSessionFile)}`,
 					`-e ${shellQuote(IMPLANT_PATH)}`,
-					modelArg,
+					model ? `--model ${shellQuote(model)}` : "",
+					thinking ? `--thinking ${shellQuote(thinking)}` : "",
 					systemPromptFile ? `--append-system-prompt ${shellQuote(systemPromptFile)}` : "",
-					toolsArg,
+					tools ? `--tools ${shellQuote(withControlTools(tools))}` : "",
 					taskArg,
 				]
 					.filter((part) => part !== "")
@@ -822,7 +830,7 @@ export default function (pi: ExtensionAPI) {
 			const modelCandidates = params.model ? [params.model] : meta.model ? [meta.model] : [];
 			const model =
 				modelCandidates.length > 0 ? resolveUsableModel(modelCandidates, ctx.modelRegistry) : undefined;
-			const thinking = params.model ? undefined : meta.thinking;
+			const thinking = meta.thinking;
 
 			// An autonomous resume with no message would open an idle session
 			// that never completes: nothing prompts the child, so no turn runs,
@@ -865,7 +873,8 @@ export default function (pi: ExtensionAPI) {
 					env,
 					`pi --session ${shellQuote(sessionPath)}`,
 					`-e ${shellQuote(IMPLANT_PATH)}`,
-					model ? `--model ${shellQuote(thinking ? `${model}:${thinking}` : model)}` : "",
+					model ? `--model ${shellQuote(model)}` : "",
+					thinking ? `--thinking ${shellQuote(thinking)}` : "",
 					systemPromptFile ? `--append-system-prompt ${shellQuote(systemPromptFile)}` : "",
 					tools ? `--tools ${shellQuote(withControlTools(tools))}` : "",
 					messageArg,
