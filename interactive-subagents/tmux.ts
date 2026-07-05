@@ -17,6 +17,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { config, type SubagentsConfig } from "./config.ts";
 
 // ── running tmux ─────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ export function shellQuote(value: string): string {
 // ── pane layout ──────────────────────────────────────────────────────────
 // How subagent panes are arranged. Naively splitting the parent's column every
 // time makes each pane progressively narrower; these strategies keep things
-// readable. Switch with PI_SUBAGENT_LAYOUT (default "main"):
+// readable. Configured via config.ts (`layout` / `mainWidth`):
 //
 //   off     Split a plain pane to the right in the current window. No re-flow.
 //   main    Split in the current window, then main-vertical: the parent pi
@@ -62,23 +63,10 @@ export function shellQuote(value: string): string {
 //   window  Put every subagent in a dedicated sibling window named
 //           "<current window>-subagents", kept tiled.
 
-type Layout = "off" | "main" | "window";
+type Layout = SubagentsConfig["layout"];
 
-/** Which layout to use (default "main"). */
 function getLayout(): Layout {
-	const raw = (process.env.PI_SUBAGENT_LAYOUT ?? "main").trim().toLowerCase();
-	if (raw === "off" || raw === "window") return raw;
-	return "main";
-}
-
-/**
- * Width of the parent ("main") pane in the "main" layout. A tmux width:
- * a percentage like "60%" (default, scales with the terminal) or an absolute
- * column count like "120".
- */
-function getMainWidth(): string {
-	const raw = (process.env.PI_SUBAGENT_MAIN_WIDTH ?? "60%").trim();
-	return /^\d+%?$/.test(raw) ? raw : "60%";
+	return config.layout;
 }
 
 /** Give a pane a title (shown by `tmux display-panes` / status lines). */
@@ -97,7 +85,7 @@ function titlePane(paneId: string, title: string): void {
  */
 function applyMainVertical(anchorPane: string): void {
 	try {
-		tmux(["setw", "-t", anchorPane, "main-pane-width", getMainWidth()]);
+		tmux(["setw", "-t", anchorPane, "main-pane-width", config.mainWidth]);
 		tmux(["select-layout", "-t", anchorPane, "main-vertical"]);
 	} catch {
 		// keep the raw split if the layout command fails

@@ -96,8 +96,26 @@ exact file path, with line numbers when you cite code.
 - **How children end.** Auto-exit children close when their turn completes; interactive ones (`autoExit: false`) stay open until the model calls `subagent_done`. Either can `caller_ping` the parent.
 - **Watch or take over.** Every child is a real pi process in a visible pane — watch it, or just start typing to steer it. Escape in an auto-exit child keeps its pane open for inspection.
 
-| Env var | Default | Purpose |
-|---|---|---|
-| `PI_SUBAGENT_LAYOUT` | `main` | Pane layout: `main`, `window`, or `off` |
-| `PI_SUBAGENT_MAIN_WIDTH` | `60%` | Parent pane width in `main` layout (tmux width: percentage or columns) |
-| `PI_SUBAGENT_SHELL_READY_DELAY_MS` | `500` | Pause after opening a pane before typing the launch command — raise it if a slow shell (direnv etc.) drops the command |
+## Configuration
+
+Settings resolve in three layers — later wins:
+
+**defaults** < **config file** < **environment variables**
+
+The config file is `interactive-subagents.json` in pi's config root (`$PI_CODING_AGENT_DIR`, default `~/.pi/agent/`) — the same root the agent definitions live under. Missing file = all defaults. A **malformed** file (bad JSON, unknown keys, invalid values) fails the extension at **load time** with an error naming the file and the offending key — fix it and `/reload`.
+
+| Key | Env override | Default | Purpose |
+|---|---|---|---|
+| `layout` | `PI_SUBAGENT_LAYOUT` | `main` | Pane layout: `main`, `window`, or `off` |
+| `mainWidth` | `PI_SUBAGENT_MAIN_WIDTH` | `60%` | Parent pane width in `main` layout (tmux width: percentage or columns) |
+| `shellReadyDelayMs` | `PI_SUBAGENT_SHELL_READY_DELAY_MS` | `500` | Pause after opening a pane before typing the launch command — raise it if a slow shell (direnv etc.) drops the command |
+
+```json
+{
+  "layout": "main",
+  "mainWidth": "60%",
+  "shellReadyDelayMs": 500
+}
+```
+
+Env vars are validated as strictly as the file. Use the file for your stable, dotfiles-managed baseline and env vars for per-project (direnv) or one-off overrides.

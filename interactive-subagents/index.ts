@@ -36,6 +36,7 @@ import {
 } from "./tmux.ts";
 import { countEntries, extractSummary, readSessionCwd, seedForkSession } from "./session.ts";
 import { assertValidThinkingLevel, resolveUsableModel } from "./models.ts";
+import { agentConfigDir, config } from "./config.ts";
 
 // ── am I running inside a subagent? ──────────────────────────────────────
 // This extension is installed globally, so it also loads inside every child
@@ -49,11 +50,6 @@ const IS_SUBAGENT_CHILD = Boolean(process.env.PI_SUBAGENT_SESSION);
 /** Absolute path to this directory, so we can point `-e` at implant.ts. */
 const THIS_DIR = dirname(fileURLToPath(import.meta.url));
 const IMPLANT_PATH = join(THIS_DIR, "implant.ts");
-
-/** pi's config root: $PI_CODING_AGENT_DIR or ~/.pi/agent. */
-function agentConfigDir(): string {
-	return process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-}
 
 /** Where agent definitions live. Global only, by design (see PLAN.md). */
 function agentDefsDir(): string {
@@ -358,17 +354,6 @@ function slugify(value: string): string {
 function humanElapsed(totalSeconds: number): string {
 	if (totalSeconds < 60) return `${totalSeconds}s`;
 	return `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`;
-}
-
-/**
- * Fresh panes run the user's login shell, and slow shell init (direnv etc.)
- * can silently drop keystrokes typed before the prompt is ready. We wait a
- * little before typing the launch command. Tunable via env when 500ms is
- * not enough.
- */
-function shellReadyDelayMs(): number {
-	const parsed = Number.parseInt(process.env.PI_SUBAGENT_SHELL_READY_DELAY_MS ?? "", 10);
-	return Number.isFinite(parsed) && parsed >= 0 ? parsed : 500;
 }
 
 /** Artifacts for this extension live under the parent session's artifact dir. */
@@ -778,7 +763,7 @@ export default function (pi: ExtensionAPI) {
 			// Create the pane, give its shell a moment, then run the launch
 			// script (written to artifacts for debuggability).
 			const paneId = createPane(params.name);
-			await sleep(shellReadyDelayMs());
+			await sleep(config.shellReadyDelayMs);
 			const scriptPath = join(base, "scripts", `${slug}-${id}.sh`);
 			sendLongCommand(paneId, command, scriptPath);
 
@@ -1009,7 +994,7 @@ export default function (pi: ExtensionAPI) {
 					.join(" ") + ` ; echo '__SUBAGENT_DONE_'$?'__'`;
 
 			const paneId = createPane(name);
-			await sleep(shellReadyDelayMs());
+			await sleep(config.shellReadyDelayMs);
 			const scriptPath = join(base, "scripts", `${slug}-${id}-resume.sh`);
 			sendLongCommand(paneId, command, scriptPath);
 
