@@ -74,8 +74,6 @@ interface AgentDefinition {
 	 * with different provider setups.
 	 */
 	models?: string[];
-	/** True when the file still uses the removed `model:` key (spawn errors). */
-	legacyModelKey?: boolean;
 	/** Thinking/effort level, passed to the child via `pi --thinking` (works
 	 * with or without a models list). */
 	thinking?: string;
@@ -114,7 +112,6 @@ function parseAgentMarkdown(name: string, markdown: string): AgentDefinition {
 		models: rawModels
 			? rawModels.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "")
 			: undefined,
-		legacyModelKey: frontmatterValue(frontmatter, "model") !== undefined,
 		thinking: frontmatterValue(frontmatter, "thinking"),
 		tools: frontmatterValue(frontmatter, "tools"),
 		mode: rawMode === "fork" || rawMode === "fresh" ? rawMode : undefined,
@@ -167,9 +164,6 @@ function collectAgentInventory(registry: ExtensionContext["modelRegistry"]): Age
 		const problems: string[] = [];
 		let resolvedModel: string | undefined;
 
-		if (def.legacyModelKey) {
-			problems.push("uses the removed `model:` key — rename to `models:`");
-		}
 		if (def.models && def.models.length > 0) {
 			try {
 				resolvedModel = resolveUsableModel(def.models, registry);
@@ -637,11 +631,6 @@ export default function (pi: ExtensionAPI) {
 					params.agent
 						? `Unknown agent "${agentName}" — no ${agentName}.md in ${agentDefsDir()}. Use subagents_list to see available agents.`
 						: `No agent given, so this spawn defaults to "worker" — but ${join(agentDefsDir(), "worker.md")} does not exist. Create it (it defines the default sub-agent), or pass an agent explicitly.`,
-				);
-			}
-			if (agentDef.legacyModelKey) {
-				throw new Error(
-					`Agent "${agentName}" uses the removed \`model:\` key — replace it with \`models:\` (comma-separated provider/model entries, first usable one wins).`,
 				);
 			}
 			const mode = params.mode ?? agentDef.mode ?? "fresh";
