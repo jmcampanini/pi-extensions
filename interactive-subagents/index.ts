@@ -54,9 +54,14 @@ const IS_SUBAGENT_CHILD = Boolean(process.env.PI_SUBAGENT_SESSION);
 const THIS_DIR = dirname(fileURLToPath(import.meta.url));
 const IMPLANT_PATH = join(THIS_DIR, "implant.ts");
 
-/** Where agent definitions live. Global only, by design (see PLAN.md). */
+/** The global agent-definitions dir. */
 function agentDefsDir(): string {
 	return join(agentConfigDir(), "subagents");
+}
+
+/** The project-local agent-definitions dir for a working directory. */
+function projectDefsDir(cwd: string): string {
+	return join(cwd, ".pi", "subagents");
 }
 
 // ── agent definitions ────────────────────────────────────────────────────
@@ -66,6 +71,10 @@ function agentDefsDir(): string {
 
 interface AgentDefinition {
 	name: string;
+	/** Which layer this definition came from (project shadows global). */
+	source: "project" | "global";
+	/** The definition file itself. */
+	filePath: string;
 	description?: string;
 	/**
 	 * Ordered model candidates, each fully qualified as "provider/model"
@@ -94,7 +103,12 @@ function frontmatterValue(frontmatter: string, key: string): string | undefined 
 	return match ? match[1].trim() : undefined;
 }
 
-function parseAgentMarkdown(name: string, markdown: string): AgentDefinition {
+function parseAgentMarkdown(
+	name: string,
+	markdown: string,
+	source: "project" | "global",
+	filePath: string,
+): AgentDefinition {
 	// Normalize Windows line endings first — otherwise the fence regex below
 	// silently fails to match and the whole frontmatter is treated as body.
 	markdown = markdown.replace(/\r\n/g, "\n");
@@ -109,6 +123,8 @@ function parseAgentMarkdown(name: string, markdown: string): AgentDefinition {
 
 	return {
 		name,
+		source,
+		filePath,
 		description: frontmatterValue(frontmatter, "description"),
 		models: rawModels
 			? rawModels.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "")
@@ -121,21 +137,38 @@ function parseAgentMarkdown(name: string, markdown: string): AgentDefinition {
 	};
 }
 
-function loadAgentDefinition(name: string): AgentDefinition | null {
-	const path = join(agentDefsDir(), `${name}.md`);
-	if (!existsSync(path)) return null;
-	return parseAgentMarkdown(name, readFileSync(path, "utf8"));
+function loadAgentDefinition(name: string, cwd: string): AgentDefinition | null {
+	// Project first, then global — most specific wins, so a repo can
+	// specialize scout/worker for its own conventions.
+	const projectPath = join(projectDefsDir(cwd), `${name}.md`);
+	if (existsSync(projectPath)) {
+		return parseAgentMarkdown(name, readFileSync(projectPath, "utf8"), "project", projectPath);
+	}
+	const globalPath = join(agentDefsDir(), `${name}.md`);
+	if (!existsSync(globalPath)) return null;
+	return parseAgentMarkdown(name, readFileSync(globalPath, "utf8"), "global", globalPath);
 }
 
-function listAgentDefinitions(): AgentDefinition[] {
+/** All *.md names in a dir (missing dir = empty). */
+function agentNamesIn(dir: string): string[] {
 	try {
-		return readdirSync(agentDefsDir())
+		return readdirSync(dir)
 			.filter((file) => file.endsWith(".md"))
-			.sort()
-			.map((file) => parseAgentMarkdown(file.slice(0, -3), readFileSync(join(agentDefsDir(), file), "utf8")));
+			.map((file) => file.slice(0, -3));
 	} catch {
-		return []; // directory doesn't exist yet
+		return [];
 	}
+}
+
+function listAgentDefinitions(cwd: string): AgentDefinition[] {
+	// Union of global + project names; loadAgentDefinition applies the same
+	// shadowing rule, so both views can never disagree.
+	const names = new Set(agentNamesIn(agentDefsDir()));
+	for (const name of agentNamesIn(projectDefsDir(cwd))) names.add(name);
+	return [...names]
+		.sort()
+		.map((name) => loadAgentDefinition(name, cwd))
+		.filter((def): def is AgentDefinition => def !== null);
 }
 
 // ── the agent inventory: one loader, many presenters ─────────────────────
@@ -147,6 +180,8 @@ function listAgentDefinitions(): AgentDefinition[] {
 
 interface AgentInfo {
 	name: string;
+	/** Which layer it came from — "project" (.pi/subagents) or "global". */
+	source: "project" | "global";
 	description?: string;
 	/** The definition file this agent came from. */
 	filePath: string;
@@ -160,8 +195,8 @@ interface AgentInfo {
 	problems: string[];
 }
 
-function collectAgentInventory(registry: ExtensionContext["modelRegistry"]): AgentInfo[] {
-	return listAgentDefinitions().map((def) => {
+function collectAgentInventory(registry: ExtensionContext["modelRegistry"], cwd: string): AgentInfo[] {
+	return listAgentDefinitions(cwd).map((def) => {
 		const problems: string[] = [];
 		let resolvedModel: string | undefined;
 
@@ -182,8 +217,9 @@ function collectAgentInventory(registry: ExtensionContext["modelRegistry"]): Age
 
 		return {
 			name: def.name,
+			source: def.source,
 			description: def.description,
-			filePath: join(agentDefsDir(), `${def.name}.md`),
+			filePath: def.filePath,
 			resolvedModel,
 			thinking: def.thinking,
 			tools: def.tools,
@@ -202,7 +238,7 @@ function formatAgentOverviewLines(inventory: AgentInfo[], dir: string): string[]
 			"  Create <name>.md files there (frontmatter: description, models, thinking, tools, mode, auto-exit; body = system prompt).",
 		];
 	}
-	const lines: string[] = [`Sub-agents · ${inventory.length} in ${dir}`];
+	const lines: string[] = [`Sub-agents · ${inventory.length}`];
 	for (const agent of inventory) {
 		const thinking = agent.thinking ? ` · thinking ${agent.thinking}` : "";
 		lines.push("");
@@ -660,11 +696,11 @@ export default function (pi: ExtensionAPI) {
 			// worker.md is missing that's a loud error telling you to create
 			// it, not a silently different kind of child.
 			const agentName = params.agent ?? "worker";
-			const agentDef = loadAgentDefinition(agentName);
+			const agentDef = loadAgentDefinition(agentName, ctx.cwd);
 			if (!agentDef) {
 				throw new Error(
 					params.agent
-						? `Unknown agent "${agentName}" — no ${agentName}.md in ${agentDefsDir()}. Use subagents_list to see available agents.`
+						? `Unknown agent "${agentName}" — no ${agentName}.md in ${projectDefsDir(ctx.cwd)} or ${agentDefsDir()}. Use subagents_list to see available agents.`
 						: `No agent given, so this spawn defaults to "worker" — but ${join(agentDefsDir(), "worker.md")} does not exist. Create it (it defines the default sub-agent), or pass an agent explicitly.`,
 				);
 			}
@@ -841,7 +877,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("The sub-agent overview needs the interactive TUI.", "warning");
 				return;
 			}
-			const lines = formatAgentOverviewLines(collectAgentInventory(ctx.modelRegistry), agentDefsDir());
+			const lines = formatAgentOverviewLines(collectAgentInventory(ctx.modelRegistry, ctx.cwd), agentDefsDir());
 			latestCtx.ui.setWidget(OVERVIEW_WIDGET_KEY, lines, { placement: "aboveEditor" });
 			overviewShownAt = Date.now();
 		},
@@ -932,7 +968,7 @@ export default function (pi: ExtensionAPI) {
 		description: "List the available agent definitions (global <name>.md files) usable as the `agent` parameter of the subagent tool.",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-			const inventory = collectAgentInventory(ctx.modelRegistry);
+			const inventory = collectAgentInventory(ctx.modelRegistry, ctx.cwd);
 			if (inventory.length === 0) {
 				return {
 					content: [
@@ -954,7 +990,8 @@ export default function (pi: ExtensionAPI) {
 				const interactive = agent.autoExit ? "" : " (interactive — a human drives it)";
 				const warning = agent.problems.length > 0 ? ` [⚠ not spawnable: ${agent.problems.join("; ")}]` : "";
 				const isDefault = agent.name === "worker" ? " (default)" : "";
-				return `• ${agent.name}${isDefault}${interactive}${warning} — ${agent.description ?? "(no description)"}`;
+				const source = agent.source === "project" ? " (project)" : "";
+				return `• ${agent.name}${isDefault}${source}${interactive}${warning} — ${agent.description ?? "(no description)"}`;
 			});
 			return {
 				content: [{ type: "text", text: lines.join("\n") }],

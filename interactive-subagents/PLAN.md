@@ -26,9 +26,11 @@ superseded and was deleted.
 
 - **tmux only.** Thin backend module; no cmux/zellij/wezterm.
 - **No Claude Code backend.** pi children only.
-- **Global agent definitions only** (`~/.pi/agent/subagents/*.md`, or
-  `$PI_CODING_AGENT_DIR/subagents/`). Nothing bundled, nothing project-local.
-  **Filename = agent name** (no frontmatter `name` key).
+- **Agent definitions are files; filename = agent name** (no frontmatter
+  `name` key). Global dir (`$PI_CODING_AGENT_DIR/subagents/`, default
+  `~/.pi/agent/subagents/`) plus project-local `<cwd>/.pi/subagents/` —
+  project shadows global. No trust gating: what a repo's `.pi/subagents/`
+  contains is the user's responsibility. Nothing bundled.
 - **`worker` is the default agent.** A spawn without `agent` runs as
   `agent: "worker"` through the identical machinery — there is no "bare"
   spawn. Missing `worker.md` is a loud spawn error, not a fallback.

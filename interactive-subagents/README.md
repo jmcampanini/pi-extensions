@@ -58,7 +58,12 @@ In `main`, `PI_SUBAGENT_MAIN_WIDTH` sets the parent pane's width — a percentag
 
 ## Agent definitions
 
-An agent definition is a Markdown file: optional frontmatter for settings, and a body that becomes the child's appended system prompt (`pi --append-system-prompt`). The `worker` agent is the **default** — a spawn that names no agent runs as `worker`, so `worker.md` should always exist. Definitions load from the **global** agents dir only — `$PI_CODING_AGENT_DIR/subagents/`, defaulting to `~/.pi/agent/subagents/`. No project-local lookup, nothing bundled. The **filename is the agent name** (`scout.md` → `agent: "scout"`); there is no `name:` key.
+An agent definition is a Markdown file: optional frontmatter for settings, and a body that becomes the child's appended system prompt (`pi --append-system-prompt`). The `worker` agent is the **default** — a spawn that names no agent runs as `worker`, so `worker.md` should always exist. The **filename is the agent name** (`scout.md` → `agent: "scout"`); there is no `name:` key.
+
+Definitions load from two places, most specific wins:
+
+1. **Project**: `<cwd>/.pi/subagents/`. A project file **shadows** a global one with the same name — a repo can specialize `worker.md` or `scout.md` for its own conventions.
+2. **Global**: `$PI_CODING_AGENT_DIR/subagents/`, defaulting to `~/.pi/agent/subagents/`.
 
 | Frontmatter key | Meaning |
 |---|---|
