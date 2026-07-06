@@ -5,9 +5,9 @@
  *
  *   built-in defaults  <  config file  <  environment variables
  *
- * The config file is `interactive-subagents.json` in pi's config root
- * ($PI_CODING_AGENT_DIR, default ~/.pi/agent) — the same root the agent
- * definitions live under. A missing file is fine (defaults apply); a
+ * The config file is `subagents.json` in pi's config root
+ * ($PI_CODING_AGENT_DIR, default ~/.pi/agent) — matching the `subagents/`
+ * directory the agent definitions live in. A missing file is fine (defaults apply); a
  * MALFORMED file or env value throws, and because `config` below is built at
  * module import, that failure happens at EXTENSION LOAD TIME: pi refuses to
  * start the extension and shows the error, so a broken config gets fixed
@@ -45,7 +45,7 @@ export function agentConfigDir(env: Env = process.env): string {
 }
 
 export function configFilePath(env: Env = process.env): string {
-	return join(agentConfigDir(env), "interactive-subagents.json");
+	return join(agentConfigDir(env), "subagents.json");
 }
 
 // ── validators ───────────────────────────────────────────────────────────

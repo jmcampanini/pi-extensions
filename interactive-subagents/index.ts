@@ -56,7 +56,7 @@ const IMPLANT_PATH = join(THIS_DIR, "implant.ts");
 
 /** Where agent definitions live. Global only, by design (see PLAN.md). */
 function agentDefsDir(): string {
-	return join(agentConfigDir(), "agents");
+	return join(agentConfigDir(), "subagents");
 }
 
 // ── agent definitions ────────────────────────────────────────────────────
@@ -235,6 +235,10 @@ interface RunningSubagent {
 	tools?: string;
 	model?: string;
 	autoExit: boolean;
+	/** Cancels this child's watcher (used by the picker's x = stop). */
+	abort: AbortController;
+	/** True when a human stopped it via the picker — the model gets told. */
+	stoppedByUser?: boolean;
 }
 
 /** All children currently running, keyed by their 8-char run id. */
@@ -508,7 +512,7 @@ export default function (pi: ExtensionAPI) {
 			result = await pollForExit({
 				paneId: child.paneId,
 				sessionFile: child.sessionFile,
-				signal: moduleSignal(),
+				signal: AbortSignal.any([moduleSignal(), child.abort.signal]),
 				// v2 seam: liveness snapshot observation attaches here.
 			});
 		} catch (error) {
@@ -525,10 +529,30 @@ export default function (pi: ExtensionAPI) {
 		// Re-flow the remaining subagent panes so they reclaim this one's space.
 		if (running.size > 0) refreshLayout();
 
-		// Session is shutting down — nobody left to tell.
-		if (result.reason === "aborted") return;
-
 		const elapsed = humanElapsed(Math.round((Date.now() - child.startTime) / 1000));
+
+		if (result.reason === "aborted") {
+			// Two ways to get aborted: the session is shutting down (stay
+			// silent — nobody is left to tell) or a human pressed x in the
+			// picker. The model must hear about the latter, because it was
+			// promised a result for this child and would otherwise wait for
+			// one that can never arrive.
+			if (child.stoppedByUser) {
+				pi.sendMessage(
+					{
+						customType: "subagent_result",
+						content:
+							`Sub-agent "${child.name}" (id ${child.id}) was stopped by the user after ${elapsed}. ` +
+							`Do not treat this as a failure of the sub-agent.\n\n` +
+							`Session: ${child.sessionFile}\nResume with subagent_resume({ id: "${child.id}", message: "..." }) if the work should continue.`,
+						display: true,
+						details: { id: child.id, name: child.name, reason: "stopped", sessionFile: child.sessionFile },
+					},
+					{ triggerTurn: true, deliverAs: "steer" },
+				);
+			}
+			return;
+		}
 
 		// A ping is a help request, not a completion: hand the parent model
 		// the question plus everything it needs to resume the child. The
@@ -785,6 +809,7 @@ export default function (pi: ExtensionAPI) {
 				tools,
 				model,
 				autoExit,
+				abort: new AbortController(),
 			});
 
 			return {
@@ -841,7 +866,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("No sub-agents running.", "info");
 				return;
 			}
-			const choice = await ctx.ui.custom<{ child: RunningSubagent; zoom: boolean } | undefined>(
+			const choice = await ctx.ui.custom<{ child: RunningSubagent; action: "goto" | "zoom" | "stop" } | undefined>(
 				(tui, theme, _keybindings, done) => {
 					const children = [...running.values()];
 					let cursor = 0;
@@ -856,9 +881,11 @@ export default function (pi: ExtensionAPI) {
 								cursor = (cursor + 1) % children.length;
 								tui.requestRender();
 							} else if (matchesKey(data, "enter") || matchesKey(data, "return")) {
-								done({ child: children[cursor], zoom: false });
+								done({ child: children[cursor], action: "goto" });
 							} else if (data === "z") {
-								done({ child: children[cursor], zoom: true });
+								done({ child: children[cursor], action: "zoom" });
+							} else if (data === "x") {
+								done({ child: children[cursor], action: "stop" });
 							}
 						},
 						invalidate(): void {},
@@ -873,7 +900,7 @@ export default function (pi: ExtensionAPI) {
 								const row = `${i === cursor ? "→" : " "} ${elapsed}  ${child.name}${agentTag}`;
 								lines.push(truncateToWidth(i === cursor ? th.fg("accent", row) : th.fg("text", row), width));
 							}
-							lines.push(truncateToWidth(th.fg("dim", " ↑/↓ or j/k · enter: go · z: go + zoom · esc: cancel"), width));
+							lines.push(truncateToWidth(th.fg("dim", " ↑/↓ or j/k · enter: go · z: go + zoom · x: stop · esc: cancel"), width));
 							lines.push("");
 							return lines;
 						},
@@ -882,8 +909,16 @@ export default function (pi: ExtensionAPI) {
 			);
 
 			if (!choice) return;
+			if (choice.action === "stop") {
+				// Mark first, then abort: the watcher reads the flag when its
+				// poll loop notices the abort, closes the pane, and steers the
+				// "stopped by the user" note to the model.
+				choice.child.stoppedByUser = true;
+				choice.child.abort.abort();
+				return;
+			}
 			try {
-				focusPane(choice.child.paneId, { zoom: choice.zoom });
+				focusPane(choice.child.paneId, { zoom: choice.action === "zoom" });
 			} catch {
 				ctx.ui.notify(`Pane for "${choice.child.name}" is gone.`, "warning");
 			}
@@ -1078,6 +1113,7 @@ export default function (pi: ExtensionAPI) {
 				tools,
 				model,
 				autoExit,
+				abort: new AbortController(),
 			});
 
 			return {

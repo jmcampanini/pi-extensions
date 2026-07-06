@@ -58,7 +58,7 @@ In `main`, `PI_SUBAGENT_MAIN_WIDTH` sets the parent pane's width — a percentag
 
 ## Agent definitions
 
-An agent definition is a Markdown file: optional frontmatter for settings, and a body that becomes the child's appended system prompt (`pi --append-system-prompt`). The `worker` agent is the **default** — a spawn that names no agent runs as `worker`, so `worker.md` should always exist. Definitions load from the **global** agents dir only — `$PI_CODING_AGENT_DIR/agents/`, defaulting to `~/.pi/agent/agents/`. No project-local lookup, nothing bundled. The **filename is the agent name** (`scout.md` → `agent: "scout"`); there is no `name:` key.
+An agent definition is a Markdown file: optional frontmatter for settings, and a body that becomes the child's appended system prompt (`pi --append-system-prompt`). The `worker` agent is the **default** — a spawn that names no agent runs as `worker`, so `worker.md` should always exist. Definitions load from the **global** agents dir only — `$PI_CODING_AGENT_DIR/subagents/`, defaulting to `~/.pi/agent/subagents/`. No project-local lookup, nothing bundled. The **filename is the agent name** (`scout.md` → `agent: "scout"`); there is no `name:` key.
 
 | Frontmatter key | Meaning |
 |---|---|
@@ -71,7 +71,7 @@ An agent definition is a Markdown file: optional frontmatter for settings, and a
 
 All keys are optional; a file without `---` fences is treated as all body. Parsing is line-based `key: value`, not full YAML.
 
-Example (`~/.pi/agent/agents/scout.md`):
+Example (`~/.pi/agent/subagents/scout.md`):
 
 ```markdown
 ---
@@ -92,7 +92,7 @@ exact file path, with line numbers when you cite code.
 - **`/subagents-available` (human command).** Shows every known agent with full details — description, the model that wins on this machine, thinking, tools, mode, validity problems, and the source file path — in a widget above the editor. Human-only and zero-token: it never touches the session or the model's context. Run it again (or send a message) to dismiss. The model's `subagents_list` tool is a terse view over the same inventory.
 
 - **Live widget.** While children run, one line per sub-agent appears above the parent's editor: `[agent-type]  name` with a right-anchored elapsed clock, and nothing else — a row existing means it's running. Names that repeat the agent type (`Scout: Auth` next to `[scout]`) are de-duplicated for display. The right edge is reserved for v2's live activity states.
-- **`/subagents-running` (human command).** Opens a picker over the running children: up/down to choose, **Enter** jumps to its pane (switching tmux windows if needed), **z** jumps *and* zooms the pane (`prefix+z` un-zooms), Escape cancels.
+- **`/subagents-running` (human command).** Opens a picker over the running children: up/down to choose, **Enter** jumps to its pane (switching tmux windows if needed), **z** jumps *and* zooms the pane (`prefix+z` un-zooms), **x** stops it (the model is told it was stopped by the user), Escape cancels.
 - **No recursion.** Children never get the spawn tools — the extension detects child mode via `PI_SUBAGENT_SESSION` and registers nothing. Depth is hard-capped at 1.
 - **How children end.** Auto-exit children close when their turn completes; interactive ones (`autoExit: false`) stay open until the model calls `subagent_done`. Either can `caller_ping` the parent.
 - **Watch or take over.** Every child is a real pi process in a visible pane — watch it, or just start typing to steer it. Escape in an auto-exit child keeps its pane open for inspection.
@@ -103,7 +103,7 @@ Settings resolve in three layers — later wins:
 
 **defaults** < **config file** < **environment variables**
 
-The config file is `interactive-subagents.json` in pi's config root (`$PI_CODING_AGENT_DIR`, default `~/.pi/agent/`) — the same root the agent definitions live under. Missing file = all defaults. A **malformed** file (bad JSON, unknown keys, invalid values) fails the extension at **load time** with an error naming the file and the offending key — fix it and `/reload`.
+The config file is `subagents.json` in pi's config root (`$PI_CODING_AGENT_DIR`, default `~/.pi/agent/`) — the same root the agent definitions live under. Missing file = all defaults. A **malformed** file (bad JSON, unknown keys, invalid values) fails the extension at **load time** with an error naming the file and the offending key — fix it and `/reload`.
 
 | Key | Env override | Default | Purpose |
 |---|---|---|---|

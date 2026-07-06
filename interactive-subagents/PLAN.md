@@ -26,8 +26,8 @@ superseded and was deleted.
 
 - **tmux only.** Thin backend module; no cmux/zellij/wezterm.
 - **No Claude Code backend.** pi children only.
-- **Global agent definitions only** (`~/.pi/agent/agents/*.md`, or
-  `$PI_CODING_AGENT_DIR/agents/`). Nothing bundled, nothing project-local.
+- **Global agent definitions only** (`~/.pi/agent/subagents/*.md`, or
+  `$PI_CODING_AGENT_DIR/subagents/`). Nothing bundled, nothing project-local.
   **Filename = agent name** (no frontmatter `name` key).
 - **`worker` is the default agent.** A spawn without `agent` runs as
   `agent: "worker"` through the identical machinery — there is no "bare"
@@ -60,8 +60,8 @@ User-facing configuration (config.ts) resolves defaults < config file < env:
 | `mainWidth` | `PI_SUBAGENT_MAIN_WIDTH` | `60%` | Width of the parent pane in `main` layout (a tmux width: `60%` or an absolute column count) |
 | `shellReadyDelayMs` | `PI_SUBAGENT_SHELL_READY_DELAY_MS` | `500` | Pause after creating a pane before typing the launch command (raise it if a slow shell drops the command) |
 
-The file is `$PI_CODING_AGENT_DIR/interactive-subagents.json` (default
-`~/.pi/agent/interactive-subagents.json`). Missing = defaults; malformed =
+The file is `$PI_CODING_AGENT_DIR/subagents.json` (default
+`~/.pi/agent/subagents.json`). Missing = defaults; malformed =
 the extension refuses to LOAD, naming the file and key (deliberate fail-fast,
 per the same philosophy as model resolution). Loaded once at import; edits
 take effect on `/reload`.
