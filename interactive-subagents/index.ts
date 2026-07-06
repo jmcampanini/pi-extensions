@@ -302,10 +302,13 @@ function updateWidget(): void {
 	}));
 	ctx.ui.setWidget(
 		WIDGET_KEY,
-		() => ({
+		(_tui, theme) => ({
 			invalidate(): void {},
 			render(width: number): string[] {
-				return formatRunningWidgetLines(rows, width);
+				return formatRunningWidgetLines(rows, width, {
+					dim: (text) => theme.fg("dim", text),
+					border: (text) => theme.fg("borderMuted", text),
+				});
 			},
 		}),
 		{ placement: "aboveEditor" },
@@ -846,10 +849,10 @@ export default function (pi: ExtensionAPI) {
 						handleInput(data: string): void {
 							if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
 								done(undefined);
-							} else if (matchesKey(data, "up")) {
+							} else if (matchesKey(data, "up") || data === "k") {
 								cursor = (cursor - 1 + children.length) % children.length;
 								tui.requestRender();
-							} else if (matchesKey(data, "down")) {
+							} else if (matchesKey(data, "down") || data === "j") {
 								cursor = (cursor + 1) % children.length;
 								tui.requestRender();
 							} else if (matchesKey(data, "enter") || matchesKey(data, "return")) {
@@ -870,7 +873,7 @@ export default function (pi: ExtensionAPI) {
 								const row = `${i === cursor ? "→" : " "} ${elapsed}  ${child.name}${agentTag}`;
 								lines.push(truncateToWidth(i === cursor ? th.fg("accent", row) : th.fg("text", row), width));
 							}
-							lines.push(truncateToWidth(th.fg("dim", " enter: go · z: go + zoom · esc: cancel"), width));
+							lines.push(truncateToWidth(th.fg("dim", " ↑/↓ or j/k · enter: go · z: go + zoom · esc: cancel"), width));
 							lines.push("");
 							return lines;
 						},

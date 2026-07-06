@@ -2,16 +2,27 @@
  * widget.ts — rendering the running-subagents widget.
  *
  * The style ("5c"): a bracketed agent-type tag, the task-focused display
- * name, and a right-anchored elapsed clock. Nothing else — no colors, no
- * borders, no status column, no header/footer. A row EXISTING means that
- * child is running, and the right edge is reserved for v2's live activity
- * states (`· bash 7m`).
+ * name, and a right-anchored elapsed clock — no status column, no counts or
+ * hints. A row EXISTING means that child is running, and the right edge is
+ * reserved for v2's live activity states (`· bash 7m`).
  *
- *   [scout]   Auth                                      00:23
- *   [worker]  quick fix                                 00:04
+ *   ──────────────────────────────────────────────────────
+ *   [scout]   Auth                                     00:23
+ *   [worker]  quick fix                                00:04
  *
- * Pure string-building with no pi imports, so it unit-tests with plain data.
+ * A faded rule tops the block to separate it from the transcript, the clock
+ * sits one space off the edge and renders dim. Styling is injected as plain
+ * string-wrapping functions (theme colors in pi, identity in tests), so this
+ * module stays dependency-free and unit-testable.
  */
+
+/** Optional styling hooks; identity (no styling) when omitted. */
+export interface WidgetStyle {
+	/** Applied to the elapsed clock (pi passes the theme's dim color). */
+	dim?: (text: string) => string;
+	/** Applied to the top rule (pi passes the theme's muted border color). */
+	border?: (text: string) => string;
+}
 
 export interface WidgetRow {
 	/** Display name — the `name` the model chose at spawn time. */
@@ -44,23 +55,33 @@ export function stripAgentPrefix(name: string, agent: string | undefined): strin
 	return name;
 }
 
-export function formatRunningWidgetLines(rows: WidgetRow[], width: number): string[] {
+export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style: WidgetStyle = {}): string[] {
+	const dim = style.dim ?? ((text: string) => text);
+	const border = style.border ?? ((text: string) => text);
+
 	// Tag column: "[scout]" padded so names align across rows. A row with no
 	// agent type gets blank padding — absence communicates absence.
 	const tags = rows.map((row) => (row.agent ? `[${row.agent}]` : ""));
 	const tagWidth = Math.max(...tags.map((tag) => tag.length), 0);
 
-	return rows.map((row, i) => {
+	// A single faded rule separates the widget from the transcript above it.
+	const lines = [border("─".repeat(Math.max(0, width)))];
+
+	for (let i = 0; i < rows.length; i++) {
+		const row = rows[i];
 		const tag = tags[i].padEnd(tagWidth);
 		const elapsed = formatElapsed(row.elapsedSeconds);
 		const left = ` ${tag}  ${stripAgentPrefix(row.name, row.agent)}`;
 
-		// Right-anchor the clock: the flex gap absorbs the width. When space
-		// runs out, the NAME gives way (ellipsis) — the tag and the clock are
-		// the identity and the anchor; prose is sacrificial.
-		const maxLeft = width - elapsed.length - 2;
+		// Right-anchor the clock one space off the edge. The flex gap absorbs
+		// the width; when space runs out the NAME gives way (ellipsis) — the
+		// tag and the clock are the identity and the anchor; prose is
+		// sacrificial. Layout is computed on plain text; the dim wrapper is
+		// applied last so ANSI codes never enter the width math.
+		const maxLeft = width - elapsed.length - 3;
 		const clippedLeft = left.length > maxLeft ? left.slice(0, Math.max(tagWidth + 3, maxLeft - 1)) + "…" : left;
-		const gap = Math.max(2, width - clippedLeft.length - elapsed.length);
-		return clippedLeft + " ".repeat(gap) + elapsed;
-	});
+		const gap = Math.max(2, width - clippedLeft.length - elapsed.length - 1);
+		lines.push(clippedLeft + " ".repeat(gap) + dim(elapsed) + " ");
+	}
+	return lines;
 }
