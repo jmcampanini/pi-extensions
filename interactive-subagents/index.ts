@@ -39,6 +39,7 @@ import {
 import { countEntries, extractSummary, readSessionCwd, seedForkSession } from "./session.ts";
 import { assertValidThinkingLevel, resolveUsableModel } from "./models.ts";
 import { agentConfigDir, config } from "./config.ts";
+import { formatElapsed, formatRunningWidgetLines } from "./widget.ts";
 
 // ── am I running inside a subagent? ──────────────────────────────────────
 // This extension is installed globally, so it also loads inside every child
@@ -282,12 +283,6 @@ const WIDGET_KEY = "interactive-subagents";
  * happen from timers/watchers where no ctx is handed to us. */
 let latestCtx: ExtensionContext | null = null;
 
-function formatMMSS(totalSeconds: number): string {
-	const minutes = Math.floor(totalSeconds / 60);
-	const seconds = totalSeconds % 60;
-	return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
 function updateWidget(): void {
 	const ctx = latestCtx;
 	if (!ctx || !ctx.hasUI) return;
@@ -298,13 +293,23 @@ function updateWidget(): void {
 		return;
 	}
 
-	const lines = [`── subagents · ${running.size} running · /subagents-running to jump ──`];
-	for (const child of running.values()) {
-		const elapsed = formatMMSS(Math.round((Date.now() - child.startTime) / 1000));
-		const agentTag = child.agent ? ` (${child.agent})` : "";
-		lines.push(`  ${elapsed}  ${child.name}${agentTag}  running…`);
-	}
-	ctx.ui.setWidget(WIDGET_KEY, lines, { placement: "aboveEditor" });
+	// Snapshot the rows now; the component form gets the real terminal width
+	// at render time, which is what lets the elapsed clock right-anchor.
+	const rows = [...running.values()].map((child) => ({
+		name: child.name,
+		agent: child.agent,
+		elapsedSeconds: Math.round((Date.now() - child.startTime) / 1000),
+	}));
+	ctx.ui.setWidget(
+		WIDGET_KEY,
+		() => ({
+			invalidate(): void {},
+			render(width: number): string[] {
+				return formatRunningWidgetLines(rows, width);
+			},
+		}),
+		{ placement: "aboveEditor" },
+	);
 }
 
 function ensureWidgetTimer(): void {
@@ -413,7 +418,10 @@ function withControlTools(tools: string): string {
 // ── tool parameter schemas ───────────────────────────────────────────────
 
 const SubagentParams = Type.Object({
-	name: Type.String({ description: "Short display name for this subagent (shown in the widget and pane title)" }),
+	name: Type.String({
+		description:
+			"Short display name describing the TASK, e.g. 'Auth flow' — shown in the widget next to the agent type, so do not repeat the agent type in it.",
+	}),
 	task: Type.String({ description: "The task prompt for the subagent" }),
 	agent: Type.Optional(
 		Type.String({ description: "Agent definition to load defaults from (a <name>.md file in the global agents dir — see subagents_list). Default: 'worker'" }),
@@ -857,7 +865,7 @@ export default function (pi: ExtensionAPI) {
 							lines.push(truncateToWidth(th.fg("accent", " Jump to sub-agent "), width));
 							for (let i = 0; i < children.length; i++) {
 								const child = children[i];
-								const elapsed = formatMMSS(Math.round((Date.now() - child.startTime) / 1000));
+								const elapsed = formatElapsed(Math.round((Date.now() - child.startTime) / 1000));
 								const agentTag = child.agent ? ` (${child.agent})` : "";
 								const row = `${i === cursor ? "→" : " "} ${elapsed}  ${child.name}${agentTag}`;
 								lines.push(truncateToWidth(i === cursor ? th.fg("accent", row) : th.fg("text", row), width));
