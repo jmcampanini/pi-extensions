@@ -211,7 +211,8 @@ function formatAgentOverviewLines(inventory: AgentInfo[], dir: string): string[]
 	for (const agent of inventory) {
 		const thinking = agent.thinking ? ` · thinking ${agent.thinking}` : "";
 		lines.push("");
-		lines.push(`  ${agent.name} — ${agent.resolvedModel ?? "default model"}${thinking}`);
+		const isDefault = agent.name === "worker" ? " (default)" : "";
+		lines.push(`  ${agent.name}${isDefault} — ${agent.resolvedModel ?? "default model"}${thinking}`);
 		for (const problem of agent.problems) {
 			lines.push(`    ⚠ ${problem}`);
 		}
@@ -421,7 +422,7 @@ const SubagentParams = Type.Object({
 	name: Type.String({ description: "Short display name for this subagent (shown in the widget and pane title)" }),
 	task: Type.String({ description: "The task prompt for the subagent" }),
 	agent: Type.Optional(
-		Type.String({ description: "Agent definition to load defaults from (a <name>.md file in the global agents dir — see subagents_list)" }),
+		Type.String({ description: "Agent definition to load defaults from (a <name>.md file in the global agents dir — see subagents_list). Default: 'worker'" }),
 	),
 	mode: Type.Optional(
 		Type.Union([Type.Literal("fork"), Type.Literal("fresh")], {
@@ -625,36 +626,40 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Resolve agent defaults: explicit params beat frontmatter beats built-in defaults.
-			let agentDef: AgentDefinition | null = null;
-			if (params.agent) {
-				agentDef = loadAgentDefinition(params.agent);
-				if (!agentDef) {
-					throw new Error(
-						`Unknown agent "${params.agent}" — no ${params.agent}.md in ${agentDefsDir()}. Use subagents_list to see available agents.`,
-					);
-				}
-				if (agentDef.legacyModelKey) {
-					throw new Error(
-						`Agent "${params.agent}" uses the removed \`model:\` key — replace it with \`models:\` (comma-separated provider/model entries, first usable one wins).`,
-					);
-				}
+			// There is no "bare" spawn: a call without `agent` IS the "worker"
+			// agent — same definition machinery, same file, same rules. If
+			// worker.md is missing that's a loud error telling you to create
+			// it, not a silently different kind of child.
+			const agentName = params.agent ?? "worker";
+			const agentDef = loadAgentDefinition(agentName);
+			if (!agentDef) {
+				throw new Error(
+					params.agent
+						? `Unknown agent "${agentName}" — no ${agentName}.md in ${agentDefsDir()}. Use subagents_list to see available agents.`
+						: `No agent given, so this spawn defaults to "worker" — but ${join(agentDefsDir(), "worker.md")} does not exist. Create it (it defines the default sub-agent), or pass an agent explicitly.`,
+				);
 			}
-			const mode = params.mode ?? agentDef?.mode ?? "fresh";
+			if (agentDef.legacyModelKey) {
+				throw new Error(
+					`Agent "${agentName}" uses the removed \`model:\` key — replace it with \`models:\` (comma-separated provider/model entries, first usable one wins).`,
+				);
+			}
+			const mode = params.mode ?? agentDef.mode ?? "fresh";
 			// An explicit param is just a one-entry candidate list — same
 			// resolution path as the agent's `models:` list, so a bad override
 			// fails fast with the same clear error. No candidates at all means
 			// the child inherits pi's default model.
-			const modelCandidates = params.model ? [params.model] : (agentDef?.models ?? []);
+			const modelCandidates = params.model ? [params.model] : (agentDef.models ?? []);
 			const model =
 				modelCandidates.length > 0 ? resolveUsableModel(modelCandidates, ctx.modelRegistry) : undefined;
 			// Thinking/effort level: param beats frontmatter. Passed to the
 			// child as pi's standalone `--thinking` flag so it works with or
 			// without a resolved model. Validated here so a typo fails the
 			// tool call instead of erroring later inside the child's pane.
-			const thinking = params.thinking ?? agentDef?.thinking;
+			const thinking = params.thinking ?? agentDef.thinking;
 			if (thinking) assertValidThinkingLevel(thinking);
-			const tools = params.tools ?? agentDef?.tools;
-			const autoExit = params.autoExit ?? agentDef?.autoExit ?? true;
+			const tools = params.tools ?? agentDef.tools;
+			const autoExit = params.autoExit ?? agentDef.autoExit ?? true;
 
 			// Resolve the working directory to an absolute path up front — it
 			// feeds the launch script's `cd`, the session-dir naming, and the
@@ -758,7 +763,7 @@ export default function (pi: ExtensionAPI) {
 			// the command line, not in the conversation.
 			writeFileSync(
 				`${childSessionFile}.meta`,
-				JSON.stringify({ name: params.name, agent: params.agent, tools, model, thinking, systemPromptFile, autoExit }),
+				JSON.stringify({ name: params.name, agent: agentName, tools, model, thinking, systemPromptFile, autoExit }),
 				"utf8",
 			);
 
@@ -772,7 +777,7 @@ export default function (pi: ExtensionAPI) {
 			trackChild({
 				id,
 				name: params.name,
-				agent: params.agent,
+				agent: agentName,
 				paneId,
 				sessionFile: childSessionFile,
 				startTime: Date.now(),
@@ -913,7 +918,8 @@ export default function (pi: ExtensionAPI) {
 			const lines = inventory.map((agent) => {
 				const interactive = agent.autoExit ? "" : " (interactive — a human drives it)";
 				const warning = agent.problems.length > 0 ? ` [⚠ not spawnable: ${agent.problems.join("; ")}]` : "";
-				return `• ${agent.name}${interactive}${warning} — ${agent.description ?? "(no description)"}`;
+				const isDefault = agent.name === "worker" ? " (default)" : "";
+				return `• ${agent.name}${isDefault}${interactive}${warning} — ${agent.description ?? "(no description)"}`;
 			});
 			return {
 				content: [{ type: "text", text: lines.join("\n") }],
@@ -982,6 +988,7 @@ export default function (pi: ExtensionAPI) {
 			// means no defaults.
 			let meta: {
 				name?: string;
+				agent?: string;
 				tools?: string;
 				model?: string;
 				thinking?: string;
@@ -1063,6 +1070,7 @@ export default function (pi: ExtensionAPI) {
 			trackChild({
 				id,
 				name,
+				agent: meta.agent,
 				paneId,
 				sessionFile: sessionPath,
 				startTime: Date.now(),

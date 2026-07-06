@@ -18,7 +18,7 @@ The extension registers three caller-side tools:
 |---|---|
 | `name` | Display name (widget + pane title) — required |
 | `task` | The task prompt — required |
-| `agent` | Agent definition to load defaults from (see `subagents_list`) |
+| `agent` | Agent definition to load defaults from (see `subagents_list`). **Default: `worker`** — there is no agent-less spawn; if `worker.md` doesn't exist, the spawn errors telling you to create it |
 | `mode` | `"fork"` or `"fresh"` (default `"fresh"`) |
 | `model` | Model override — `provider/model`, or a bare id if unambiguous among configured providers; validated like the agent's `models` list (errors fast otherwise) |
 | `thinking` | Thinking/effort level override (`off`–`xhigh`); defaults to the agent definition's `thinking:` value |
@@ -58,7 +58,7 @@ In `main`, `PI_SUBAGENT_MAIN_WIDTH` sets the parent pane's width — a percentag
 
 ## Agent definitions
 
-An agent definition is a Markdown file: optional frontmatter for settings, and a body that becomes the child's appended system prompt (`pi --append-system-prompt`). Definitions load from the **global** agents dir only — `$PI_CODING_AGENT_DIR/agents/`, defaulting to `~/.pi/agent/agents/`. No project-local lookup, nothing bundled. The **filename is the agent name** (`scout.md` → `agent: "scout"`); there is no `name:` key.
+An agent definition is a Markdown file: optional frontmatter for settings, and a body that becomes the child's appended system prompt (`pi --append-system-prompt`). The `worker` agent is the **default** — a spawn that names no agent runs as `worker`, so `worker.md` should always exist. Definitions load from the **global** agents dir only — `$PI_CODING_AGENT_DIR/agents/`, defaulting to `~/.pi/agent/agents/`. No project-local lookup, nothing bundled. The **filename is the agent name** (`scout.md` → `agent: "scout"`); there is no `name:` key.
 
 | Frontmatter key | Meaning |
 |---|---|

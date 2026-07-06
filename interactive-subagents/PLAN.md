@@ -29,6 +29,9 @@ superseded and was deleted.
 - **Global agent definitions only** (`~/.pi/agent/agents/*.md`, or
   `$PI_CODING_AGENT_DIR/agents/`). Nothing bundled, nothing project-local.
   **Filename = agent name** (no frontmatter `name` key).
+- **`worker` is the default agent.** A spawn without `agent` runs as
+  `agent: "worker"` through the identical machinery — there is no "bare"
+  spawn. Missing `worker.md` is a loud spawn error, not a fallback.
 - **Two session modes.** `fork` (child session seeded with the parent's
   conversation minus the in-flight turn — preserves provider prompt-cache
   affinity) and `fresh` (clean context; pi creates the session file).
