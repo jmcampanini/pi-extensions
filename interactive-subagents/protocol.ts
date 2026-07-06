@@ -1,0 +1,61 @@
+/**
+ * protocol.ts — the parent ↔ child contract, all in one file.
+ *
+ * The parent and the child are separate pi processes; they never share
+ * memory. Everything they say to each other travels over three channels,
+ * and this file defines the shape of each one:
+ *
+ *   1. ENV VARS (parent → child, at launch): `ChildEnvVars`, prefixed onto
+ *      the launch command line because tmux panes run a fresh shell that
+ *      inherits nothing from the parent process.
+ *   2. THE `.exit` SIDECAR (child → parent, at exit): `ExitSidecar`, a tiny
+ *      JSON file the child's implant writes next to its session file. It is
+ *      the child's typed last word — done / ping / error — and the parent's
+ *      poller deletes it on read (a one-shot signal).
+ *   3. THE SCREEN SENTINEL (crash net): `SENTINEL_*`, a marker the launch
+ *      script echoes after pi exits. It catches every exit where the child
+ *      never ran our extension code (crashes, kills, provider explosions).
+ *
+ * If you change anything here, both sides change together — that is the
+ * point of keeping the contract in one file.
+ */
+
+// ── channel 1: env vars (parent → child) ─────────────────────────────────
+// Read by implant.ts inside the child. PI_SUBAGENT_SESSION doubles as the
+// "am I a subagent?" detector: index.ts sees it and registers no spawn tools
+// inside children (no recursion), and implant.ts sees it and comes alive.
+
+export interface ChildEnvVars {
+	/** The child's session file — also where the implant writes `.exit`. */
+	PI_SUBAGENT_SESSION: string;
+	/** Display name, echoed back in ping messages. */
+	PI_SUBAGENT_NAME: string;
+	/** "1" = exit automatically when a turn completes; absent = stay open. */
+	PI_SUBAGENT_AUTO_EXIT?: "1";
+}
+
+// ── channel 2: the `.exit` sidecar (child → parent) ──────────────────────
+// Written by implant.ts to `<session>.jsonl.exit`; read AND DELETED by the
+// parent's poller (tmux.ts). The result text itself never travels through
+// the sidecar — it is the child's last assistant message, already durable
+// in the session .jsonl. The sidecar only carries the exit INTENT.
+
+export type ExitSidecar =
+	| { type: "done" }
+	| { type: "ping"; name?: string; message: string }
+	| { type: "error"; errorMessage: string };
+
+// ── channel 3: the screen sentinel (crash net) ───────────────────────────
+// The launch command ends with this suffix, so the shell echoes
+// `__SUBAGENT_DONE_<exit code>__` after pi exits — whatever the reason.
+//
+// The echo is written QUOTE-SPLIT on purpose: the command line the shell
+// displays while typing shows `'__SUBAGENT_DONE_'$?'__'` with `$?`
+// unexpanded, so the poller's digits-only regex can never match the typed
+// command itself — only the real output that appears AFTER pi exits.
+// The suffix and the regex are two halves of one protocol; they live side
+// by side here so they can never drift apart.
+
+export const SENTINEL_ECHO_SUFFIX = ` ; echo '__SUBAGENT_DONE_'$?'__'`;
+
+export const SENTINEL_REGEX = /__SUBAGENT_DONE_(\d+)__/;

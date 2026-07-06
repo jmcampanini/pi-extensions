@@ -4,7 +4,7 @@
  * Everything the orchestrator needs from tmux: create a pane, type a command
  * into it, read its screen, close it, and poll for the child's exit.
  *
- * Design notes carried over from the reference implementation:
+ * Design notes:
  * - Long commands are NEVER typed directly into a pane. Typing text that is
  *   wider than the pane wraps and corrupts the command, and the user's login
  *   shell (fish/zsh/bash) has different quoting rules. Instead we write a
@@ -17,7 +17,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { config, type SubagentsConfig } from "./config.ts";
+import { config } from "./config.ts";
+import { SENTINEL_REGEX } from "./protocol.ts";
 
 // ── running tmux ─────────────────────────────────────────────────────────
 
@@ -61,12 +62,19 @@ export function shellQuote(value: string): string {
 //   main    Split in the current window, then main-vertical: the parent pi
 //           stays a fixed-width pane on the left, children stack on the right.
 //   window  Put every subagent in a dedicated sibling window named
-//           "<current window>-subagents", kept tiled.
+//           "<parent window>-subagents", kept tiled.
 
-type Layout = SubagentsConfig["layout"];
-
-function getLayout(): Layout {
-	return config.layout;
+/**
+ * Every pane-creating tmux command is run with `-P -F "#{pane_id}"` so it
+ * prints the new pane's id. Validate that we really got one ("%12"-style)
+ * before trusting it as a target for later commands.
+ */
+function paneIdFrom(raw: string, tmuxCommand: string): string {
+	const paneId = raw.trim();
+	if (!paneId.startsWith("%")) {
+		throw new Error(`tmux ${tmuxCommand} returned an unexpected pane id: "${paneId}"`);
+	}
+	return paneId;
 }
 
 /** Give a pane a title (shown by `tmux display-panes` / status lines). */
@@ -95,8 +103,20 @@ function applyMainVertical(anchorPane: string): void {
 // ── the dedicated subagents window ("window" layout) ───────────────────────
 // The window id is parked on globalThis (like our timers) so it survives a
 // /reload: we reuse the same window across spawns instead of leaking a new one.
+// The two tiny accessors below are the ONLY way this file touches that slot,
+// so the untyped globalThis cast happens in exactly one place.
 
 const AGENTS_WINDOW_KEY = Symbol.for("interactive-subagents/agents-window");
+const slots = globalThis as Record<symbol, unknown>;
+
+function rememberedAgentsWindow(): string | null {
+	const id = slots[AGENTS_WINDOW_KEY];
+	return typeof id === "string" ? id : null;
+}
+
+function rememberAgentsWindow(windowId: string | null): void {
+	slots[AGENTS_WINDOW_KEY] = windowId;
+}
 
 /** Does a window with this id still exist anywhere in the server? */
 function windowExists(windowId: string): boolean {
@@ -111,9 +131,9 @@ function windowExists(windowId: string): boolean {
 
 /** The dedicated subagents window id if it still exists, else null. */
 function agentsWindow(): string | null {
-	const id = (globalThis as any)[AGENTS_WINDOW_KEY];
-	if (typeof id === "string" && windowExists(id)) return id;
-	(globalThis as any)[AGENTS_WINDOW_KEY] = null;
+	const id = rememberedAgentsWindow();
+	if (id !== null && windowExists(id)) return id;
+	rememberAgentsWindow(null);
 	return null;
 }
 
@@ -143,13 +163,10 @@ function createAgentsWindow(title: string): string {
 	if (parentWindow) args.push("-a", "-t", parentWindow);
 	args.push("-n", `${base}-subagents`);
 
-	const paneId = tmux(args).trim();
-	if (!paneId.startsWith("%")) {
-		throw new Error(`tmux new-window returned an unexpected pane id: "${paneId}"`);
-	}
+	const paneId = paneIdFrom(tmux(args), "new-window");
 
 	const windowId = tmux(["display-message", "-p", "-t", paneId, "#{window_id}"]).trim();
-	(globalThis as any)[AGENTS_WINDOW_KEY] = windowId;
+	rememberAgentsWindow(windowId);
 	try {
 		tmux(["set-window-option", "-t", windowId, "automatic-rename", "off"]);
 		tmux(["set-window-option", "-t", windowId, "allow-rename", "off"]);
@@ -177,20 +194,15 @@ function tileAgentsWindow(windowId: string): void {
  * Never steals the user's focus (`-d`).
  */
 export function createPane(title: string): string {
-	const layout = getLayout();
-
 	// "window": all subagents live in one dedicated, tiled sibling window.
-	if (layout === "window") {
+	if (config.layout === "window") {
 		const existing = agentsWindow();
 		if (!existing) {
 			// First subagent: create the window and use its initial pane.
 			return createAgentsWindow(title);
 		}
 		// Subsequent: add a pane to that window and re-tile.
-		const paneId = tmux(["split-window", "-d", "-t", existing, "-P", "-F", "#{pane_id}"]).trim();
-		if (!paneId.startsWith("%")) {
-			throw new Error(`tmux split-window returned an unexpected pane id: "${paneId}"`);
-		}
+		const paneId = paneIdFrom(tmux(["split-window", "-d", "-t", existing, "-P", "-F", "#{pane_id}"]), "split-window");
 		tileAgentsWindow(existing);
 		titlePane(paneId, title);
 		return paneId;
@@ -203,13 +215,10 @@ export function createPane(title: string): string {
 	}
 	args.push("-P", "-F", "#{pane_id}");
 
-	const paneId = tmux(args).trim();
-	if (!paneId.startsWith("%")) {
-		throw new Error(`tmux split-window returned an unexpected pane id: "${paneId}"`);
-	}
+	const paneId = paneIdFrom(tmux(args), "split-window");
 
 	// "main" re-flows into main-vertical; "off" leaves the raw split alone.
-	if (layout === "main") applyMainVertical(paneId);
+	if (config.layout === "main") applyMainVertical(paneId);
 	titlePane(paneId, title);
 	return paneId;
 }
@@ -243,10 +252,9 @@ export function closePane(paneId: string): void {
  * dies). No-op for "off", and for "window" once the whole window is gone.
  */
 export function refreshLayout(): void {
-	const layout = getLayout();
-	if (layout === "off") return;
+	if (config.layout === "off") return;
 
-	if (layout === "window") {
+	if (config.layout === "window") {
 		const win = agentsWindow();
 		if (win) tileAgentsWindow(win);
 		return;
@@ -304,18 +312,10 @@ export interface ExitResult {
 }
 
 /**
- * The sentinel string the launch script echoes after pi exits, carrying the
- * shell exit code. In the launch command it is written quote-split
- * (`'__SUBAGENT_DONE_'$?'__'`) so the *typed command line* on screen can
- * never match this digits-only regex — only the real output after exit can.
- */
-const SENTINEL_REGEX = /__SUBAGENT_DONE_(\d+)__/;
-
-/**
  * If the pane disappears (user closed it, tmux died) and no sidecar shows up,
- * we wait this many extra polls before declaring the child dead. This fixes a
- * reference-implementation gotcha where a killed pane made the watcher loop
- * forever.
+ * we wait this many extra polls before declaring the child dead. Without this
+ * grace period, a pane killed externally at just the wrong moment could make
+ * the watcher give up before the child's sidecar hits the disk.
  */
 const PANE_GONE_GRACE_TICKS = 5;
 
@@ -386,7 +386,9 @@ export async function pollForExit(options: {
 function readSidecar(sidecarPath: string): ExitResult | null {
 	if (!existsSync(sidecarPath)) return null;
 	try {
-		const data = JSON.parse(readFileSync(sidecarPath, "utf8"));
+		// The file should be an ExitSidecar (see protocol.ts), but it comes
+		// off the disk, so every field is still checked before it is trusted.
+		const data = JSON.parse(readFileSync(sidecarPath, "utf8")) as Record<string, unknown>;
 		rmSync(sidecarPath, { force: true });
 
 		if (data.type === "ping") {
@@ -415,6 +417,7 @@ function readSidecar(sidecarPath: string): ExitResult | null {
 	}
 }
 
-function sleep(ms: number): Promise<void> {
+/** Promise-flavored setTimeout, shared by the poller and the launch flow. */
+export function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }

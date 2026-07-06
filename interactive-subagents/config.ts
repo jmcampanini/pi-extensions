@@ -65,8 +65,7 @@ function requireMainWidth(value: unknown, source: string): string {
 }
 
 function requireDelayMs(value: unknown, source: string): number {
-	const parsed = typeof value === "string" ? Number(value) : value;
-	if (typeof parsed === "number" && Number.isInteger(parsed) && parsed >= 0) return parsed;
+	if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
 	throw new Error(`${source}: invalid shellReadyDelayMs ${JSON.stringify(value)} — use a non-negative integer`);
 }
 
@@ -105,15 +104,22 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 	}
 
 	// Layer 3: env vars override the file (handy for direnv and one-offs).
+	// The values go through the SAME validators as the file, so both layers
+	// accept exactly the same inputs.
 	if (env.PI_SUBAGENT_LAYOUT) {
-		result.layout = requireLayout(env.PI_SUBAGENT_LAYOUT.trim().toLowerCase(), "PI_SUBAGENT_LAYOUT");
+		result.layout = requireLayout(env.PI_SUBAGENT_LAYOUT, "PI_SUBAGENT_LAYOUT");
 	}
 	if (env.PI_SUBAGENT_MAIN_WIDTH) {
 		result.mainWidth = requireMainWidth(env.PI_SUBAGENT_MAIN_WIDTH, "PI_SUBAGENT_MAIN_WIDTH");
 	}
 	if (env.PI_SUBAGENT_SHELL_READY_DELAY_MS) {
+		// Env values arrive as strings; convert before validating. A
+		// non-numeric string becomes NaN, so we hand the validator the
+		// original text and let it reject with a readable message.
+		const raw = env.PI_SUBAGENT_SHELL_READY_DELAY_MS;
+		const converted = Number(raw);
 		result.shellReadyDelayMs = requireDelayMs(
-			env.PI_SUBAGENT_SHELL_READY_DELAY_MS,
+			Number.isNaN(converted) ? raw : converted,
 			"PI_SUBAGENT_SHELL_READY_DELAY_MS",
 		);
 	}

@@ -6,10 +6,8 @@ runs in its own pane where you can watch it or take it over; when it finishes,
 its result is steered back into the parent conversation asynchronously.
 
 Design is derived from a full dissection of
-[HazAT/pi-interactive-subagents](https://github.com/HazAT/pi-interactive-subagents)
-(analysis in `.sandbox/analysis/`), rebuilt deliberately smaller. This is a
-fresh design — the older `subagent/PLAN.md` (in-process, synchronous MVP) is
-superseded and was deleted.
+[HazAT/pi-interactive-subagents](https://github.com/HazAT/pi-interactive-subagents),
+rebuilt deliberately smaller.
 
 ## Core commitments
 
@@ -50,15 +48,15 @@ Files, per child:
 |---|---|---|
 | `<child-session>.jsonl` | parent (fork seed) + child (transcript) | context, result extraction, resume anchor |
 | `<child-session>.jsonl.exit` | child implant | typed exit intent: `{type: "done" \| "ping" \| "error"}` — one-shot, parent deletes on read |
-| `<child-session>.jsonl.meta` | parent (at launch) | launch metadata (name, agent, tools, model, system-prompt file, auto-exit) so `subagent_resume` reapplies the child's identity |
-| `artifacts/<sid>/interactive-subagents/…` | parent | task files (`@file` delivery), system prompts, launch scripts |
+| `<child-session>.jsonl.meta` | parent (at launch) | launch metadata (name, agent, tools, model, thinking, system-prompt file, auto-exit) so `subagent_resume` reapplies the child's identity |
+| `artifacts/<sid>/interactive-subagents/…` | parent | task files (`@file` delivery), system prompts, resume follow-up messages, launch scripts |
 | pane screen | child's shell | `__SUBAGENT_DONE_<code>__` sentinel — crash net |
 
 User-facing configuration (config.ts) resolves defaults < config file < env:
 
 | Config key (file) | Env override | Default | Purpose |
 |---|---|---|---|
-| `layout` | `PI_SUBAGENT_LAYOUT` | `window` | Pane layout: `main` (main-vertical — parent stays big, children stack in a side rail, re-flows on spawn/exit), `window` (all children in a dedicated tiled sibling window named `<current window>-subagents`), `off` (plain right-split in place, no re-flow) |
+| `layout` | `PI_SUBAGENT_LAYOUT` | `window` | Pane layout: `main` (main-vertical — parent stays big, children stack in a side rail, re-flows on spawn/exit), `window` (all children in a dedicated tiled sibling window named `<parent window>-subagents`), `off` (plain right-split in place, no re-flow) |
 | `mainWidth` | `PI_SUBAGENT_MAIN_WIDTH` | `60%` | Width of the parent pane in `main` layout (a tmux width: `60%` or an absolute column count) |
 | `shellReadyDelayMs` | `PI_SUBAGENT_SHELL_READY_DELAY_MS` | `500` | Pause after creating a pane before typing the launch command (raise it if a slow shell drops the command) |
 
@@ -100,16 +98,33 @@ run a fresh shell and inherit nothing):
 
 ### v1 — the primitive (this version)
 
-- `index.ts` — orchestrator: `subagent`, `subagents_list`, `subagent_resume`
-  tools; per-child registry + watcher; steer-back delivery; dumb widget
-  (name + elapsed time, no state machine); /subagents-running jump picker (Enter =
-  go to the child's pane across windows, z = go + zoom) and
-  /subagents-available overview widget.
+One file per job; `index.ts` only wires them into pi:
+
+- `protocol.ts` — the parent↔child contract: child env vars, the `.exit`
+  sidecar shape, and both halves of the exit sentinel.
+- `config.ts` — layered settings (defaults < `subagents.json` < env),
+  validated at extension load (fail-fast).
+- `models.ts` — first-usable-model resolution for `models:` candidate lists.
+- `agents.ts` — agent definition files (frontmatter parsing,
+  project-shadows-global lookup) and the inventory built from them.
+- `session.ts` — pi session `.jsonl` handling: fork seeding; summary
+  extraction (last assistant message, with the `stopReason: "error"` →
+  `errorMessage` fallback).
 - `tmux.ts` — pane create/type/read/close; bash-script command transport;
   the exit poller (sidecar → screen sentinel → pane-closed grace).
-- `session.ts` — fork seeding; summary extraction (last assistant message,
-  with the `stopReason: "error"` → `errorMessage` fallback).
+- `launch.ts` — the ONE builder for a child's launch command, plus the
+  `.meta` launch-metadata sidecar.
+- `state.ts` — shared runtime state: running children, the resume ledger,
+  /reload-safe teardown.
+- `widget.ts` / `running-widget.ts` — pure renderer / stateful controller for
+  the dumb running widget (name + elapsed time, no state machine).
+- `watcher.ts` — per-child supervision and the steered result/ping messages.
 - `implant.ts` — child-side: `subagent_done`, `caller_ping`, auto-exit.
+- `tool-subagent.ts`, `tool-resume.ts`, `tool-list.ts` — one file per
+  model-facing tool.
+- `command-available.ts` — /subagents-available overview widget (zero-token).
+- `command-running.ts` — /subagents-running picker (Enter = go to the child's
+  pane across windows, z = go + zoom, x = stop — the model is notified).
 
 Seams reserved so v2/v3 are additions, not rework:
 
@@ -157,7 +172,18 @@ Deliberate improvements over the reference implementation:
 
 ## Verification
 
-Each version lands with a scripted end-to-end proof (detached tmux session,
-`pi -ne -e interactive-subagents/index.ts`, a hidden `test-echo` agent def,
-assertions on the steered `subagent_result` in the parent session file), plus
-a `caller_ping` → `subagent_resume` round-trip test.
+Two layers:
+
+- **Unit tests** (`tests/*.ts`, run with `node --experimental-strip-types`)
+  cover the pure leaf modules: config layering and fail-fast, model
+  resolution, widget rendering, fork cut-point selection, agent-definition
+  parsing/shadowing, and the exact launch-command bytes.
+- **E2E scripts** (`.sandbox/e2e-*.sh`) prove the real thing: each starts a
+  detached tmux session, launches an interactive
+  `pi -e interactive-subagents/index.ts` parent, writes throwaway agent
+  definitions (e.g. an echo agent in `~/.pi/agent/subagents/`), and greps the
+  parent session `.jsonl` for the steered `subagent_result` /
+  `subagent_ping` entries. The suite covers spawn/echo, the `caller_ping` →
+  `subagent_resume` round trip, fork seeding, model fallback + fail-fast,
+  config load failure, the layout strategies, the human commands, the
+  running picker (jump/zoom/stop), and project-local agents.

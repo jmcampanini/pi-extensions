@@ -38,7 +38,7 @@ subagent({
 //   Its result will arrive automatically — do not poll.
 ```
 
-**The help loop:** a blocked child calls `caller_ping` and exits; the parent is woken with the question and answers via `subagent_resume({ id, message })` — the child's original system prompt, tools, and model are restored automatically from its launch metadata. The `id` is in-memory only; after a pi restart, pass `sessionPath` from the result/ping message instead.
+**The help loop:** a blocked child calls `caller_ping` and exits; the parent is woken with the question and answers via `subagent_resume({ id, message })` — the child's original system prompt, tools, model, and thinking level are restored automatically from its launch metadata. The `id` is in-memory only; after a pi restart, pass `sessionPath` from the result/ping message instead.
 
 ## Session context: fork vs fresh
 
@@ -46,7 +46,7 @@ subagent({
 
 ## Pane layout (tmux)
 
-Children are always created detached — a spawning child never steals your focus. Arrangement is controlled by `PI_SUBAGENT_LAYOUT`:
+Children are always created detached — a spawning child never steals your focus. Arrangement is controlled by the `layout` setting (see [Configuration](#configuration); `PI_SUBAGENT_LAYOUT` overrides it):
 
 | Value | Behavior |
 |---|---|
@@ -54,7 +54,7 @@ Children are always created detached — a spawning child never steals your focu
 | `window` (default) | All children live in a dedicated tiled sibling window named `<parent window>-subagents`, reused across spawns (survives `/reload`). |
 | `off` | Plain right-split off the parent pi's pane. No re-flow — each spawn just narrows the row. |
 
-In `main`, `PI_SUBAGENT_MAIN_WIDTH` sets the parent pane's width — a percentage like `60%` (default) or absolute columns like `120`. Layout application is best-effort: if a tmux layout command fails, the spawn still succeeds with a raw split.
+In `main`, the `mainWidth` setting sets the parent pane's width — a percentage like `60%` (default) or absolute columns like `120`. Layout application is best-effort: if a tmux layout command fails, the spawn still succeeds with a raw split.
 
 ## Agent definitions
 

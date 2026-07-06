@@ -1,9 +1,9 @@
 /**
  * widget.ts — rendering the running-subagents widget.
  *
- * The style ("5c"): a bracketed agent-type tag, the task-focused display
- * name, and a right-anchored elapsed clock — no status column, no counts or
- * hints. A row EXISTING means that child is running, and the right edge is
+ * The style: a bracketed agent-type tag, the task-focused display name, and
+ * a right-anchored elapsed clock — no status column, no counts or hints.
+ * A row EXISTING means that child is running, and the right edge is
  * reserved for v2's live activity states (`· bash 7m`).
  *
  *   ──────────────────────────────────────────────────────
@@ -27,7 +27,8 @@ export interface WidgetStyle {
 export interface WidgetRow {
 	/** Display name — the `name` the model chose at spawn time. */
 	name: string;
-	/** Agent type ("worker", "scout", …). Missing only for pre-worker resumes. */
+	/** Agent type ("worker", "scout", …). Missing only when a resume found no
+	 * `.meta` launch metadata (a session not launched by this extension). */
 	agent?: string;
 	elapsedSeconds: number;
 }

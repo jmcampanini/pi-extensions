@@ -19,17 +19,14 @@ import { dirname } from "node:path";
 // index signature lets everything else pass through untouched.
 interface SessionEntry {
 	type: string;
-	[key: string]: unknown;
-}
-
-interface MessageEntry extends SessionEntry {
-	type: "message";
-	message: {
+	/** Present when type === "message"; the fields this module reads from it. */
+	message?: {
 		role: string;
 		content: Array<{ type: string; text?: string }>;
 		stopReason?: string;
 		errorMessage?: string;
 	};
+	[key: string]: unknown;
 }
 
 /** Parse a session file into entries, skipping blank or corrupt lines. */
@@ -79,7 +76,22 @@ export function seedForkSession(options: {
 	childCwd: string;
 }): void {
 	const raw = readFileSync(options.parentSessionFile, "utf8");
-	const lines = raw.split("\n").filter((line) => line.trim() !== "");
+
+	// Parse every line exactly once, keeping the ORIGINAL text alongside the
+	// parsed entry: the seed is written from the original lines (byte-identical
+	// copies are what make prompt-cache reuse possible), while all the
+	// decisions below are made on the parsed entries. A corrupt line parses to
+	// `entry: null` and is kept — pi tolerates lines it can't read.
+	const parsed = raw
+		.split("\n")
+		.filter((line) => line.trim() !== "")
+		.map((line) => {
+			try {
+				return { line, entry: JSON.parse(line) as SessionEntry };
+			} catch {
+				return { line, entry: null };
+			}
+		});
 
 	// Walk backwards to find where the in-flight turn STARTED, then cut there.
 	// A turn can be started by a plain user message OR by a custom message —
@@ -88,45 +100,30 @@ export function seedForkSession(options: {
 	// user message at all. Cutting only at user messages would, on such a
 	// turn, land on the PREVIOUS turn's user message and silently drop the
 	// whole completed exchange in between.
-	let cutAt = lines.length;
-	for (let i = lines.length - 1; i >= 0; i--) {
-		try {
-			const entry = JSON.parse(lines[i]);
-			const isUserMessage = entry.type === "message" && entry.message?.role === "user";
-			if (isUserMessage || entry.type === "custom_message") {
-				cutAt = i;
-				break;
-			}
-		} catch {
-			// ignore corrupt lines while searching
+	let cutAt = parsed.length;
+	for (let i = parsed.length - 1; i >= 0; i--) {
+		const entry = parsed[i].entry;
+		const isUserMessage = entry?.type === "message" && entry.message?.role === "user";
+		if (isUserMessage || entry?.type === "custom_message") {
+			cutAt = i;
+			break;
 		}
 	}
 
 	// Keep everything before the cut, minus the parent's header line.
-	const copied = lines.slice(0, cutAt).filter((line) => {
-		try {
-			return JSON.parse(line).type !== "session";
-		} catch {
-			return true; // keep lines we can't parse — pi tolerates them
-		}
-	});
+	const copied = parsed.slice(0, cutAt).filter(({ entry }) => entry?.type !== "session");
 
 	// Safety net: never let the seed END on an assistant message that makes
 	// tool calls — its tool RESULTS were cut away with the in-flight turn,
 	// and providers reject a conversation that stops on an unanswered tool
 	// call. Trim such trailing entries.
 	while (copied.length > 0) {
-		try {
-			const last = JSON.parse(copied[copied.length - 1]);
-			const isAssistant = last.type === "message" && last.message?.role === "assistant";
-			const makesToolCalls =
-				isAssistant &&
-				(last.message.content ?? []).some((block: { type?: string }) => block.type === "toolCall");
-			if (!makesToolCalls) break;
-			copied.pop();
-		} catch {
-			break;
-		}
+		const last = copied[copied.length - 1].entry;
+		const isAssistant = last?.type === "message" && last.message?.role === "assistant";
+		const makesToolCalls =
+			isAssistant && (last?.message?.content ?? []).some((block) => block.type === "toolCall");
+		if (!makesToolCalls) break;
+		copied.pop();
 	}
 
 	// Fresh header. version 3 must match pi's CURRENT_SESSION_VERSION, and
@@ -143,7 +140,7 @@ export function seedForkSession(options: {
 	mkdirSync(dirname(options.childSessionFile), { recursive: true });
 	writeFileSync(
 		options.childSessionFile,
-		[JSON.stringify(header), ...copied].join("\n") + "\n",
+		[JSON.stringify(header), ...copied.map(({ line }) => line)].join("\n") + "\n",
 		"utf8",
 	);
 }
@@ -188,7 +185,7 @@ export function extractSummary(sessionFile: string, skipEntries = 0): string | n
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i];
 		if (entry.type !== "message") continue;
-		const msg = (entry as MessageEntry).message;
+		const msg = entry.message;
 		if (msg?.role !== "assistant") continue;
 
 		// Join all non-empty text blocks of this assistant message.

@@ -1,0 +1,172 @@
+/**
+ * launch.ts — the ONE way a child pi process gets launched.
+ *
+ * Both the `subagent` tool (first launch) and `subagent_resume` (relaunch of
+ * an existing session) go through the helpers in this file, so there is a
+ * single place that decides what a child's command line looks like: the env
+ * prefix, the pi flags, the control-tool union, and the exit sentinel. If
+ * spawn and resume ever behave differently, the difference is visible in
+ * their own files — not hidden in two drifting copies of this logic.
+ *
+ * Also here: the `.meta` launch-metadata sidecar. It records the identity a
+ * child was launched with (system prompt, tools, model, thinking, auto-exit)
+ * so a later resume can reapply it — those settings live on the command
+ * line, not in the conversation, so without `.meta` a resumed child would
+ * silently lose them.
+ */
+
+import { randomUUID } from "node:crypto";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { agentConfigDir } from "./config.ts";
+import { SENTINEL_ECHO_SUFFIX, type ChildEnvVars } from "./protocol.ts";
+import { shellQuote } from "./tmux.ts";
+
+// ── paths ────────────────────────────────────────────────────────────────
+
+/** Absolute path to this directory, so we can point `pi -e` at implant.ts. */
+const THIS_DIR = dirname(fileURLToPath(import.meta.url));
+const IMPLANT_PATH = join(THIS_DIR, "implant.ts");
+
+/** Turn a display name into something safe for filenames. */
+export function slugify(value: string): string {
+	return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "subagent";
+}
+
+/** Artifacts for this extension live under the parent session's artifact dir. */
+export function artifactBase(ctx: ExtensionContext): string {
+	return join(
+		ctx.sessionManager.getSessionDir(),
+		"artifacts",
+		ctx.sessionManager.getSessionId(),
+		"interactive-subagents",
+	);
+}
+
+/**
+ * Pre-generate the child's session file path BEFORE the child exists. The
+ * parent choosing the path (rather than discovering it afterwards) is what
+ * makes parallel spawns race-free: every watcher knows exactly which file
+ * belongs to its child. The directory naming mimics pi's own convention
+ * (`sessions/--<cwd with separators as dashes>--/`) so child sessions appear
+ * in pi's session picker like any other session for that directory.
+ */
+export function generateChildSessionFile(childCwd: string): string {
+	const dirName = "--" + childCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-") + "--";
+	const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+	return join(agentConfigDir(), "sessions", dirName, `${timestamp}_${randomUUID()}.jsonl`);
+}
+
+// ── the launch command ───────────────────────────────────────────────────
+
+/**
+ * Build the `KEY='value'` env prefix for the child's launch command.
+ * tmux panes run a fresh shell that inherits NOTHING from the parent pi
+ * process, so every variable the child needs must ride on the command line.
+ * All child env vars flow through here — v2 adds its liveness vars here too.
+ */
+export function buildChildEnv(vars: ChildEnvVars): string {
+	const parts: string[] = [];
+	// Propagate a custom config root so the child resolves the same models,
+	// providers, and extensions as the parent.
+	if (process.env.PI_CODING_AGENT_DIR) {
+		parts.push(`PI_CODING_AGENT_DIR=${shellQuote(process.env.PI_CODING_AGENT_DIR)}`);
+	}
+	for (const [key, value] of Object.entries(vars)) {
+		if (value !== undefined) parts.push(`${key}=${shellQuote(value)}`);
+	}
+	return parts.join(" ");
+}
+
+/**
+ * pi's `--tools` allowlist filters EXTENSION tools too (since pi 0.70), so a
+ * restricted child would lose the very tools it needs to signal completion.
+ * Always union the implant's control tools into any allowlist.
+ */
+function withControlTools(tools: string): string {
+	const names = new Set(
+		tools.split(",").map((t) => t.trim()).filter((t) => t !== ""),
+	);
+	names.add("subagent_done");
+	names.add("caller_ping");
+	return [...names].join(",");
+}
+
+export interface LaunchCommandOptions {
+	/** Directory to `cd` into first; null = launch wherever the shell is. */
+	cwd: string | null;
+	/** The env prefix from buildChildEnv(). */
+	env: string;
+	/** The child's session file (created fresh, seeded, or resumed). */
+	sessionFile: string;
+	model?: string;
+	thinking?: string;
+	/** File whose contents pi appends to the child's system prompt. */
+	systemPromptFile?: string;
+	/** Comma-separated tool allowlist; the control tools are unioned in. */
+	tools?: string;
+	/** Shell-quoted `@file` prompt argument, or "" for none (resume without a message). */
+	promptArg: string;
+}
+
+/**
+ * The full command a child pane runs: optional `cd`, env prefix, `pi` with
+ * its flags, the prompt argument, and the exit sentinel (see protocol.ts).
+ * Empty parts are dropped, so optional settings simply don't appear.
+ */
+export function buildLaunchCommand(options: LaunchCommandOptions): string {
+	return (
+		[
+			options.cwd ? `cd ${shellQuote(options.cwd)} &&` : "",
+			options.env,
+			`pi --session ${shellQuote(options.sessionFile)}`,
+			`-e ${shellQuote(IMPLANT_PATH)}`,
+			options.model ? `--model ${shellQuote(options.model)}` : "",
+			options.thinking ? `--thinking ${shellQuote(options.thinking)}` : "",
+			options.systemPromptFile ? `--append-system-prompt ${shellQuote(options.systemPromptFile)}` : "",
+			options.tools ? `--tools ${shellQuote(withControlTools(options.tools))}` : "",
+			options.promptArg,
+		]
+			.filter((part) => part !== "")
+			.join(" ") + SENTINEL_ECHO_SUFFIX
+	);
+}
+
+// ── the `.meta` launch-metadata sidecar ──────────────────────────────────
+
+/** What `subagent_resume` needs to reapply a child's launch identity.
+ * Every field is optional on read: a session not created by this extension
+ * has no `.meta` at all, and that just means "no defaults". */
+export interface LaunchMeta {
+	name?: string;
+	agent?: string;
+	tools?: string;
+	model?: string;
+	thinking?: string;
+	systemPromptFile?: string;
+	autoExit?: boolean;
+}
+
+export function writeLaunchMeta(sessionFile: string, meta: LaunchMeta): void {
+	writeFileSync(`${sessionFile}.meta`, JSON.stringify(meta), "utf8");
+}
+
+/** Read a session's `.meta`. Missing or corrupt = `{}` (resume with plain defaults). */
+export function readLaunchMeta(sessionFile: string): LaunchMeta {
+	try {
+		return JSON.parse(readFileSync(`${sessionFile}.meta`, "utf8")) as LaunchMeta;
+	} catch {
+		return {};
+	}
+}
+
+/**
+ * Delete any leftover `.exit` sidecar before (re)launching into a session.
+ * A stale sidecar from a previous run would be consumed by the poller's
+ * first tick and instantly fake a completion, killing the fresh child.
+ */
+export function clearExitSidecar(sessionFile: string): void {
+	rmSync(`${sessionFile}.exit`, { force: true });
+}
