@@ -147,14 +147,16 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			const autoExit = params.autoExit ?? agentDef.autoExit ?? true;
 			// Worktree isolation: param beats frontmatter, default off. An
 			// explicit cwd contradicts "run in a fresh worktree" (the worktree
-			// IS the child's cwd), so the combination errors instead of one
-			// silently winning.
-			const useWorktree = params.worktree ?? agentDef.worktree ?? false;
-			if (useWorktree && params.cwd) {
+			// IS the child's cwd) — but only when BOTH were explicitly passed
+			// is that a caller error. When the worktree flag merely comes from
+			// the agent's frontmatter default, an explicit cwd param wins, the
+			// same way params beat frontmatter for every other setting.
+			if (params.worktree && params.cwd) {
 				throw new Error(
 					"The `worktree` and `cwd` parameters cannot be combined — the worktree becomes the sub-agent's working directory.",
 				);
 			}
+			const useWorktree = params.worktree ?? (params.cwd ? false : (agentDef.worktree ?? false));
 
 			// Fork needs the parent's session file on disk. pi buffers a brand-new
 			// session in memory until the first assistant reply, so a fork on the

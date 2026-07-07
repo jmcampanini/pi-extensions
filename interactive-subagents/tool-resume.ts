@@ -141,7 +141,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			if (sessionCwd && !existsSync(sessionCwd)) {
 				if (meta.worktree) {
 					throw new Error(
-						`Cannot resume: this sub-agent ran in a git worktree at ${meta.worktree.dir} that was removed after it finished with no changes. Spawn a new subagent instead.`,
+						`Cannot resume: this sub-agent ran in a git worktree at ${meta.worktree.dir} that no longer exists (usually auto-cleanup after it finished with no changes). Spawn a new subagent instead.`,
 					);
 				}
 				throw new Error(

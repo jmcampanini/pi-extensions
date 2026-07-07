@@ -128,17 +128,17 @@ await rejects("fail: non-git parent cwd",
 
 	// pristine: nothing touched since creation
 	const pristine = await create(repo, "pristine");
-	eq("dirty: pristine worktree is clean", isWorktreeDirty(pristine), false);
+	eq("dirty: pristine worktree is clean", await isWorktreeDirty(pristine), false);
 
 	// untracked file
 	const untracked = await create(repo, "untracked");
 	writeFileSync(join(untracked.dir, "new.txt"), "hi\n");
-	eq("dirty: untracked file", isWorktreeDirty(untracked), true);
+	eq("dirty: untracked file", await isWorktreeDirty(untracked), true);
 
 	// modified tracked file
 	const modified = await create(repo, "modified");
 	writeFileSync(join(modified.dir, "README.md"), "changed\n");
-	eq("dirty: modified tracked file", isWorktreeDirty(modified), true);
+	eq("dirty: modified tracked file", await isWorktreeDirty(modified), true);
 
 	// committed work: status is clean but HEAD moved off baseCommit —
 	// the critical case, since removal would delete the branch and the work
@@ -146,11 +146,12 @@ await rejects("fail: non-git parent cwd",
 	writeFileSync(join(committed.dir, "work.txt"), "done\n");
 	git(committed.dir, ["add", "."]);
 	git(committed.dir, ["commit", "-q", "-m", "work"]);
-	eq("dirty: committed work (clean status, moved HEAD)", isWorktreeDirty(committed), true);
+	eq("dirty: committed work (clean status, moved HEAD)", await isWorktreeDirty(committed), true);
 
-	// git can't answer (directory gone) -> assume dirty, never destroy work
+	// git can't answer (directory gone) -> THROWS; finishWorktree owns turning
+	// that into an honest "kept" outcome (tested below), never a false "dirty"
 	const gone = { ...pristine, dir: join(repo, "no-such-dir") };
-	eq("dirty: git error counts as dirty", isWorktreeDirty(gone), true);
+	await rejects("dirty: git error throws", () => isWorktreeDirty(gone), ["no-such-dir"]);
 }
 
 // ── finishWorktree outcomes ────────────────────────────────────────────────
@@ -173,21 +174,21 @@ await rejects("fail: non-git parent cwd",
 	writeFileSync(join(dirty.dir, "wip.txt"), "wip\n");
 	eq("finish: dirty is kept",
 		await finishWorktree({ info: dirty, mode: "auto", command: cleanup, childSucceeded: true }),
-		{ status: "kept", reason: "it has changes" });
+		{ status: "kept", code: "dirty", reason: "it has changes" });
 	ok("finish: dirty worktree still exists", existsSync(dirty.dir));
 
 	// mode "never" -> kept even though clean + succeeded
 	const never = await create(repo, "never");
 	eq("finish: mode never is kept",
 		await finishWorktree({ info: never, mode: "never", command: cleanup, childSucceeded: true }),
-		{ status: "kept", reason: 'worktreeCleanupMode is "never"' });
+		{ status: "kept", code: "mode-never", reason: 'worktreeCleanupMode is "never"' });
 	ok("finish: never-mode worktree still exists", existsSync(never.dir));
 
 	// failed child -> kept (even clean), so subagent_resume still works
 	const failed = await create(repo, "failed");
 	eq("finish: failed child is kept",
 		await finishWorktree({ info: failed, mode: "auto", command: cleanup, childSucceeded: false }),
-		{ status: "kept", reason: "the sub-agent did not finish successfully" });
+		{ status: "kept", code: "child-failed", reason: "the sub-agent did not finish successfully" });
 	ok("finish: failed-child worktree still exists", existsSync(failed.dir));
 
 	// cleanup command itself fails -> cleanup-failed with the error, and the
@@ -206,7 +207,15 @@ await rejects("fail: non-git parent cwd",
 	git(repo, ["worktree", "remove", "--force", vanished.dir]);
 	eq("finish: vanished directory is kept without running cleanup",
 		await finishWorktree({ info: vanished, mode: "auto", command: `exit 1`, childSucceeded: true }),
-		{ status: "kept", reason: "directory no longer exists" });
+		{ status: "kept", code: "vanished", reason: "its directory no longer exists" });
+
+	// directory exists but is NOT a git work tree -> state can't be verified ->
+	// kept with an honest reason (we never remove what we can't prove clean)
+	const swapped = { dir: tempDir("subagents-opaque-"), branch: "b", baseCommit: "x", parentCwd: repo };
+	const unverified = await finishWorktree({ info: swapped, mode: "auto", command: `exit 1`, childSucceeded: true });
+	ok("finish: unverifiable state is kept with reason",
+		unverified.status === "kept" && unverified.code === "unverified" &&
+			unverified.reason.includes("could not be verified"));
 }
 
 // ── detached HEAD: create + cleanup ────────────────────────────────────────
@@ -220,7 +229,7 @@ await rejects("fail: non-git parent cwd",
 	const info = await createWorktree({ name: "detached", parentCwd: repo, command: cmd });
 	eq("detached: branch snapshots as literal HEAD", info.branch, "HEAD");
 	eq("detached: baseCommit is parent HEAD", info.baseCommit, git(repo, ["rev-parse", "HEAD"]));
-	eq("detached: fresh worktree is clean", isWorktreeDirty(info), false);
+	eq("detached: fresh worktree is clean", await isWorktreeDirty(info), false);
 
 	// The default cleanup gets PI_SUBAGENT_WORKTREE_BRANCH="" here, and its
 	// `[ -n ]` guard must skip branch deletion instead of erroring.

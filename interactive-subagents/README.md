@@ -78,13 +78,16 @@ Both commands are config keys (see [Configuration](#configuration)), so any tool
 
 ```json
 {
-  "worktreeCreateCommand": "grove create \"$PI_SUBAGENT_WORKTREE_NAME\" --from-remote-primary",
+  "worktreeCreateCommand": "grove create \"$PI_SUBAGENT_WORKTREE_NAME\"",
   "worktreeCleanupCommand": "grove remove \"$PI_SUBAGENT_WORKTREE_DIR\""
 }
 ```
 
+This branches the child from the parent's current HEAD, which is usually what a helper sub-agent wants; add `--from-remote-primary` to base children on the remote's primary branch instead (fetches, so it needs network).
+
 Worth knowing:
 
+- Both commands must let their stdout/stderr **close when they exit**: a background process they leave attached to those pipes (a daemon started without `>/dev/null 2>&1`) stalls the spawn until the timeout fires.
 - A child **stopped by the user** keeps its worktree — the work may be half-done.
 - If pi itself crashes (or is killed) mid-child, cleanup never runs and the worktree stays behind under `.pi/worktrees/` — it's self-ignored and recorded in the child's `.meta` sidecar; remove it manually (`git worktree remove <dir>`).
 - Resuming a child whose worktree was already removed fails with a clear error telling you to spawn a new sub-agent instead.

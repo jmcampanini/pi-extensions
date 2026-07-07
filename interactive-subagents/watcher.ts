@@ -48,14 +48,21 @@ function worktreeNote(info: WorktreeInfo, outcome: WorktreeOutcome): string {
 			: "Worktree: no changes were made, so its worktree was removed.";
 	}
 	if (outcome.status === "kept") {
-		return (
-			`Worktree: kept at ${info.dir}` +
-			(branch ? ` on branch ${branch}` : "") +
-			` — ${outcome.reason}. ` +
-			(branch
-				? `Merge its work with \`git merge ${branch}\`, or remove the worktree when you are done with it.`
-				: "Inspect or remove the worktree when you are done with it.")
-		);
+		// The wording branches on WHY it was kept: "kept at <dir>" would be a
+		// lie for a vanished directory, and `git merge` only helps once work
+		// is committed — uncommitted changes live only in the worktree itself.
+		if (outcome.code === "vanished") {
+			return `Worktree: its directory ${info.dir} no longer exists — nothing was cleaned up.`;
+		}
+		const where = `Worktree: kept at ${info.dir}` + (branch ? ` on branch ${branch}` : "") + ` — ${outcome.reason}.`;
+		if (outcome.code === "dirty") {
+			return (
+				`${where} Inspect the changes there` +
+				(branch ? `; committed work can be merged from the main checkout with \`git merge ${branch}\`` : "") +
+				`. Remove the worktree when you are done with it.`
+			);
+		}
+		return `${where} Inspect or remove the worktree when you are done with it.`;
 	}
 	return `Worktree: cleanup failed (${outcome.error}) — the worktree at ${info.dir} is still on disk; remove it manually.`;
 }

@@ -13,6 +13,9 @@
  *   - Cleanup command: gets PI_SUBAGENT_WORKTREE_DIR and
  *     PI_SUBAGENT_WORKTREE_BRANCH (empty string when detached), runs in the
  *     parent cwd, must exit 0.
+ *   - Both commands must let stdout/stderr close when they exit: a background
+ *     process left attached to those pipes (e.g. a daemon started without
+ *     `>/dev/null 2>&1`) stalls the runner until the timeout fires.
  *
  * Cleanup is deliberately cautious: a worktree is only auto-removed when the
  * child SUCCEEDED and the worktree is provably clean — uncommitted changes,
@@ -25,7 +28,7 @@
  * throwaway git repo and no config fixtures.
  */
 
-import { execFile, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
@@ -73,24 +76,31 @@ async function runCommand(
 		const e = error as { code?: unknown; killed?: boolean; signal?: string; stderr?: string };
 		const stderr = typeof e.stderr === "string" ? e.stderr.trim() : "";
 		const detail = stderr === "" ? "" : `: ${stderr}`;
-		// A timeout shows up as the child being killed by a signal, not as an
-		// exit code — report it as what it is so the user tunes their command.
-		if (e.killed || e.signal) {
+		// Node sets `killed` only when IT initiated the kill — i.e. our timeout
+		// fired. Any other signal means the command crashed or was killed from
+		// outside; report that honestly instead of steering the user toward
+		// tuning a timeout that was never the problem.
+		if (e.killed) {
 			throw new Error(`${what} timed out after ${opts.timeoutMs / 1000}s${detail}`);
+		}
+		if (e.signal) {
+			throw new Error(`${what} was killed by signal ${e.signal}${detail}`);
 		}
 		throw new Error(`${what} failed (exit code ${typeof e.code === "number" ? e.code : "unknown"})${detail}`);
 	}
 }
 
-// Local git reads (status, rev-parse) are milliseconds, so sync is fine here
-// — only the user-pluggable commands above need to be async. stderr is piped
-// (not inherited) so git's chatter never leaks into pi's TUI.
-function gitOutput(dir: string, args: string[]): string {
-	return execFileSync("git", ["-C", dir, ...args], {
+// Local git reads (status, rev-parse) are ALSO async: they run inside pi's
+// TUI process, and `git status` on a freshly created worktree has a cold stat
+// cache — seconds on a big repo, which would freeze rendering if run sync.
+// stderr is captured (not inherited) so git's chatter never leaks into the TUI.
+async function gitOutput(dir: string, args: string[]): Promise<string> {
+	const { stdout } = await execFileAsync("git", ["-C", dir, ...args], {
 		encoding: "utf8",
 		timeout: 10_000,
-		stdio: ["ignore", "pipe", "pipe"],
-	}).trim();
+		maxBuffer: MAX_BUFFER_BYTES,
+	});
+	return stdout.trim();
 }
 
 /**
@@ -148,10 +158,17 @@ export async function createWorktree(opts: {
 	let branch: string;
 	let baseCommit: string;
 	try {
-		branch = gitOutput(dir, ["rev-parse", "--abbrev-ref", "HEAD"]);
-		baseCommit = gitOutput(dir, ["rev-parse", "HEAD"]);
-	} catch {
-		throw new Error(`worktree create command returned a directory that is not a git work tree: ${dir}`);
+		branch = await gitOutput(dir, ["rev-parse", "--abbrev-ref", "HEAD"]);
+		baseCommit = await gitOutput(dir, ["rev-parse", "HEAD"]);
+	} catch (error) {
+		// Keep git's own words: an unborn HEAD (e.g. `git worktree add
+		// --orphan`) IS a git work tree, just unusable here — the dirty check
+		// needs a base commit to compare against.
+		const detail = error instanceof Error ? error.message : String(error);
+		throw new Error(
+			`worktree create command printed ${dir}, but snapshotting HEAD there failed — ` +
+				`not a git work tree, or it has no commits yet (the dirty check needs a base commit): ${detail}`,
+		);
 	}
 
 	return { dir, branch, baseCommit, parentCwd: opts.parentCwd };
@@ -164,22 +181,24 @@ export async function createWorktree(opts: {
  * untracked files (`git status --porcelain` non-empty) OR a HEAD that moved
  * off the creation-time base commit — a subagent that COMMITTED its work has
  * a clean status, and auto-removing the worktree + branch would destroy it.
- * If git errors (directory deleted, corrupted, ...) we can't prove it's
- * clean, so answer dirty — the failure mode is a leftover directory, never
- * lost work.
+ * THROWS when git itself fails (directory deleted mid-check, corruption, a
+ * timed-out status) — finishWorktree turns that into its own honest "kept"
+ * reason instead of this function silently claiming "it has changes".
  */
-export function isWorktreeDirty(info: WorktreeInfo): boolean {
-	try {
-		if (gitOutput(info.dir, ["status", "--porcelain"]) !== "") return true;
-		return gitOutput(info.dir, ["rev-parse", "HEAD"]) !== info.baseCommit;
-	} catch {
-		return true;
-	}
+export async function isWorktreeDirty(info: WorktreeInfo): Promise<boolean> {
+	if ((await gitOutput(info.dir, ["status", "--porcelain"])) !== "") return true;
+	return (await gitOutput(info.dir, ["rev-parse", "HEAD"])) !== info.baseCommit;
 }
 
+// The `code` on "kept" is machine-readable so the watcher can word its report
+// per case (the human `reason` alone was easy to contradict).
 export type WorktreeOutcome =
 	| { status: "removed" }
-	| { status: "kept"; reason: string }
+	| {
+			status: "kept";
+			code: "vanished" | "mode-never" | "child-failed" | "unverified" | "dirty";
+			reason: string;
+	  }
 	| { status: "cleanup-failed"; error: string };
 
 /**
@@ -223,9 +242,26 @@ export async function finishWorktree(opts: {
 	command: string;
 	childSucceeded: boolean;
 }): Promise<WorktreeOutcome> {
-	if (!existsSync(opts.info.dir)) return { status: "kept", reason: "directory no longer exists" };
-	if (opts.mode === "never") return { status: "kept", reason: 'worktreeCleanupMode is "never"' };
-	if (!opts.childSucceeded) return { status: "kept", reason: "the sub-agent did not finish successfully" };
-	if (isWorktreeDirty(opts.info)) return { status: "kept", reason: "it has changes" };
+	if (!existsSync(opts.info.dir)) {
+		return { status: "kept", code: "vanished", reason: "its directory no longer exists" };
+	}
+	if (opts.mode === "never") {
+		return { status: "kept", code: "mode-never", reason: 'worktreeCleanupMode is "never"' };
+	}
+	if (!opts.childSucceeded) {
+		return { status: "kept", code: "child-failed", reason: "the sub-agent did not finish successfully" };
+	}
+	let dirty: boolean;
+	try {
+		dirty = await isWorktreeDirty(opts.info);
+	} catch (error) {
+		// Can't prove it's clean → keep. The failure mode is a leftover
+		// directory, never lost work.
+		const detail = error instanceof Error ? error.message : String(error);
+		return { status: "kept", code: "unverified", reason: `its state could not be verified (${detail})` };
+	}
+	if (dirty) {
+		return { status: "kept", code: "dirty", reason: "it has changes" };
+	}
 	return removeWorktree(opts.info, opts.command);
 }
