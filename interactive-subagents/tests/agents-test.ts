@@ -45,12 +45,21 @@ eq("thinking", scout.thinking, "low");
 eq("tools kept as one string", scout.tools, "read, bash");
 eq("context", scout.context, "forked");
 eq("auto-exit false", scout.autoExit, false);
+eq("valid frontmatter has no problems", scout.problems, []);
 eq("body is the system prompt", scout.body, "You are a scout.");
 
-// The old `mode:` key was hard-cut in the rename to `context:` — it must be
-// ignored entirely, so an un-migrated file just falls back to the default.
+// The old `mode:` key (and its `fork` value) was hard-cut in the rename to
+// `context:` — leftovers never apply, and are reported as problems so an
+// un-migrated file fails loud instead of silently spawning a fresh child.
 writeFileSync(join(globalDefs, "legacy.md"), "---\nmode: fork\n---\nOld-style file.\n");
-eq("old mode: key is ignored", loadAgentDefinition("legacy", cwd)!.context, undefined);
+const legacy = loadAgentDefinition("legacy", cwd)!;
+eq("old mode: key does not set context", legacy.context, undefined);
+ok("old mode: key is reported as a problem", legacy.problems[0].includes('"context:"'));
+
+writeFileSync(join(globalDefs, "halfway.md"), "---\ncontext: fork\n---\nNew key, old value.\n");
+const halfway = loadAgentDefinition("halfway", cwd)!;
+eq("old fork value does not set context", halfway.context, undefined);
+ok("old fork value is reported as a problem", halfway.problems[0].includes('"forked"'));
 
 writeFileSync(join(globalDefs, "crlf.md"), "---\r\ndescription: windows line endings\r\n---\r\nBody here.\r\n");
 eq("CRLF frontmatter still parses", loadAgentDefinition("crlf", cwd)!.description, "windows line endings");
@@ -72,7 +81,7 @@ eq("shadowed source is project", worker.source, "project");
 ok("filePath points into .pi/subagents", worker.filePath.startsWith(projectDefs));
 
 const names = listAgentDefinitions(cwd).map((def) => def.name);
-eq("list is the sorted union (no duplicate worker)", names, ["bare", "crlf", "legacy", "scout", "worker"]);
+eq("list is the sorted union (no duplicate worker)", names, ["bare", "crlf", "halfway", "legacy", "scout", "worker"]);
 
 // ── inventory ────────────────────────────────────────────────────────────
 
@@ -91,6 +100,8 @@ eq("first usable model wins", scoutInfo.resolvedModel, "openai-codex/gpt-5.5");
 eq("valid agent has no problems", scoutInfo.problems, []);
 const workerInfo = inventory.find((a) => a.name === "worker")!;
 eq("defaults applied: context fresh, auto-exit true", [workerInfo.context, workerInfo.autoExit], ["fresh", true]);
+const legacyInfo = inventory.find((a) => a.name === "legacy")!;
+eq("frontmatter problems flow into the inventory", legacyInfo.problems.length, 1);
 
 // An agent whose models are all unusable: the problem must carry the real
 // per-entry reasons (flattened to one line), not a generic string.

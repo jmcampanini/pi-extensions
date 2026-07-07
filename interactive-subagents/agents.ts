@@ -60,6 +60,13 @@ export interface AgentDefinition {
 	context?: "fresh" | "forked";
 	/** true = autonomous (exits when its turn completes). Default true. */
 	autoExit?: boolean;
+	/**
+	 * Problems found in the frontmatter itself: an unknown `context:` value,
+	 * or the removed `mode:` key. Kept on the definition (not just the
+	 * inventory) so spawning can fail loud — otherwise an un-migrated
+	 * `mode: fork` file would silently spawn a fresh child.
+	 */
+	problems: string[];
 	/** Everything after the frontmatter: the agent's system-prompt text. */
 	body: string;
 }
@@ -88,6 +95,17 @@ function parseAgentMarkdown(
 	const rawAutoExit = frontmatterValue(frontmatter, "auto-exit");
 	const rawModels = frontmatterValue(frontmatter, "models");
 
+	// The `mode:` key (values fork/fresh) was renamed to `context:` (values
+	// forked/fresh) with a hard cutover. Report leftovers as problems instead
+	// of silently defaulting to a fresh context.
+	const problems: string[] = [];
+	if (frontmatterValue(frontmatter, "mode") !== undefined) {
+		problems.push('uses the removed "mode:" key — rename it to "context:" (values: fresh, forked)');
+	}
+	if (rawContext !== undefined && rawContext !== "fresh" && rawContext !== "forked") {
+		problems.push(`invalid context "${rawContext}" — use "fresh" or "forked"`);
+	}
+
 	return {
 		name,
 		source,
@@ -100,6 +118,7 @@ function parseAgentMarkdown(
 		tools: frontmatterValue(frontmatter, "tools"),
 		context: rawContext === "forked" || rawContext === "fresh" ? rawContext : undefined,
 		autoExit: rawAutoExit === "true" ? true : rawAutoExit === "false" ? false : undefined,
+		problems,
 		body,
 	};
 }
@@ -170,7 +189,7 @@ function problemText(error: unknown): string {
 
 export function collectAgentInventory(registry: ModelLookup, cwd: string): AgentInfo[] {
 	return listAgentDefinitions(cwd).map((def) => {
-		const problems: string[] = [];
+		const problems: string[] = [...def.problems];
 		let resolvedModel: string | undefined;
 
 		if (def.models && def.models.length > 0) {

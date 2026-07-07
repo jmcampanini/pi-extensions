@@ -96,6 +96,15 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			"the result. Call this multiple times to run sub-agents in parallel.",
 		parameters: SubagentParams,
 		async execute(_toolCallId, params: SubagentParamsType, _signal, _onUpdate, ctx) {
+			// The old `mode` param was renamed to `context` with a hard cutover.
+			// Extra params pass schema validation, so without this check a call
+			// imitating a pre-rename transcript would silently spawn fresh.
+			if ("mode" in params) {
+				throw new Error(
+					'The "mode" parameter was renamed to "context" (values: "fresh" | "forked"). Retry with context.',
+				);
+			}
+
 			// Guards: we need tmux and a persistent parent session.
 			if (!isTmuxAvailable()) {
 				throw new Error(
@@ -120,6 +129,11 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 						? `Unknown agent "${agentName}" — no ${agentName}.md in ${projectDefsDir(ctx.cwd)} or ${agentDefsDir()}. Use subagents_list to see available agents.`
 						: `No agent given, so this spawn defaults to "worker" — but ${join(agentDefsDir(), "worker.md")} does not exist. Create it (it defines the default sub-agent), or pass an agent explicitly.`,
 				);
+			}
+			// Frontmatter problems (removed mode: key, bad context value) fail the
+			// spawn instead of silently running with a default the file didn't ask for.
+			if (agentDef.problems.length > 0) {
+				throw new Error(`Agent "${agentName}" (${agentDef.filePath}): ${agentDef.problems.join("; ")}`);
 			}
 			const context = params.context ?? agentDef.context ?? "fresh";
 			// An explicit param is just a one-entry candidate list — same

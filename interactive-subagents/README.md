@@ -76,6 +76,8 @@ Definitions load from two places, most specific wins:
 
 All keys are optional; a file without `---` fences is treated as all body. Parsing is line-based `key: value`, not full YAML.
 
+The pre-rename `mode:` key (values `fork`/`fresh`) is gone. A file that still uses it — or that uses the old `fork` value under `context:` — shows a ⚠ problem in `/subagents-available` and fails the spawn with a migration message, rather than silently running with a fresh context.
+
 Example (`~/.pi/agent/subagents/scout.md`):
 
 ```markdown
