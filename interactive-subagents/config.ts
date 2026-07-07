@@ -29,12 +29,36 @@ export interface SubagentsConfig {
 	mainWidth: string;
 	/** Pause between opening a pane and typing the launch command. */
 	shellReadyDelayMs: number;
+	/** Shell command (run via bash -c) that creates a worktree and prints its directory. */
+	worktreeCreateCommand: string;
+	/** Shell command (run via bash -c) that removes a finished subagent's worktree. */
+	worktreeCleanupCommand: string;
+	/** "auto" removes clean worktrees after a successful child; "never" always keeps them. */
+	worktreeCleanupMode: "auto" | "never";
 }
+
+// The default worktree commands are plain shell strings — they double as
+// documentation of the contract a replacement command must follow (users
+// override them to plug in tools like `grove`).
+//
+// Create: gets PI_SUBAGENT_WORKTREE_NAME in its env, must exit 0 and print
+// the worktree directory as the last non-empty stdout line. Git's chatter is
+// sent to stderr so stdout stays clean, and the `*` gitignore makes the
+// `.pi/worktrees/` holding directory ignore itself in the parent repo.
+export const DEFAULT_WORKTREE_CREATE_COMMAND = `ROOT="$(git rev-parse --show-toplevel)" && WT="$ROOT/.pi/worktrees/$PI_SUBAGENT_WORKTREE_NAME" && mkdir -p "$ROOT/.pi/worktrees" && printf '*\\n' >"$ROOT/.pi/worktrees/.gitignore" && git worktree add -b "pi/$PI_SUBAGENT_WORKTREE_NAME" "$WT" >&2 && echo "$WT"`;
+
+// Cleanup: gets PI_SUBAGENT_WORKTREE_DIR and PI_SUBAGENT_WORKTREE_BRANCH
+// (empty string when the worktree was on a detached HEAD — the `[ -n ]`
+// guard skips branch deletion in that case).
+export const DEFAULT_WORKTREE_CLEANUP_COMMAND = `git worktree remove "$PI_SUBAGENT_WORKTREE_DIR" >&2 && if [ -n "$PI_SUBAGENT_WORKTREE_BRANCH" ]; then git branch -D "$PI_SUBAGENT_WORKTREE_BRANCH" >&2; fi`;
 
 const DEFAULTS: SubagentsConfig = {
 	layout: "window",
 	mainWidth: "60%",
 	shellReadyDelayMs: 500,
+	worktreeCreateCommand: DEFAULT_WORKTREE_CREATE_COMMAND,
+	worktreeCleanupCommand: DEFAULT_WORKTREE_CLEANUP_COMMAND,
+	worktreeCleanupMode: "auto",
 };
 
 type Env = Record<string, string | undefined>;
@@ -69,6 +93,19 @@ function requireDelayMs(value: unknown, source: string): number {
 	throw new Error(`${source}: invalid shellReadyDelayMs ${JSON.stringify(value)} — use a non-negative integer`);
 }
 
+// Shared by both worktree commands: any non-empty string is a valid shell
+// command (we can't validate shell syntax here — bash reports that at run
+// time), but an empty/blank value would silently do nothing, so reject it.
+function requireCommandString(value: unknown, source: string): string {
+	if (typeof value === "string" && value.trim() !== "") return value;
+	throw new Error(`${source}: invalid command ${JSON.stringify(value)} — use a non-empty shell command string`);
+}
+
+function requireWorktreeCleanupMode(value: unknown, source: string): SubagentsConfig["worktreeCleanupMode"] {
+	if (value === "auto" || value === "never") return value;
+	throw new Error(`${source}: invalid worktreeCleanupMode ${JSON.stringify(value)} — valid values: auto, never`);
+}
+
 // ── loading ──────────────────────────────────────────────────────────────
 
 export function loadConfig(env: Env = process.env): SubagentsConfig {
@@ -101,6 +138,24 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 		if (file.shellReadyDelayMs !== undefined) {
 			result.shellReadyDelayMs = requireDelayMs(file.shellReadyDelayMs, `${filePath}: shellReadyDelayMs`);
 		}
+		if (file.worktreeCreateCommand !== undefined) {
+			result.worktreeCreateCommand = requireCommandString(
+				file.worktreeCreateCommand,
+				`${filePath}: worktreeCreateCommand`,
+			);
+		}
+		if (file.worktreeCleanupCommand !== undefined) {
+			result.worktreeCleanupCommand = requireCommandString(
+				file.worktreeCleanupCommand,
+				`${filePath}: worktreeCleanupCommand`,
+			);
+		}
+		if (file.worktreeCleanupMode !== undefined) {
+			result.worktreeCleanupMode = requireWorktreeCleanupMode(
+				file.worktreeCleanupMode,
+				`${filePath}: worktreeCleanupMode`,
+			);
+		}
 	}
 
 	// Layer 3: env vars override the file (handy for direnv and one-offs).
@@ -121,6 +176,24 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 		result.shellReadyDelayMs = requireDelayMs(
 			Number.isNaN(converted) ? raw : converted,
 			"PI_SUBAGENT_SHELL_READY_DELAY_MS",
+		);
+	}
+	if (env.PI_SUBAGENT_WORKTREE_CREATE_COMMAND) {
+		result.worktreeCreateCommand = requireCommandString(
+			env.PI_SUBAGENT_WORKTREE_CREATE_COMMAND,
+			"PI_SUBAGENT_WORKTREE_CREATE_COMMAND",
+		);
+	}
+	if (env.PI_SUBAGENT_WORKTREE_CLEANUP_COMMAND) {
+		result.worktreeCleanupCommand = requireCommandString(
+			env.PI_SUBAGENT_WORKTREE_CLEANUP_COMMAND,
+			"PI_SUBAGENT_WORKTREE_CLEANUP_COMMAND",
+		);
+	}
+	if (env.PI_SUBAGENT_WORKTREE_CLEANUP_MODE) {
+		result.worktreeCleanupMode = requireWorktreeCleanupMode(
+			env.PI_SUBAGENT_WORKTREE_CLEANUP_MODE,
+			"PI_SUBAGENT_WORKTREE_CLEANUP_MODE",
 		);
 	}
 

@@ -204,5 +204,32 @@ ok("problem bullets keep their shape", brokenLines.some((l) => l.trim().startsWi
 ok("second problem gets its own block", brokenLines.some((l) => l.includes("⚠ Invalid thinking level")));
 ok("broken view still fits the width", brokenLines.every((l) => l.length <= WIDTH));
 
+// ── worktree frontmatter (tri-state, mirrors auto-exit) ──────────────────
+// Placed after the overview-rendering tests: writing these agent files
+// earlier would change the inventory counts those tests assert on.
+
+writeFileSync(join(globalDefs, "isolated.md"), "---\nworktree: true\n---\nI.\n");
+eq("worktree true", loadAgentDefinition("isolated", cwd)!.worktree, true);
+writeFileSync(join(globalDefs, "shared.md"), "---\nworktree: false\n---\nS.\n");
+eq("worktree false", loadAgentDefinition("shared", cwd)!.worktree, false);
+eq("worktree absent = undefined", scout.worktree, undefined);
+
+// Any other value (e.g. YAML's `yes`) is a PROBLEM, not a silent default —
+// spawning without isolation is exactly the hazard the flag prevents.
+writeFileSync(join(globalDefs, "sloppy.md"), "---\nworktree: yes\n---\nY.\n");
+const sloppy = loadAgentDefinition("sloppy", cwd)!;
+eq("worktree invalid value = undefined", sloppy.worktree, undefined);
+eq("worktree invalid value reported as problem", sloppy.problems.length, 1);
+ok("worktree problem names the bad value", sloppy.problems[0].includes('invalid worktree "yes"'));
+
+// Inventory turns the tri-state into a concrete boolean (absent → false),
+// and the overview's meta row tags only agents that opted in — for an agent
+// whose only deviation is the worktree, the row is exactly "worktree".
+const withWorktree = collectAgentInventory(registry, cwd);
+eq("inventory: worktree true carried through", withWorktree.find((a) => a.name === "isolated")!.worktree, true);
+eq("inventory: absent defaults to false", withWorktree.find((a) => a.name === "worker")!.worktree, false);
+const worktreeLines = formatAgentOverviewLines(withWorktree, WIDTH, dirs);
+eq("overview tags exactly the one worktree agent", worktreeLines.filter((l) => l.trim() === "worktree").length, 1);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

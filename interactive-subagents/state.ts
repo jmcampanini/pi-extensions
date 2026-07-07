@@ -15,6 +15,7 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { WorktreeInfo } from "./worktree.ts";
 
 // ── the per-child record ─────────────────────────────────────────────────
 
@@ -31,6 +32,8 @@ export interface RunningSubagent {
 	tools?: string;
 	model?: string;
 	autoExit: boolean;
+	/** Set when this child runs in a git worktree — drives end-of-run cleanup. */
+	worktree?: WorktreeInfo;
 	/** Cancels this child's watcher (used by the picker's x = stop). */
 	abort: AbortController;
 	/** True when a human stopped it via the picker — the model gets told. */

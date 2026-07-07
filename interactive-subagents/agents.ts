@@ -61,6 +61,8 @@ export interface AgentDefinition {
 	context?: "fresh" | "forked";
 	/** true = autonomous (exits when its turn completes). Default true. */
 	autoExit?: boolean;
+	/** true = spawn this agent in a fresh git worktree by default. */
+	worktree?: boolean;
 	/**
 	 * Problems found in the frontmatter itself: an unknown `context:` value,
 	 * or the removed `mode:` key. Kept on the definition (not just the
@@ -94,6 +96,7 @@ function parseAgentMarkdown(
 
 	const rawContext = frontmatterValue(frontmatter, "context");
 	const rawAutoExit = frontmatterValue(frontmatter, "auto-exit");
+	const rawWorktree = frontmatterValue(frontmatter, "worktree");
 	const rawModels = frontmatterValue(frontmatter, "models");
 
 	// The `mode:` key (values fork/fresh) was renamed to `context:` (values
@@ -105,6 +108,11 @@ function parseAgentMarkdown(
 	}
 	if (rawContext !== undefined && rawContext !== "fresh" && rawContext !== "forked") {
 		problems.push(`invalid context "${rawContext}" — use "fresh" or "forked"`);
+	}
+	// Same loudness for worktree: `worktree: yes` silently spawning WITHOUT
+	// isolation would be exactly the parallel-edit hazard the flag prevents.
+	if (rawWorktree !== undefined && rawWorktree !== "true" && rawWorktree !== "false") {
+		problems.push(`invalid worktree "${rawWorktree}" — use "true" or "false"`);
 	}
 
 	return {
@@ -119,6 +127,7 @@ function parseAgentMarkdown(
 		tools: frontmatterValue(frontmatter, "tools"),
 		context: rawContext === "forked" || rawContext === "fresh" ? rawContext : undefined,
 		autoExit: rawAutoExit === "true" ? true : rawAutoExit === "false" ? false : undefined,
+		worktree: rawWorktree === "true" ? true : rawWorktree === "false" ? false : undefined,
 		problems,
 		body,
 	};
@@ -181,6 +190,8 @@ export interface AgentInfo {
 	tools?: string;
 	context: "fresh" | "forked";
 	autoExit: boolean;
+	/** true = this agent runs in a fresh git worktree by default. */
+	worktree: boolean;
 	/** Anything that would break or degrade spawning this agent. Empty = valid. */
 	problems: string[];
 }
@@ -224,6 +235,7 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 			tools: def.tools,
 			context: def.context ?? "fresh",
 			autoExit: def.autoExit ?? true,
+			worktree: def.worktree ?? false,
 			problems,
 		};
 	});
@@ -356,7 +368,7 @@ export function formatAgentOverviewLines(
 			` global:  ${tildify(dirs.global)}`,
 			` project: ${tildify(dirs.project)}`,
 			...wrapText(
-				"Create <name>.md files there (frontmatter: description, models, thinking, tools, context, auto-exit; body = system prompt).",
+				"Create <name>.md files there (frontmatter: description, models, thinking, tools, context, auto-exit, worktree; body = system prompt).",
 				Math.max(1, width - 1),
 			).map((wrapped) => ` ${wrapped}`),
 		].map((line) => clampVisible(line, width));
@@ -443,6 +455,9 @@ export function formatAgentOverviewLines(
 		if (agent.tools) parts.push({ text: `tools: ${agent.tools}`, paint: muted });
 		if (agent.context === "forked") parts.push({ text: "forked", paint: warning });
 		if (!agent.autoExit) parts.push({ text: "interactive", paint: warning });
+		// Worktree isolation changes where the child runs — a run-behavior
+		// deviation, so it renders loud like forked/interactive.
+		if (agent.worktree) parts.push({ text: "worktree", paint: warning });
 		let row = "";
 		let rowLength = 0;
 		const flushRow = () => {
