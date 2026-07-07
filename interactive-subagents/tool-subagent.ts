@@ -73,7 +73,13 @@ const SubagentParams = Type.Object({
 				`Thinking/effort level override: ${THINKING_LEVELS.join(", ")}. Defaults to the agent definition's \`thinking:\` value.`,
 		}),
 	),
-	cwd: Type.Optional(Type.String({ description: "Working directory for the subagent (defaults to this session's cwd)" })),
+	cwd: Type.Optional(
+		Type.String({
+			description:
+				"Working directory for the subagent (defaults to this session's cwd). " +
+				"Passing cwd also overrides an agent's frontmatter worktree default — the child runs here, not in a worktree.",
+		}),
+	),
 	worktree: Type.Optional(
 		Type.Boolean({
 			description:
@@ -354,8 +360,19 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 				};
 			} catch (error) {
 				// Best-effort rollback; removeWorktree never throws, and the
-				// original launch error is what the model needs to see.
-				if (worktree) await removeWorktree(worktree, config.worktreeCleanupCommand);
+				// original launch error is what the model needs to see — but a
+				// rollback that ITSELF failed must not be silent, or the leaked
+				// worktree (and branch) would linger with zero signal anywhere.
+				if (worktree) {
+					const rollback = await removeWorktree(worktree, config.worktreeCleanupCommand);
+					if (rollback.status === "cleanup-failed") {
+						const message = error instanceof Error ? error.message : String(error);
+						throw new Error(
+							`${message}\n\nAlso: rolling back the worktree failed (${rollback.error}) — ` +
+								`remove ${worktree.dir} manually.`,
+						);
+					}
+				}
 				throw error;
 			}
 		},

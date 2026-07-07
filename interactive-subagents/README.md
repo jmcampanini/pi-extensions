@@ -125,7 +125,7 @@ Definitions load from two places, most specific wins:
 | `tools` | Comma-separated allowlist for `pi --tools` |
 | `context` | `fresh` or `forked` (default `fresh`) |
 | `auto-exit` | `true` (default) or `false` |
-| `worktree` | `true` = spawn this agent in a fresh git worktree by default (the call's `worktree` param overrides it). Default `false`. See [Worktree isolation](#worktree-isolation) |
+| `worktree` | `true` = spawn this agent in a fresh git worktree by default (the call's `worktree` param overrides it, and so does an explicit `cwd` param — the child then runs there, with no worktree). Default `false`. See [Worktree isolation](#worktree-isolation) |
 
 All keys are optional; a file without `---` fences is treated as all body. Parsing is line-based `key: value`, not full YAML.
 

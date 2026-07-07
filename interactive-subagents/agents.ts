@@ -109,6 +109,11 @@ function parseAgentMarkdown(
 	if (rawContext !== undefined && rawContext !== "fresh" && rawContext !== "forked") {
 		problems.push(`invalid context "${rawContext}" — use "fresh" or "forked"`);
 	}
+	// Same loudness for worktree: `worktree: yes` silently spawning WITHOUT
+	// isolation would be exactly the parallel-edit hazard the flag prevents.
+	if (rawWorktree !== undefined && rawWorktree !== "true" && rawWorktree !== "false") {
+		problems.push(`invalid worktree "${rawWorktree}" — use "true" or "false"`);
+	}
 
 	return {
 		name,

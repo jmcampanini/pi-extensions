@@ -51,7 +51,25 @@ export interface WorktreeInfo {
 // so it gets a generous timeout; cleanup is local-only and gets less.
 const CREATE_TIMEOUT_MS = 120_000;
 const CLEANUP_TIMEOUT_MS = 60_000;
+const GIT_TIMEOUT_MS = 10_000;
 const MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Turn an execFile failure into a plain Error that says what actually
+ * happened. Node sets `killed` only when IT initiated the kill — i.e. our
+ * timeout fired; any other signal means the command crashed or was killed
+ * from outside. The trimmed stderr rides along because it is usually the
+ * only real clue (e.g. git's "not a git repository"). Exported for tests —
+ * the timeout branch cannot be exercised through the 120s public timeouts.
+ */
+export function describeExecError(error: unknown, what: string, timeoutMs: number): Error {
+	const e = error as { code?: unknown; killed?: boolean; signal?: string; stderr?: string };
+	const stderr = typeof e.stderr === "string" ? e.stderr.trim() : "";
+	const detail = stderr === "" ? "" : `: ${stderr}`;
+	if (e.killed) return new Error(`${what} timed out after ${timeoutMs / 1000}s${detail}`);
+	if (e.signal) return new Error(`${what} was killed by signal ${e.signal}${detail}`);
+	return new Error(`${what} failed (exit code ${typeof e.code === "number" ? e.code : "unknown"})${detail}`);
+}
 
 // ── running the user's commands ────────────────────────────────────────────
 
@@ -73,34 +91,26 @@ async function runCommand(
 			maxBuffer: MAX_BUFFER_BYTES,
 		});
 	} catch (error) {
-		const e = error as { code?: unknown; killed?: boolean; signal?: string; stderr?: string };
-		const stderr = typeof e.stderr === "string" ? e.stderr.trim() : "";
-		const detail = stderr === "" ? "" : `: ${stderr}`;
-		// Node sets `killed` only when IT initiated the kill — i.e. our timeout
-		// fired. Any other signal means the command crashed or was killed from
-		// outside; report that honestly instead of steering the user toward
-		// tuning a timeout that was never the problem.
-		if (e.killed) {
-			throw new Error(`${what} timed out after ${opts.timeoutMs / 1000}s${detail}`);
-		}
-		if (e.signal) {
-			throw new Error(`${what} was killed by signal ${e.signal}${detail}`);
-		}
-		throw new Error(`${what} failed (exit code ${typeof e.code === "number" ? e.code : "unknown"})${detail}`);
+		throw describeExecError(error, what, opts.timeoutMs);
 	}
 }
 
 // Local git reads (status, rev-parse) are ALSO async: they run inside pi's
 // TUI process, and `git status` on a freshly created worktree has a cold stat
 // cache — seconds on a big repo, which would freeze rendering if run sync.
-// stderr is captured (not inherited) so git's chatter never leaks into the TUI.
+// stderr is captured (not inherited) so git's chatter never leaks into the
+// TUI, and failures go through the same honest classifier as the commands.
 async function gitOutput(dir: string, args: string[]): Promise<string> {
-	const { stdout } = await execFileAsync("git", ["-C", dir, ...args], {
-		encoding: "utf8",
-		timeout: 10_000,
-		maxBuffer: MAX_BUFFER_BYTES,
-	});
-	return stdout.trim();
+	try {
+		const { stdout } = await execFileAsync("git", ["-C", dir, ...args], {
+			encoding: "utf8",
+			timeout: GIT_TIMEOUT_MS,
+			maxBuffer: MAX_BUFFER_BYTES,
+		});
+		return stdout.trim();
+	} catch (error) {
+		throw describeExecError(error, `git ${args.join(" ")}`, GIT_TIMEOUT_MS);
+	}
 }
 
 /**
@@ -169,6 +179,25 @@ export async function createWorktree(opts: {
 			`worktree create command printed ${dir}, but snapshotting HEAD there failed — ` +
 				`not a git work tree, or it has no commits yet (the dirty check needs a base commit): ${detail}`,
 		);
+	}
+
+	// A misconfigured command that echoes the PARENT checkout would silently
+	// defeat isolation (the child would edit the shared tree) — and cleanup
+	// could later try to remove the parent's own worktree. Fail fast instead.
+	// When the parent cwd is not itself in a git work tree, skip the check —
+	// there is nothing to collide with.
+	try {
+		const parentTop = await gitOutput(opts.parentCwd, ["rev-parse", "--show-toplevel"]);
+		const dirTop = await gitOutput(dir, ["rev-parse", "--show-toplevel"]);
+		if (parentTop === dirTop) {
+			throw new Error(
+				`worktree create command printed ${dir}, which is the parent checkout itself — ` +
+					`it must create a FRESH worktree (its own directory and branch), not reuse the current one`,
+			);
+		}
+	} catch (error) {
+		if (error instanceof Error && error.message.includes("parent checkout itself")) throw error;
+		// parentCwd not in a git work tree: nothing to collide with.
 	}
 
 	return { dir, branch, baseCommit, parentCwd: opts.parentCwd };

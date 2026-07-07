@@ -19,6 +19,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { existsSync } from "node:fs";
 import { config } from "./config.ts";
 import { closePane, pollForExit, refreshLayout, type ExitResult } from "./tmux.ts";
 import { extractSummary } from "./session.ts";
@@ -43,9 +44,12 @@ function humanElapsed(totalSeconds: number): string {
 function worktreeNote(info: WorktreeInfo, outcome: WorktreeOutcome): string {
 	const branch = info.branch === "HEAD" ? undefined : info.branch;
 	if (outcome.status === "removed") {
+		// The cleanup contract only promises the worktree goes away — branch
+		// deletion is a property of the DEFAULT command, so name the branch
+		// without asserting its fate (a grove-style override may keep it).
 		return branch
-			? `Worktree: no changes were made, so its worktree and branch ${branch} were removed.`
-			: "Worktree: no changes were made, so its worktree was removed.";
+			? `Worktree: no changes were made, so the cleanup command removed it (its branch was ${branch}).`
+			: "Worktree: no changes were made, so the cleanup command removed it.";
 	}
 	if (outcome.status === "kept") {
 		// The wording branches on WHY it was kept: "kept at <dir>" would be a
@@ -64,7 +68,14 @@ function worktreeNote(info: WorktreeInfo, outcome: WorktreeOutcome): string {
 		}
 		return `${where} Inspect or remove the worktree when you are done with it.`;
 	}
-	return `Worktree: cleanup failed (${outcome.error}) — the worktree at ${info.dir} is still on disk; remove it manually.`;
+	// cleanup-failed: say only what is observable — the command may have
+	// removed the directory before failing, or done nothing at all.
+	return existsSync(info.dir)
+		? `Worktree: the cleanup command failed (${outcome.error}) — it is still at ${info.dir}` +
+				(branch ? ` on branch ${branch}` : "") +
+				"; remove it manually."
+		: `Worktree: the cleanup command failed (${outcome.error}) after removing the directory` +
+				(branch ? ` — check for a leftover branch ${branch}.` : ".");
 }
 
 /** Register a child and start its supervision machinery. */

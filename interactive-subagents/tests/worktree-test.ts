@@ -1,4 +1,4 @@
-import { createWorktree, finishWorktree, isWorktreeDirty, lastNonEmptyLine, removeWorktree } from "../worktree.ts";
+import { createWorktree, describeExecError, finishWorktree, isWorktreeDirty, lastNonEmptyLine, removeWorktree } from "../worktree.ts";
 import { DEFAULT_WORKTREE_CLEANUP_COMMAND, DEFAULT_WORKTREE_CREATE_COMMAND } from "../config.ts";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, realpathSync, statSync, writeFileSync } from "node:fs";
@@ -104,15 +104,38 @@ eq("last line: whitespace-only stdout is null", lastNonEmptyLine("\n  \n"), null
 		() => createWorktree({ name: "x", parentCwd: repo, command: `echo /definitely/not/a/real/dir` }),
 		["does not exist"]);
 	// exit 0, directory exists, but it's not a git work tree — it must live
-	// OUTSIDE the fixture repo, or git would just walk up and find the repo
+	// OUTSIDE the fixture repo, or git would just walk up and find the repo.
+	// git's own stderr must survive into the message, not just our framing.
 	const plain = tempDir("subagents-plain-");
 	await rejects("fail: non-git directory returned",
 		() => createWorktree({ name: "x", parentCwd: repo, command: `echo "${plain}"` }),
-		["not a git work tree"]);
+		["not a git work tree", "not a git repository"]);
 	// exit 0 but nothing on stdout at all
 	await rejects("fail: no stdout",
 		() => createWorktree({ name: "x", parentCwd: repo, command: `true` }),
 		["printed no directory"]);
+	// exit 0 but the printed path is the PARENT checkout — accepting it would
+	// silently defeat isolation, so the contract rejects it loudly
+	await rejects("fail: parent checkout returned",
+		() => createWorktree({ name: "x", parentCwd: repo, command: `echo .` }),
+		["parent checkout itself"]);
+	// killed by a signal (crash, OOM-kill, pkill): reported as the signal it
+	// was, never as a timeout — and stderr from before the kill survives
+	await rejects("fail: signal-killed is not a timeout",
+		() => createWorktree({ name: "x", parentCwd: repo, command: `echo crashed >&2; kill -KILL $$` }),
+		["was killed by signal SIGKILL", "crashed"]);
+}
+
+// The classifier's timeout branch can't be reached through the 120s public
+// timeouts, so it is exercised directly with Node-shaped error objects.
+{
+	const timeout = describeExecError({ killed: true, signal: "SIGTERM" }, "worktree create command", 120_000);
+	ok("classify: killed=true is a timeout", timeout.message.includes("timed out after 120s"));
+	const signal = describeExecError({ killed: false, signal: "SIGSEGV", stderr: "boom\n" }, "x", 1_000);
+	ok("classify: external signal named with stderr",
+		signal.message.includes("was killed by signal SIGSEGV") && signal.message.includes("boom"));
+	const exit = describeExecError({ code: 7, stderr: "nope" }, "x", 1_000);
+	ok("classify: exit code + stderr", exit.message.includes("exit code 7") && exit.message.includes("nope"));
 }
 
 // Parent cwd isn't a git repo: the DEFAULT command's own `git rev-parse`
@@ -210,12 +233,13 @@ await rejects("fail: non-git parent cwd",
 		{ status: "kept", code: "vanished", reason: "its directory no longer exists" });
 
 	// directory exists but is NOT a git work tree -> state can't be verified ->
-	// kept with an honest reason (we never remove what we can't prove clean)
+	// kept with an honest reason that carries git's actual complaint
 	const swapped = { dir: tempDir("subagents-opaque-"), branch: "b", baseCommit: "x", parentCwd: repo };
 	const unverified = await finishWorktree({ info: swapped, mode: "auto", command: `exit 1`, childSucceeded: true });
-	ok("finish: unverifiable state is kept with reason",
+	ok("finish: unverifiable state is kept with git's reason",
 		unverified.status === "kept" && unverified.code === "unverified" &&
-			unverified.reason.includes("could not be verified"));
+			unverified.reason.includes("could not be verified") &&
+			unverified.reason.includes("not a git repository"));
 }
 
 // ── detached HEAD: create + cleanup ────────────────────────────────────────
