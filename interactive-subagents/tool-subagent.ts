@@ -51,10 +51,10 @@ const SubagentParams = Type.Object({
 				"Agent definition to load defaults from (a <name>.md file in <cwd>/.pi/subagents/ or the global subagents dir; project shadows global — see subagents_list). Default: 'worker'",
 		}),
 	),
-	mode: Type.Optional(
-		Type.Union([Type.Literal("fork"), Type.Literal("fresh")], {
+	context: Type.Optional(
+		Type.Union([Type.Literal("fresh"), Type.Literal("forked")], {
 			description:
-				"'fork' = child inherits this conversation's context (good for follow-up work, reuses the provider prompt cache). " +
+				"'forked' = child inherits this conversation's context (good for follow-up work, reuses the provider prompt cache). " +
 				"'fresh' = clean context (default). Overrides the agent definition.",
 		}),
 	),
@@ -121,7 +121,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 						: `No agent given, so this spawn defaults to "worker" — but ${join(agentDefsDir(), "worker.md")} does not exist. Create it (it defines the default sub-agent), or pass an agent explicitly.`,
 				);
 			}
-			const mode = params.mode ?? agentDef.mode ?? "fresh";
+			const context = params.context ?? agentDef.context ?? "fresh";
 			// An explicit param is just a one-entry candidate list — same
 			// resolution path as the agent's `models:` list, so a bad override
 			// fails fast with the same clear error. No candidates at all means
@@ -153,9 +153,9 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			// Fork needs the parent's session file on disk. pi buffers a brand-new
 			// session in memory until the first assistant reply, so a fork on the
 			// very first turn can race this.
-			if (mode === "fork" && !existsSync(parentSessionFile)) {
+			if (context === "forked" && !existsSync(parentSessionFile)) {
 				throw new Error(
-					"Cannot fork yet: the parent session file has not been written to disk. Try again after this reply, or use mode 'fresh'.",
+					"Cannot fork yet: the parent session file has not been written to disk. Try again after this reply, or use context 'fresh'.",
 				);
 			}
 
@@ -168,13 +168,13 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			// poller trusts this path completely — keep it provably clean.
 			clearExitSidecar(childSessionFile);
 
-			// Fork mode: write the child's session file ourselves, seeded with the
-			// parent's conversation. Fresh mode: seed nothing — pi creates it.
+			// Forked context: write the child's session file ourselves, seeded with
+			// the parent's conversation. Fresh context: seed nothing — pi creates it.
 			// The seed's entry count is recorded so the eventual summary can only
 			// come from turns the CHILD added — without this, a copied parent
 			// assistant message could be reported as the child's "result".
 			let skipEntries = 0;
-			if (mode === "fork") {
+			if (context === "forked") {
 				seedForkSession({ parentSessionFile, childSessionFile, childCwd: cwd });
 				skipEntries = countEntries(childSessionFile);
 			}
@@ -182,11 +182,11 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			// The task the child receives — always delivered as an @file: multi-KB
 			// tasks never touch the shell command line, tasks starting with "-" or
 			// "@" can't be misparsed as CLI flags, and the exact text stays
-			// inspectable under artifacts/. Fork children already carry the
+			// inspectable under artifacts/. Forked children already carry the
 			// conversation so they get the raw task; fresh children also get
 			// instructions about how their run ends.
 			const fullTask =
-				mode === "fork"
+				context === "forked"
 					? params.task
 					: `# Your task\n\n${params.task}\n\n---\n` +
 						(autoExit
@@ -256,7 +256,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 					{
 						type: "text",
 						text:
-							`Sub-agent "${params.name}" started (id ${id}, ${mode} mode). ` +
+							`Sub-agent "${params.name}" started (id ${id}, ${context} context). ` +
 							"Its result will arrive automatically — do not poll; continue with other work or end your turn.",
 					},
 				],
