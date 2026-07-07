@@ -100,7 +100,7 @@ exact file path, with line numbers when you cite code.
 
 ## Also worth knowing
 
-- **`/subagents-available` (human command).** Shows every known agent with full details — description, the model that wins on this machine, thinking, tools, context, validity problems, and the source file path — in a widget above the editor. Human-only and zero-token: it never touches the session or the model's context. Run it again (or send a message) to dismiss. The model's `subagents_list` tool is a terse view over the same inventory.
+- **`/subagents-available` (human command).** Shows one card per known agent in a widget above the editor: the description headline, the model that wins on this machine (or a red problem block when none would), where it came from (project/global), and only the non-default parts of its config — default run behavior and file paths are folded away (the name is the filename). Human-only and zero-token: it never touches the session or the model's context. Run it again (or send a message) to dismiss. The model's `subagents_list` tool is a terse view over the same inventory.
 
 - **Live widget.** While children run, one line per sub-agent appears above the parent's editor: `[agent-type]  name` with a right-anchored elapsed clock, and nothing else — a row existing means it's running. Names that repeat the agent type (`Scout: Auth` next to `[scout]`) are de-duplicated for display. The right edge is reserved for v2's live activity states.
 - **`/subagents-running` (human command).** Opens a picker over the running children: up/down to choose, **Enter** jumps to its pane (switching tmux windows if needed), **z** jumps *and* zooms the pane (`prefix+z` un-zooms), **x** stops it (the model is told it was stopped by the user), Escape cancels.

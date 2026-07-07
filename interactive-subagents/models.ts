@@ -94,8 +94,6 @@ export function resolveUsableModel(candidates: string[], registry: ModelLookup):
 		return `${model.provider}/${model.id}`;
 	}
 
-	throw new Error(
-		`No usable model. Tried, in order:\n${reasons.map((r) => `  - ${r}`).join("\n")}\n` +
-			`Entries are "provider/model" (or an unambiguous bare model id), known to pi, with credentials configured.`,
-	);
+	// Just the per-entry reasons — each one already says what to fix.
+	throw new Error(`No usable model. Tried, in order:\n${reasons.map((r) => `  - ${r}`).join("\n")}`);
 }

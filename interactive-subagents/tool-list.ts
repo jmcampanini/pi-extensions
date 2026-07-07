@@ -37,7 +37,10 @@ export function registerSubagentsListTool(pi: ExtensionAPI): void {
 			}
 			const lines = inventory.map((agent) => {
 				const interactive = agent.autoExit ? "" : " (interactive — a human drives it)";
-				const warning = agent.problems.length > 0 ? ` [⚠ not spawnable: ${agent.problems.join("; ")}]` : "";
+				// Problems keep their line breaks in the inventory; this terse
+				// view flattens them to keep one bullet per agent.
+				const problems = agent.problems.join("; ").replace(/\s*\n\s*/g, " ");
+				const warning = agent.problems.length > 0 ? ` [⚠ not spawnable: ${problems}]` : "";
 				const isDefault = agent.name === "worker" ? " (default)" : "";
 				const source = agent.source === "project" ? " (project)" : "";
 				return `• ${agent.name}${isDefault}${source}${interactive}${warning} — ${agent.description ?? "(no description)"}`;
