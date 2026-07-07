@@ -20,7 +20,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "@sinclair/typebox";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { agentDefsDir, loadAgentDefinition, projectDefsDir } from "./agents.ts";
@@ -35,8 +35,8 @@ import {
 	writeLaunchMeta,
 } from "./launch.ts";
 import { assertValidThinkingLevel, resolveUsableModel, THINKING_LEVELS } from "./models.ts";
-import { countEntries, seedForkSession } from "./session.ts";
-import { createPane, isTmuxAvailable, sendLongCommand, shellQuote, sleep } from "./tmux.ts";
+import { countEntries, seedForkSession, seedFreshSession } from "./session.ts";
+import { closePane, createPane, isTmuxAvailable, sendLongCommand, shellQuote, sleep } from "./tmux.ts";
 import { trackChild } from "./watcher.ts";
 
 const SubagentParams = Type.Object({
@@ -168,74 +168,94 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			// poller trusts this path completely — keep it provably clean.
 			clearExitSidecar(childSessionFile);
 
-			// Fork mode: write the child's session file ourselves, seeded with the
-			// parent's conversation. Fresh mode: seed nothing — pi creates it.
-			// The seed's entry count is recorded so the eventual summary can only
-			// come from turns the CHILD added — without this, a copied parent
-			// assistant message could be reported as the child's "result".
+			// Both modes pre-seed the child's session file so pi's session picker
+			// shows a readable entry: the header's parentSession nests the child
+			// under THIS session in threaded view, and the seeded display name
+			// ("subagent › <agent> › <name>") replaces the raw @file task text.
+			// Fork additionally copies the parent's conversation, and records the
+			// seed's entry count so the eventual summary can only come from turns
+			// the CHILD added — without this, a copied parent assistant message
+			// could be reported as the child's "result".
+			const sessionLabel = `subagent › ${agentName} › ${params.name}`;
 			let skipEntries = 0;
 			if (mode === "fork") {
-				seedForkSession({ parentSessionFile, childSessionFile, childCwd: cwd });
+				seedForkSession({ parentSessionFile, childSessionFile, childCwd: cwd, name: sessionLabel });
 				skipEntries = countEntries(childSessionFile);
+			} else {
+				seedFreshSession({ parentSessionFile, childSessionFile, childCwd: cwd, name: sessionLabel });
 			}
 
-			// The task the child receives — always delivered as an @file: multi-KB
-			// tasks never touch the shell command line, tasks starting with "-" or
-			// "@" can't be misparsed as CLI flags, and the exact text stays
-			// inspectable under artifacts/. Fork children already carry the
-			// conversation so they get the raw task; fresh children also get
-			// instructions about how their run ends.
-			const fullTask =
-				mode === "fork"
-					? params.task
-					: `# Your task\n\n${params.task}\n\n---\n` +
-						(autoExit
-							? "Complete your task autonomously. When you finish your final reply, this session closes automatically. "
-							: "When your task is complete, write a final summary message and then call the subagent_done tool. If you are blocked, call caller_ping. ") +
-						"Your final assistant message is reported back to the caller as your result.";
-			const taskFile = join(base, "tasks", `${slug}-${id}.md`);
-			mkdirSync(dirname(taskFile), { recursive: true });
-			writeFileSync(taskFile, fullTask, "utf8");
-
-			// The agent's body becomes an appended system prompt. We pass a FILE
-			// PATH — pi auto-reads existing paths for --append-system-prompt —
-			// which sidesteps shell-escaping of multiline text entirely.
-			let systemPromptFile: string | undefined;
-			if (agentDef.body !== "") {
-				systemPromptFile = join(base, "sysprompts", `${slug}-${id}.md`);
-				mkdirSync(dirname(systemPromptFile), { recursive: true });
-				writeFileSync(systemPromptFile, agentDef.body, "utf8");
-			}
-
-			// Assemble the launch command (see launch.ts for every piece).
-			const command = buildLaunchCommand({
-				cwd,
-				env: buildChildEnv({
-					PI_SUBAGENT_SESSION: childSessionFile,
-					PI_SUBAGENT_NAME: params.name,
-					PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
-				}),
-				sessionFile: childSessionFile,
-				model,
-				thinking,
-				systemPromptFile,
-				tools,
-				promptArg: shellQuote(`@${taskFile}`),
-			});
-
-			// Launch-metadata sidecar: records the child's identity settings so
-			// subagent_resume can reapply them later (system prompt, tools,
-			// model, thinking, auto-exit). Without this, a resumed agent
-			// silently loses its system prompt and restrictions — they live on
-			// the command line, not in the conversation.
-			writeLaunchMeta(childSessionFile, { name: params.name, agent: agentName, tools, model, thinking, systemPromptFile, autoExit });
-
-			// Create the pane, give its shell a moment, then run the launch
-			// script (written to artifacts for debuggability).
-			const paneId = createPane(params.name);
-			await sleep(config.shellReadyDelayMs);
+			// The child session file now exists on disk, so from here until the
+			// launch command is actually sent, a failure (tmux gone, pane limits,
+			// disk errors) must delete the seed again — otherwise every failed
+			// spawn leaves a phantom named session in pi's picker. Once
+			// sendLongCommand succeeds the child owns the file, and deleting it
+			// would corrupt a live session — hence this exact try range.
 			const scriptPath = join(base, "scripts", `${slug}-${id}.sh`);
-			sendLongCommand(paneId, command, scriptPath);
+			let paneId: string | undefined;
+			try {
+				// The task the child receives — always delivered as an @file: multi-KB
+				// tasks never touch the shell command line, tasks starting with "-" or
+				// "@" can't be misparsed as CLI flags, and the exact text stays
+				// inspectable under artifacts/. Fork children already carry the
+				// conversation so they get the raw task; fresh children also get
+				// instructions about how their run ends.
+				const fullTask =
+					mode === "fork"
+						? params.task
+						: `# Your task\n\n${params.task}\n\n---\n` +
+							(autoExit
+								? "Complete your task autonomously. When you finish your final reply, this session closes automatically. "
+								: "When your task is complete, write a final summary message and then call the subagent_done tool. If you are blocked, call caller_ping. ") +
+							"Your final assistant message is reported back to the caller as your result.";
+				const taskFile = join(base, "tasks", `${slug}-${id}.md`);
+				mkdirSync(dirname(taskFile), { recursive: true });
+				writeFileSync(taskFile, fullTask, "utf8");
+
+				// The agent's body becomes an appended system prompt. We pass a FILE
+				// PATH — pi auto-reads existing paths for --append-system-prompt —
+				// which sidesteps shell-escaping of multiline text entirely.
+				let systemPromptFile: string | undefined;
+				if (agentDef.body !== "") {
+					systemPromptFile = join(base, "sysprompts", `${slug}-${id}.md`);
+					mkdirSync(dirname(systemPromptFile), { recursive: true });
+					writeFileSync(systemPromptFile, agentDef.body, "utf8");
+				}
+
+				// Assemble the launch command (see launch.ts for every piece).
+				const command = buildLaunchCommand({
+					cwd,
+					env: buildChildEnv({
+						PI_SUBAGENT_SESSION: childSessionFile,
+						PI_SUBAGENT_NAME: params.name,
+						PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
+					}),
+					sessionFile: childSessionFile,
+					model,
+					thinking,
+					systemPromptFile,
+					tools,
+					promptArg: shellQuote(`@${taskFile}`),
+				});
+
+				// Launch-metadata sidecar: records the child's identity settings so
+				// subagent_resume can reapply them later (system prompt, tools,
+				// model, thinking, auto-exit). Without this, a resumed agent
+				// silently loses its system prompt and restrictions — they live on
+				// the command line, not in the conversation.
+				writeLaunchMeta(childSessionFile, { name: params.name, agent: agentName, tools, model, thinking, systemPromptFile, autoExit });
+
+				// Create the pane, give its shell a moment, then run the launch
+				// script (written to artifacts for debuggability).
+				paneId = createPane(params.name);
+				await sleep(config.shellReadyDelayMs);
+				sendLongCommand(paneId, command, scriptPath);
+			} catch (error) {
+				rmSync(childSessionFile, { force: true });
+				rmSync(`${childSessionFile}.meta`, { force: true });
+				if (paneId !== undefined) closePane(paneId);
+				throw error;
+			}
 
 			trackChild(pi, {
 				id,

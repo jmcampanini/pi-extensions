@@ -44,6 +44,10 @@ subagent({
 
 `mode: "fresh"` (the default) starts the child with a clean context. `mode: "fork"` seeds the child's session file with a snapshot of the parent conversation, so the child starts knowing everything the parent knows and reuses the provider prompt cache — good for follow-up work on the current discussion. Forking needs the parent's session file on disk, so it fails on the very first turn of a brand-new session (pi hasn't written the file yet).
 
+## Children in pi's session picker
+
+Child sessions are real pi sessions, so they show up in `pi --resume` next to your own. To keep them recognizable there, every child is seeded with a display name — **`subagent › <agent> › <name>`** — which the picker shows (in the "named" color) instead of the child's raw task text, and with a `parentSession` header pointer, which nests the child under the session that spawned it in the picker's default threaded view. Children spawned before this existed are backfilled: `subagent_resume` adds the name the first time it reopens one, unless the session already has a name (e.g. you renamed it in the picker yourself).
+
 ## Pane layout (tmux)
 
 Children are always created detached — a spawning child never steals your focus. Arrangement is controlled by the `layout` setting (see [Configuration](#configuration); `PI_SUBAGENT_LAYOUT` overrides it):
