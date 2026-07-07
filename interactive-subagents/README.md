@@ -19,7 +19,7 @@ The extension registers three caller-side tools:
 | `name` | Display name (widget + pane title) — required |
 | `task` | The task prompt — required |
 | `agent` | Agent definition to load defaults from (see `subagents_list`). **Default: `worker`** — there is no agent-less spawn; if `worker.md` doesn't exist, the spawn errors telling you to create it |
-| `mode` | `"fork"` or `"fresh"` (default `"fresh"`) |
+| `context` | `"fresh"` or `"forked"` (default `"fresh"`) |
 | `model` | Model override — `provider/model`, or a bare id if unambiguous among configured providers; validated like the agent's `models` list (errors fast otherwise) |
 | `thinking` | Thinking/effort level override (`off`–`xhigh`); defaults to the agent definition's `thinking:` value |
 | `tools` | Comma-separated tool allowlist, e.g. `read,bash` |
@@ -34,15 +34,15 @@ subagent({
   task: "Map where exit detection lives in ./src; report file:line pointers.",
   agent: "scout",
 })
-// → Sub-agent "recon" started (id 3f2a91bc, fresh mode).
+// → Sub-agent "recon" started (id 3f2a91bc, fresh context).
 //   Its result will arrive automatically — do not poll.
 ```
 
 **The help loop:** a blocked child calls `caller_ping` and exits; the parent is woken with the question and answers via `subagent_resume({ id, message })` — the child's original system prompt, tools, model, and thinking level are restored automatically from its launch metadata. The `id` is in-memory only; after a pi restart, pass `sessionPath` from the result/ping message instead.
 
-## Session context: fork vs fresh
+## Session context: fresh vs forked
 
-`mode: "fresh"` (the default) starts the child with a clean context. `mode: "fork"` seeds the child's session file with a snapshot of the parent conversation, so the child starts knowing everything the parent knows and reuses the provider prompt cache — good for follow-up work on the current discussion. Forking needs the parent's session file on disk, so it fails on the very first turn of a brand-new session (pi hasn't written the file yet).
+`context: "fresh"` (the default) starts the child with a clean context. `context: "forked"` seeds the child's session file with a snapshot of the parent conversation, so the child starts knowing everything the parent knows and reuses the provider prompt cache — good for follow-up work on the current discussion. Forking needs the parent's session file on disk, so it fails on the very first turn of a brand-new session (pi hasn't written the file yet).
 
 ## Pane layout (tmux)
 
@@ -71,10 +71,12 @@ Definitions load from two places, most specific wins:
 | `models` | Ordered, comma-separated model candidates; the first one usable **on this machine** wins, so one agent file works across computers. An entry is `provider/model` (exact) or a bare id like `gpt-5.5` — a bare id wins only when exactly one configured provider offers it (ambiguity fails that entry; no guessing, no fuzzy matching). If nothing is usable, the spawn errors immediately with per-entry reasons. Omit to inherit pi's default model. |
 | `thinking` | Thinking/effort level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`), passed via `pi --thinking`. Works with or without `models`; the call's `thinking` param overrides it. Typos fail the spawn immediately. |
 | `tools` | Comma-separated allowlist for `pi --tools` |
-| `mode` | `fork` or `fresh` (default `fresh`) |
+| `context` | `fresh` or `forked` (default `fresh`) |
 | `auto-exit` | `true` (default) or `false` |
 
 All keys are optional; a file without `---` fences is treated as all body. Parsing is line-based `key: value`, not full YAML.
+
+The pre-rename `mode:` key (values `fork`/`fresh`) is gone. A file that still uses it — or that uses the old `fork` value under `context:` — shows a ⚠ problem in `/subagents-available` and fails the spawn with a migration message, rather than silently running with a fresh context.
 
 Example (`~/.pi/agent/subagents/scout.md`):
 
@@ -94,7 +96,7 @@ exact file path, with line numbers when you cite code.
 
 ## Also worth knowing
 
-- **`/subagents-available` (human command).** Shows every known agent with full details — description, the model that wins on this machine, thinking, tools, mode, validity problems, and the source file path — in a widget above the editor. Human-only and zero-token: it never touches the session or the model's context. Run it again (or send a message) to dismiss. The model's `subagents_list` tool is a terse view over the same inventory.
+- **`/subagents-available` (human command).** Shows every known agent with full details — description, the model that wins on this machine, thinking, tools, context, validity problems, and the source file path — in a widget above the editor. Human-only and zero-token: it never touches the session or the model's context. Run it again (or send a message) to dismiss. The model's `subagents_list` tool is a terse view over the same inventory.
 
 - **Live widget.** While children run, one line per sub-agent appears above the parent's editor: `[agent-type]  name` with a right-anchored elapsed clock, and nothing else — a row existing means it's running. Names that repeat the agent type (`Scout: Auth` next to `[scout]`) are de-duplicated for display. The right edge is reserved for v2's live activity states.
 - **`/subagents-running` (human command).** Opens a picker over the running children: up/down to choose, **Enter** jumps to its pane (switching tmux windows if needed), **z** jumps *and* zooms the pane (`prefix+z` un-zooms), **x** stops it (the model is told it was stopped by the user), Escape cancels.
