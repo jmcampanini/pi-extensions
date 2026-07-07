@@ -32,7 +32,7 @@ rebuilt deliberately smaller.
 - **`worker` is the default agent.** A spawn without `agent` runs as
   `agent: "worker"` through the identical machinery — there is no "bare"
   spawn. Missing `worker.md` is a loud spawn error, not a fallback.
-- **Two session modes.** `fork` (child session seeded with the parent's
+- **Two starting contexts.** `forked` (child session seeded with the parent's
   conversation minus the in-flight turn — preserves provider prompt-cache
   affinity) and `fresh` (clean context; pi creates the session file).
 - **No recursion.** Children never get the spawn tools (the extension detects

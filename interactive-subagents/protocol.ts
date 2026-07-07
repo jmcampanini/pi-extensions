@@ -30,6 +30,8 @@ export interface ChildEnvVars {
 	PI_SUBAGENT_SESSION: string;
 	/** Display name, echoed back in ping messages. */
 	PI_SUBAGENT_NAME: string;
+	/** Agent-definition name ("scout", "worker") for the child's identity banner. */
+	PI_SUBAGENT_AGENT?: string;
 	/** "1" = exit automatically when a turn completes; absent = stay open. */
 	PI_SUBAGENT_AUTO_EXIT?: "1";
 }

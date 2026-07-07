@@ -40,7 +40,10 @@ export function registerSubagentsListTool(pi: ExtensionAPI): void {
 				// Worth surfacing to the model: a worktree agent runs isolated in
 				// its own directory, which changes where its edits land.
 				const worktree = agent.worktree ? " (worktree)" : "";
-				const warning = agent.problems.length > 0 ? ` [⚠ not spawnable: ${agent.problems.join("; ")}]` : "";
+				// Problems keep their line breaks in the inventory; this terse
+				// view flattens them to keep one bullet per agent.
+				const problems = agent.problems.join("; ").replace(/\s*\n\s*/g, " ");
+				const warning = agent.problems.length > 0 ? ` [⚠ not spawnable: ${problems}]` : "";
 				const isDefault = agent.name === "worker" ? " (default)" : "";
 				const source = agent.source === "project" ? " (project)" : "";
 				return `• ${agent.name}${isDefault}${source}${interactive}${worktree}${warning} — ${agent.description ?? "(no description)"}`;
