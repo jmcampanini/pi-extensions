@@ -8,6 +8,7 @@
  *
  *   PI_SUBAGENT_SESSION    where to write the `.exit` sidecar (required)
  *   PI_SUBAGENT_NAME       display name, echoed in ping messages
+ *   PI_SUBAGENT_AGENT      agent-definition name, shown in the banner
  *   PI_SUBAGENT_AUTO_EXIT  "1" = exit automatically when a turn completes
  *
  * If PI_SUBAGENT_SESSION is missing we register nothing at all, so this file
@@ -18,12 +19,22 @@
  * and consumed (deleted) by the parent's poller. The result summary itself
  * never travels through the sidecar: it is the child's last assistant
  * message, already durable in the session .jsonl.
+ *
+ * The implant also pins a one-line identity banner above the editor
+ * (banner.ts) so a human who opens the pane can see at a glance that this
+ * is a subagent, which one, and how the session will end.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { writeFileSync } from "node:fs";
+import { formatBannerLine } from "./banner.ts";
 import type { ChildEnvVars, ExitSidecar } from "./protocol.ts";
+
+// Sticky human-driving flag for the banner: set when a user aborts a turn
+// (Escape) in an auto-exit child, and never cleared — once a human has
+// touched the session, the "next completed turn exits" warning stays up.
+let humanDriving = false;
 
 export default function (pi: ExtensionAPI) {
 	// The type-only cast gives the env vars the shape protocol.ts promises;
@@ -31,10 +42,39 @@ export default function (pi: ExtensionAPI) {
 	const env = process.env as Partial<ChildEnvVars>;
 	const sessionFile = env.PI_SUBAGENT_SESSION;
 	const subagentName = env.PI_SUBAGENT_NAME ?? "subagent";
+	const agentName = env.PI_SUBAGENT_AGENT;
 	const autoExit = env.PI_SUBAGENT_AUTO_EXIT === "1";
 
 	// Not launched as a subagent — do nothing.
 	if (!sessionFile) return;
+
+	// ── the identity banner ────────────────────────────────────────────────
+	// banner.ts is the pure renderer; this pushes it into pi's UI. Passing a
+	// COMPONENT FACTORY (not plain lines) lets the banner render at the real
+	// terminal width — same pattern as running-widget.ts. render() reads
+	// `humanDriving` live, and re-calling setWidget after the flag flips
+	// forces the repaint.
+	function showBanner(ctx: ExtensionContext): void {
+		if (!ctx.hasUI) return;
+		ctx.ui.setWidget(
+			"subagent-banner",
+			(_tui, theme) => ({
+				invalidate(): void {},
+				render(width: number): string[] {
+					return [
+						formatBannerLine({ name: subagentName, agent: agentName, autoExit, humanDriving }, width, {
+							dim: (text) => theme.fg("dim", text),
+							border: (text) => theme.fg("borderMuted", text),
+							warn: (text) => theme.fg("warning", text),
+						}),
+					];
+				},
+			}),
+			{ placement: "aboveEditor" },
+		);
+	}
+
+	pi.on("session_start", (_event, ctx) => showBanner(ctx));
 
 	/** True once any sidecar has been written this run. The first write is
 	 * the child's verdict — nothing may overwrite it (see agent_end below). */
@@ -131,7 +171,14 @@ export default function (pi: ExtensionAPI) {
 				.reverse()
 				.find((message) => message.role === "assistant");
 
-			if (lastAssistant?.stopReason === "aborted") return; // Escape — stay open
+			if (lastAssistant?.stopReason === "aborted") {
+				// Escape — stay open, and flip the banner into its warning
+				// state: a human is driving now, but auto-exit is still armed,
+				// so the next completed turn WILL exit and report back.
+				humanDriving = true;
+				showBanner(ctx);
+				return;
+			}
 
 			if (lastAssistant?.stopReason === "error") {
 				const errorMessage =

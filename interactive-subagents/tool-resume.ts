@@ -148,6 +148,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				env: buildChildEnv({
 					PI_SUBAGENT_SESSION: sessionPath,
 					PI_SUBAGENT_NAME: name,
+					PI_SUBAGENT_AGENT: meta.agent,
 					PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
 				}),
 				sessionFile: sessionPath,

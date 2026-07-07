@@ -2,7 +2,7 @@
  * command-available.ts — /subagents-available: the HUMAN's view of the agents.
  *
  * Shows the full inventory (description, resolved model, thinking, tools,
- * mode, problems, source file) in a widget above the editor. It is shown as
+ * context, problems, source file) in a widget above the editor. It is shown as
  * a WIDGET, not a message or session entry, deliberately: it lives only on
  * screen, so it never enters the model's context and costs zero tokens.
  * Run the command again to hide it, or it clears on your next submitted

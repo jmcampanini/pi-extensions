@@ -56,10 +56,17 @@ export interface AgentDefinition {
 	thinking?: string;
 	/** Comma-separated tool allowlist for `pi --tools`. */
 	tools?: string;
-	/** "fork" (inherit parent conversation) or "fresh" (clean context). */
-	mode?: "fork" | "fresh";
+	/** "forked" (inherit parent conversation) or "fresh" (clean context). */
+	context?: "fresh" | "forked";
 	/** true = autonomous (exits when its turn completes). Default true. */
 	autoExit?: boolean;
+	/**
+	 * Problems found in the frontmatter itself: an unknown `context:` value,
+	 * or the removed `mode:` key. Kept on the definition (not just the
+	 * inventory) so spawning can fail loud — otherwise an un-migrated
+	 * `mode: fork` file would silently spawn a fresh child.
+	 */
+	problems: string[];
 	/** Everything after the frontmatter: the agent's system-prompt text. */
 	body: string;
 }
@@ -84,9 +91,20 @@ function parseAgentMarkdown(
 	const frontmatter = match ? match[1] : "";
 	const body = (match ? markdown.slice(match[0].length) : markdown).trim();
 
-	const rawMode = frontmatterValue(frontmatter, "mode");
+	const rawContext = frontmatterValue(frontmatter, "context");
 	const rawAutoExit = frontmatterValue(frontmatter, "auto-exit");
 	const rawModels = frontmatterValue(frontmatter, "models");
+
+	// The `mode:` key (values fork/fresh) was renamed to `context:` (values
+	// forked/fresh) with a hard cutover. Report leftovers as problems instead
+	// of silently defaulting to a fresh context.
+	const problems: string[] = [];
+	if (frontmatterValue(frontmatter, "mode") !== undefined) {
+		problems.push('uses the removed "mode:" key — rename it to "context:" (values: fresh, forked)');
+	}
+	if (rawContext !== undefined && rawContext !== "fresh" && rawContext !== "forked") {
+		problems.push(`invalid context "${rawContext}" — use "fresh" or "forked"`);
+	}
 
 	return {
 		name,
@@ -98,8 +116,9 @@ function parseAgentMarkdown(
 			: undefined,
 		thinking: frontmatterValue(frontmatter, "thinking"),
 		tools: frontmatterValue(frontmatter, "tools"),
-		mode: rawMode === "fork" || rawMode === "fresh" ? rawMode : undefined,
+		context: rawContext === "forked" || rawContext === "fresh" ? rawContext : undefined,
 		autoExit: rawAutoExit === "true" ? true : rawAutoExit === "false" ? false : undefined,
+		problems,
 		body,
 	};
 }
@@ -156,7 +175,7 @@ export interface AgentInfo {
 	resolvedModel?: string;
 	thinking?: string;
 	tools?: string;
-	mode: "fork" | "fresh";
+	context: "fresh" | "forked";
 	autoExit: boolean;
 	/** Anything that would break or degrade spawning this agent. Empty = valid. */
 	problems: string[];
@@ -170,7 +189,7 @@ function problemText(error: unknown): string {
 
 export function collectAgentInventory(registry: ModelLookup, cwd: string): AgentInfo[] {
 	return listAgentDefinitions(cwd).map((def) => {
-		const problems: string[] = [];
+		const problems: string[] = [...def.problems];
 		let resolvedModel: string | undefined;
 
 		if (def.models && def.models.length > 0) {
@@ -196,7 +215,7 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 			resolvedModel,
 			thinking: def.thinking,
 			tools: def.tools,
-			mode: def.mode ?? "fresh",
+			context: def.context ?? "fresh",
 			autoExit: def.autoExit ?? true,
 			problems,
 		};
@@ -211,7 +230,7 @@ export function formatAgentOverviewLines(
 	if (inventory.length === 0) {
 		return [
 			`Sub-agents · none found in ${dirs.global} or ${dirs.project}`,
-			"  Create <name>.md files there (frontmatter: description, models, thinking, tools, mode, auto-exit; body = system prompt).",
+			"  Create <name>.md files there (frontmatter: description, models, thinking, tools, context, auto-exit; body = system prompt).",
 		];
 	}
 	const lines: string[] = [`Sub-agents · ${inventory.length}`];
@@ -224,7 +243,7 @@ export function formatAgentOverviewLines(
 			lines.push(`    ⚠ ${problem}`);
 		}
 		if (agent.description) lines.push(`    ${agent.description}`);
-		lines.push(`    tools: ${agent.tools ?? "(all)"} · ${agent.mode} · ${agent.autoExit ? "auto-exit" : "interactive"}`);
+		lines.push(`    tools: ${agent.tools ?? "(all)"} · ${agent.context} · ${agent.autoExit ? "auto-exit" : "interactive"}`);
 		lines.push(`    ${agent.filePath}`);
 	}
 	lines.push("");
