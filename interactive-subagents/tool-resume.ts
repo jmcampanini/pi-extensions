@@ -16,7 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import { config } from "./config.ts";
 import { artifactBase, buildChildEnv, buildLaunchCommand, clearExitSidecar, readLaunchMeta, slugify } from "./launch.ts";
 import { resolveUsableModel } from "./models.ts";
-import { countEntries, readSessionCwd } from "./session.ts";
+import { appendSessionName, countEntries, readSessionCwd, readSessionName } from "./session.ts";
 import { createPane, isTmuxAvailable, sendLongCommand, shellQuote, sleep } from "./tmux.ts";
 import { ledger, running } from "./state.ts";
 import { trackChild } from "./watcher.ts";
@@ -116,6 +116,16 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			const id = randomUUID().slice(0, 8);
 			const base = artifactBase(ctx);
 			const slug = slugify(name);
+
+			// Backfill: children spawned before display names were seeded show
+			// raw @file task text in pi's session picker. Give them the same
+			// "subagent › agent › name" label on resume — but only when the file
+			// has NO name yet (a human may have renamed it in the picker), and
+			// only for sessions this extension created (meta has name + agent).
+			// Runs before the child pi process starts, so there is one writer.
+			if (meta.name && meta.agent && readSessionName(sessionPath) === undefined) {
+				appendSessionName(sessionPath, `subagent › ${meta.agent} › ${meta.name}`);
+			}
 
 			// Only entries added AFTER this point count toward the new summary.
 			const skipEntries = countEntries(sessionPath);
