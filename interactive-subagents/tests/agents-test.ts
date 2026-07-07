@@ -35,7 +35,7 @@ mkdirSync(projectDefs, { recursive: true });
 
 writeFileSync(
 	join(globalDefs, "scout.md"),
-	"---\ndescription: Fast recon\nmodels: openai-codex/gpt-5.5, gpt-5.4-mini\nthinking: low\ntools: read, bash\nmode: fork\nauto-exit: false\n---\n\nYou are a scout.\n",
+	"---\ndescription: Fast recon\nmodels: openai-codex/gpt-5.5, gpt-5.4-mini\nthinking: low\ntools: read, bash\ncontext: forked\nauto-exit: false\n---\n\nYou are a scout.\n",
 );
 const scout = loadAgentDefinition("scout", cwd)!;
 eq("filename is the name", scout.name, "scout");
@@ -44,9 +44,23 @@ eq("description", scout.description, "Fast recon");
 eq("models split + trimmed", scout.models, ["openai-codex/gpt-5.5", "gpt-5.4-mini"]);
 eq("thinking", scout.thinking, "low");
 eq("tools kept as one string", scout.tools, "read, bash");
-eq("mode", scout.mode, "fork");
+eq("context", scout.context, "forked");
 eq("auto-exit false", scout.autoExit, false);
+eq("valid frontmatter has no problems", scout.problems, []);
 eq("body is the system prompt", scout.body, "You are a scout.");
+
+// The old `mode:` key (and its `fork` value) was hard-cut in the rename to
+// `context:` — leftovers never apply, and are reported as problems so an
+// un-migrated file fails loud instead of silently spawning a fresh child.
+writeFileSync(join(globalDefs, "legacy.md"), "---\nmode: fork\n---\nOld-style file.\n");
+const legacy = loadAgentDefinition("legacy", cwd)!;
+eq("old mode: key does not set context", legacy.context, undefined);
+ok("old mode: key is reported as a problem", legacy.problems[0].includes('"context:"'));
+
+writeFileSync(join(globalDefs, "halfway.md"), "---\ncontext: fork\n---\nNew key, old value.\n");
+const halfway = loadAgentDefinition("halfway", cwd)!;
+eq("old fork value does not set context", halfway.context, undefined);
+ok("old fork value is reported as a problem", halfway.problems[0].includes('"forked"'));
 
 writeFileSync(join(globalDefs, "crlf.md"), "---\r\ndescription: windows line endings\r\n---\r\nBody here.\r\n");
 eq("CRLF frontmatter still parses", loadAgentDefinition("crlf", cwd)!.description, "windows line endings");
@@ -68,7 +82,7 @@ eq("shadowed source is project", worker.source, "project");
 ok("filePath points into .pi/subagents", worker.filePath.startsWith(projectDefs));
 
 const names = listAgentDefinitions(cwd).map((def) => def.name);
-eq("list is the sorted union (no duplicate worker)", names, ["bare", "crlf", "scout", "worker"]);
+eq("list is the sorted union (no duplicate worker)", names, ["bare", "crlf", "halfway", "legacy", "scout", "worker"]);
 
 // ── inventory ────────────────────────────────────────────────────────────
 
@@ -87,8 +101,10 @@ eq("first usable model wins", scoutInfo.resolvedModel, "openai-codex/gpt-5.5");
 eq("requested models kept verbatim", scoutInfo.requestedModels, ["openai-codex/gpt-5.5", "gpt-5.4-mini"]);
 eq("valid agent has no problems", scoutInfo.problems, []);
 const workerInfo = inventory.find((a) => a.name === "worker")!;
-eq("defaults applied: mode fresh, auto-exit true", [workerInfo.mode, workerInfo.autoExit], ["fresh", true]);
+eq("defaults applied: context fresh, auto-exit true", [workerInfo.context, workerInfo.autoExit], ["fresh", true]);
 eq("no models listed = empty requestedModels", workerInfo.requestedModels, []);
+const legacyInfo = inventory.find((a) => a.name === "legacy")!;
+eq("frontmatter problems flow into the inventory", legacyInfo.problems.length, 1);
 
 // An agent whose models are all unusable: the problem must carry the real
 // per-entry reasons, keeping the message's own line breaks (each view
@@ -131,10 +147,10 @@ const emptyFlat = emptyLines.join("\n");
 ok("empty state names both dirs", emptyFlat.includes("/g/subagents") && emptyFlat.includes("/p/.pi/subagents"));
 ok("empty state fits the width", formatAgentOverviewLines([], 40, dirs).every((l) => l.length <= 40));
 
-// `inventory` predates broken.md: bare, crlf, scout, worker.
+// `inventory` predates broken.md: bare, crlf, halfway, legacy, scout, worker.
 const lines = formatAgentOverviewLines(inventory, WIDTH, dirs);
 const flat = lines.join("\n");
-ok("top rule carries the count", lines[0].startsWith("── Sub-agents · 4 ─") && lines[0].length === WIDTH);
+ok("top rule carries the count", lines[0].startsWith("── Sub-agents · 6 ─") && lines[0].length === WIDTH);
 ok("names render as tags", flat.includes("[scout]") && flat.includes("[worker]"));
 ok("resolved model on the header row", lines.some((l) => l.includes("[scout]") && l.includes("openai-codex/gpt-5.5")));
 ok("no models listed reads as inherits", lines.some((l) => l.includes("[worker]") && l.includes("inherits parent model")));
@@ -143,11 +159,15 @@ ok(
 	lines.some((l) => l.includes("[worker]") && l.endsWith("project · default")),
 );
 ok("file paths are gone", !flat.includes(worker.filePath) && !flat.includes(globalDefs));
-ok("default run behavior is folded away", !flat.includes("fresh") && !flat.includes("auto-exit"));
+// The fold is checked on a worker-only render: the full flat legitimately
+// contains "fresh"/"forked" inside the legacy-migration problem text.
+const workerCard = formatAgentOverviewLines([workerInfo], WIDTH, dirs).join("\n");
+ok("default run behavior is folded away", !workerCard.includes("fresh") && !workerCard.includes("auto-exit"));
 ok(
 	"deviations surface on the meta row",
-	lines.some((l) => l.includes("thinking low") && l.includes("tools: read, bash") && l.includes("fork · interactive")),
+	lines.some((l) => l.includes("thinking low") && l.includes("tools: read, bash") && l.includes("forked · interactive")),
 );
+ok("migration problems render as ⚠ blocks", lines.some((l) => l.trim().startsWith("⚠ uses the removed")));
 ok("every line fits the width", lines.every((l) => l.length <= WIDTH));
 ok("dismiss hint present", flat.includes("/subagents-available again"));
 

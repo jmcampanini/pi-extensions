@@ -19,7 +19,7 @@ The extension registers three caller-side tools:
 | `name` | Display name (widget + pane title) — required |
 | `task` | The task prompt — required |
 | `agent` | Agent definition to load defaults from (see `subagents_list`). **Default: `worker`** — there is no agent-less spawn; if `worker.md` doesn't exist, the spawn errors telling you to create it |
-| `mode` | `"fork"` or `"fresh"` (default `"fresh"`) |
+| `context` | `"fresh"` or `"forked"` (default `"fresh"`) |
 | `model` | Model override — `provider/model`, or a bare id if unambiguous among configured providers; validated like the agent's `models` list (errors fast otherwise) |
 | `thinking` | Thinking/effort level override (`off`–`xhigh`); defaults to the agent definition's `thinking:` value |
 | `tools` | Comma-separated tool allowlist, e.g. `read,bash` |
@@ -34,15 +34,15 @@ subagent({
   task: "Map where exit detection lives in ./src; report file:line pointers.",
   agent: "scout",
 })
-// → Sub-agent "recon" started (id 3f2a91bc, fresh mode).
+// → Sub-agent "recon" started (id 3f2a91bc, fresh context).
 //   Its result will arrive automatically — do not poll.
 ```
 
 **The help loop:** a blocked child calls `caller_ping` and exits; the parent is woken with the question and answers via `subagent_resume({ id, message })` — the child's original system prompt, tools, model, and thinking level are restored automatically from its launch metadata. The `id` is in-memory only; after a pi restart, pass `sessionPath` from the result/ping message instead.
 
-## Session context: fork vs fresh
+## Session context: fresh vs forked
 
-`mode: "fresh"` (the default) starts the child with a clean context. `mode: "fork"` seeds the child's session file with a snapshot of the parent conversation, so the child starts knowing everything the parent knows and reuses the provider prompt cache — good for follow-up work on the current discussion. Forking needs the parent's session file on disk, so it fails on the very first turn of a brand-new session (pi hasn't written the file yet).
+`context: "fresh"` (the default) starts the child with a clean context. `context: "forked"` seeds the child's session file with a snapshot of the parent conversation, so the child starts knowing everything the parent knows and reuses the provider prompt cache — good for follow-up work on the current discussion. Forking needs the parent's session file on disk, so it fails on the very first turn of a brand-new session (pi hasn't written the file yet).
 
 ## Pane layout (tmux)
 
@@ -71,10 +71,12 @@ Definitions load from two places, most specific wins:
 | `models` | Ordered, comma-separated model candidates; the first one usable **on this machine** wins, so one agent file works across computers. An entry is `provider/model` (exact) or a bare id like `gpt-5.5` — a bare id wins only when exactly one configured provider offers it (ambiguity fails that entry; no guessing, no fuzzy matching). If nothing is usable, the spawn errors immediately with per-entry reasons. Omit to inherit pi's default model. |
 | `thinking` | Thinking/effort level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`), passed via `pi --thinking`. Works with or without `models`; the call's `thinking` param overrides it. Typos fail the spawn immediately. |
 | `tools` | Comma-separated allowlist for `pi --tools` |
-| `mode` | `fork` or `fresh` (default `fresh`) |
+| `context` | `fresh` or `forked` (default `fresh`) |
 | `auto-exit` | `true` (default) or `false` |
 
 All keys are optional; a file without `---` fences is treated as all body. Parsing is line-based `key: value`, not full YAML.
+
+The pre-rename `mode:` key (values `fork`/`fresh`) is gone. A file that still uses it — or that uses the old `fork` value under `context:` — shows a ⚠ problem in `/subagents-available` and fails the spawn with a migration message, rather than silently running with a fresh context.
 
 Example (`~/.pi/agent/subagents/scout.md`):
 
@@ -101,6 +103,7 @@ exact file path, with line numbers when you cite code.
 - **No recursion.** Children never get the spawn tools — the extension detects child mode via `PI_SUBAGENT_SESSION` and registers nothing. Depth is hard-capped at 1.
 - **How children end.** Auto-exit children close when their turn completes; interactive ones (`autoExit: false`) stay open until the model calls `subagent_done`. Either can `caller_ping` the parent.
 - **Watch or take over.** Every child is a real pi process in a visible pane — watch it, or just start typing to steer it. Escape in an auto-exit child keeps its pane open for inspection.
+- **Identity banner (inside the child).** Every child pins one line above its editor — `─ SUBAGENT · recon [scout] · auto-exit ───` — naming the child, its agent definition, and how the session ends. The mode is state-aware: `auto-exit` (closes itself when a turn completes), `interactive` (stays open until `subagent_done`), and after Escape in an auto-exit child it flips to `⚠ human driving — next completed turn exits & reports to parent` — a reminder that auto-exit is still armed while you type.
 
 ## Configuration
 
