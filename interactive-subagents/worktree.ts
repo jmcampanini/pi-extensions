@@ -186,18 +186,18 @@ export async function createWorktree(opts: {
 	// could later try to remove the parent's own worktree. Fail fast instead.
 	// When the parent cwd is not itself in a git work tree, skip the check —
 	// there is nothing to collide with.
+	let sameAsParent = false;
 	try {
 		const parentTop = await gitOutput(opts.parentCwd, ["rev-parse", "--show-toplevel"]);
-		const dirTop = await gitOutput(dir, ["rev-parse", "--show-toplevel"]);
-		if (parentTop === dirTop) {
-			throw new Error(
-				`worktree create command printed ${dir}, which is the parent checkout itself — ` +
-					`it must create a FRESH worktree (its own directory and branch), not reuse the current one`,
-			);
-		}
-	} catch (error) {
-		if (error instanceof Error && error.message.includes("parent checkout itself")) throw error;
+		sameAsParent = parentTop === (await gitOutput(dir, ["rev-parse", "--show-toplevel"]));
+	} catch {
 		// parentCwd not in a git work tree: nothing to collide with.
+	}
+	if (sameAsParent) {
+		throw new Error(
+			`worktree create command printed ${dir}, which is the parent checkout itself — ` +
+				`it must create a FRESH worktree (its own directory and branch), not reuse the current one`,
+		);
 	}
 
 	return { dir, branch, baseCommit, parentCwd: opts.parentCwd };
