@@ -213,6 +213,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 				env: buildChildEnv({
 					PI_SUBAGENT_SESSION: childSessionFile,
 					PI_SUBAGENT_NAME: params.name,
+					PI_SUBAGENT_AGENT: agentName,
 					PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
 				}),
 				sessionFile: childSessionFile,

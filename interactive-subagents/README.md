@@ -101,6 +101,7 @@ exact file path, with line numbers when you cite code.
 - **No recursion.** Children never get the spawn tools — the extension detects child mode via `PI_SUBAGENT_SESSION` and registers nothing. Depth is hard-capped at 1.
 - **How children end.** Auto-exit children close when their turn completes; interactive ones (`autoExit: false`) stay open until the model calls `subagent_done`. Either can `caller_ping` the parent.
 - **Watch or take over.** Every child is a real pi process in a visible pane — watch it, or just start typing to steer it. Escape in an auto-exit child keeps its pane open for inspection.
+- **Identity banner (inside the child).** Every child pins one line above its editor — `─ SUBAGENT · recon [scout] · auto-exit ───` — naming the child, its agent definition, and how the session ends. The mode is state-aware: `auto-exit` (closes itself when a turn completes), `interactive` (stays open until `subagent_done`), and after Escape in an auto-exit child it flips to `⚠ human driving — next completed turn exits & reports to parent` — a reminder that auto-exit is still armed while you type.
 
 ## Configuration
 
