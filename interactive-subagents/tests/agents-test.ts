@@ -96,6 +96,22 @@ ok("model problem names the provider reason", broken.problems[0].includes('provi
 ok("model problem is one line", !broken.problems[0].includes("\n"));
 ok("thinking problem names the bad level", broken.problems[1].includes('Invalid thinking level "ultra"'));
 
+// ── worktree frontmatter (tri-state, mirrors auto-exit) ──────────────────
+
+writeFileSync(join(globalDefs, "isolated.md"), "---\nworktree: true\n---\nI.\n");
+eq("worktree true", loadAgentDefinition("isolated", cwd)!.worktree, true);
+writeFileSync(join(globalDefs, "shared.md"), "---\nworktree: false\n---\nS.\n");
+eq("worktree false", loadAgentDefinition("shared", cwd)!.worktree, false);
+eq("worktree absent = undefined", scout.worktree, undefined);
+
+// Inventory turns the tri-state into a concrete boolean (absent → false),
+// and the overview only tags agents that opted in.
+const withWorktree = collectAgentInventory(registry, cwd);
+eq("inventory: worktree true carried through", withWorktree.find((a) => a.name === "isolated")!.worktree, true);
+eq("inventory: absent defaults to false", withWorktree.find((a) => a.name === "worker")!.worktree, false);
+const worktreeLines = formatAgentOverviewLines(withWorktree, { global: globalDefs, project: projectDefs });
+eq("overview tags exactly the one worktree agent", worktreeLines.filter((l) => l.includes("· worktree")).length, 1);
+
 // ── overview rendering ───────────────────────────────────────────────────
 
 const emptyLines = formatAgentOverviewLines([], { global: "/g/subagents", project: "/p/.pi/subagents" });

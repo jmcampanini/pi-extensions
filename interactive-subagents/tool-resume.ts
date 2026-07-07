@@ -133,6 +133,22 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			// session header) so relative paths and tools behave the same.
 			const sessionCwd = readSessionCwd(sessionPath);
 
+			// A vanished cwd would otherwise fail OBSCURELY: the pane's `cd`
+			// fails, the sentinel reports exit 1 after ~1s, and the watcher
+			// delivers a misleading "failed" result with a stale summary. Catch
+			// it here and say what actually happened — for worktree children
+			// that usually means auto-cleanup removed the directory.
+			if (sessionCwd && !existsSync(sessionCwd)) {
+				if (meta.worktree) {
+					throw new Error(
+						`Cannot resume: this sub-agent ran in a git worktree at ${meta.worktree.dir} that was removed after it finished with no changes. Spawn a new subagent instead.`,
+					);
+				}
+				throw new Error(
+					`Cannot resume: the sub-agent's working directory no longer exists: ${sessionCwd}. Spawn a new subagent instead.`,
+				);
+			}
+
 			const command = buildLaunchCommand({
 				cwd: sessionCwd,
 				env: buildChildEnv({
@@ -164,6 +180,10 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				tools,
 				model,
 				autoExit,
+				// The ORIGINAL worktree snapshot rides along unchanged: keeping
+				// the original baseCommit means work committed in an earlier run
+				// still counts as "changes" when this run's cleanup decides.
+				worktree: meta.worktree,
 				abort: new AbortController(),
 			});
 

@@ -48,7 +48,7 @@ Files, per child:
 |---|---|---|
 | `<child-session>.jsonl` | parent (fork seed) + child (transcript) | context, result extraction, resume anchor |
 | `<child-session>.jsonl.exit` | child implant | typed exit intent: `{type: "done" \| "ping" \| "error"}` — one-shot, parent deletes on read |
-| `<child-session>.jsonl.meta` | parent (at launch) | launch metadata (name, agent, tools, model, thinking, system-prompt file, auto-exit) so `subagent_resume` reapplies the child's identity |
+| `<child-session>.jsonl.meta` | parent (at launch) | launch metadata (name, agent, tools, model, thinking, system-prompt file, auto-exit, worktree snapshot) so `subagent_resume` reapplies the child's identity |
 | `artifacts/<sid>/interactive-subagents/…` | parent | task files (`@file` delivery), system prompts, resume follow-up messages, launch scripts |
 | pane screen | child's shell | `__SUBAGENT_DONE_<code>__` sentinel — crash net |
 
@@ -59,6 +59,9 @@ User-facing configuration (config.ts) resolves defaults < config file < env:
 | `layout` | `PI_SUBAGENT_LAYOUT` | `window` | Pane layout: `main` (main-vertical — parent stays big, children stack in a side rail, re-flows on spawn/exit), `window` (all children in a dedicated tiled sibling window named `<parent window>-subagents`), `off` (plain right-split in place, no re-flow) |
 | `mainWidth` | `PI_SUBAGENT_MAIN_WIDTH` | `60%` | Width of the parent pane in `main` layout (a tmux width: `60%` or an absolute column count) |
 | `shellReadyDelayMs` | `PI_SUBAGENT_SHELL_READY_DELAY_MS` | `500` | Pause after creating a pane before typing the launch command (raise it if a slow shell drops the command) |
+| `worktreeCreateCommand` | `PI_SUBAGENT_WORKTREE_CREATE_COMMAND` | `git worktree add` under `.pi/worktrees/` | Shell command (via `bash -c`, parent cwd, `PI_SUBAGENT_WORKTREE_NAME` in env) that creates a worktree; must exit 0 and print the directory as the last non-empty stdout line |
+| `worktreeCleanupCommand` | `PI_SUBAGENT_WORKTREE_CLEANUP_COMMAND` | `git worktree remove` + branch delete | Shell command (gets `PI_SUBAGENT_WORKTREE_DIR` / `PI_SUBAGENT_WORKTREE_BRANCH`, branch empty when detached) that removes a finished child's worktree |
+| `worktreeCleanupMode` | `PI_SUBAGENT_WORKTREE_CLEANUP_MODE` | `auto` | `auto` removes a worktree only when the child succeeded AND it is clean (no uncommitted/untracked files, HEAD still on the base commit — committed work counts as dirty); `never` always keeps |
 
 The file is `$PI_CODING_AGENT_DIR/subagents.json` (default
 `~/.pi/agent/subagents.json`). Missing = defaults; malformed =
@@ -107,6 +110,9 @@ One file per job; `index.ts` only wires them into pi:
 - `models.ts` — first-usable-model resolution for `models:` candidate lists.
 - `agents.ts` — agent definition files (frontmatter parsing,
   project-shadows-global lookup) and the inventory built from them.
+- `worktree.ts` — git worktree isolation: runs the user-pluggable
+  create/cleanup commands, the dirty check, and the end-of-run keep/remove
+  policy (see the README's "Worktree isolation" section for the contract).
 - `session.ts` — pi session `.jsonl` handling: fork seeding; summary
   extraction (last assistant message, with the `stopReason: "error"` →
   `errorMessage` fallback).

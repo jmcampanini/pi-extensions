@@ -19,16 +19,45 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { config } from "./config.ts";
 import { closePane, pollForExit, refreshLayout, type ExitResult } from "./tmux.ts";
 import { extractSummary } from "./session.ts";
 import { ledger, moduleSignal, running, type RunningSubagent } from "./state.ts";
 import { ensureWidgetTimer, updateRunningWidget } from "./running-widget.ts";
+import { finishWorktree, type WorktreeInfo, type WorktreeOutcome } from "./worktree.ts";
 
 /** Elapsed time as prose ("3m 42s") for the steered messages. The widget's
  * clock format (03:42) lives separately in widget.ts — different surface. */
 function humanElapsed(totalSeconds: number): string {
 	if (totalSeconds < 60) return `${totalSeconds}s`;
 	return `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`;
+}
+
+/**
+ * The worktree sentence appended to a result message. The model never sees
+ * `details`, so this prose must carry everything it needs to act: the path,
+ * the branch, what happened to them, and the next step (merge, inspect, or
+ * clean up by hand). Branch phrasing is omitted when the worktree was on a
+ * detached HEAD (`branch` is the literal "HEAD" — there is no branch to name).
+ */
+function worktreeNote(info: WorktreeInfo, outcome: WorktreeOutcome): string {
+	const branch = info.branch === "HEAD" ? undefined : info.branch;
+	if (outcome.status === "removed") {
+		return branch
+			? `Worktree: no changes were made, so its worktree and branch ${branch} were removed.`
+			: "Worktree: no changes were made, so its worktree was removed.";
+	}
+	if (outcome.status === "kept") {
+		return (
+			`Worktree: kept at ${info.dir}` +
+			(branch ? ` on branch ${branch}` : "") +
+			` — ${outcome.reason}. ` +
+			(branch
+				? `Merge its work with \`git merge ${branch}\`, or remove the worktree when you are done with it.`
+				: "Inspect or remove the worktree when you are done with it.")
+		);
+	}
+	return `Worktree: cleanup failed (${outcome.error}) — the worktree at ${info.dir} is still on disk; remove it manually.`;
 }
 
 /** Register a child and start its supervision machinery. */
@@ -80,8 +109,11 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 					customType: "subagent_result",
 					content:
 						`Sub-agent "${child.name}" (id ${child.id}) was stopped by the user after ${elapsed}. ` +
-						`Do not treat this as a failure of the sub-agent.\n\n` +
-						`Session: ${child.sessionFile}\nResume with subagent_resume({ id: "${child.id}", message: "..." }) if the work should continue.`,
+						`Do not treat this as a failure of the sub-agent.` +
+						// A stopped child's work may be half-done, so its worktree is
+						// deliberately NOT cleaned up — resume still needs it.
+						(child.worktree ? `\nIts worktree at ${child.worktree.dir} was kept (the work may be half-done).` : "") +
+						`\n\nSession: ${child.sessionFile}\nResume with subagent_resume({ id: "${child.id}", message: "..." }) if the work should continue.`,
 					display: true,
 					details: { id: child.id, name: child.name, reason: "stopped", sessionFile: child.sessionFile },
 				},
@@ -116,6 +148,19 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 	const summary = extractSummary(child.sessionFile, child.skipEntries);
 	const failed = result.exitCode !== 0 || result.reason === "error" || result.reason === "pane-closed";
 
+	// Worktree cleanup runs BEFORE the result message is sent, so the status
+	// the parent model reads (removed/kept/cleanup-failed) is the truth, not a
+	// prediction. finishWorktree never throws, so result delivery is safe.
+	let worktreeOutcome: WorktreeOutcome | undefined;
+	if (child.worktree) {
+		worktreeOutcome = await finishWorktree({
+			info: child.worktree,
+			mode: config.worktreeCleanupMode,
+			command: config.worktreeCleanupCommand,
+			childSucceeded: !failed,
+		});
+	}
+
 	let content: string;
 	if (!failed) {
 		content =
@@ -135,6 +180,12 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 			`You can retry with subagent_resume({ id: "${child.id}", message: "<guidance>" }). Session: ${child.sessionFile}`;
 	}
 
+	// The worktree's fate is part of the result — appended to the prose (the
+	// model only reads content) and mirrored in details for tooling.
+	if (child.worktree && worktreeOutcome) {
+		content += `\n\n${worktreeNote(child.worktree, worktreeOutcome)}`;
+	}
+
 	pi.sendMessage(
 		{
 			customType: "subagent_result",
@@ -149,6 +200,9 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 				sessionFile: child.sessionFile,
 				tools: child.tools,
 				model: child.model,
+				worktreeDir: child.worktree?.dir,
+				worktreeBranch: child.worktree?.branch,
+				worktreeStatus: worktreeOutcome?.status,
 			},
 		},
 		{ triggerTurn: true, deliverAs: "steer" },

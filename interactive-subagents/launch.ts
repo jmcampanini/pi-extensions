@@ -23,6 +23,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { agentConfigDir } from "./config.ts";
 import { SENTINEL_ECHO_SUFFIX, type ChildEnvVars } from "./protocol.ts";
 import { shellQuote } from "./tmux.ts";
+import type { WorktreeInfo } from "./worktree.ts";
 
 // ── paths ────────────────────────────────────────────────────────────────
 
@@ -147,6 +148,9 @@ export interface LaunchMeta {
 	thinking?: string;
 	systemPromptFile?: string;
 	autoExit?: boolean;
+	/** Set when the child ran in a git worktree — lets a resume keep the same
+	 * cleanup behavior, and lets it explain a worktree that was removed. */
+	worktree?: WorktreeInfo;
 }
 
 export function writeLaunchMeta(sessionFile: string, meta: LaunchMeta): void {

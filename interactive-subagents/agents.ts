@@ -60,6 +60,8 @@ export interface AgentDefinition {
 	mode?: "fork" | "fresh";
 	/** true = autonomous (exits when its turn completes). Default true. */
 	autoExit?: boolean;
+	/** true = spawn this agent in a fresh git worktree by default. */
+	worktree?: boolean;
 	/** Everything after the frontmatter: the agent's system-prompt text. */
 	body: string;
 }
@@ -86,6 +88,7 @@ function parseAgentMarkdown(
 
 	const rawMode = frontmatterValue(frontmatter, "mode");
 	const rawAutoExit = frontmatterValue(frontmatter, "auto-exit");
+	const rawWorktree = frontmatterValue(frontmatter, "worktree");
 	const rawModels = frontmatterValue(frontmatter, "models");
 
 	return {
@@ -100,6 +103,7 @@ function parseAgentMarkdown(
 		tools: frontmatterValue(frontmatter, "tools"),
 		mode: rawMode === "fork" || rawMode === "fresh" ? rawMode : undefined,
 		autoExit: rawAutoExit === "true" ? true : rawAutoExit === "false" ? false : undefined,
+		worktree: rawWorktree === "true" ? true : rawWorktree === "false" ? false : undefined,
 		body,
 	};
 }
@@ -158,6 +162,8 @@ export interface AgentInfo {
 	tools?: string;
 	mode: "fork" | "fresh";
 	autoExit: boolean;
+	/** true = this agent runs in a fresh git worktree by default. */
+	worktree: boolean;
 	/** Anything that would break or degrade spawning this agent. Empty = valid. */
 	problems: string[];
 }
@@ -198,6 +204,7 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 			tools: def.tools,
 			mode: def.mode ?? "fresh",
 			autoExit: def.autoExit ?? true,
+			worktree: def.worktree ?? false,
 			problems,
 		};
 	});
@@ -211,7 +218,7 @@ export function formatAgentOverviewLines(
 	if (inventory.length === 0) {
 		return [
 			`Sub-agents · none found in ${dirs.global} or ${dirs.project}`,
-			"  Create <name>.md files there (frontmatter: description, models, thinking, tools, mode, auto-exit; body = system prompt).",
+			"  Create <name>.md files there (frontmatter: description, models, thinking, tools, mode, auto-exit, worktree; body = system prompt).",
 		];
 	}
 	const lines: string[] = [`Sub-agents · ${inventory.length}`];
@@ -224,7 +231,10 @@ export function formatAgentOverviewLines(
 			lines.push(`    ⚠ ${problem}`);
 		}
 		if (agent.description) lines.push(`    ${agent.description}`);
-		lines.push(`    tools: ${agent.tools ?? "(all)"} · ${agent.mode} · ${agent.autoExit ? "auto-exit" : "interactive"}`);
+		// The worktree tag only appears when set — most agents run in the
+		// parent's cwd, so the common case stays visually quiet.
+		const worktree = agent.worktree ? " · worktree" : "";
+		lines.push(`    tools: ${agent.tools ?? "(all)"} · ${agent.mode} · ${agent.autoExit ? "auto-exit" : "interactive"}${worktree}`);
 		lines.push(`    ${agent.filePath}`);
 	}
 	lines.push("");

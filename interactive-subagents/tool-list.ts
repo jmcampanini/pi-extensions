@@ -37,10 +37,13 @@ export function registerSubagentsListTool(pi: ExtensionAPI): void {
 			}
 			const lines = inventory.map((agent) => {
 				const interactive = agent.autoExit ? "" : " (interactive — a human drives it)";
+				// Worth surfacing to the model: a worktree agent runs isolated in
+				// its own directory, which changes where its edits land.
+				const worktree = agent.worktree ? " (worktree)" : "";
 				const warning = agent.problems.length > 0 ? ` [⚠ not spawnable: ${agent.problems.join("; ")}]` : "";
 				const isDefault = agent.name === "worker" ? " (default)" : "";
 				const source = agent.source === "project" ? " (project)" : "";
-				return `• ${agent.name}${isDefault}${source}${interactive}${warning} — ${agent.description ?? "(no description)"}`;
+				return `• ${agent.name}${isDefault}${source}${interactive}${worktree}${warning} — ${agent.description ?? "(no description)"}`;
 			});
 			return {
 				content: [{ type: "text", text: lines.join("\n") }],
