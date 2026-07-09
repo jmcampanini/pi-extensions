@@ -64,10 +64,10 @@ export interface AgentDefinition {
 	/** true = spawn this agent in a fresh git worktree by default. */
 	worktree?: boolean;
 	/**
-	 * Problems found in the frontmatter itself: an unknown `context:` value,
-	 * or the removed `mode:` key. Kept on the definition (not just the
-	 * inventory) so spawning can fail loud — otherwise an un-migrated
-	 * `mode: fork` file would silently spawn a fresh child.
+	 * Problems found in the frontmatter itself (e.g. an unknown `context:` or
+	 * `worktree:` value). Kept on the definition (not just the inventory) so
+	 * spawning can fail loud instead of silently running with a default the
+	 * file didn't ask for.
 	 */
 	problems: string[];
 	/** Everything after the frontmatter: the agent's system-prompt text. */
@@ -99,13 +99,9 @@ function parseAgentMarkdown(
 	const rawWorktree = frontmatterValue(frontmatter, "worktree");
 	const rawModels = frontmatterValue(frontmatter, "models");
 
-	// The `mode:` key (values fork/fresh) was renamed to `context:` (values
-	// forked/fresh) with a hard cutover. Report leftovers as problems instead
-	// of silently defaulting to a fresh context.
 	const problems: string[] = [];
-	if (frontmatterValue(frontmatter, "mode") !== undefined) {
-		problems.push('uses the removed "mode:" key — rename it to "context:" (values: fresh, forked)');
-	}
+	// Unknown values are problems, not silent defaults — a typo in `context:`
+	// quietly spawning a fresh child would hide a forked-context intent.
 	if (rawContext !== undefined && rawContext !== "fresh" && rawContext !== "forked") {
 		problems.push(`invalid context "${rawContext}" — use "fresh" or "forked"`);
 	}
