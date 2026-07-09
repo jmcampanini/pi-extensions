@@ -55,7 +55,7 @@ Parallel children editing the same checkout can trample each other. Pass `worktr
 
 **Creation is a user-pluggable shell command** — `worktreeCreateCommand`, run via `bash -c` in the parent session's cwd. The contract:
 
-- It gets `PI_SUBAGENT_WORKTREE_NAME` in its env (the spawn's `<slug>-<id>`, e.g. `auth-flow-3f2a91bc`).
+- It gets `PI_SUBAGENT_WORKTREE_NAME` in its env (the spawn's `<phrase>-<id>`, e.g. `auth-flow-3f2a91bc`). The phrase is the slugified `name` with role words (`wt`, `worktree`, `agent`, `subagent`, …) stripped, because the create command brands the directory itself — a child named "wt sleeper" must not end up in a `wt-wt-sleeper-…` directory.
 - It must exit 0 and print the worktree directory as the **last non-empty stdout line** (relative paths resolve against the parent cwd — send tool chatter to stderr).
 - Timeout: 120s, since creation may fetch from a remote.
 
@@ -82,12 +82,12 @@ Both commands are config keys (see [Configuration](#configuration)), so any tool
 
 ```json
 {
-  "worktreeCreateCommand": "grove create \"$PI_SUBAGENT_WORKTREE_NAME\"",
+  "worktreeCreateCommand": "grove create \"$PI_SUBAGENT_WORKTREE_NAME\" --worktree-prefix subagent-",
   "worktreeCleanupCommand": "grove remove \"$PI_SUBAGENT_WORKTREE_DIR\""
 }
 ```
 
-This branches the child from the parent's current HEAD, which is usually what a helper sub-agent wants; add `--from-remote-primary` to base children on the remote's primary branch instead (fetches, so it needs network).
+This branches the child from the parent's current HEAD, which is usually what a helper sub-agent wants; add `--from-remote-primary` to base children on the remote's primary branch instead (fetches, so it needs network). `--worktree-prefix` names the directories `subagent-<phrase>-<id>` so children stand apart from your own `wt-*` worktrees — it needs a grove new enough to have the flag (older groves fail every worktree spawn with `unknown flag: --worktree-prefix`; drop the flag to fall back to grove's configured prefix).
 
 Worth knowing:
 

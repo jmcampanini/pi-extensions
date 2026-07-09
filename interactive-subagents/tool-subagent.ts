@@ -32,6 +32,7 @@ import {
 	clearExitSidecar,
 	generateChildSessionFile,
 	slugify,
+	worktreePhrase,
 	writeLaunchMeta,
 } from "./launch.ts";
 import { assertValidThinkingLevel, resolveUsableModel, THINKING_LEVELS } from "./models.ts";
@@ -43,7 +44,7 @@ import { createWorktree, removeWorktree, type WorktreeInfo } from "./worktree.ts
 const SubagentParams = Type.Object({
 	name: Type.String({
 		description:
-			"Short display name describing the TASK, e.g. 'Auth flow' — shown in the widget next to the agent type, so do not repeat the agent type in it.",
+			"Short display name describing the TASK, e.g. 'Auth flow' — shown in the widget next to the agent type, so do not repeat the agent type in it. Words like 'agent' or 'worktree' are redundant (worktree names derive from this and carry their own prefix).",
 	}),
 	task: Type.String({ description: "The task prompt for the subagent" }),
 	agent: Type.Optional(
@@ -202,7 +203,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			let worktree: WorktreeInfo | undefined;
 			if (useWorktree) {
 				worktree = await createWorktree({
-					name: `${slug}-${id}`,
+					name: `${worktreePhrase(params.name)}-${id}`,
 					parentCwd: ctx.cwd,
 					command: config.worktreeCreateCommand,
 				});

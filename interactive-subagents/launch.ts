@@ -36,6 +36,21 @@ export function slugify(value: string): string {
 	return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "subagent";
 }
 
+/**
+ * The phrase handed to the worktree create command: the slugified name with
+ * role words removed. The create command brands the directory itself (grove's
+ * `wt-` or a configured `subagent-` prefix), so tokens like "wt" or "agent"
+ * in the name would only double up — a child named "wt sleeper 3" must not
+ * end life as the `wt-wt-sleeper-3` directory.
+ */
+export function worktreePhrase(name: string): string {
+	const phrase = slugify(name)
+		.replace(/\b(?:sub-?agents?|agents?|worktrees?|wt)\b/g, "")
+		.replace(/-+/g, "-")
+		.replace(/^-|-$/g, "");
+	return phrase || "task";
+}
+
 /** Artifacts for this extension live under the parent session's artifact dir. */
 export function artifactBase(ctx: ExtensionContext): string {
 	return join(

@@ -7,6 +7,7 @@ import {
 	buildLaunchCommand,
 	readLaunchMeta,
 	slugify,
+	worktreePhrase,
 	writeLaunchMeta,
 } from "../launch.ts";
 import { SENTINEL_ECHO_SUFFIX, SENTINEL_REGEX } from "../protocol.ts";
@@ -98,6 +99,17 @@ eq("corrupt meta = {}", readLaunchMeta(sessionFile), {});
 
 eq("slugify basics", slugify("Auth Flow: part 2!"), "auth-flow-part-2");
 eq("slugify empty falls back", slugify("™™™"), "subagent");
+
+// ── worktreePhrase ───────────────────────────────────────────────────────
+// The create command brands the directory itself, so role words in the name
+// must not survive into the phrase (the wt-wt- double-prefix bug).
+
+eq("phrase drops wt", worktreePhrase("wt sleeper 3"), "sleeper-3");
+eq("phrase drops agent", worktreePhrase("Auth flow agent"), "auth-flow");
+eq("phrase drops subagent/sub-agent/worktree", worktreePhrase("sub-agent worktree subagents test"), "test");
+eq("phrase keeps embedded matches", worktreePhrase("newt management"), "newt-management");
+eq("phrase all-role-words falls back", worktreePhrase("worktree agent"), "task");
+eq("phrase empty falls back", worktreePhrase("™™™"), "task");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
