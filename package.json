@@ -33,6 +33,6 @@
     "@earendil-works/pi-coding-agent": "^0.80.3",
     "@earendil-works/pi-tui": "^0.80.3",
     "@types/node": "22.19.0",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   }
 }
