@@ -15,6 +15,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { sanitizeDisplayText } from "./display-text.ts";
 import { formatElapsed } from "./widget.ts";
 import { running, type RunningSubagent } from "./state.ts";
 import { focusPane } from "./tmux.ts";
@@ -57,8 +58,10 @@ export function registerSubagentsRunningCommand(pi: ExtensionAPI): void {
 							for (let i = 0; i < children.length; i++) {
 								const child = children[i];
 								const elapsed = formatElapsed(Math.round((Date.now() - child.startTime) / 1000));
-								const agentTag = child.agent ? ` (${child.agent})` : "";
-								const row = `${i === cursor ? "→" : " "} ${elapsed}  ${child.name}${agentTag}`;
+								const childName = sanitizeDisplayText(child.name);
+								const agent = child.agent === undefined ? undefined : sanitizeDisplayText(child.agent);
+								const agentTag = agent ? ` (${agent})` : "";
+								const row = `${i === cursor ? "→" : " "} ${elapsed}  ${childName}${agentTag}`;
 								lines.push(truncateToWidth(i === cursor ? th.fg("accent", row) : th.fg("text", row), width));
 							}
 							lines.push(truncateToWidth(th.fg("dim", " ↑/↓ or j/k · enter: go · z: go + zoom · x: stop · esc: cancel"), width));
@@ -81,7 +84,7 @@ export function registerSubagentsRunningCommand(pi: ExtensionAPI): void {
 			try {
 				focusPane(choice.child.paneId, { zoom: choice.action === "zoom" });
 			} catch {
-				ctx.ui.notify(`Pane for "${choice.child.name}" is gone.`, "warning");
+				ctx.ui.notify(`Pane for "${sanitizeDisplayText(choice.child.name)}" is gone.`, "warning");
 			}
 		},
 	});

@@ -19,6 +19,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type, type Static } from "@sinclair/typebox";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -37,6 +38,8 @@ import {
 } from "./launch.ts";
 import { assertValidThinkingLevel, resolveUsableModel, THINKING_LEVELS } from "./models.ts";
 import { countEntries, seedForkSession, seedFreshSession } from "./session.ts";
+import { formatCollapsedSubagentCall, formatExpandedSubagentCall } from "./subagent-call.ts";
+import { renderSubagentLaunchResult } from "./subagent-result.ts";
 import { closePane, createPane, isTmuxAvailable, sendLongCommand, shellQuote, sleep } from "./tmux.ts";
 import { trackChild } from "./watcher.ts";
 import { createWorktree, removeWorktree, type WorktreeInfo } from "./worktree.ts";
@@ -103,6 +106,11 @@ const SubagentParams = Type.Object({
 });
 type SubagentParamsType = Static<typeof SubagentParams>;
 
+const CALL_TEXT_METRICS = {
+	truncateToWidth,
+	renderText: (text: string, width: number) => new Text(text, 0, 0).render(width),
+};
+
 export function registerSubagentTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "subagent",
@@ -118,6 +126,28 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			"Default to subagent context 'fresh' for self-contained work; put all needed facts, constraints, and expected output in `task`. Use 'forked' only when the task materially depends on accumulated parent discussion, reads, or decisions that would be difficult or lossy to restate, and remember that the copied history goes to the child's selected model/provider. Use subagent_resume instead when a follow-up depends on the child's own prior context.",
 		],
 		parameters: SubagentParams,
+		renderCall(args, theme, context) {
+			const style = {
+				title: (text: string) => theme.fg("toolTitle", theme.bold(text)),
+				agent: (text: string) => theme.fg("accent", text),
+				name: (text: string) => theme.fg("toolOutput", text),
+				preview: (text: string) => theme.fg("dim", text),
+			};
+			return {
+				invalidate(): void {},
+				render(width: number): string[] {
+					if (context.expanded) {
+						return formatExpandedSubagentCall(args, width, CALL_TEXT_METRICS, style);
+					}
+					return formatCollapsedSubagentCall(args, width, CALL_TEXT_METRICS, style);
+				},
+			};
+		},
+		renderResult(result, _options, theme, context) {
+			return renderSubagentLaunchResult(result, context.isError, (text) =>
+				new Text(theme.fg("error", text), 0, 0),
+			);
+		},
 		async execute(_toolCallId, params: SubagentParamsType, _signal, _onUpdate, ctx) {
 			// Guards: we need tmux and a persistent parent session.
 			if (!isTmuxAvailable()) {
