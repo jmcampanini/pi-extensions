@@ -12,7 +12,7 @@ The extension registers three caller-side tools:
 - **`subagents_list`** — list the available agent definitions usable as the `agent` param.
 - **`subagent_resume`** — reopen a finished child (by `id`, or `sessionPath` after a pi restart) to answer a question, retry, or send follow-up work.
 
-`subagent` and `subagent_resume` are **fire-and-forget**: they return immediately with a "started" status, and the child's result arrives as a steered message when it exits. The model must never poll — no sleeping, no reading the child's session file.
+`subagent` and `subagent_resume` are **fire-and-forget**: they return immediately with a "started" status, and the child's result arrives as a steered message when it exits. The launch instructions remain in the model-facing tool result, but the successful result prose is hidden from the human transcript so the TUI shows only the compact call; launch errors remain visible. The model must never poll - no sleeping, no reading the child's session file.
 
 | `subagent` param | Meaning |
 |---|---|
@@ -152,6 +152,7 @@ exact file path, with line numbers when you cite code.
 - **`/subagents-available` (human command).** Shows one card per known agent in a widget above the editor: the description headline, the model that wins on this machine (or a red problem block when none would), where it came from (project/global), and only the non-default parts of its config — default run behavior and file paths are folded away (the name is the filename). Human-only and zero-token: it never touches the session or the model's context. Run it again (or send a message) to dismiss. The model's `subagents_list` tool is a terse view over the same inventory.
 
 - **Live widget.** While children run, one line per sub-agent appears above the parent's editor: `[agent-type]  name` with a right-anchored elapsed clock, and nothing else — a row existing means it's running. Names that repeat the agent type (`Scout: Auth` next to `[scout]`) are de-duplicated for display. The right edge is reserved for v2's live activity states.
+- **Parent task preview.** A `subagent` tool call shows a compact identity header, a blank line, and one dimmed line of the task in the parent transcript. The task line uses normal terminal word wrapping and has no truncation marker. Press **Ctrl+O** to expand the full task content and logical line structure. Normal terminal text rendering displays tabs as spaces and treats CR/CRLF as line breaks. This is display-only and does not add another message to model context.
 - **`/subagents-running` (human command).** Opens a picker over the running children: up/down to choose, **Enter** jumps to its pane (switching tmux windows if needed), **z** jumps *and* zooms the pane (`prefix+z` un-zooms), **x** stops it (the model is told it was stopped by the user), Escape cancels.
 - **No recursion.** Children never get the spawn tools — the extension detects child mode via `PI_SUBAGENT_SESSION` and registers nothing. Depth is hard-capped at 1.
 - **How children end.** Auto-exit children close when their turn completes; interactive ones (`autoExit: false`) stay open until the model calls `subagent_done`. Either can `caller_ping` the parent.

@@ -9,6 +9,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "@sinclair/typebox";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -17,6 +18,7 @@ import { config } from "./config.ts";
 import { artifactBase, buildChildEnv, buildLaunchCommand, clearExitSidecar, readLaunchMeta, slugify } from "./launch.ts";
 import { resolveUsableModel } from "./models.ts";
 import { appendSessionName, countEntries, readSessionCwd, readSessionName } from "./session.ts";
+import { renderSubagentLaunchResult } from "./subagent-result.ts";
 import { createPane, isTmuxAvailable, sendLongCommand, shellQuote, sleep } from "./tmux.ts";
 import { ledger, running } from "./state.ts";
 import { trackChild } from "./watcher.ts";
@@ -45,6 +47,11 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			"result/ping message (preferred), or `sessionPath` if the id is no longer known (e.g. after a restart). " +
 			"ASYNC — returns immediately; the result steers back automatically. Do not poll.",
 		parameters: ResumeParams,
+		renderResult(result, _options, theme, context) {
+			return renderSubagentLaunchResult(result, context.isError, (text) =>
+				new Text(theme.fg("error", text), 0, 0),
+			);
+		},
 		async execute(_toolCallId, params: ResumeParamsType, _signal, _onUpdate, ctx) {
 			if (!isTmuxAvailable()) {
 				throw new Error("Subagents need tmux: start pi inside a tmux session.");
