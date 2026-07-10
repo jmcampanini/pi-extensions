@@ -14,6 +14,7 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 // One parsed line of a session file. We only care about a few fields; the
 // index signature lets everything else pass through untouched.
@@ -58,20 +59,14 @@ export function countEntries(sessionFile: string): number {
 // ── seeding building blocks ──────────────────────────────────────────────
 
 /**
- * The header line every seeded child session starts with. version 3 must
- * match pi's CURRENT_SESSION_VERSION, cwd matters because pi adopts the
- * header's cwd when opening the file, and parentSession is what makes the
- * child NEST under its parent in the session picker's threaded view.
+ * The header line every seeded child session starts with. Build it through
+ * pi so provider routing receives pi's UUIDv7 session ID and the format stays
+ * aligned with the installed pi version.
  */
 function headerLine(childCwd: string, parentSessionFile: string): string {
-	return JSON.stringify({
-		type: "session",
-		version: 3,
-		id: randomUUID(),
-		timestamp: new Date().toISOString(),
-		cwd: childCwd,
-		parentSession: parentSessionFile,
-	});
+	const header = SessionManager.inMemory(childCwd, { parentSession: parentSessionFile }).getHeader();
+	if (!header) throw new Error("Could not create a subagent session header.");
+	return JSON.stringify(header);
 }
 
 /**
