@@ -2,7 +2,7 @@ import { stripVTControlCharacters } from "node:util";
 import * as subagentCall from "../subagent-call.ts";
 
 let pass = 0, fail = 0;
-function eq(label: string, got: unknown, want: unknown) {
+function eq(label: string, got: unknown, want: unknown): void {
 	const g = JSON.stringify(got), w = JSON.stringify(want);
 	if (g === w) { pass++; console.log(`  ok  ${label}`); }
 	else { fail++; console.log(`  FAIL ${label}:\n    got  ${g}\n    want ${w}`); }
@@ -114,7 +114,7 @@ eq("module exports only production formatters", Object.keys(subagentCall).sort()
 
 const task = "Trace authentication from the HTTP entry point.";
 const args = { name: "Auth flow", agent: "scout", task };
-const plainLines = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line).trimEnd());
+const plainLines = (lines: string[]): string[] => lines.map((line) => stripVTControlCharacters(line).trimEnd());
 const comfortable = formatCollapsedSubagentCall(args, 100, metrics);
 eq("collapsed call has two content lines separated by a blank line", comfortable.length, 3);
 eq("comfortable heading", plainLines(comfortable)[0], "Subagent [scout] Auth flow");

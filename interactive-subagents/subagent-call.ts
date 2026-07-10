@@ -16,15 +16,19 @@ interface SubagentCallTextMetrics {
 	renderText: (text: string, width: number) => string[];
 }
 
-function normalizedInline(value: string | undefined, fallback: string): string {
-	return value?.replace(/\s+/g, " ").trim() || fallback;
+const plainText = (text: string): string => text;
+
+function normalizedInline(value: string | undefined): string {
+	return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
-function identity(args: SubagentCallArgs): { agent: string; name: string } {
-	return {
-		agent: args.agent === undefined ? "worker" : args.agent.replace(/\s+/g, " ").trim(),
-		name: normalizedInline(args.name, ""),
-	};
+function formatHeading(args: SubagentCallArgs, style: SubagentCallStyle): string {
+	const title = style.title ?? plainText;
+	const agentStyle = style.agent ?? plainText;
+	const nameStyle = style.name ?? plainText;
+	const agent = args.agent === undefined ? "worker" : normalizedInline(args.agent);
+	const name = normalizedInline(args.name);
+	return title("Subagent") + " " + agentStyle(`[${agent}]`) + " " + nameStyle(name);
 }
 
 function availableWidth(width: number): number {
@@ -33,14 +37,8 @@ function availableWidth(width: number): number {
 }
 
 function expandedContent(args: SubagentCallArgs, style: SubagentCallStyle): string {
-	const title = style.title ?? ((text: string) => text);
-	const agentStyle = style.agent ?? ((text: string) => text);
-	const nameStyle = style.name ?? ((text: string) => text);
-	const callIdentity = identity(args);
-	const heading =
-		title("Subagent") + " " + agentStyle(`[${callIdentity.agent}]`) + " " + nameStyle(callIdentity.name);
-	const task = (args.task ?? "").replace(/\r\n?|\n/g, "\n");
-	return `${heading}\n\n${task}`;
+	const task = (args.task ?? "").replace(/\r\n?/g, "\n");
+	return `${formatHeading(args, style)}\n\n${task}`;
 }
 
 export function formatCollapsedSubagentCall(
@@ -51,13 +49,8 @@ export function formatCollapsedSubagentCall(
 ): string[] {
 	const maxWidth = availableWidth(width);
 	if (maxWidth === 0) return [];
-	const title = style.title ?? ((text: string) => text);
-	const agentStyle = style.agent ?? ((text: string) => text);
-	const nameStyle = style.name ?? ((text: string) => text);
-	const previewStyle = style.preview ?? ((text: string) => text);
-	const callIdentity = identity(args);
-	const heading = title("Subagent") + " " + agentStyle(`[${callIdentity.agent}]`) + " " + nameStyle(callIdentity.name);
-	const preview = previewStyle(normalizedInline(args.task, ""));
+	const heading = formatHeading(args, style);
+	const preview = (style.preview ?? plainText)(normalizedInline(args.task));
 	const firstLine = (text: string): string =>
 		metrics.truncateToWidth(metrics.renderText(text, maxWidth)[0] ?? "", maxWidth, "");
 	return [firstLine(heading), "", firstLine(preview)];

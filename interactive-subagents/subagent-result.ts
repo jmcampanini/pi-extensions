@@ -1,17 +1,14 @@
+import type { Component } from "@earendil-works/pi-tui";
+
 interface ToolResultLike {
 	content: Array<{ type: string; text?: string }>;
-}
-
-interface RenderComponent {
-	render(width: number): string[];
-	invalidate(): void;
 }
 
 export function renderSubagentLaunchResult(
 	result: ToolResultLike,
 	isError: boolean,
-	renderError: (text: string) => RenderComponent,
-): RenderComponent {
+	renderError: (text: string) => Component,
+): Component {
 	if (!isError) {
 		return {
 			invalidate(): void {},
@@ -20,7 +17,10 @@ export function renderSubagentLaunchResult(
 	}
 
 	const text = result.content
-		.filter((content): content is { type: string; text: string } => content.type === "text" && typeof content.text === "string")
+		.filter(
+			(content): content is { type: string; text: string } =>
+				content.type === "text" && typeof content.text === "string",
+		)
 		.map((content) => content.text)
 		.join("\n");
 	return renderError(text || "Sub-agent launch failed.");

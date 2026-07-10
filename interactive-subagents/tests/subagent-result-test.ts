@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { renderSubagentLaunchResult } from "../subagent-result.ts";
 
 let pass = 0, fail = 0;
-function eq(label: string, got: unknown, want: unknown) {
+function eq(label: string, got: unknown, want: unknown): void {
 	const g = JSON.stringify(got), w = JSON.stringify(want);
 	if (g === w) { pass++; console.log(`  ok  ${label}`); }
 	else { fail++; console.log(`  FAIL ${label}:\n    got  ${g}\n    want ${w}`); }

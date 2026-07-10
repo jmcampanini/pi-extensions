@@ -118,25 +118,20 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			"the result. Call this multiple times to run sub-agents in parallel.",
 		parameters: SubagentParams,
 		renderCall(args, theme, context) {
-			const identityStyle = {
+			const style = {
 				title: (text: string) => theme.fg("toolTitle", theme.bold(text)),
 				agent: (text: string) => theme.fg("accent", text),
 				name: (text: string) => theme.fg("toolOutput", text),
+				preview: (text: string) => theme.fg("dim", text),
 			};
-			if (context.expanded) {
-				return {
-					invalidate(): void {},
-					render: (width: number) =>
-						formatExpandedSubagentCall(args, width, CALL_TEXT_METRICS, identityStyle),
-				};
-			}
 			return {
 				invalidate(): void {},
-				render: (width: number) =>
-					formatCollapsedSubagentCall(args, width, CALL_TEXT_METRICS, {
-						...identityStyle,
-						preview: (text: string) => theme.fg("dim", text),
-					}),
+				render(width: number): string[] {
+					if (context.expanded) {
+						return formatExpandedSubagentCall(args, width, CALL_TEXT_METRICS, style);
+					}
+					return formatCollapsedSubagentCall(args, width, CALL_TEXT_METRICS, style);
+				},
 			};
 		},
 		renderResult(result, _options, theme, context) {
