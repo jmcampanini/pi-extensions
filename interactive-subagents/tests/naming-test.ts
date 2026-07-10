@@ -24,11 +24,15 @@ check(
 	"A2 header",
 	fresh[0].version === 3 && fresh[0].cwd === "/tmp/work" && fresh[0].parentSession === "/tmp/naming-test-parent.jsonl",
 );
-check("A3 name entry", fresh[1].name === "subagent › scout › wait 1" && fresh[1].parentId === null);
-check("A4 readSessionName", readSessionName(freshFile) === "subagent › scout › wait 1");
+check(
+	"A3 UUIDv7 session id",
+	typeof fresh[0].id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(fresh[0].id as string),
+);
+check("A4 name entry", fresh[1].name === "subagent › scout › wait 1" && fresh[1].parentId === null);
+check("A5 readSessionName", readSessionName(freshFile) === "subagent › scout › wait 1");
 // Full-uuid entry id: an 8-hex id could collide with a copied parent entry's
 // id, which would shadow that entry in pi's index and hang its context walk.
-check("A5 full-uuid id", typeof fresh[1].id === "string" && (fresh[1].id as string).length === 36);
+check("A6 full-uuid id", typeof fresh[1].id === "string" && (fresh[1].id as string).length === 36);
 
 // Case B: a fork seed keeps the copied conversation byte-identical and puts
 // the session_info LAST, linked to the last copied entry's id.
