@@ -301,15 +301,10 @@ export function readScreen(paneId: string, lines = 50): string {
 // ── exit detection ───────────────────────────────────────────────────────
 
 /** What pollForExit reports back to the watcher. */
-export interface ExitResult {
-	reason: "done" | "ping" | "error" | "exited" | "pane-closed" | "aborted";
-	exitCode: number;
-	/** Set when reason is "ping": what the child needs help with. */
-	pingMessage?: string;
-	pingName?: string;
-	/** Set when reason is "error": the provider/agent error from the child. */
-	errorMessage?: string;
-}
+export type ExitResult =
+	| { reason: "done" | "exited" | "aborted"; exitCode: number }
+	| { reason: "ping"; exitCode: number; pingMessage: string; pingName?: string }
+	| { reason: "error" | "pane-closed"; exitCode: number; errorMessage: string };
 
 /**
  * If the pane disappears (user closed it, tmux died) and no sidecar shows up,
