@@ -16,6 +16,8 @@
  * module stays dependency-free and unit-testable.
  */
 
+import { sanitizeDisplayText } from "./display-text.ts";
+
 /** Optional styling hooks; identity (no styling) when omitted. */
 export interface WidgetStyle {
 	/** Applied to the elapsed clock (pi passes the theme's dim color). */
@@ -48,28 +50,36 @@ export function formatElapsed(totalSeconds: number): string {
  * plus a separator, for DISPLAY only. Anything less exact stays untouched.
  */
 export function stripAgentPrefix(name: string, agent: string | undefined): string {
-	if (!agent) return name;
-	const match = name.match(/^(\S+)\s*[:\-–—]\s*(.+)$/);
-	if (match && match[1].toLowerCase() === agent.toLowerCase() && match[2].trim() !== "") {
+	const safeName = sanitizeDisplayText(name);
+	const safeAgent = agent === undefined ? undefined : sanitizeDisplayText(agent);
+	if (!safeAgent) return safeName;
+	const match = safeName.match(/^(\S+)\s*[:\-–—]\s*(.+)$/);
+	if (match && match[1].toLowerCase() === safeAgent.toLowerCase() && match[2].trim() !== "") {
 		return match[2].trim();
 	}
-	return name;
+	return safeName;
 }
 
 export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style: WidgetStyle = {}): string[] {
 	const dim = style.dim ?? ((text: string) => text);
 	const border = style.border ?? ((text: string) => text);
 
+	const safeRows = rows.map((row) => ({
+		...row,
+		name: sanitizeDisplayText(row.name),
+		agent: row.agent === undefined ? undefined : sanitizeDisplayText(row.agent),
+	}));
+
 	// Tag column: "[scout]" padded so names align across rows. A row with no
 	// agent type gets blank padding — absence communicates absence.
-	const tags = rows.map((row) => (row.agent ? `[${row.agent}]` : ""));
+	const tags = safeRows.map((row) => (row.agent ? `[${row.agent}]` : ""));
 	const tagWidth = Math.max(...tags.map((tag) => tag.length), 0);
 
 	// A single faded rule separates the widget from the transcript above it.
 	const lines = [border("─".repeat(Math.max(0, width)))];
 
-	for (let i = 0; i < rows.length; i++) {
-		const row = rows[i];
+	for (let i = 0; i < safeRows.length; i++) {
+		const row = safeRows[i];
 		const tag = tags[i].padEnd(tagWidth);
 		const elapsed = formatElapsed(row.elapsedSeconds);
 		const left = ` ${tag}  ${stripAgentPrefix(row.name, row.agent)}`;

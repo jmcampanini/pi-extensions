@@ -142,6 +142,18 @@ eq("ANSI styles are retained", styled.join("").includes("\x1b["), true);
 eq("ANSI and wide/combining lines obey terminal width", styled.every((line) => metrics.visibleWidth(line) <= 36), true);
 eq("wide/combining identity is preserved", plainLines(styled)[0], "Subagent [偵察] 界e\u0301");
 
+const hostileArgs = {
+	name: "Auth\x1b[2J flow\0",
+	agent: "scout\x1b]52;c;Zm9v\x07",
+	task: "Trace \x1b]52;c;YmFy\x1b\\authentication.\b",
+};
+const hostileCollapsed = formatCollapsedSubagentCall(hostileArgs, 100, metrics);
+eq("collapsed input terminal controls are removed", hostileCollapsed.join("").includes("\x1b]52"), false);
+eq("collapsed input keeps safe text", plainLines(hostileCollapsed), ["Subagent [scout] Auth flow", "", "Trace authentication."]);
+const hostileExpanded = formatExpandedSubagentCall(hostileArgs, 100, metrics);
+eq("expanded input terminal controls are removed", hostileExpanded.join("").includes("\x1b]52"), false);
+eq("expanded input keeps safe text", plainLines(hostileExpanded).slice(0, 3), ["Subagent [scout] Auth flow", "", "Trace authentication."]);
+
 eq(
 	"multiline task is normalized for preview",
 	plainLines(formatCollapsedSubagentCall({ name: "N", task: "Trace auth.\n\nReturn  file:\tline pointers." }, 100, metrics)),

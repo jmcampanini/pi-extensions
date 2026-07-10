@@ -1,3 +1,5 @@
+import { sanitizeDisplayText } from "./display-text.ts";
+
 interface SubagentCallArgs {
 	name?: string;
 	task?: string;
@@ -19,7 +21,7 @@ interface SubagentCallTextMetrics {
 const plainText = (text: string): string => text;
 
 function normalizedInline(value: string | undefined): string {
-	return (value ?? "").replace(/\s+/g, " ").trim();
+	return sanitizeDisplayText(value ?? "").replace(/\s+/g, " ").trim();
 }
 
 function formatHeading(args: SubagentCallArgs, style: SubagentCallStyle): string {
@@ -37,7 +39,7 @@ function availableWidth(width: number): number {
 }
 
 function expandedContent(args: SubagentCallArgs, style: SubagentCallStyle): string {
-	const task = (args.task ?? "").replace(/\r\n?/g, "\n");
+	const task = sanitizeDisplayText(args.task ?? "").replace(/\r\n?/g, "\n");
 	return `${formatHeading(args, style)}\n\n${task}`;
 }
 

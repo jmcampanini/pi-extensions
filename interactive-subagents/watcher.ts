@@ -21,6 +21,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync } from "node:fs";
 import { config } from "./config.ts";
+import { sanitizeDisplayText } from "./display-text.ts";
 import { closePane, pollForExit, refreshLayout, type ExitResult } from "./tmux.ts";
 import { extractSummary } from "./session.ts";
 import { ledger, moduleSignal, running, type RunningSubagent } from "./state.ts";
@@ -114,6 +115,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 	if (running.size > 0) refreshLayout();
 
 	const elapsed = humanElapsed(Math.round((Date.now() - child.startTime) / 1000));
+	const childName = sanitizeDisplayText(child.name);
 
 	if (result.reason === "aborted") {
 		// Two ways to get aborted: the session is shutting down (stay
@@ -126,7 +128,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 				{
 					customType: "subagent_result",
 					content:
-						`Sub-agent "${child.name}" (id ${child.id}) was stopped by the user after ${elapsed}. ` +
+						`Sub-agent "${childName}" (id ${child.id}) was stopped by the user after ${elapsed}. ` +
 						`Do not treat this as a failure of the sub-agent.` +
 						// A stopped child's work may be half-done, so its worktree is
 						// deliberately NOT cleaned up — resume still needs it.
@@ -144,11 +146,13 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 	// A ping is a help request, not a completion: hand the parent model
 	// the question plus everything it needs to resume the child.
 	if (result.reason === "ping") {
+		const pingName = sanitizeDisplayText(result.pingName ?? child.name);
+		const pingMessage = sanitizeDisplayText(result.pingMessage);
 		pi.sendMessage(
 			{
 				customType: "subagent_ping",
 				content:
-					`Sub-agent "${result.pingName ?? child.name}" (id ${child.id}) needs help: ${result.pingMessage}\n\n` +
+					`Sub-agent "${pingName}" (id ${child.id}) needs help: ${pingMessage}\n\n` +
 					`Answer with subagent_resume({ id: "${child.id}", message: "<your answer>" }). ` +
 					"Its original system prompt, tools, and model are reapplied automatically.\n" +
 					`Session: ${child.sessionFile} (pass as sessionPath instead of id if the id is no longer known)`,
@@ -164,6 +168,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 	// message, read from its session file (only entries after a resume
 	// point, if any).
 	const summary = extractSummary(child.sessionFile, child.skipEntries);
+	const generatedSummary = summary === null ? null : sanitizeDisplayText(summary);
 	const failed = result.exitCode !== 0 || result.reason === "error" || result.reason === "pane-closed";
 
 	// Worktree cleanup runs BEFORE the result message is sent, so the status
@@ -182,8 +187,8 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 	let content: string;
 	if (!failed) {
 		content =
-			`Sub-agent "${child.name}" (id ${child.id}) completed (${elapsed}).\n\n` +
-			`${summary ?? "(the subagent produced no final message)"}\n\n` +
+			`Sub-agent "${childName}" (id ${child.id}) completed (${elapsed}).\n\n` +
+			`${generatedSummary ?? "(the subagent produced no final message)"}\n\n` +
 			`For follow-up work: subagent_resume({ id: "${child.id}", message: "..." }). Session: ${child.sessionFile}`;
 	} else {
 		const reasonText =
@@ -193,8 +198,8 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 					? result.errorMessage
 					: `exit code ${result.exitCode}`;
 		content =
-			`Sub-agent "${child.name}" (id ${child.id}) failed after ${elapsed} (${reasonText}).\n\n` +
-			(summary ? `Last output:\n${summary}\n\n` : "") +
+			`Sub-agent "${childName}" (id ${child.id}) failed after ${elapsed} (${reasonText}).\n\n` +
+			(generatedSummary ? `Last output:\n${generatedSummary}\n\n` : "") +
 			`You can retry with subagent_resume({ id: "${child.id}", message: "<guidance>" }). Session: ${child.sessionFile}`;
 	}
 

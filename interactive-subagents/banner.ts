@@ -26,6 +26,8 @@
  * plain node.
  */
 
+import { sanitizeDisplayText } from "./display-text.ts";
+
 /** Everything the banner states about the session. */
 export interface BannerState {
 	/** Display name — the `name` the parent chose at spawn time. */
@@ -49,6 +51,8 @@ export interface BannerStyle {
 }
 
 export function formatBannerLine(state: BannerState, width: number, style: BannerStyle = {}): string {
+	const nameText = sanitizeDisplayText(state.name);
+	const agentText = state.agent === undefined ? undefined : sanitizeDisplayText(state.agent);
 	const dim = style.dim ?? ((text: string) => text);
 	const border = style.border ?? ((text: string) => text);
 	const warn = style.warn ?? ((text: string) => text);
@@ -62,13 +66,13 @@ export function formatBannerLine(state: BannerState, width: number, style: Banne
 	// The plain-text segments, in banner order. All width math happens on
 	// these before any styling function touches them.
 	const prefix = "─ SUBAGENT · ";
-	const agentTag = state.agent ? ` [${state.agent}]` : "";
+	const agentTag = agentText ? ` [${agentText}]` : "";
 	const modeSegment = ` · ${modeText}`;
 
 	// Name clipping: the identity marker, agent tag, and mode all win over
 	// the free-text name, which shortens to a "…" suffix as width shrinks.
 	const maxName = width - prefix.length - agentTag.length - modeSegment.length;
-	let name = state.name;
+	let name = nameText;
 	if (name.length > maxName) {
 		name = maxName >= 2 ? name.slice(0, maxName - 1) + "…" : maxName === 1 ? "…" : "";
 	}

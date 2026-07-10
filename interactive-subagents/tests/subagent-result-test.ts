@@ -37,6 +37,17 @@ for (const tool of ["subagent", "subagent_resume"]) {
 	eq(`${tool} error remains visibly renderable`, error.render(100), [`ERROR: ${errorText}`]);
 }
 
+let sanitizedError = "";
+renderSubagentLaunchResult(
+	{ content: [{ type: "text", text: "Failed\x1b]52;c;Zm9v\x07 clearly.\0" }] },
+	true,
+	(text) => {
+		sanitizedError = text;
+		return { invalidate() {}, render: () => [text] };
+	},
+);
+eq("error terminal controls are removed before rendering", sanitizedError, "Failed clearly.");
+
 const directory = fileURLToPath(new URL("..", import.meta.url));
 const subagentSource = readFileSync(`${directory}/tool-subagent.ts`, "utf8");
 const resumeSource = readFileSync(`${directory}/tool-resume.ts`, "utf8");

@@ -18,6 +18,11 @@ eq("keeps non-matching prefix", stripAgentPrefix("Scouting: Auth", "scout"), "Sc
 eq("keeps name without separator", stripAgentPrefix("Scout Auth", "scout"), "Scout Auth");
 eq("keeps name when strip would empty it", stripAgentPrefix("scout: ", "scout"), "scout: ");
 eq("no agent, no strip", stripAgentPrefix("Scout: Auth", undefined), "Scout: Auth");
+eq(
+	"prefix stripping removes terminal controls first",
+	stripAgentPrefix("Scout: Au\x1b]52;c;Zm9v\x07th\0", "scout\x1b[2J"),
+	"Auth",
+);
 
 // full rows at a comfortable width
 const rows = [
@@ -50,6 +55,13 @@ const mixed = formatRunningWidgetLines(
 	[{ name: "old resume", agent: undefined, elapsedSeconds: 10 },
 	 { name: "Auth", agent: "scout", elapsedSeconds: 20 }], 50);
 eq("blank tag pads to column", mixed[1].startsWith(" " + " ".repeat(7) + "  old resume"), true);
+
+const hostileRow = formatRunningWidgetLines(
+	[{ name: "safe\x1b]52;c;Zm9v\x07 name\0", agent: "worker\x1b[2J", elapsedSeconds: 1 }],
+	50,
+);
+eq("widget removes input terminal controls", hostileRow.join("").includes("\x1b"), false);
+eq("widget preserves safe identity text", hostileRow[1].includes("[worker]  safe name"), true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

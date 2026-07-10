@@ -1,4 +1,5 @@
 import type { Component } from "@earendil-works/pi-tui";
+import { sanitizeDisplayText } from "./display-text.ts";
 
 interface ToolResultLike {
 	content: Array<{ type: string; text?: string }>;
@@ -23,5 +24,5 @@ export function renderSubagentLaunchResult(
 		)
 		.map((content) => content.text)
 		.join("\n");
-	return renderError(text || "Sub-agent launch failed.");
+	return renderError(sanitizeDisplayText(text) || "Sub-agent launch failed.");
 }

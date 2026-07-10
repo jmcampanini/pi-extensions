@@ -60,5 +60,17 @@ eq("styled human line lays out identically", strip(styledHuman), formatBannerLin
 eq("styled narrow clip lays out identically",
 	strip(formatBannerLine(human, 45, markers)), formatBannerLine(human, 45));
 
+const hostileIdentity = formatBannerLine(
+	{
+		name: "safe\x1b]52;c;Zm9v\x07 name\0",
+		agent: "worker\x1b[2J",
+		autoExit: true,
+		humanDriving: false,
+	},
+	70,
+);
+eq("banner removes generated terminal controls", hostileIdentity.includes("\x1b"), false);
+eq("banner preserves safe generated identity", hostileIdentity.includes("safe name [worker]"), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
