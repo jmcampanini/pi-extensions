@@ -43,7 +43,13 @@ subagent({
 
 ## Session context: fresh vs forked
 
-`context: "fresh"` (the default) starts the child with a clean context. `context: "forked"` seeds the child's session file with a snapshot of the parent conversation, so the child starts knowing everything the parent knows and reuses the provider prompt cache — good for follow-up work on the current discussion. Forking needs the parent's session file on disk, so it fails on the very first turn of a brand-new session (pi hasn't written the file yet).
+`context: "fresh"` (the default) starts the child without the parent conversation. Project files and instructions still load. Use fresh context for bounded, self-contained work, especially independent exploration, research, reviews, tests, and other tasks whose intermediate context should stay isolated. The task prompt must supply the objective, relevant facts and paths, constraints, whether edits are allowed, and the expected output or verification.
+
+`context: "forked"` copies the completed parent conversation before the current turn, then gives the child the new task. Use it when the task materially depends on accumulated discussion, reads, or decisions that would be difficult or lossy to restate. It is also useful when several agents should try different approaches from the same conversational starting point. Forking imports irrelevant or stale context too, so task size alone is not a reason to choose it. The copied history is sent to the child's selected model and provider, including an explicit model override, so use fresh context when the parent history is unnecessary or sensitive.
+
+Copied conversation entries remain byte-identical, but provider cache reuse is not guaranteed. A different child model, system prompt, or tool set can invalidate or limit a shared prefix, so treat caching as a possible optimization rather than a reason to fork. Forking needs the parent's session file on disk, so it fails on the first turn of a brand-new session before pi has written that file.
+
+If a follow-up depends on a child's own previous findings or tool results, continue that child with `subagent_resume` instead of spawning a new child. In short: default to fresh; fork only when reconstructing the necessary parent context would be difficult or lossy; resume when the dependency is on the child's context.
 
 ## Children in pi's session picker
 

@@ -2,9 +2,10 @@
  * tool-subagent.ts — the `subagent` tool: spawn a child pi session.
  *
  * pi API in play: `pi.registerTool(...)` exposes a tool to the MODEL. The
- * `description` and every `parameters` field description are read by the
- * model when it decides whether and how to call the tool — they are prompts,
- * not documentation, so they carry behavioral instructions ("do not poll").
+ * `description`, `promptGuidelines`, and every `parameters` field description
+ * are read by the model when it decides whether and how to call the tool —
+ * they are prompts, not documentation, so they carry behavioral instructions
+ * ("do not poll").
  * `execute(toolCallId, params, signal, onUpdate, ctx)` runs when the model
  * calls it; whatever `content` it returns (or the message of whatever it
  * throws) goes straight back into the model's context as the tool result.
@@ -48,7 +49,11 @@ const SubagentParams = Type.Object({
 		description:
 			"Short display name describing the TASK, e.g. 'Auth flow' — shown in the widget next to the agent type, so do not repeat the agent type in it.",
 	}),
-	task: Type.String({ description: "The task prompt for the subagent" }),
+	task: Type.String({
+		description:
+			"Task prompt. With fresh context, make it self-contained: include the objective, relevant facts and paths, constraints, whether edits are allowed, and the expected output or verification. " +
+			"With forked context, the task can be a directive that refers to the inherited conversation.",
+	}),
 	agent: Type.Optional(
 		Type.String({
 			description:
@@ -58,8 +63,9 @@ const SubagentParams = Type.Object({
 	context: Type.Optional(
 		Type.Union([Type.Literal("fresh"), Type.Literal("forked")], {
 			description:
-				"'forked' = child inherits this conversation's context (good for follow-up work, reuses the provider prompt cache). " +
-				"'fresh' = clean context (default). Overrides the agent definition.",
+				"'fresh' = no parent conversation (default; project files and instructions still load). Use for self-contained work and include all needed context in `task`. " +
+				"'forked' = copies this conversation before the current turn. Use when the task materially depends on accumulated discussion, reads, or decisions that would be difficult or lossy to restate, or to try parallel approaches from the same starting point. " +
+				"Forked history is sent to the child's selected model/provider, so prefer fresh when that history is unnecessary or sensitive. Use subagent_resume instead when a follow-up depends on a previous child's own context. Overrides the agent definition.",
 		}),
 	),
 	model: Type.Optional(
@@ -116,6 +122,9 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			"do not sleep, do not read the child session file, do not check panes. " +
 			"Just continue with other work or end your turn — you will be woken with " +
 			"the result. Call this multiple times to run sub-agents in parallel.",
+		promptGuidelines: [
+			"Default to subagent context 'fresh' for self-contained work; put all needed facts, constraints, and expected output in `task`. Use 'forked' only when the task materially depends on accumulated parent discussion, reads, or decisions that would be difficult or lossy to restate, and remember that the copied history goes to the child's selected model/provider. Use subagent_resume instead when a follow-up depends on the child's own prior context.",
+		],
 		parameters: SubagentParams,
 		renderCall(args, theme, context) {
 			const style = {

@@ -12,15 +12,27 @@
     "url": "git+ssh://git@github.com/jmcampanini/pi-extensions.git"
   },
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "pi": {
     "extensions": [
       "./*/index.ts"
     ]
   },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.50"
+  },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*",
-    "@sinclair/typebox": "*"
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.80.6",
+    "@earendil-works/pi-coding-agent": "^0.80.6",
+    "@earendil-works/pi-tui": "^0.80.6",
+    "@types/node": "26.1.1",
+    "typescript": "^7.0.2"
   }
 }
