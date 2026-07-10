@@ -9,11 +9,11 @@ function eq(label: string, got: unknown, want: unknown): void {
 }
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-const wide = /^(?:\p{RGI_Emoji}|\p{Script_Extensions=Han}|\p{Script_Extensions=Hiragana}|\p{Script_Extensions=Katakana}|\p{Script_Extensions=Hangul})$/v;
+const wide = /^(?:\p{Extended_Pictographic}|\p{Script_Extensions=Han}|\p{Script_Extensions=Hiragana}|\p{Script_Extensions=Katakana}|\p{Script_Extensions=Hangul})$/u;
 const ansiAtStart = /^\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/;
 
 function graphemeWidth(grapheme: string): number {
-	if (/^[\p{Mark}\p{Control}\p{Default_Ignorable_Code_Point}]+$/v.test(grapheme)) return 0;
+	if (/^[\p{Mark}\p{Control}\p{Default_Ignorable_Code_Point}]+$/u.test(grapheme)) return 0;
 	return wide.test(grapheme) || /[\uFF01-\uFF60\uFFE0-\uFFE6]/u.test(grapheme) ? 2 : 1;
 }
 
