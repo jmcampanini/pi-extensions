@@ -98,8 +98,12 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 	const tags = safeRows.map((row) => (row.agent ? `[${row.agent}]` : ""));
 	const tagWidth = Math.max(...tags.map((tag) => tag.length), 0);
 
+	// Guard the two places that would misbehave on a negative width
+	// (repeat throws, slice counts from the end).
+	const safeWidth = Math.max(0, width);
+
 	// A single faded rule separates the widget from the transcript above it.
-	const lines = [border("─".repeat(Math.max(0, width)))];
+	const lines = [border("─".repeat(safeWidth))];
 
 	for (let i = 0; i < safeRows.length; i++) {
 		const row = safeRows[i];
@@ -113,14 +117,33 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 		const name = stripAgentPrefix(row.name, row.agent);
 
 		// Right-anchor the clock one space off the edge. The flex gap absorbs
-		// the width; when space runs out the NAME gives way (ellipsis) — the
-		// tag, the state slot, and the clock are the identity and the anchor;
-		// prose is sacrificial. Layout is computed on plain text; the dim
-		// wrappers are applied last so ANSI codes never enter the width math.
-		const maxName = width - prefix.length - slot.length - 1 - elapsed.length - 3;
-		const clippedName = name.length > maxName ? name.slice(0, Math.max(1, maxName - 1)) + "…" : name;
-		const gap = Math.max(2, width - prefix.length - slot.length - 1 - clippedName.length - elapsed.length - 1);
-		lines.push(prefix + slotStyle(slot) + " " + clippedName + " ".repeat(gap) + dim(elapsed) + " ");
+		// the width; when space runs out the NAME gives way (ellipsis, then
+		// nothing) — the tag, the state slot, and the clock are the identity
+		// and the anchor; prose is sacrificial. Layout is computed on plain
+		// text; the dim wrappers are applied last so ANSI codes never enter
+		// the width math.
+		// Everything except the name and the flex gap has a fixed width: the
+		// prefix, the slot, its padding space, the clock, its trailing space.
+		const fixedWidth = prefix.length + slot.length + 1 + elapsed.length + 1;
+		const maxName = width - fixedWidth - 2; // reserve a 2-column minimum gap
+		// Clip the name to fit: ellipsis-terminated while at least one column
+		// remains (a single column shows a bare "…"), empty below that.
+		let clippedName = name;
+		if (name.length > maxName) {
+			clippedName = maxName >= 1 ? name.slice(0, maxName - 1) + "…" : "";
+		}
+		const gap = Math.max(0, width - fixedWidth - clippedName.length);
+
+		// A line wider than the terminal is FATAL upstream: pi's TUI treats an
+		// overflowing widget line as a crash. At every width the grid fits
+		// in, the styled line below is exact; at widths narrower than the
+		// fixed grid, clamp the plain text instead and skip styling the row.
+		const plainLine = prefix + slot + " " + clippedName + " ".repeat(gap) + elapsed + " ";
+		lines.push(
+			plainLine.length <= width
+				? prefix + slotStyle(slot) + " " + clippedName + " ".repeat(gap) + dim(elapsed) + " "
+				: plainLine.slice(0, safeWidth),
+		);
 	}
 	return lines;
 }

@@ -92,6 +92,21 @@ eq("narrow keeps the state slot", narrowState[1].includes(` [scout] ${FORK_MARK}
 eq("narrow state row truncates with ellipsis", narrowState[1].includes("…"), true);
 eq("narrow state row fits width", narrowState[1].length <= 30, true);
 
+// no width may overflow — pi's TUI crashes on a widget line wider than the
+// terminal. Worst case: long tag, both marks, H:MM:SS clock, long name.
+const overflowRows = [
+	{ name: "a very long task name that cannot possibly fit", agent: "code-reviewer", elapsedSeconds: 3723, forked: true, worktree: true },
+	{ name: "x", elapsedSeconds: 0 },
+];
+let widthViolations = 0;
+for (let w = -2; w <= 45; w++) {
+	// Negative widths must not throw and must emit empty lines (max(0, w)).
+	for (const line of formatRunningWidgetLines(overflowRows, w)) {
+		if (line.length > Math.max(0, w)) widthViolations++;
+	}
+}
+eq("no line ever exceeds the render width", widthViolations, 0);
+
 const hostileRow = formatRunningWidgetLines(
 	[{ name: "safe\x1b]52;c;Zm9v\x07 name\0", agent: "worker\x1b[2J", elapsedSeconds: 1 }],
 	50,

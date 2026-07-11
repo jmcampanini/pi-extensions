@@ -5,6 +5,7 @@
 import {
 	buildChildEnv,
 	buildLaunchCommand,
+	type LaunchMeta,
 	readLaunchMeta,
 	slugify,
 	writeLaunchMeta,
@@ -87,7 +88,7 @@ eq(
 
 const dir = mkdtempSync(join(tmpdir(), "subagents-launch-"));
 const sessionFile = join(dir, "child.jsonl");
-const meta = { name: "Worker", agent: "worker", tools: "read", model: "p/m", thinking: "low", systemPromptFile: "/sp.md", autoExit: true };
+const meta: LaunchMeta = { name: "Worker", agent: "worker", tools: "read", model: "p/m", thinking: "low", systemPromptFile: "/sp.md", autoExit: true, context: "forked" };
 writeLaunchMeta(sessionFile, meta);
 eq("meta round-trips", readLaunchMeta(sessionFile), meta);
 eq("missing meta = {}", readLaunchMeta(join(dir, "nope.jsonl")), {});
