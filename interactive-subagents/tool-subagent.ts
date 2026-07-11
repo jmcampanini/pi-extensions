@@ -335,7 +335,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 					// model, thinking, auto-exit, worktree). Without this, a resumed
 					// agent silently loses its system prompt and restrictions — they
 					// live on the command line, not in the conversation.
-					writeLaunchMeta(childSessionFile, { name: params.name, agent: agentName, tools, model, thinking, systemPromptFile, autoExit, worktree });
+					writeLaunchMeta(childSessionFile, { name: params.name, agent: agentName, tools, model, thinking, systemPromptFile, autoExit, context, worktree });
 
 					// Create the pane, give its shell a moment, then run the launch
 					// script (written to artifacts for debuggability).
@@ -360,6 +360,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 					tools,
 					model,
 					autoExit,
+					context,
 					worktree,
 					abort: new AbortController(),
 				});

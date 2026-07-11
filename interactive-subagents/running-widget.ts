@@ -58,6 +58,8 @@ export function updateRunningWidget(): void {
 		name: child.name,
 		agent: child.agent,
 		elapsedSeconds: Math.round((Date.now() - child.startTime) / 1000),
+		forked: child.context === "forked",
+		worktree: child.worktree !== undefined,
 	}));
 	ctx.ui.setWidget(
 		WIDGET_KEY,
@@ -67,6 +69,10 @@ export function updateRunningWidget(): void {
 				return formatRunningWidgetLines(rows, width, {
 					dim: (text) => theme.fg("dim", text),
 					border: (text) => theme.fg("borderMuted", text),
+					// The state marks stack the terminal's faint attribute (SGR 2)
+					// on top of the theme's dim color, so they sit a notch quieter
+					// than the clock. \x1b[22m turns only the faintness back off.
+					slot: (text) => `\x1b[2m${theme.fg("dim", text)}\x1b[22m`,
 				});
 			},
 		}),

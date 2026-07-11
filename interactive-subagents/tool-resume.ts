@@ -198,6 +198,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				tools,
 				model,
 				autoExit,
+				context: meta.context,
 				// The ORIGINAL worktree snapshot rides along unchanged: keeping
 				// the original baseCommit means work committed in an earlier run
 				// still counts as "changes" when this run's cleanup decides.

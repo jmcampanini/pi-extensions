@@ -32,6 +32,9 @@ export interface RunningSubagent {
 	tools?: string;
 	model?: string;
 	autoExit: boolean;
+	/** How the conversation started: "forked" copies the parent's, "fresh" starts
+	 * empty. Missing when a resume found no `.meta` context (an older session). */
+	context?: "fresh" | "forked";
 	/** Set when this child runs in a git worktree — drives end-of-run cleanup. */
 	worktree?: WorktreeInfo;
 	/** Cancels this child's watcher (used by the picker's x = stop). */
