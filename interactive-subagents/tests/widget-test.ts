@@ -415,26 +415,26 @@ eq("no v2 line ever exceeds the render width", v2WidthViolations, 0);
 // An exit-lifecycle state supplied by the controller from the delivering
 // map, never by computeStatus: frozen clock, no tool/token telemetry, dim
 // (never warn). "delivering" is 10 chars - the widest status word - so the
-// ladder and the sweep must absorb it.
+// fixed telemetry core and the sweep must absorb it.
 const deliveringRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "delivering" }];
 eq("delivering row exact string", formatRunningWidgetLines(deliveringRow, 50)[1],
-	" [scout]    Auth" + " ".repeat(16) + "delivering  03:12 ");
-eq("delivering row at the 10-char name boundary",
+	" [scout]    Auth        delivering        · 03:12 ");
+eq("delivering truncates the name around the fixed telemetry core",
 	formatRunningWidgetLines(
 		[{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "delivering" }] as WidgetRow[], 43)[1],
-	" [judge]    API review   delivering  01:12 ");
+	" [judge]    AP…  delivering        · 01:12 ");
 const deliveringStyled = formatRunningWidgetLines(deliveringRow, 50,
 	{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
-eq("delivering renders dim, joined to a dim clock",
-	deliveringStyled[1].includes("<D>delivering</D>  <D>03:12</D> "), true);
+eq("delivering core and clock separator render dim",
+	deliveringStyled[1].includes(`<D>delivering${" ".repeat(7)}</D><D> · </D><D>03:12</D> `), true);
 eq("delivering never uses the warn hook", deliveringStyled[1].includes("<W>"), false);
-// The ladder: the segment stays while the name can hold its 10-column
-// floor, then the whole segment drops to exact v1 geometry.
+// The fixed core remains while it fits with identity and clock, sacrificing
+// the name first. Once the core no longer fits, the row uses v1 geometry.
 const deliveringLadder: WidgetRow[] = [{ name: "Auth refactor", agent: "scout", elapsedSeconds: 192, status: "delivering" }];
-eq("delivering ladder 42: segment kept, name at the floor",
-	formatRunningWidgetLines(deliveringLadder, 42)[1], " [scout]    Auth refa…  delivering  03:12 ");
-eq("delivering ladder 41: segment drops, exact v1 geometry",
-	formatRunningWidgetLines(deliveringLadder, 41)[1], " [scout]    Auth refactor" + " ".repeat(10) + "03:12 ");
+eq("delivering ladder 42: fixed core truncates the name",
+	formatRunningWidgetLines(deliveringLadder, 42)[1], " [scout]    A…  delivering        · 03:12 ");
+eq("delivering ladder 37: fixed core drops to v1 geometry",
+	formatRunningWidgetLines(deliveringLadder, 37)[1], " [scout]    Auth refactor      03:12 ");
 // Width sweep with delivering rows: worst-case tag, both marks, H:MM:SS
 // clock. No width - including negative - may ever overflow.
 const deliveringOverflowRows: WidgetRow[] = [
@@ -445,7 +445,7 @@ const deliveringOverflowRows: WidgetRow[] = [
 let deliveringWidthViolations = 0;
 for (let w = -2; w <= 70; w++) {
 	for (const line of formatRunningWidgetLines(deliveringOverflowRows, w)) {
-		if (line.length > Math.max(0, w)) deliveringWidthViolations++;
+		if (visibleWidth(line) > Math.max(0, w)) deliveringWidthViolations++;
 	}
 }
 eq("no delivering line ever exceeds the render width", deliveringWidthViolations, 0);
