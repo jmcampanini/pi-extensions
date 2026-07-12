@@ -50,6 +50,54 @@ eq("row 1", lines[1], " [scout]     Auth" + " ".repeat(60 - 17 - 6) + "00:23 ");
 eq("row 2", lines[2], " [worker]    quick fix" + " ".repeat(60 - 22 - 6) + "00:04 ");
 eq("rows exactly width wide", lines.every((l) => l.length === 60), true);
 
+// Agent identifiers have a widget-only 12-column budget inside their
+// brackets. The shared column is sized from those rendered tags, while the
+// full identifier remains available for display prefix de-duplication.
+const tagRows = formatRunningWidgetLines([
+	{ name: "short child", agent: "scout", elapsedSeconds: 1 },
+	{ name: "boundary child", agent: "abcdefghijkl", elapsedSeconds: 2 },
+	{ name: "long child", agent: "abcdefghijklm", elapsedSeconds: 3 },
+], 72);
+eq("short agent tag remains unchanged", tagRows[1].includes("[scout]"), true);
+eq("12-column agent tag remains unchanged", tagRows[2].includes("[abcdefghijkl]"), true);
+eq("long ASCII agent tag truncates within the budget", tagRows[3].includes("[abcdefghijk…]"), true);
+const tagInteriors = tagRows.slice(1).map((line) => line.match(/\[([^\]]*)\]/)?.[1] ?? "");
+eq("every rendered agent identifier fits 12 display columns",
+	tagInteriors.every((tag) => visibleWidth(tag) <= 12), true);
+eq("mixed clamped tags keep child names aligned",
+	tagRows.slice(1).map((line, index) => line.indexOf(["short child", "boundary child", "long child"][index])),
+	[19, 19, 19]);
+
+const familyEmoji = "👨‍👩‍👧‍👦";
+const wideTagRows = formatRunningWidgetLines([
+	{ name: "CJK boundary", agent: "検索検索検索", elapsedSeconds: 1 },
+	{ name: "CJK long", agent: "検索検索検索検", elapsedSeconds: 2 },
+	{ name: "emoji long", agent: "💥".repeat(7), elapsedSeconds: 3 },
+	{ name: "emoji cluster long", agent: familyEmoji.repeat(7), elapsedSeconds: 4 },
+], 72);
+eq("12-column wide agent tag remains unchanged", wideTagRows[1].includes("[検索検索検索]"), true);
+eq("wide agent tag truncates without splitting a glyph", wideTagRows[2].includes("[検索検索検…]"), true);
+eq("emoji agent tag truncates without splitting a surrogate pair",
+	wideTagRows[3].includes(`[${"💥".repeat(5)}…]`), true);
+eq("emoji agent tag truncates without splitting a grapheme cluster",
+	wideTagRows[4].includes(`[${familyEmoji.repeat(5)}…]`), true);
+eq("wide and emoji rendered agent identifiers fit 12 display columns",
+	wideTagRows.slice(1).every((line) => visibleWidth(line.match(/\[([^\]]*)\]/)?.[1] ?? "") <= 12), true);
+
+const fullAgent = "abcdefghijklmnop";
+const fullPrefixRow = formatRunningWidgetLines(
+	[{ name: `${fullAgent}: Auth`, agent: fullAgent, elapsedSeconds: 4 }], 50);
+eq("prefix de-duplication compares against the full agent identifier",
+	fullPrefixRow[1].includes("[abcdefghijk…]    Auth"), true);
+eq("truncated agent identifier is not used for prefix de-duplication",
+	fullPrefixRow[1].includes(`${fullAgent}: Auth`), false);
+
+const narrowLongTag = formatRunningWidgetLines(
+	[{ name: "Task details that should reclaim width", agent: "a-very-long-agent-definition", elapsedSeconds: 4 }], 30);
+eq("clamped long tag leaves narrow-terminal room for the child name",
+	narrowLongTag[1].includes("[a-very-long…]    Ta…"), true);
+eq("narrow long-tag row fits terminal columns", visibleWidth(narrowLongTag[1]) <= 30, true);
+
 // style hooks wrap ONLY the clock, the state slot, and the rule; layout math
 // stays plain
 const styled = formatRunningWidgetLines(rows, 60, { dim: (t) => `<D>${t}</D>`, border: (t) => `<B>${t}</B>` });

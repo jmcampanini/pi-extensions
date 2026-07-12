@@ -42,6 +42,8 @@ export const FORK_MARK = "f";
 /** Marks a child running in its own git worktree. */
 export const WORKTREE_MARK = "w";
 
+const AGENT_TAG_MAX_COLUMNS = 12;
+
 /** Optional styling hooks; identity (no styling) when omitted. */
 export interface WidgetStyle {
 	/** Applied to the elapsed clock (pi passes the theme's dim color). */
@@ -284,9 +286,13 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 		agent: row.agent === undefined ? undefined : singleLine(sanitizeDisplayText(row.agent)),
 	}));
 
-	// Tag column: "[scout]" padded so names align across rows. A row with no
-	// agent type gets blank padding — absence communicates absence.
-	const tags = safeRows.map((row) => (row.agent ? `[${row.agent}]` : ""));
+	// Tag column: "[scout]" padded so names align across rows. Clamp only the
+	// rendered identifier; the full row.agent remains available for prefix
+	// de-duplication and every non-widget use. A row with no agent type gets
+	// blank padding — absence communicates absence.
+	const tags = safeRows.map((row) =>
+		row.agent ? `[${truncateToColumns(row.agent, AGENT_TAG_MAX_COLUMNS)}]` : "",
+	);
 	const tagWidth = Math.max(...tags.map(displayColumns), 0);
 	const elapsedValues = safeRows.map((row) => formatElapsed(row.elapsedSeconds));
 	const elapsedWidth = Math.max(...elapsedValues.map(displayColumns), 0);
