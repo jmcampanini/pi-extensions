@@ -29,6 +29,7 @@
  *   widget.ts            pure renderer for the running-children widget
  *   running-widget.ts    the widget's stateful controller (timer, ctx.ui)
  *   watcher.ts           per-child supervision + the steered result messages
+ *   delivery.ts          message_end listener that clears "delivering" widget rows
  *   implant.ts           loaded INSIDE each child: done/ping tools, auto-exit
  *   tool-*.ts            one file per model-facing tool (subagent, resume, list)
  *   command-*.ts         one file per human command (available, running)
@@ -40,6 +41,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resetOverview, registerSubagentsAvailableCommand } from "./command-available.ts";
 import { registerSubagentsRunningCommand } from "./command-running.ts";
+import { registerDeliveryListener } from "./delivery.ts";
 import { stopWidgetTimer } from "./running-widget.ts";
 import { resetForShutdown, setLatestCtx } from "./state.ts";
 import { registerSubagentsListTool } from "./tool-list.ts";
@@ -71,6 +73,13 @@ export default function (pi: ExtensionAPI) {
 	// the child-side tools; withholding the spawn tools here is what enforces
 	// the no-recursion rule.
 	if (IS_SUBAGENT_CHILD) return;
+
+	// Parent mode only: watch our own result/ping messages land in the parent
+	// transcript so "delivering" widget rows can be cleared (see delivery.ts).
+	// Registered before the spawn tools: on an idle parent the landing event
+	// fires within microtasks of the watcher's send, so the listener must
+	// exist before any child can possibly exit.
+	registerDeliveryListener(pi);
 
 	registerSubagentTool(pi);
 	registerSubagentsAvailableCommand(pi);

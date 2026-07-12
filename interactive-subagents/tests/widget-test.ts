@@ -411,6 +411,45 @@ for (let w = -2; w <= 90; w++) {
 }
 eq("no v2 line ever exceeds the render width", v2WidthViolations, 0);
 
+// ── the delivering exit state ────────────────────────────────────────────
+// An exit-lifecycle state supplied by the controller from the delivering
+// map, never by computeStatus: frozen clock, no tool/token telemetry, dim
+// (never warn). "delivering" is 10 chars - the widest status word - so the
+// fixed telemetry core and the sweep must absorb it.
+const deliveringRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "delivering" }];
+eq("delivering row exact string", formatRunningWidgetLines(deliveringRow, 50)[1],
+	" [scout]    Auth        delivering        · 03:12 ");
+eq("delivering truncates the name around the fixed telemetry core",
+	formatRunningWidgetLines(
+		[{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "delivering" }] as WidgetRow[], 43)[1],
+	" [judge]    AP…  delivering        · 01:12 ");
+const deliveringStyled = formatRunningWidgetLines(deliveringRow, 50,
+	{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
+eq("delivering core and clock separator render dim",
+	deliveringStyled[1].includes(`<D>delivering${" ".repeat(7)}</D><D> · </D><D>03:12</D> `), true);
+eq("delivering never uses the warn hook", deliveringStyled[1].includes("<W>"), false);
+// The fixed core remains while it fits with identity and clock, sacrificing
+// the name first. Once the core no longer fits, the row uses v1 geometry.
+const deliveringLadder: WidgetRow[] = [{ name: "Auth refactor", agent: "scout", elapsedSeconds: 192, status: "delivering" }];
+eq("delivering ladder 42: fixed core truncates the name",
+	formatRunningWidgetLines(deliveringLadder, 42)[1], " [scout]    A…  delivering        · 03:12 ");
+eq("delivering ladder 37: fixed core drops to v1 geometry",
+	formatRunningWidgetLines(deliveringLadder, 37)[1], " [scout]    Auth refactor      03:12 ");
+// Width sweep with delivering rows: worst-case tag, both marks, H:MM:SS
+// clock. No width - including negative - may ever overflow.
+const deliveringOverflowRows: WidgetRow[] = [
+	{ name: "a very long task name that cannot possibly fit", agent: "code-reviewer", elapsedSeconds: 3723,
+	  forked: true, worktree: true, status: "delivering" },
+	{ name: "x", elapsedSeconds: 0, status: "delivering" },
+];
+let deliveringWidthViolations = 0;
+for (let w = -2; w <= 70; w++) {
+	for (const line of formatRunningWidgetLines(deliveringOverflowRows, w)) {
+		if (visibleWidth(line) > Math.max(0, w)) deliveringWidthViolations++;
+	}
+}
+eq("no delivering line ever exceeds the render width", deliveringWidthViolations, 0);
+
 // value table: formatToolElapsed
 eq("tool elapsed seconds", formatToolElapsed(42), "42s");
 eq("tool elapsed minutes", formatToolElapsed(420), "7m");
