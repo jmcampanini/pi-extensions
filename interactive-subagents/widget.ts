@@ -14,13 +14,13 @@
  * immediately left of the clock, joined to it by two spaces:
  *
  *   ──────────────────────────────────────────────────────────────────
- *   [scout]  fw Auth                    active · bash 7m · 84k  03:12
- *   [worker]    quick fix                         waiting · 6k  00:41
+ *   [scout]  fw Auth                   bash 7m · active ·  84k  03:12
+ *   [worker]    quick fix                       waiting ·   6k  00:41
  *   [judge]   w API review                             stalled  01:12
  *
- * The segment degrades before the name does (tool part first, then the
- * tokens, then the whole segment — see the ladder at chooseSegment), and
- * a row WITHOUT a status renders byte-identical to the v1 row, which the
+ * The optional tool sits at the segment's variable left edge. It drops
+ * before the name truncates, while state and known context stay visible.
+ * A row WITHOUT a status renders byte-identical to the v1 row, which the
  * v1 exact-string tests pin.
  *
  * A faded rule tops the block to separate it from the transcript, the clock
@@ -77,8 +77,8 @@ export interface WidgetRow {
 	/** How long that tool has been running (skew-free parent-side estimate). */
 	toolElapsedSeconds?: number;
 	/** Pi's own context-token count, pre-computed by the controller.
-	 * Absent (or non-finite) context renders as absence, not "?" — quieter,
-	 * and the number returns on the next turn_end. */
+	 * Absent (or non-finite) context reserves a blank fixed-width cell rather
+	 * than rendering "?"; the number returns on the next turn_end. */
 	contextTokens?: number;
 }
 
@@ -168,13 +168,8 @@ export function stripAgentPrefix(name: string, agent: string | undefined): strin
 }
 
 // ── display safety: columns, single lines, surrogate pairs ───────────────
-// All layout math in this file measures UTF-16 .length, which undercounts
-// East-Asian-wide and emoji glyphs (2 terminal columns each). pi-tui's fatal
-// overflow check measures DISPLAY COLUMNS, so a .length-exact line holding
-// wide glyphs can overflow the terminal and crash the whole parent TUI.
-// Deliberately NOT fixed by making the layout ladder column-aware (that is
-// a separately parked project); these helpers back a final per-row guard
-// that converts a possible crash into a cosmetically-rough-but-safe row.
+// Layout uses terminal display columns rather than UTF-16 length so wide
+// names and tags cannot consume the fixed right-side telemetry budget.
 
 /** The standard East-Asian-wide ranges plus emoji/astral pictographs, all
  * counted 2 columns; everything else 1. A small conservative table, not a
@@ -213,8 +208,7 @@ export function displayColumns(text: string): number {
 	return columns;
 }
 
-/** Column-aware clamp for the fallback row: walk code points accumulating
- * displayColumns until the width budget is hit. */
+/** Column-aware clamp: walk code points until the width budget is hit. */
 function clampToColumns(text: string, maxColumns: number): string {
 	let columns = 0;
 	let out = "";
@@ -227,27 +221,37 @@ function clampToColumns(text: string, maxColumns: number): string {
 	return out;
 }
 
+function padToColumns(text: string, width: number): string {
+	return text + " ".repeat(Math.max(0, width - displayColumns(text)));
+}
+
+function truncateToColumns(text: string, width: number): string {
+	if (displayColumns(text) <= width) return text;
+	if (width < 1) return "";
+	return clampToColumns(text, width - 1) + "…";
+}
+
 /** \t/\n/\r each become one space: this renderer emits exactly one terminal
  * row per child, so the shared sanitizer's multi-line whitelist does not
  * apply here (it stays multi-line-friendly for the surfaces that do wrap).
- * A surviving tab counts 1 in the .length math but 3 columns in pi-tui —
- * fatal overflow — and a raw newline/CR corrupts the TUI's row accounting. */
+ * A surviving tab occupies 3 columns in pi-tui, and a raw newline/CR
+ * corrupts the TUI's row accounting. */
 function singleLine(text: string): string {
 	return text.replace(/[\t\n\r]/g, " ");
 }
 
 /** A .slice() by code units can cut a surrogate pair in half; never emit the
- * dangling high surrogate (it renders as mojibake). The result only ever
- * gets shorter, so the callers' .length budget arithmetic still holds. */
+ * dangling high surrogate because it renders as mojibake. */
 function stripTrailingLoneSurrogate(text: string): string {
 	const last = text.charCodeAt(text.length - 1);
 	return last >= 0xd800 && last <= 0xdbff ? text.slice(0, -1) : text;
 }
 
 // ── the status segment ───────────────────────────────────────────────────
-// Grammar: `<status>[ · <tool> <elapsed>][ · <tokens>k]`, parts omitted (with
-// their separators) when absent. The segment sits immediately left of the
-// clock, joined to it by two spaces.
+// Grammar: `[<tool> <elapsed> · ]<status><context>`. Context is a fixed
+// seven-column suffix: ` · ` plus three right-aligned digits and `k`, or seven
+// blank columns when unknown. The segment sits immediately left of the clock,
+// joined to it by two spaces.
 
 /** Tool names come out of the child's own activity writes — hostile by
  * definition — so they are sanitized AGAIN here regardless of what the
@@ -258,42 +262,54 @@ export function clampToolName(rawName: string): string {
 	return safe.length > 12 ? stripTrailingLoneSurrogate(safe.slice(0, 12)) + "…" : safe;
 }
 
-/** Candidate segments, widest first — the degradation ladder. The tool part
- * drops before the tokens (most volatile, least identifying; the context
- * size is the segment's stated purpose), the tokens before the status
- * word, and the whole segment before the name. */
-function segmentCandidates(row: WidgetRow): string[] {
-	if (row.status === undefined) return [];
-	// Tool part: only while active, and only when a name survives sanitizing.
-	let toolPart = "";
-	if (row.status === "active" && row.toolName !== undefined) {
-		const tool = clampToolName(row.toolName);
-		if (tool !== "") toolPart = ` · ${tool} ${formatToolElapsed(row.toolElapsedSeconds ?? 0)}`;
-	}
-	// Tokens part: unknown context renders as absence, not "?". Whole
-	// thousands only — how full the child is, nothing finer.
-	let tokensPart = "";
-	if (row.contextTokens !== undefined && Number.isFinite(row.contextTokens)) {
-		tokensPart = ` · ${Math.max(0, Math.round(row.contextTokens / 1000))}k`;
-	}
-	return [row.status + toolPart + tokensPart, row.status + tokensPart, row.status];
+const CONTEXT_DIGITS = 3;
+const CONTEXT_CELL_WIDTH = CONTEXT_DIGITS + 1;
+const CONTEXT_SUFFIX_WIDTH = 3 + CONTEXT_CELL_WIDTH;
+
+/** Widget-only context formatter: three right-aligned whole-thousands digits
+ * plus `k`. Saturating at 999 keeps the display contract fixed even if a
+ * future context window exceeds the widget's stated three-digit range. */
+export function formatWidgetContextTokens(count: number): string {
+	const thousands = Math.max(0, Math.min(999, Math.round(count / 1000)));
+	return `${String(thousands).padStart(CONTEXT_DIGITS, " ")}k`;
 }
 
-/** Pick the widest candidate that leaves the name at least 10 columns
- * (a truncated-but-meaningful name; a shorter name only demands its own
- * length, so it is never truncated to make room for a segment). The check
- * reuses the row's exact fixed-width formula — the candidate plus its
- * two-space joint to the clock, plus the same 2-column minimum-gap reserve
- * as the maxName math below — so a chosen segment can never overflow.
- * Returns "" when nothing fits: the row is then geometrically the exact
- * v1 row and the v1 name ladder takes over. */
-function chooseSegment(row: WidgetRow, width: number, prefix: string, slot: string, elapsed: string, name: string): string {
-	for (const candidate of segmentCandidates(row)) {
-		const fixedWidth = prefix.length + slot.length + 1 + candidate.length + 2 + elapsed.length + 1;
-		const candidateMaxName = width - fixedWidth - 2;
-		if (candidateMaxName >= Math.min(name.length, 10)) return candidate;
+/** Candidate segments, widest first. The optional tool drops before the
+ * task name truncates. State and the fixed context suffix form the core. */
+function segmentCandidates(row: WidgetRow): string[] {
+	if (row.status === undefined) return [];
+	const contextTokens = row.contextTokens;
+	const contextPart = contextTokens !== undefined && Number.isFinite(contextTokens)
+		? ` · ${formatWidgetContextTokens(contextTokens)}`
+		: " ".repeat(CONTEXT_SUFFIX_WIDTH);
+	const core = row.status + contextPart;
+	// Tool part: only while active, and only when a name survives sanitizing.
+	if (row.status === "active" && row.toolName !== undefined) {
+		const tool = clampToolName(row.toolName);
+		if (tool !== "") return [`${tool} ${formatToolElapsed(row.toolElapsedSeconds ?? 0)} · ${core}`, core];
 	}
-	return "";
+	return [core];
+}
+
+/** Keep the tool only when the complete name still fits. Otherwise drop the
+ * tool and preserve the core,
+ * allowing the name to truncate around the fixed right-side telemetry. If
+ * even the core cannot fit beside the identity and clock, omit it so the
+ * renderer retains its pre-telemetry narrow-width safety. */
+function chooseSegment(row: WidgetRow, width: number, prefix: string, slot: string, elapsed: string, name: string): string {
+	const candidates = segmentCandidates(row);
+	if (candidates.length === 0) return "";
+	const full = candidates[0];
+	if (candidates.length > 1) {
+		const fixedWidth = displayColumns(prefix) + displayColumns(slot) + 1
+			+ displayColumns(full) + 2 + displayColumns(elapsed) + 1;
+		const candidateMaxName = width - fixedWidth - 2;
+		if (candidateMaxName >= displayColumns(name)) return full;
+	}
+	const core = candidates[candidates.length - 1];
+	const coreFixedWidth = displayColumns(prefix) + displayColumns(slot) + 1
+		+ displayColumns(core) + 2 + displayColumns(elapsed) + 1;
+	return coreFixedWidth <= width ? core : "";
 }
 
 export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style: WidgetStyle = {}): string[] {
@@ -313,7 +329,9 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 	// Tag column: "[scout]" padded so names align across rows. A row with no
 	// agent type gets blank padding — absence communicates absence.
 	const tags = safeRows.map((row) => (row.agent ? `[${row.agent}]` : ""));
-	const tagWidth = Math.max(...tags.map((tag) => tag.length), 0);
+	const tagWidth = Math.max(...tags.map(displayColumns), 0);
+	const elapsedValues = safeRows.map((row) => formatElapsed(row.elapsedSeconds));
+	const elapsedWidth = Math.max(...elapsedValues.map(displayColumns), 0);
 
 	// Guard the two places that would misbehave on a negative width
 	// (repeat throws, slice counts from the end).
@@ -324,8 +342,8 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 
 	for (let i = 0; i < safeRows.length; i++) {
 		const row = safeRows[i];
-		const tag = tags[i].padEnd(tagWidth);
-		const elapsed = formatElapsed(row.elapsedSeconds);
+		const tag = padToColumns(tags[i], tagWidth);
+		const elapsed = elapsedValues[i].padStart(elapsedWidth, " ");
 		// The four-column grid: padded tag, one space, the two-column state
 		// slot (blank columns when a state doesn't apply), one padding space,
 		// then the name.
@@ -334,52 +352,41 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 		const name = stripAgentPrefix(row.name, row.agent);
 
 		// Right-anchor the clock one space off the edge. The flex gap absorbs
-		// the width; when space runs out the status detail gives way first
-		// (the ladder in chooseSegment), then the NAME (ellipsis, then
-		// nothing) — the tag, the state slot, and the clock are the identity
-		// and the anchor; prose is sacrificial. Layout is computed on plain
-		// text; the dim wrappers are applied last so ANSI codes never enter
+		// the width; when space runs out the optional tool gives way first,
+		// then the NAME truncates (ellipsis, then nothing). The tag, state slot,
+		// telemetry core, and clock are the identity and anchors; prose is
+		// sacrificial. Layout is computed on plain text; the dim wrappers are
+		// applied last so ANSI codes never enter
 		// the width math.
-		// The segment is chosen BEFORE the width math so its plain length
-		// participates in fixedWidth — a line wider than the terminal is
+		// The segment is chosen BEFORE the width math so its display width
+		// participates in fixedWidth. A line wider than the terminal is
 		// FATAL upstream, so the segment can never be bolted on afterwards.
 		// Everything except the name and the flex gap has a fixed width: the
 		// prefix, the slot, its padding space, the segment plus its two-space
 		// joint to the clock, the clock, its trailing space.
 		const segment = chooseSegment(row, width, prefix, slot, elapsed, name);
-		const segmentWidth = segment === "" ? 0 : segment.length + 2;
-		const fixedWidth = prefix.length + slot.length + 1 + segmentWidth + elapsed.length + 1;
+		const segmentWidth = segment === "" ? 0 : displayColumns(segment) + 2;
+		const fixedWidth = displayColumns(prefix) + displayColumns(slot) + 1
+			+ segmentWidth + displayColumns(elapsed) + 1;
 		const maxName = width - fixedWidth - 2; // reserve a 2-column minimum gap
-		// Clip the name to fit: ellipsis-terminated while at least one column
-		// remains (a single column shows a bare "…"), empty below that.
-		let clippedName = name;
-		if (name.length > maxName) {
-			// The surrogate strip only ever shortens the clip, so the gap math
-			// below (which measures clippedName.length) still lands the clock
-			// exactly on the right edge.
-			clippedName = maxName >= 1 ? stripTrailingLoneSurrogate(name.slice(0, maxName - 1)) + "…" : "";
-		}
-		const gap = Math.max(0, width - fixedWidth - clippedName.length);
+		const clippedName = truncateToColumns(name, maxName);
+		const gap = Math.max(0, width - fixedWidth - displayColumns(clippedName));
 
 		// A line wider than the terminal is FATAL upstream: pi's TUI treats an
 		// overflowing widget line as a crash. At every width the grid fits
 		// in, the styled line below is exact; at widths narrower than the
 		// fixed grid, clamp the plain text instead and skip styling the row.
 		// The segment renders dim in every state except stalled, which gets
-		// the warn hook — and it appears in BOTH branches so the plain-length
-		// exact-fit check keeps holding.
+		// the warn hook.
 		//
-		// The exact-fit check measures BOTH units: pi-tui's fatal overflow
-		// check counts display columns, and the .length math above undercounts
-		// wide (CJK/emoji) glyphs, so a .length-exact line can still overflow
-		// and kill the parent TUI. Rows holding wide glyphs take the unstyled
-		// column-clamped fallback instead — cosmetically rough (clock off the
-		// right edge), but never a crash.
+		// The final clamp handles terminals narrower than the immutable identity
+		// and clock fields. Under normal widths the column-aware budget keeps the
+		// styled line exact without sacrificing the right-side suffix.
 		const segmentStyle = row.status === "stalled" ? warn : dim;
 		const plainLine = prefix + slot + " " + clippedName + " ".repeat(gap)
 			+ (segment !== "" ? segment + "  " : "") + elapsed + " ";
 		lines.push(
-			plainLine.length <= width && displayColumns(plainLine) <= width
+			displayColumns(plainLine) <= width
 				? prefix + slotStyle(slot) + " " + clippedName + " ".repeat(gap)
 					+ (segment !== "" ? segmentStyle(segment) + "  " : "") + dim(elapsed) + " "
 				: clampToColumns(plainLine, safeWidth),
