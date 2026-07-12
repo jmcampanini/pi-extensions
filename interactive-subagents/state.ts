@@ -88,12 +88,13 @@ slots[STATE_KEY] = reloadState;
 
 reloadState.lifetime?.controller.abort();
 
-function newLifetime(): ModuleLifetime {
-	return { controller: new AbortController(), generation: ++reloadState.nextGeneration };
+function startLifetime(): ModuleLifetime {
+	const next = { controller: new AbortController(), generation: ++reloadState.nextGeneration };
+	reloadState.lifetime = next;
+	return next;
 }
 
-let lifetime = newLifetime();
-reloadState.lifetime = lifetime;
+let lifetime = startLifetime();
 
 export const running = reloadState.running;
 /** Full records remain private by convention; consumers see only the projection. */
@@ -152,10 +153,7 @@ export function prepareForReload(
 export function completeReloadHandoff(): void {
 	if (reloadState.handoffTimer) clearTimeout(reloadState.handoffTimer);
 	reloadState.handoffTimer = undefined;
-	if (lifetime.controller.signal.aborted) {
-		lifetime = newLifetime();
-		reloadState.lifetime = lifetime;
-	}
+	if (lifetime.controller.signal.aborted) lifetime = startLifetime();
 }
 
 /** Destructive session boundaries discard both running and queued delivery. */
@@ -163,8 +161,7 @@ export function resetForShutdown(): RunningSubagent[] {
 	completeReloadHandoff();
 	lifetime.controller.abort();
 	const children = clearTrackedState();
-	lifetime = newLifetime();
-	reloadState.lifetime = lifetime;
+	lifetime = startLifetime();
 	return children;
 }
 

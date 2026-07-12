@@ -203,6 +203,9 @@ Deliberate improvements over the reference implementation:
 - Escape while the parent streams drops queued steers silently, so a
   `delivering` row that never clears is the deliberate, honest signal of a
   lost result. Accepted sends are not re-sent, and /reload preserves the row.
+- A thrown `pi.sendMessage` is retried only after a later successful `/reload`.
+  This and the preceding Escape behavior are accepted known limitations, not
+  errors.
 - `subagents_list` gains a "Finished, result on its way" section so a child
   is never invisible between exit and delivery.
 

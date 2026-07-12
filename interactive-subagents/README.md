@@ -120,6 +120,13 @@ Running and finalizing children survive `/reload` in the parent. Existing panes 
 
 This guarantee is deliberately limited to hot reload in the same parent pi process. Quit, `/new`, `/resume`, `/fork`, a parent crash, and a parent process restart remain destructive boundaries. Child session files still survive those boundaries and can be reopened by path, but live supervision is not reconstructed after a process restart. If a replacement extension fails to load and never adopts the children, a 30-second fallback closes their panes rather than leaving unsupervised processes running.
 
+### Accepted delivery limitations
+
+These are known, acceptable behaviors and should not be reported as errors:
+
+- If `pi.sendMessage` throws, the enriched delivery record remains available for retry by the next successful `/reload`; there is intentionally no timer-based retry in the current implementation.
+- If Pi accepts a queued steer and the user presses Escape before it lands, Pi can silently drop it. The frozen `delivering` row remains as the honest signal that delivery was lost; the extension intentionally does not resend an accepted message because that could duplicate a result that actually landed.
+
 ## Agent definitions
 
 An agent definition is a Markdown file: optional frontmatter for settings, and a body that becomes the child's appended system prompt (`pi --append-system-prompt`). The `worker` agent is the **default** — a spawn that names no agent runs as `worker`, so `worker.md` should always exist. The **filename is the agent name** (`scout.md` → `agent: "scout"`); there is no `name:` key.
