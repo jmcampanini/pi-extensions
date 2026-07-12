@@ -1,4 +1,4 @@
-import { resolveUsableModel } from "../models.ts";
+import { assertValidThinkingLevel, resolveUsableModel, THINKING_LEVELS } from "../models.ts";
 
 // Fake registry: gpt-x offered by two providers (only one with auth),
 // dual-model offered by two providers BOTH with auth (ambiguous),
@@ -31,6 +31,10 @@ function throws(label: string, fn: () => void, contains: string[]) {
 		else { fail++; console.log(`  FAIL ${label}: message missing ${JSON.stringify(missing)}\n    ${msg}`); }
 	}
 }
+
+eq("thinking levels mirror Pi", THINKING_LEVELS.join(", "), "off, minimal, low, medium, high, xhigh, max");
+eq("max thinking accepted", assertValidThinkingLevel("max"), undefined);
+throws("invalid thinking rejected", () => assertValidThinkingLevel("ultra"), ["valid levels", "max"]);
 
 // qualified entry wins, canonical casing
 eq("qualified win", resolveUsableModel(["OpenAI-Codex/GPT-X"], registry), "openai-codex/gpt-x");
