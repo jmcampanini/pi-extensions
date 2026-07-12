@@ -24,7 +24,7 @@ import { agentDefsDir, collectAgentInventory, projectDefsDir } from "./agents.ts
 import { sanitizeDisplayText } from "./display-text.ts";
 import { delivering, running } from "./state.ts";
 import { computeStatus, STALL_AFTER_MS, type SubagentStatus } from "./status.ts";
-import { humanElapsed } from "./watcher.ts";
+import { humanElapsed } from "./result-message.ts";
 import { clampToolName, formatCost, formatTokens, formatToolElapsed } from "./widget.ts";
 
 /** A stalled bullet's parenthetical — the steer prose's reasons, shortened
