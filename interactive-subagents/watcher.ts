@@ -20,17 +20,28 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync } from "node:fs";
+import {
+	activityFilePath,
+	newActivityObservation,
+	noteTick,
+	observeActivity,
+	readActivityFile,
+	type ActivityObservation,
+} from "./activity.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
+import { computeStatus, STALL_AFTER_MS, type SubagentStatus } from "./status.ts";
 import { closePane, pollForExit, refreshLayout, type ExitResult } from "./tmux.ts";
 import { extractSummary } from "./session.ts";
 import { ledger, moduleSignal, running, type RunningSubagent } from "./state.ts";
 import { ensureWidgetTimer, updateRunningWidget } from "./running-widget.ts";
+import { formatResultContextLine } from "./widget.ts";
 import { finishWorktree, type WorktreeInfo, type WorktreeOutcome } from "./worktree.ts";
 
 /** Elapsed time as prose ("3m 42s") for the steered messages. The widget's
- * clock format (03:42) lives separately in widget.ts — different surface. */
-function humanElapsed(totalSeconds: number): string {
+ * clock format (03:42) lives separately in widget.ts — different surface.
+ * Exported for subagents_list, whose lines are the same prose surface. */
+export function humanElapsed(totalSeconds: number): string {
 	if (totalSeconds < 60) return `${totalSeconds}s`;
 	return `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`;
 }
@@ -79,8 +90,97 @@ function worktreeNote(info: WorktreeInfo, outcome: WorktreeOutcome): string {
 				(branch ? ` — check for a leftover branch ${branch}.` : ".");
 }
 
+// ── the liveness steers ──────────────────────────────────────────────────
+// Edge-triggered: one stalled steer when a child ENTERS stalled (capped at 3
+// episodes per child), one recovered steer when it leaves — never a message
+// per tick. Interactive (non-auto-exit) children get neither: a human is
+// expected to be looking at the pane, and the widget still shows their state.
+
+/**
+ * Re-checked immediately before EVERY send, mirroring the abort-suppression
+ * discipline of the result path below: an abort can fire during the poll
+ * sleep, and a steer into a dying or already-resolved session must never go
+ * out.
+ */
+function canSteer(child: RunningSubagent, signal: AbortSignal): boolean {
+	return child.autoExit && !signal.aborted && !child.stoppedByUser && running.has(child.id);
+}
+
+/**
+ * Why the watchdog fired, as prose. When the reads themselves were healthy
+ * (no 60s-old problem window) the stall is rule 6 — pi is up but the
+ * prompted run never began; otherwise the last problem kind decides. The
+ * missing/foreign phrasing branches on whether a snapshot was EVER accepted:
+ * "never appeared" would be a lie for a child whose reports demonstrably had
+ * been arriving before the file went missing mid-run, and would steer the
+ * model toward a bogus launch-failure diagnosis of nearly finished work.
+ */
+function stalledReason(obs: ActivityObservation, nowMs: number, launchElapsed: string): string {
+	if (obs.problemSinceMs === undefined || nowMs - obs.problemSinceMs < STALL_AFTER_MS) {
+		return `pi started in its pane but has not begun the task after ${launchElapsed}`;
+	}
+	if (obs.lastProblemKind === "invalid") {
+		return "its liveness report has been unreadable for over 60s";
+	}
+	if (obs.lastProblemKind === "stale") {
+		return "its liveness reports are time-stamped before the last accepted one for over 60s (child clock stepped backwards)";
+	}
+	if (obs.snapshot !== undefined) {
+		return "its liveness reports stopped over 60s ago (report file missing)";
+	}
+	return `no liveness report has appeared in ${launchElapsed} (pi may never have started in its pane, e.g. a provider/auth error at startup)`;
+}
+
+/** The "may be stalled" warning. Explicitly NOT a failure: the child is
+ * still supervised, and a result or failure message still arrives when it
+ * exits — the prose says so, because the prose is the protocol. */
+function sendStalledSteer(pi: ExtensionAPI, child: RunningSubagent, obs: ActivityObservation, nowMs: number): void {
+	const elapsedSeconds = Math.round((nowMs - child.startTime) / 1000);
+	const reason = stalledReason(obs, nowMs, humanElapsed(elapsedSeconds));
+	const childName = sanitizeDisplayText(child.name);
+	pi.sendMessage(
+		{
+			customType: "subagent_stalled",
+			content:
+				`Sub-agent "${childName}" (id ${child.id}) may be stalled: ${reason}.\n\n` +
+				`Options, in order: wait (it may still come up); check its pane via /subagents-running; or stop it there and retry with subagent_resume({ id: "${child.id}", message: "<guidance>" }).\n` +
+				`This is a warning, not a failure: you will still get a result or failure message when it exits.\n` +
+				`Session: ${child.sessionFile}`,
+			display: true,
+			details: {
+				id: child.id,
+				name: child.name,
+				status: "stalled",
+				reason,
+				sessionFile: child.sessionFile,
+				elapsedSeconds,
+			},
+		},
+		{ triggerTurn: true, deliverAs: "steer" },
+	);
+}
+
+/** The all-clear. Also triggerTurn: the model that just heard "maybe
+ * stalled" may be mid-decision to stop the child and must be interrupted. */
+function sendRecoveredSteer(pi: ExtensionAPI, child: RunningSubagent, status: SubagentStatus): void {
+	const childName = sanitizeDisplayText(child.name);
+	pi.sendMessage(
+		{
+			customType: "subagent_recovered",
+			content: `Sub-agent "${childName}" (id ${child.id}) recovered: it is now reporting activity (${status}). No action needed, its result will arrive as usual.`,
+			display: true,
+			details: { id: child.id, name: child.name, status, sessionFile: child.sessionFile },
+		},
+		{ triggerTurn: true, deliverAs: "steer" },
+	);
+}
+
 /** Register a child and start its supervision machinery. */
 export function trackChild(pi: ExtensionAPI, child: RunningSubagent): void {
+	// The liveness observation is created HERE, not by the spawn tools, so
+	// neither call site can forget it — and it dies with this record, which
+	// is the whole /reload story (see state.ts).
+	child.activity = newActivityObservation(Date.now());
 	running.set(child.id, child);
 	ledger.set(child.id, { sessionFile: child.sessionFile, name: child.name });
 	ensureWidgetTimer();
@@ -89,16 +189,65 @@ export function trackChild(pi: ExtensionAPI, child: RunningSubagent): void {
 }
 
 async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<void> {
+	// AbortSignal.any fires when EITHER source aborts: the module-wide signal
+	// (session shutdown or /reload) or this child's own controller (x = stop
+	// in the /subagents-running picker). Hoisted to a local so the steer gate
+	// and the poller share the same instance.
+	const signal = AbortSignal.any([moduleSignal(), child.abort.signal]);
+
+	// trackChild created the observation just before starting us; the ??= only
+	// guards a caller that skipped trackChild.
+	child.activity ??= newActivityObservation(Date.now());
+	const obs = child.activity;
+	const activityFile = activityFilePath(child.sessionFile);
+
 	let result: ExitResult;
 	try {
 		result = await pollForExit({
 			paneId: child.paneId,
 			sessionFile: child.sessionFile,
-			// AbortSignal.any fires when EITHER source aborts: the module-wide
-			// signal (session shutdown or /reload) or this child's own
-			// controller (x = stop in the /subagents-running picker).
-			signal: AbortSignal.any([moduleSignal(), child.abort.signal]),
-			// v2 seam: liveness snapshot observation attaches here.
+			signal,
+			// The liveness tick: one synchronous ~400-byte read per poll second,
+			// the same cost class as the sidecar check the tick already does.
+			onTick: () => {
+				const now = Date.now();
+				noteTick(obs, now); // clock-jump guard first — suspend/wake must not fake a stall
+				observeActivity(obs, readActivityFile(activityFile, child.id), now);
+				const status = computeStatus({
+					nowMs: now,
+					watchdogStartMs: obs.watchdogStartMs,
+					expectsRun: child.expectsRun,
+					everSawRun: obs.everSawRun ?? false,
+					snapshot: obs.snapshot,
+					problemSinceMs: obs.problemSinceMs,
+				});
+
+				// Edge detection. lastStatus is watcher-PRIVATE memory — the
+				// widget and subagents_list recompute status from the same
+				// observation fields, so they can never disagree with us.
+				const previous = child.lastStatus ?? "starting";
+				child.lastStatus = status;
+				if (status === previous) return;
+
+				if (status === "stalled") {
+					// Entering stalled: one steer per episode, capped so a child
+					// flapping at the 60s boundary cannot spam the parent. The
+					// counter advances even when the steer is suppressed
+					// (interactive children), so flipping a child to autonomous
+					// later cannot replay stale episodes.
+					child.stallEpisodes = (child.stallEpisodes ?? 0) + 1;
+					if (canSteer(child, signal) && child.stallEpisodes <= 3) {
+						sendStalledSteer(pi, child, obs, now);
+						child.stallSteerSent = true;
+					}
+				} else if (previous === "stalled") {
+					// Leaving stalled: the all-clear goes out only when the
+					// warning did, and the latch clears even when the send is
+					// suppressed — no phantom notification queues up.
+					if (child.stallSteerSent && canSteer(child, signal)) sendRecoveredSteer(pi, child, status);
+					child.stallSteerSent = false;
+				}
+			},
 		});
 	} catch (error) {
 		result = {
@@ -108,6 +257,14 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 		};
 	}
 
+	// One explicit final read: onTick never fires on the poll's resolving
+	// iteration, so without this the snapshot carrying the finished child's
+	// closing economics would never be observed. (The poller can consume the
+	// `.exit` sidecar before the child's final write lands, so these numbers
+	// are guaranteed only as-of the last turn_end — which is the right number
+	// for context anyway, and at most one settle-refresh behind for cost.)
+	observeActivity(obs, readActivityFile(activityFile, child.id), Date.now());
+
 	running.delete(child.id);
 	updateRunningWidget();
 	closePane(child.paneId);
@@ -116,6 +273,15 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 
 	const elapsed = humanElapsed(Math.round((Date.now() - child.startTime) / 1000));
 	const childName = sanitizeDisplayText(child.name);
+
+	// The child's closing economics — "Context: 84k/200k tokens (42%) · cost
+	// this run $0.31" — inserted on its own line directly before the
+	// resume/retry hint in EVERY result that invites one (completed, failed,
+	// and stopped-by-user), because that is the exact moment the model
+	// decides whether a child is too full to keep resuming. When no snapshot
+	// ever arrived the line is omitted entirely, never guessed.
+	const contextLine = formatResultContextLine(obs.snapshot);
+	const contextBlock = contextLine === undefined ? "" : `${contextLine}\n`;
 
 	if (result.reason === "aborted") {
 		// Two ways to get aborted: the session is shutting down (stay
@@ -133,7 +299,10 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 						// A stopped child's work may be half-done, so its worktree is
 						// deliberately NOT cleaned up — resume still needs it.
 						(child.worktree ? `\nIts worktree at ${child.worktree.dir} was kept (the work may be half-done).` : "") +
-						`\n\nSession: ${child.sessionFile}\nResume with subagent_resume({ id: "${child.id}", message: "..." }) if the work should continue.`,
+						// The economics line rides along here too: this message
+						// explicitly invites subagent_resume, which is exactly the
+						// decision the line informs.
+						`\n\n${contextBlock}Session: ${child.sessionFile}\nResume with subagent_resume({ id: "${child.id}", message: "..." }) if the work should continue.`,
 					display: true,
 					details: { id: child.id, name: child.name, reason: "stopped", sessionFile: child.sessionFile },
 				},
@@ -189,6 +358,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 		content =
 			`Sub-agent "${childName}" (id ${child.id}) completed (${elapsed}).\n\n` +
 			`${generatedSummary ?? "(the subagent produced no final message)"}\n\n` +
+			contextBlock +
 			`For follow-up work: subagent_resume({ id: "${child.id}", message: "..." }). Session: ${child.sessionFile}`;
 	} else {
 		const reasonText =
@@ -200,6 +370,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 		content =
 			`Sub-agent "${childName}" (id ${child.id}) failed after ${elapsed} (${reasonText}).\n\n` +
 			(generatedSummary ? `Last output:\n${generatedSummary}\n\n` : "") +
+			contextBlock +
 			`You can retry with subagent_resume({ id: "${child.id}", message: "<guidance>" }). Session: ${child.sessionFile}`;
 	}
 
@@ -226,6 +397,11 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 				worktreeDir: child.worktree?.dir,
 				worktreeBranch: child.worktree?.branch,
 				worktreeStatus: worktreeOutcome?.status,
+				// The raw numbers behind the Context line (undefined when no
+				// snapshot; tokens null right after a compaction).
+				contextTokens: obs.snapshot?.context?.tokens,
+				contextWindow: obs.snapshot?.context?.window,
+				costUsd: obs.snapshot?.costUsd,
 			},
 		},
 		{ triggerTurn: true, deliverAs: "steer" },

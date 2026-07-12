@@ -15,6 +15,8 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ActivityObservation } from "./activity.ts";
+import type { SubagentStatus } from "./status.ts";
 import type { WorktreeInfo } from "./worktree.ts";
 
 // ── the per-child record ─────────────────────────────────────────────────
@@ -32,12 +34,29 @@ export interface RunningSubagent {
 	tools?: string;
 	model?: string;
 	autoExit: boolean;
+	/** How the conversation started: "forked" copies the parent's, "fresh" starts
+	 * empty. Missing when a resume found no `.meta` context (an older session). */
+	context?: "fresh" | "forked";
 	/** Set when this child runs in a git worktree — drives end-of-run cleanup. */
 	worktree?: WorktreeInfo;
 	/** Cancels this child's watcher (used by the picker's x = stop). */
 	abort: AbortController;
 	/** True when a human stopped it via the picker — the model gets told. */
 	stoppedByUser?: boolean;
+	/** Did this launch include an initial prompt/message? Drives
+	 * starting-vs-waiting in status.ts. REQUIRED so tsc forces both trackChild
+	 * call sites (spawn always delivers a task; resume only sometimes). */
+	expectsRun: boolean;
+	/** Liveness observation state; created by trackChild, mutated only by the
+	 * watcher's onTick, read by the widget and subagents_list. */
+	activity?: ActivityObservation;
+	/** Watcher-PRIVATE edge-trigger memory. Status is never cached for
+	 * display: the widget and subagents_list recompute it from `activity`. */
+	lastStatus?: SubagentStatus;
+	/** Stall episodes seen (lifetime, this record). Steers stop after 3. */
+	stallEpisodes?: number;
+	/** True while the current stall episode's steer was actually sent. */
+	stallSteerSent?: boolean;
 }
 
 /** All children currently running, keyed by their 8-char run id. */

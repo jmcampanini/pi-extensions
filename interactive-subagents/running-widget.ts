@@ -13,6 +13,8 @@
  * removes the widget.
  */
 
+import { oldestActiveTool, toolElapsedSeconds } from "./activity.ts";
+import { computeStatus } from "./status.ts";
 import { formatRunningWidgetLines } from "./widget.ts";
 import { getLatestCtx, running } from "./state.ts";
 
@@ -54,11 +56,42 @@ export function updateRunningWidget(): void {
 
 	// Snapshot the rows now; the component form gets the real terminal width
 	// at render time, which is what lets the elapsed clock right-anchor.
-	const rows = [...running.values()].map((child) => ({
-		name: child.name,
-		agent: child.agent,
-		elapsedSeconds: Math.round((Date.now() - child.startTime) / 1000),
-	}));
+	// The liveness fields are derived HERE, synchronously off the record (no
+	// fs, nothing async), from the same observation fields the watcher uses —
+	// so render(width) below stays layout-only and the two surfaces can never
+	// disagree. Worst case the widget lags a status flip by ~1s (the two 1 Hz
+	// timers are unsynchronized), which is display-only: steer decisions live
+	// in the watcher path, never in widget renders.
+	const now = Date.now();
+	const rows = [...running.values()].map((child) => {
+		const obs = child.activity;
+		const snap = obs?.snapshot;
+		const status = obs
+			? computeStatus({
+					nowMs: now,
+					watchdogStartMs: obs.watchdogStartMs,
+					expectsRun: child.expectsRun,
+					everSawRun: obs.everSawRun ?? false,
+					snapshot: snap,
+					problemSinceMs: obs.problemSinceMs,
+				})
+			: ("starting" as const);
+		const tool = snap?.inRun ? oldestActiveTool(snap.activeTools) : undefined;
+		return {
+			name: child.name,
+			agent: child.agent,
+			elapsedSeconds: Math.round((now - child.startTime) / 1000),
+			forked: child.context === "forked",
+			worktree: child.worktree !== undefined,
+			status,
+			toolName: tool?.name,
+			toolElapsedSeconds:
+				tool && snap && obs?.acceptedAtMs !== undefined
+					? toolElapsedSeconds(snap, tool, obs.acceptedAtMs, now)
+					: undefined,
+			contextTokens: snap?.context?.tokens ?? undefined,
+		};
+	});
 	ctx.ui.setWidget(
 		WIDGET_KEY,
 		(_tui, theme) => ({
@@ -67,6 +100,13 @@ export function updateRunningWidget(): void {
 				return formatRunningWidgetLines(rows, width, {
 					dim: (text) => theme.fg("dim", text),
 					border: (text) => theme.fg("borderMuted", text),
+					// The state marks stack the terminal's faint attribute (SGR 2)
+					// on top of the theme's dim color, so they sit a notch quieter
+					// than the clock. \x1b[22m turns only the faintness back off.
+					slot: (text) => `\x1b[2m${theme.fg("dim", text)}\x1b[22m`,
+					// Stalled is the only status that should pop: the theme's
+					// warning color, same precedent as the implant banner.
+					warn: (text) => theme.fg("warning", text),
 				});
 			},
 		}),

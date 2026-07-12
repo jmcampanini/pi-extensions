@@ -5,6 +5,7 @@
 import {
 	buildChildEnv,
 	buildLaunchCommand,
+	type LaunchMeta,
 	readLaunchMeta,
 	slugify,
 	writeLaunchMeta,
@@ -32,19 +33,36 @@ delete process.env.PI_CODING_AGENT_DIR;
 
 eq(
 	"env prefix, auto-exit on",
-	buildChildEnv({ PI_SUBAGENT_SESSION: "/tmp/s.jsonl", PI_SUBAGENT_NAME: "Worker", PI_SUBAGENT_AUTO_EXIT: "1" }),
-	"PI_SUBAGENT_SESSION='/tmp/s.jsonl' PI_SUBAGENT_NAME='Worker' PI_SUBAGENT_AUTO_EXIT='1'",
+	buildChildEnv({
+		PI_SUBAGENT_SESSION: "/tmp/s.jsonl",
+		PI_SUBAGENT_NAME: "Worker",
+		PI_SUBAGENT_ID: "a55ba067",
+		PI_SUBAGENT_ACTIVITY_FILE: "/tmp/s.jsonl.activity",
+		PI_SUBAGENT_AUTO_EXIT: "1",
+	}),
+	"PI_SUBAGENT_SESSION='/tmp/s.jsonl' PI_SUBAGENT_NAME='Worker' PI_SUBAGENT_ID='a55ba067' PI_SUBAGENT_ACTIVITY_FILE='/tmp/s.jsonl.activity' PI_SUBAGENT_AUTO_EXIT='1'",
 );
 eq(
 	"env prefix, interactive (no auto-exit var at all)",
-	buildChildEnv({ PI_SUBAGENT_SESSION: "/tmp/s.jsonl", PI_SUBAGENT_NAME: "It's me", PI_SUBAGENT_AUTO_EXIT: undefined }),
-	"PI_SUBAGENT_SESSION='/tmp/s.jsonl' PI_SUBAGENT_NAME='It'\\''s me'",
+	buildChildEnv({
+		PI_SUBAGENT_SESSION: "/tmp/s.jsonl",
+		PI_SUBAGENT_NAME: "It's me",
+		PI_SUBAGENT_ID: "a55ba067",
+		PI_SUBAGENT_ACTIVITY_FILE: "/tmp/s.jsonl.activity",
+		PI_SUBAGENT_AUTO_EXIT: undefined,
+	}),
+	"PI_SUBAGENT_SESSION='/tmp/s.jsonl' PI_SUBAGENT_NAME='It'\\''s me' PI_SUBAGENT_ID='a55ba067' PI_SUBAGENT_ACTIVITY_FILE='/tmp/s.jsonl.activity'",
 );
 
 process.env.PI_CODING_AGENT_DIR = "/custom/root";
 ok(
 	"custom config root is propagated first",
-	buildChildEnv({ PI_SUBAGENT_SESSION: "/s", PI_SUBAGENT_NAME: "n" }).startsWith("PI_CODING_AGENT_DIR='/custom/root' "),
+	buildChildEnv({
+		PI_SUBAGENT_SESSION: "/s",
+		PI_SUBAGENT_NAME: "n",
+		PI_SUBAGENT_ID: "a55ba067",
+		PI_SUBAGENT_ACTIVITY_FILE: "/s.activity",
+	}).startsWith("PI_CODING_AGENT_DIR='/custom/root' "),
 );
 delete process.env.PI_CODING_AGENT_DIR;
 
@@ -87,7 +105,7 @@ eq(
 
 const dir = mkdtempSync(join(tmpdir(), "subagents-launch-"));
 const sessionFile = join(dir, "child.jsonl");
-const meta = { name: "Worker", agent: "worker", tools: "read", model: "p/m", thinking: "low", systemPromptFile: "/sp.md", autoExit: true };
+const meta: LaunchMeta = { name: "Worker", agent: "worker", tools: "read", model: "p/m", thinking: "low", systemPromptFile: "/sp.md", autoExit: true, context: "forked" };
 writeLaunchMeta(sessionFile, meta);
 eq("meta round-trips", readLaunchMeta(sessionFile), meta);
 eq("missing meta = {}", readLaunchMeta(join(dir, "nope.jsonl")), {});

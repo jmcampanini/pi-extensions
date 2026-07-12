@@ -153,11 +153,31 @@ another agent can use without re-reading everything. Every claim needs an
 exact file path, with line numbers when you cite code.
 ```
 
+## Liveness
+
+While a child runs, its implant writes a small JSON snapshot — `<child-session>.jsonl.activity`, sibling of `.exit` and `.meta` — on every pi lifecycle event it records (run start/settle, tool start/end, turn end, model change, shutdown). The parent reads it once per second and derives one of four states, shown on the running widget's right edge and reported by `subagents_list`:
+
+| State | Meaning |
+|---|---|
+| `starting` | pi is coming up in the pane, or the prompted run has not begun yet |
+| `active` | mid-run — shown with the longest-running tool and the context tokens (whole thousands) when known: `active · bash 7m · 84k` |
+| `waiting` | idle after at least one completed run, or an interactive pane handed to a human |
+| `stalled` | the 60s watchdog fired: the snapshot has been continuously missing/unreadable for 60s, or the prompted run never began within 60s of launch |
+
+When an **autonomous** child flips to stalled, the parent model is woken with a `subagent_stalled` steer — and with a `subagent_recovered` one if the child comes back. Stalled is a warning, not a failure: the child stays supervised and its result or failure message still arrives when it exits. Interactive (non-auto-exit) children never steer — a human is expected to be looking at the pane; the widget still shows their state. Stall steers stop after three episodes per child.
+
+Every result message — completion, failure, or stopped-by-user — also carries the child's closing economics on one line when a liveness snapshot arrived: `Context: 84k/200k tokens (42%) · cost this run $0.31`. It sits directly before the resume/retry hint, so the model can tell, at the moment it decides whether to resume, when a child is too full to keep resuming. When a snapshot exists but no context share was ever reported (e.g. the child died before finishing a turn) the line reads `Context: unknown · cost this run $0.12`; when no snapshot ever arrived the line is omitted entirely, never guessed. Cost is scoped to **the run** (one pi process), not the session lifetime: a lifetime figure would count forked-in parent history as child spend. It visibly resets on each resume.
+
+Two honest limitations, by design:
+
+- **A frozen valid-`active` snapshot never stalls.** A child that wedges (or is SIGSTOPped) mid-run keeps reading `active` indefinitely: a 3-hour tool run with zero events is legal, so there is no heartbeat to age a valid snapshot against. The pane stays visible and the exit sentinel still catches real death.
+- **A child clock stepping backwards defers acceptance.** Snapshots are ordered by the child's own clock, so if that clock steps back (e.g. an NTP step or a VM clock change), newer writes are time-stamped before the last accepted snapshot and read as stale until the clock catches up — after 60s of continuously stale reports the watchdog reports `stalled`, the correct loud failure, never an indefinite false `active`.
+
 ## Also worth knowing
 
 - **`/subagents-available` (human command).** Shows one card per known agent in a widget above the editor: the description headline, the model that wins on this machine (or a red problem block when none would), where it came from (project/global), and only the non-default parts of its config — default run behavior and file paths are folded away (the name is the filename). Human-only and zero-token: it never touches the session or the model's context. Run it again (or send a message) to dismiss. The model's `subagents_list` tool is a terse view over the same inventory.
 
-- **Live widget.** While children run, one line per sub-agent appears above the parent's editor: `[agent-type]  name` with a right-anchored elapsed clock, and nothing else — a row existing means it's running. Names that repeat the agent type (`Scout: Auth` next to `[scout]`) are de-duplicated for display. The right edge is reserved for v2's live activity states.
+- **Live widget.** While children run, one line per sub-agent appears above the parent's editor: `[agent-type]  name` with a right-anchored elapsed clock — a row existing means it's running. Names that repeat the agent type (`Scout: Auth` next to `[scout]`) are de-duplicated for display. The right edge carries the live status segment (see [Liveness](#liveness)); the status detail gives way before the name when the terminal narrows.
 - **Parent task preview.** A `subagent` tool call shows a compact identity header, a blank line, and one dimmed line of the task in the parent transcript. The task line uses normal terminal word wrapping and has no truncation marker. Press **Ctrl+O** to expand the full task content and logical line structure. Normal terminal text rendering displays tabs as spaces and treats CR/CRLF as line breaks. This is display-only and does not add another message to model context.
 - **`/subagents-running` (human command).** Opens a picker over the running children: up/down to choose, **Enter** jumps to its pane (switching tmux windows if needed), **z** jumps *and* zooms the pane (`prefix+z` un-zooms), **x** stops it (the model is told it was stopped by the user), Escape cancels.
 - **No recursion.** Children never get the spawn tools — the extension detects child mode via `PI_SUBAGENT_SESSION` and registers nothing. Depth is hard-capped at 1.

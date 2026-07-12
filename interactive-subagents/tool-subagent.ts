@@ -25,6 +25,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { activityFilePath, clearActivityFile } from "./activity.ts";
 import { agentDefsDir, loadAgentDefinition, projectDefsDir } from "./agents.ts";
 import { config } from "./config.ts";
 import {
@@ -254,9 +255,11 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			try {
 				const childSessionFile = generateChildSessionFile(cwd);
 				mkdirSync(dirname(childSessionFile), { recursive: true });
-				// Fresh UUID paths make a leftover sidecar impossible today, but the
-				// poller trusts this path completely — keep it provably clean.
+				// Fresh UUID paths make a leftover sidecar or activity file
+				// impossible today, but the poller and the liveness reader trust
+				// this path completely — keep it provably clean.
 				clearExitSidecar(childSessionFile);
+				clearActivityFile(childSessionFile);
 
 				// Both contexts pre-seed the child's session file so pi's session picker
 				// shows a readable entry: the header's parentSession nests the child
@@ -319,6 +322,11 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 						env: buildChildEnv({
 							PI_SUBAGENT_SESSION: childSessionFile,
 							PI_SUBAGENT_NAME: params.name,
+							// The liveness pair (see activity.ts): the run id stamps
+							// snapshot ownership, the path tells the recorder where to
+							// write.
+							PI_SUBAGENT_ID: id,
+							PI_SUBAGENT_ACTIVITY_FILE: activityFilePath(childSessionFile),
 							PI_SUBAGENT_AGENT: agentName,
 							PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
 						}),
@@ -335,7 +343,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 					// model, thinking, auto-exit, worktree). Without this, a resumed
 					// agent silently loses its system prompt and restrictions — they
 					// live on the command line, not in the conversation.
-					writeLaunchMeta(childSessionFile, { name: params.name, agent: agentName, tools, model, thinking, systemPromptFile, autoExit, worktree });
+					writeLaunchMeta(childSessionFile, { name: params.name, agent: agentName, tools, model, thinking, systemPromptFile, autoExit, context, worktree });
 
 					// Create the pane, give its shell a moment, then run the launch
 					// script (written to artifacts for debuggability).
@@ -345,6 +353,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 				} catch (error) {
 					rmSync(childSessionFile, { force: true });
 					rmSync(`${childSessionFile}.meta`, { force: true });
+					clearActivityFile(childSessionFile);
 					if (paneId !== undefined) closePane(paneId);
 					throw error;
 				}
@@ -360,8 +369,12 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 					tools,
 					model,
 					autoExit,
+					context,
 					worktree,
 					abort: new AbortController(),
+					// A spawn always delivers a task, so the starting watchdog is
+					// always armed (see status.ts).
+					expectsRun: true,
 				});
 
 				// Worktree spawns also tell the model WHERE the child works, so it
