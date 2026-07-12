@@ -36,6 +36,10 @@ export interface StatusInput {
 	/** Did this launch include an initial prompt/message? False means a pane
 	 * handed to a human, which legitimately idles forever. */
 	expectsRun: boolean;
+	/** Parent-side run-history latch (ActivityObservation.everSawRun): true
+	 * once any accepted snapshot showed inRun or runsCompleted > 0. REQUIRED,
+	 * not optional, so the compiler forces every call site to thread it. */
+	everSawRun: boolean;
 	/** The last ACCEPTED snapshot; absent until the child's first write lands. */
 	snapshot?: ActivitySnapshot;
 	/** Parent clock since reads have been CONTINUOUSLY missing/foreign/invalid;
@@ -68,7 +72,14 @@ export function computeStatus(input: StatusInput): SubagentStatus {
 	// Rule 4: idle after at least one completed run, or idle on a launch that
 	// never promised a run (interactive resume without a message). Never
 	// ages out either — waiting forever is this state's whole meaning.
-	if (input.snapshot.runsCompleted > 0 || !input.expectsRun) return "waiting";
+	// everSawRun sits alongside runsCompleted because the child-side counter
+	// is per-process and resets to 0 on an in-pane /reload: without the
+	// parent-side latch a healthy reloaded idle child would fall through to
+	// rule 6 and read stalled forever, firing a misleading "task never
+	// started" steer. Chosen tradeoff: a reload that genuinely killed a run
+	// now reads waiting, not stalled — a human was at that pane to type
+	// /reload, and a false stall steer misleads the parent model.
+	if (input.snapshot.runsCompleted > 0 || input.everSawRun || !input.expectsRun) return "waiting";
 
 	// Rules 5 and 6: the implant is alive but the prompted run has not begun.
 	// Under 60s that is normal pi startup (rule 5); at 60s and beyond it is

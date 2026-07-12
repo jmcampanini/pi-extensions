@@ -109,8 +109,11 @@ function canSteer(child: RunningSubagent, signal: AbortSignal): boolean {
 /**
  * Why the watchdog fired, as prose. When the reads themselves were healthy
  * (no 60s-old problem window) the stall is rule 6 — pi is up but the
- * prompted run never began; otherwise the last problem kind says whether the
- * file never appeared or turned unreadable.
+ * prompted run never began; otherwise the last problem kind decides. The
+ * missing/foreign phrasing branches on whether a snapshot was EVER accepted:
+ * "never appeared" would be a lie for a child whose reports demonstrably had
+ * been arriving before the file went missing mid-run, and would steer the
+ * model toward a bogus launch-failure diagnosis of nearly finished work.
  */
 function stalledReason(obs: ActivityObservation, nowMs: number, launchElapsed: string): string {
 	if (obs.problemSinceMs === undefined || nowMs - obs.problemSinceMs < STALL_AFTER_MS) {
@@ -118,6 +121,12 @@ function stalledReason(obs: ActivityObservation, nowMs: number, launchElapsed: s
 	}
 	if (obs.lastProblemKind === "invalid") {
 		return "its liveness report has been unreadable for over 60s";
+	}
+	if (obs.lastProblemKind === "stale") {
+		return "its liveness reports are time-stamped before the last accepted one for over 60s (child clock stepped backwards)";
+	}
+	if (obs.snapshot !== undefined) {
+		return "its liveness reports stopped over 60s ago (report file missing)";
 	}
 	return `no liveness report has appeared in ${launchElapsed} (pi may never have started in its pane, e.g. a provider/auth error at startup)`;
 }
@@ -208,6 +217,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 					nowMs: now,
 					watchdogStartMs: obs.watchdogStartMs,
 					expectsRun: child.expectsRun,
+					everSawRun: obs.everSawRun ?? false,
 					snapshot: obs.snapshot,
 					problemSinceMs: obs.problemSinceMs,
 				});
@@ -264,6 +274,15 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 	const elapsed = humanElapsed(Math.round((Date.now() - child.startTime) / 1000));
 	const childName = sanitizeDisplayText(child.name);
 
+	// The child's closing economics — "Context: 84k/200k tokens (42%) · cost
+	// this run $0.31" — inserted on its own line directly before the
+	// resume/retry hint in EVERY result that invites one (completed, failed,
+	// and stopped-by-user), because that is the exact moment the model
+	// decides whether a child is too full to keep resuming. When no snapshot
+	// ever arrived the line is omitted entirely, never guessed.
+	const contextLine = formatResultContextLine(obs.snapshot);
+	const contextBlock = contextLine === undefined ? "" : `${contextLine}\n`;
+
 	if (result.reason === "aborted") {
 		// Two ways to get aborted: the session is shutting down (stay
 		// silent — nobody is left to tell) or a human pressed x in the
@@ -280,7 +299,10 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 						// A stopped child's work may be half-done, so its worktree is
 						// deliberately NOT cleaned up — resume still needs it.
 						(child.worktree ? `\nIts worktree at ${child.worktree.dir} was kept (the work may be half-done).` : "") +
-						`\n\nSession: ${child.sessionFile}\nResume with subagent_resume({ id: "${child.id}", message: "..." }) if the work should continue.`,
+						// The economics line rides along here too: this message
+						// explicitly invites subagent_resume, which is exactly the
+						// decision the line informs.
+						`\n\n${contextBlock}Session: ${child.sessionFile}\nResume with subagent_resume({ id: "${child.id}", message: "..." }) if the work should continue.`,
 					display: true,
 					details: { id: child.id, name: child.name, reason: "stopped", sessionFile: child.sessionFile },
 				},
@@ -330,14 +352,6 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 			childSucceeded: !failed,
 		});
 	}
-
-	// The child's closing economics — "Context: 84k/200k tokens (42%) · cost
-	// this run $0.31" — inserted on its own line directly before the
-	// resume/retry hint in BOTH outcomes, because that is the exact moment
-	// the model decides whether a child is too full to keep resuming. When no
-	// snapshot ever arrived the line is omitted entirely, never guessed.
-	const contextLine = formatResultContextLine(obs.snapshot);
-	const contextBlock = contextLine === undefined ? "" : `${contextLine}\n`;
 
 	let content: string;
 	if (!failed) {

@@ -27,13 +27,17 @@ import { humanElapsed } from "./watcher.ts";
 import { clampToolName, formatCost, formatTokens, formatToolElapsed } from "./widget.ts";
 
 /** A stalled bullet's parenthetical — the steer prose's reasons, shortened
- * to fit one line. Same choice rule as the steer: healthy reads mean the
- * prompted run never began; otherwise the last problem kind decides. */
+ * to fit one line. Same choice rules as the steer (watcher.ts stalledReason):
+ * healthy reads mean the prompted run never began; otherwise the last
+ * problem kind decides, and "no liveness report" is claimed only when none
+ * was EVER accepted — a mid-run disappearance says the reports stopped. */
 function shortStallReason(obs: ActivityObservation, nowMs: number): string {
 	if (obs.problemSinceMs === undefined || nowMs - obs.problemSinceMs < STALL_AFTER_MS) {
 		return "task never started";
 	}
 	if (obs.lastProblemKind === "invalid") return "unreadable liveness report";
+	if (obs.lastProblemKind === "stale") return "stale liveness reports (child clock stepped backwards)";
+	if (obs.snapshot !== undefined) return "liveness reports stopped";
 	return "no liveness report";
 }
 
@@ -54,6 +58,7 @@ function describeRunningChildren(nowMs: number): { lines: string[]; details: unk
 					nowMs,
 					watchdogStartMs: obs.watchdogStartMs,
 					expectsRun: child.expectsRun,
+					everSawRun: obs.everSawRun ?? false,
 					snapshot: snap,
 					problemSinceMs: obs.problemSinceMs,
 				})

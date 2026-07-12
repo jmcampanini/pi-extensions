@@ -210,8 +210,10 @@ function freshObs(): ActivityObservation {
 }
 
 {
-	// An older pair (child clock stepped back) is kept out — but it is still
-	// a VALID read, so it clears the problem window.
+	// An older pair (child clock stepped back) is kept out — and it is a
+	// PROBLEM, kind "stale": it opens (or continues) the 60s window so rule 1
+	// can stall the child loudly instead of silently serving the frozen
+	// accepted state for the whole skew window.
 	const obs = freshObs();
 	const current = snap({ updatedAt: 5_000, sequence: 9 });
 	observeActivity(obs, { kind: "valid", snapshot: current }, 11_000);
@@ -220,8 +222,57 @@ function freshObs(): ActivityObservation {
 	observeActivity(obs, { kind: "valid", snapshot: snap({ updatedAt: 4_000, sequence: 10 }) }, 13_000);
 	eq("older pair does not replace the snapshot", obs.snapshot, current);
 	eq("older pair does not refresh acceptedAtMs", obs.acceptedAtMs, 11_000);
-	eq("older pair still clears problemSinceMs", obs.problemSinceMs, undefined);
-	eq("older pair still clears lastProblemKind", obs.lastProblemKind, undefined);
+	eq("older pair keeps the problem window open", obs.problemSinceMs, 12_000);
+	eq("older pair records problem kind stale", obs.lastProblemKind, "stale");
+
+	// An EQUAL pair (the same accepted write re-read) is healthy: it clears
+	// the problem fields without touching the snapshot or acceptedAtMs.
+	observeActivity(obs, { kind: "valid", snapshot: snap({ updatedAt: 5_000, sequence: 9 }) }, 14_000);
+	eq("equal pair clears problemSinceMs", obs.problemSinceMs, undefined);
+	eq("equal pair clears lastProblemKind", obs.lastProblemKind, undefined);
+	eq("equal pair leaves acceptedAtMs alone", obs.acceptedAtMs, 11_000);
+
+	// A stale read with no prior problem opens the window at its own tick…
+	observeActivity(obs, { kind: "valid", snapshot: snap({ updatedAt: 4_500, sequence: 11 }) }, 15_000);
+	eq("stale read opens the problem window itself", obs.problemSinceMs, 15_000);
+	eq("stale read sets lastProblemKind stale", obs.lastProblemKind, "stale");
+
+	// …and a genuinely advancing pair (child clock caught up) clears it.
+	const caughtUp = snap({ updatedAt: 6_000, sequence: 12 });
+	observeActivity(obs, { kind: "valid", snapshot: caughtUp }, 16_000);
+	eq("advancing pair clears the stale window", obs.problemSinceMs, undefined);
+	eq("advancing pair is accepted", obs.snapshot, caughtUp);
+}
+
+// ── observeActivity: the everSawRun run-history latch ────────────────────
+// The child-side runsCompleted counter is per-process and resets to 0 on an
+// in-pane /reload; the parent-side latch remembers accepted run history so
+// the status machine's rule 4 keeps a reloaded idle child at waiting.
+
+{
+	const obs = freshObs();
+	observeActivity(obs, { kind: "valid", snapshot: snap({ updatedAt: 1_000 }) }, 11_000);
+	eq("idle pre-run snapshot does not latch", obs.everSawRun ?? false, false);
+	observeActivity(obs, { kind: "valid", snapshot: snap({ updatedAt: 2_000, inRun: true }) }, 12_000);
+	eq("accepted inRun snapshot latches everSawRun", obs.everSawRun, true);
+	// The /reload aftermath: fresh process, sequence back at 1, counters at 0.
+	observeActivity(obs, { kind: "valid", snapshot: snap({ updatedAt: 3_000, sequence: 1 }) }, 13_000);
+	eq("latch survives the reloaded process's counter reset", obs.everSawRun, true);
+}
+
+{
+	// runsCompleted > 0 latches too (a settle observed without seeing inRun).
+	const obs = freshObs();
+	observeActivity(obs, { kind: "valid", snapshot: snap({ updatedAt: 1_000, runsCompleted: 1 }) }, 11_000);
+	eq("accepted runsCompleted > 0 latches everSawRun", obs.everSawRun, true);
+}
+
+{
+	// Only ACCEPTED snapshots latch: a rejected stale write must not.
+	const obs = freshObs();
+	observeActivity(obs, { kind: "valid", snapshot: snap({ updatedAt: 5_000 }) }, 11_000);
+	observeActivity(obs, { kind: "valid", snapshot: snap({ updatedAt: 4_000, inRun: true }) }, 12_000);
+	eq("a rejected stale snapshot does not latch", obs.everSawRun ?? false, false);
 }
 
 {
@@ -273,15 +324,33 @@ function freshObs(): ActivityObservation {
 }
 
 {
-	// Exactly CLOCK_JUMP_MS is a jump (>=), and a negative gap is ignored.
+	// Exactly CLOCK_JUMP_MS is a jump (>=), and ANY negative gap re-anchors:
+	// time never genuinely flows backward, so the anchors shift by the gap
+	// and the watchdog deltas are preserved exactly.
 	const obs = newActivityObservation(100_000);
 	noteTick(obs, 100_000);
 	noteTick(obs, 100_000 + CLOCK_JUMP_MS);
 	eq("gap of exactly CLOCK_JUMP_MS shifts", obs.watchdogStartMs, 100_000 + CLOCK_JUMP_MS);
 
-	noteTick(obs, 90_000); // parent clock stepped BACK
-	eq("negative gap leaves anchors alone", obs.watchdogStartMs, 100_000 + CLOCK_JUMP_MS);
+	noteTick(obs, 90_000); // parent clock stepped BACK 15s
+	eq("negative gap shifts watchdogStartMs by the gap", obs.watchdogStartMs, 90_000);
 	eq("negative gap still records lastTickMs", obs.lastTickMs, 90_000);
+}
+
+{
+	// A backward step during a stall must not shrink the problem delta —
+	// letting it shrink would flip stalled → starting with no valid read,
+	// firing a false recovered steer and then a duplicate stalled steer.
+	const obs = newActivityObservation(100_000);
+	obs.problemSinceMs = 100_000;
+	noteTick(obs, 160_000);
+	noteTick(obs, 160_001); // 60s into the problem window …
+	noteTick(obs, 150_001); // … then the parent clock steps back 10s
+	eq("negative gap shifts problemSinceMs by the gap", obs.problemSinceMs, 90_000);
+	eq("negative gap preserves the problem delta exactly",
+		(obs.lastTickMs ?? 0) - (obs.problemSinceMs ?? 0), 60_001);
+	noteTick(obs, 151_001); // small FORWARD gaps stay real elapsed time
+	eq("1s tick after the step leaves the anchors alone", obs.problemSinceMs, 90_000);
 }
 
 // ── toolElapsedSeconds: skew-free by construction ────────────────────────
@@ -307,6 +376,14 @@ function freshObs(): ActivityObservation {
 	const garbageTool = { toolCallId: "t1", name: "bash", startedAt: 200_000 };
 	const garbage = snap({ updatedAt: 100_000, activeTools: [garbageTool] });
 	eq("negative elapsed clamps to 0", toolElapsedSeconds(garbage, garbageTool, 130_000, 130_000), 0);
+
+	// Cross-field overflow: each timestamp passes the parser's per-field
+	// finiteness check, but their difference overflows to Infinity, which the
+	// max(0, …) clamp alone would pass through as "InfinityhNaNm" on the
+	// display surfaces. Non-finite sums report 0.
+	const overflowTool = { toolCallId: "t1", name: "bash", startedAt: -1e308 };
+	const overflow = snap({ updatedAt: 1e308, activeTools: [overflowTool] });
+	eq("non-finite child+parent sum reports 0", toolElapsedSeconds(overflow, overflowTool, 0, 0), 0);
 }
 
 // ── the atomic writer: real-fs round trip ────────────────────────────────

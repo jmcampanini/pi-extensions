@@ -167,6 +167,83 @@ export function stripAgentPrefix(name: string, agent: string | undefined): strin
 	return safeName;
 }
 
+// ── display safety: columns, single lines, surrogate pairs ───────────────
+// All layout math in this file measures UTF-16 .length, which undercounts
+// East-Asian-wide and emoji glyphs (2 terminal columns each). pi-tui's fatal
+// overflow check measures DISPLAY COLUMNS, so a .length-exact line holding
+// wide glyphs can overflow the terminal and crash the whole parent TUI.
+// Deliberately NOT fixed by making the layout ladder column-aware (that is
+// a separately parked project); these helpers back a final per-row guard
+// that converts a possible crash into a cosmetically-rough-but-safe row.
+
+/** The standard East-Asian-wide ranges plus emoji/astral pictographs, all
+ * counted 2 columns; everything else 1. A small conservative table, not a
+ * full Unicode width database — it only needs to agree with pi-tui about
+ * which glyphs are wide enough to overflow. */
+function isWideCodePoint(code: number): boolean {
+	return (
+		(code >= 0x1100 && code <= 0x115f) || // Hangul Jamo
+		(code >= 0x2e80 && code <= 0xa4cf) || // CJK radicals … Yi syllables
+		(code >= 0xac00 && code <= 0xd7a3) || // Hangul syllables
+		(code >= 0xf900 && code <= 0xfaff) || // CJK compatibility ideographs
+		(code >= 0xfe30 && code <= 0xfe4f) || // CJK compatibility forms
+		(code >= 0xff00 && code <= 0xff60) || // fullwidth forms
+		(code >= 0xffe0 && code <= 0xffe6) || // fullwidth signs
+		(code >= 0x1f300 && code <= 0x1f9ff) || // emoji & pictographs
+		(code >= 0x1fa00 && code <= 0x1faff) || // more astral pictographs
+		code >= 0x20000 // CJK ideograph extensions B and beyond
+	);
+}
+
+/** Terminal columns a plain-text string occupies (ASCII fast path: one
+ * column per char). Exported so the tests can use it as the sweep oracle. */
+export function displayColumns(text: string): number {
+	let ascii = true;
+	for (let i = 0; i < text.length; i++) {
+		if (text.charCodeAt(i) > 0x7f) {
+			ascii = false;
+			break;
+		}
+	}
+	if (ascii) return text.length;
+	let columns = 0;
+	for (const char of text) {
+		columns += isWideCodePoint(char.codePointAt(0) ?? 0) ? 2 : 1;
+	}
+	return columns;
+}
+
+/** Column-aware clamp for the fallback row: walk code points accumulating
+ * displayColumns until the width budget is hit. */
+function clampToColumns(text: string, maxColumns: number): string {
+	let columns = 0;
+	let out = "";
+	for (const char of text) {
+		const width = isWideCodePoint(char.codePointAt(0) ?? 0) ? 2 : 1;
+		if (columns + width > maxColumns) break;
+		columns += width;
+		out += char;
+	}
+	return out;
+}
+
+/** \t/\n/\r each become one space: this renderer emits exactly one terminal
+ * row per child, so the shared sanitizer's multi-line whitelist does not
+ * apply here (it stays multi-line-friendly for the surfaces that do wrap).
+ * A surviving tab counts 1 in the .length math but 3 columns in pi-tui —
+ * fatal overflow — and a raw newline/CR corrupts the TUI's row accounting. */
+function singleLine(text: string): string {
+	return text.replace(/[\t\n\r]/g, " ");
+}
+
+/** A .slice() by code units can cut a surrogate pair in half; never emit the
+ * dangling high surrogate (it renders as mojibake). The result only ever
+ * gets shorter, so the callers' .length budget arithmetic still holds. */
+function stripTrailingLoneSurrogate(text: string): string {
+	const last = text.charCodeAt(text.length - 1);
+	return last >= 0xd800 && last <= 0xdbff ? text.slice(0, -1) : text;
+}
+
 // ── the status segment ───────────────────────────────────────────────────
 // Grammar: `<status>[ · <tool> <elapsed>][ · <pct>%]`, parts omitted (with
 // their separators) when absent. The segment sits immediately left of the
@@ -177,8 +254,8 @@ export function stripAgentPrefix(name: string, agent: string | undefined): strin
  * controller did, and clamped so one long MCP tool name cannot eat the row.
  * Exported for subagents_list, which shows the same clamped name in prose. */
 export function clampToolName(rawName: string): string {
-	const safe = sanitizeDisplayText(rawName);
-	return safe.length > 12 ? safe.slice(0, 12) + "…" : safe;
+	const safe = singleLine(sanitizeDisplayText(rawName));
+	return safe.length > 12 ? stripTrailingLoneSurrogate(safe.slice(0, 12)) + "…" : safe;
 }
 
 /** Candidate segments, widest first — the degradation ladder. The tool part
@@ -224,10 +301,12 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 	const slotStyle = style.slot ?? dim;
 	const warn = style.warn ?? dim;
 
+	// Sanitize AND single-line: names and agent tags are one-row surfaces
+	// here, so surviving tabs/newlines become plain spaces (see singleLine).
 	const safeRows = rows.map((row) => ({
 		...row,
-		name: sanitizeDisplayText(row.name),
-		agent: row.agent === undefined ? undefined : sanitizeDisplayText(row.agent),
+		name: singleLine(sanitizeDisplayText(row.name)),
+		agent: row.agent === undefined ? undefined : singleLine(sanitizeDisplayText(row.agent)),
 	}));
 
 	// Tag column: "[scout]" padded so names align across rows. A row with no
@@ -274,7 +353,10 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 		// remains (a single column shows a bare "…"), empty below that.
 		let clippedName = name;
 		if (name.length > maxName) {
-			clippedName = maxName >= 1 ? name.slice(0, maxName - 1) + "…" : "";
+			// The surrogate strip only ever shortens the clip, so the gap math
+			// below (which measures clippedName.length) still lands the clock
+			// exactly on the right edge.
+			clippedName = maxName >= 1 ? stripTrailingLoneSurrogate(name.slice(0, maxName - 1)) + "…" : "";
 		}
 		const gap = Math.max(0, width - fixedWidth - clippedName.length);
 
@@ -285,14 +367,21 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 		// The segment renders dim in every state except stalled, which gets
 		// the warn hook — and it appears in BOTH branches so the plain-length
 		// exact-fit check keeps holding.
+		//
+		// The exact-fit check measures BOTH units: pi-tui's fatal overflow
+		// check counts display columns, and the .length math above undercounts
+		// wide (CJK/emoji) glyphs, so a .length-exact line can still overflow
+		// and kill the parent TUI. Rows holding wide glyphs take the unstyled
+		// column-clamped fallback instead — cosmetically rough (clock off the
+		// right edge), but never a crash.
 		const segmentStyle = row.status === "stalled" ? warn : dim;
 		const plainLine = prefix + slot + " " + clippedName + " ".repeat(gap)
 			+ (segment !== "" ? segment + "  " : "") + elapsed + " ";
 		lines.push(
-			plainLine.length <= width
+			plainLine.length <= width && displayColumns(plainLine) <= width
 				? prefix + slotStyle(slot) + " " + clippedName + " ".repeat(gap)
 					+ (segment !== "" ? segmentStyle(segment) + "  " : "") + dim(elapsed) + " "
-				: plainLine.slice(0, safeWidth),
+				: clampToColumns(plainLine, safeWidth),
 		);
 	}
 	return lines;

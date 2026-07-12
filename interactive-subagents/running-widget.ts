@@ -71,6 +71,7 @@ export function updateRunningWidget(): void {
 					nowMs: now,
 					watchdogStartMs: obs.watchdogStartMs,
 					expectsRun: child.expectsRun,
+					everSawRun: obs.everSawRun ?? false,
 					snapshot: snap,
 					problemSinceMs: obs.problemSinceMs,
 				})

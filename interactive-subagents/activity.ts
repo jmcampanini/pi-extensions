@@ -265,13 +265,13 @@ export function registerActivityRecorder(pi: ExtensionAPI, options: { runId: str
 	});
 
 	// Best-effort final write. Fires on reload/new/resume/fork too, which is
-	// fine: a fresh import re-registers and writes anew. This write also
-	// clears the dangling activeTools entry left by the implant's own
-	// subagent_done / caller_ping call (its tool_execution_start fires, then
-	// ctx.shutdown() preempts its end event). For auto-exit children
-	// agent_settled may never fire; irrelevant — this write lands
-	// inRun: false, and the `.exit` sidecar resolves the parent's poller
-	// regardless.
+	// fine: a fresh import re-registers and writes anew. Note ctx.shutdown()
+	// called from a tool (subagent_done / caller_ping) is DEFERRED until
+	// agent_settled, so those tools do get their tool_execution_end — no
+	// dangling entry comes from them. This write's real jobs are the final
+	// inRun: false snapshot and clearing entries left dangling by tool loops
+	// aborted via a thrown error (also covered by agent_settled's defensive
+	// clear). The `.exit` sidecar resolves the parent's poller regardless.
 	pi.on("session_shutdown", (_event, ctx) => {
 		inRun = false;
 		tools.clear();
@@ -415,13 +415,24 @@ export interface ActivityObservation {
 	/** Parent clock when `snapshot` last advanced. */
 	acceptedAtMs?: number;
 	/** Parent clock since reads have been CONTINUOUSLY missing/foreign/
-	 * invalid; cleared by any valid read. After 60s of continuous problem the
-	 * status machine stalls the child — this is what detects mid-run file
-	 * deletion, corruption, or a writer that died, for the whole run and not
-	 * just startup. */
+	 * invalid/stale; cleared by an accepted or same-pair valid read. After 60s
+	 * of continuous problem the status machine stalls the child — this is what
+	 * detects mid-run file deletion, corruption, a writer that died, or a
+	 * child clock stepped backwards, for the whole run and not just startup. */
 	problemSinceMs?: number;
-	/** For steer prose only — never drives state transitions. */
-	lastProblemKind?: "missing" | "foreign" | "invalid";
+	/** For steer prose only — never drives state transitions. `stale` means
+	 * valid reads keep arriving but time-stamped strictly BEFORE the accepted
+	 * pair (child clock stepped backwards). */
+	lastProblemKind?: "missing" | "foreign" | "invalid" | "stale";
+	/** Parent-side run-history latch: true once any ACCEPTED snapshot showed
+	 * inRun or runsCompleted > 0. Needed because the child-side runsCompleted
+	 * counter is per-process and resets to 0 on an in-pane /reload; without
+	 * this latch a healthy reloaded idle child reads stalled forever and fires
+	 * a misleading "task never started" steer. Chosen tradeoff: a reload that
+	 * genuinely killed a run now reads waiting, not stalled — a human was at
+	 * that pane to type /reload, and a false stall steer misleads the parent
+	 * model. */
+	everSawRun?: boolean;
 	/** Parent clock; launch time, shifted forward on detected clock jumps. */
 	watchdogStartMs: number;
 	/** Parent clock; the previous onTick time (the clock-jump detector). */
@@ -443,13 +454,17 @@ export const CLOCK_JUMP_MS = 5_000;
  * parent machine slept or its clock stepped forward — not that the child was
  * quiet — so shift the watchdog anchors forward by the whole gap: a laptop
  * waking from sleep must not fire a spurious stall steer for every child.
- * Negative gaps (clock stepped back) are ignored: durations only shrink,
- * which is safe.
+ * ANY negative gap re-anchors too (shift by the gap, preserving the deltas
+ * exactly): time never genuinely flows backward, and letting the durations
+ * shrink is NOT safe — a backward step during a stall would flip the status
+ * to starting, fire a false recovered steer, and then a duplicate stalled
+ * steer when the delta re-crosses 60s. Small FORWARD gaps stay untouched:
+ * under CLOCK_JUMP_MS they are real elapsed time, not a jump.
  */
 export function noteTick(obs: ActivityObservation, nowMs: number): void {
 	if (obs.lastTickMs !== undefined) {
 		const gap = nowMs - obs.lastTickMs;
-		if (gap >= CLOCK_JUMP_MS) {
+		if (gap < 0 || gap >= CLOCK_JUMP_MS) {
 			obs.watchdogStartMs += gap;
 			if (obs.problemSinceMs !== undefined) obs.problemSinceMs += gap;
 		}
@@ -460,16 +475,23 @@ export function noteTick(obs: ActivityObservation, nowMs: number): void {
 /**
  * Merge one read into the observation. The rules:
  *
- *   valid   → clear the problem fields, then accept the snapshot iff its
- *             (updatedAt, sequence) pair STRICTLY advanced past the current
- *             one (or none was accepted yet). Both pair components are
- *             child-clock, so parent-side skew cannot affect the ordering,
- *             and updatedAt-first absorbs an in-pane /reload's sequence
- *             reset. An EQUAL pair is the same write re-read: no-op, and
- *             acceptedAtMs deliberately stays put (it anchors the parent
- *             half of toolElapsedSeconds). An OLDER pair is a valid-but-
- *             stale file (child clock stepped back): keep the current
- *             snapshot and wait for the child's clock to catch up.
+ *   valid   → accept the snapshot iff its (updatedAt, sequence) pair STRICTLY
+ *             advanced past the current one (or none was accepted yet). Both
+ *             pair components are child-clock, so parent-side skew cannot
+ *             affect the ordering, and updatedAt-first absorbs an in-pane
+ *             /reload's sequence reset. Accepting also clears the problem
+ *             fields and latches everSawRun when the snapshot shows run
+ *             history — the parent-side latch that survives the child-side
+ *             counter reset (see ActivityObservation.everSawRun).
+ *             An EQUAL pair is the same write re-read: it clears the problem
+ *             fields but changes nothing else — acceptedAtMs deliberately
+ *             stays put (it anchors the parent half of toolElapsedSeconds).
+ *             An OLDER pair is a valid-but-stale file (child clock stepped
+ *             back): keep the current snapshot, and open (or continue) the
+ *             problem window as kind "stale" — after 60s of continuously
+ *             stale reads the status machine stalls the child, the loud
+ *             failure the README promises, instead of silently serving the
+ *             frozen accepted state for the whole skew window.
  *
  *   missing / foreign / invalid
  *           → start (or continue) the continuous-problem window and record
@@ -479,18 +501,29 @@ export function noteTick(obs: ActivityObservation, nowMs: number): void {
  */
 export function observeActivity(obs: ActivityObservation, read: ActivityRead, nowMs: number): void {
 	if (read.kind === "valid") {
-		obs.problemSinceMs = undefined;
-		obs.lastProblemKind = undefined;
 		const current = obs.snapshot;
 		const candidate = read.snapshot;
-		const advanced =
+		if (
 			current === undefined ||
 			candidate.updatedAt > current.updatedAt ||
-			(candidate.updatedAt === current.updatedAt && candidate.sequence > current.sequence);
-		if (advanced) {
+			(candidate.updatedAt === current.updatedAt && candidate.sequence > current.sequence)
+		) {
 			obs.snapshot = candidate;
 			obs.acceptedAtMs = nowMs;
+			if (candidate.inRun || candidate.runsCompleted > 0) obs.everSawRun = true;
+			obs.problemSinceMs = undefined;
+			obs.lastProblemKind = undefined;
+			return;
 		}
+		const samePair = candidate.updatedAt === current.updatedAt && candidate.sequence === current.sequence;
+		if (samePair) {
+			obs.problemSinceMs = undefined;
+			obs.lastProblemKind = undefined;
+			return;
+		}
+		// Strictly older: the child clock stepped backwards.
+		obs.problemSinceMs ??= nowMs;
+		obs.lastProblemKind = "stale";
 		return;
 	}
 	obs.problemSinceMs ??= nowMs;
@@ -531,5 +564,11 @@ export function toolElapsedSeconds(
 ): number {
 	const childMs = snapshot.updatedAt - tool.startedAt;
 	const parentMs = nowMs - acceptedAtMs;
-	return Math.max(0, Math.round((childMs + parentMs) / 1000));
+	// Each field is validated finite, but the DIFFERENCE of two finite
+	// numbers can still overflow (1e308 - -1e308 = Infinity), which Math.max
+	// would pass straight through to the display. Non-finite means garbage
+	// input: report 0, never "InfinityhNaNm".
+	const ms = childMs + parentMs;
+	if (!Number.isFinite(ms)) return 0;
+	return Math.max(0, Math.round(ms / 1000));
 }

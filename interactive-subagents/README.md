@@ -166,12 +166,12 @@ While a child runs, its implant writes a small JSON snapshot — `<child-session
 
 When an **autonomous** child flips to stalled, the parent model is woken with a `subagent_stalled` steer — and with a `subagent_recovered` one if the child comes back. Stalled is a warning, not a failure: the child stays supervised and its result or failure message still arrives when it exits. Interactive (non-auto-exit) children never steer — a human is expected to be looking at the pane; the widget still shows their state. Stall steers stop after three episodes per child.
 
-Every result message also carries the child's closing economics on one line — `Context: 84k/200k tokens (42%) · cost this run $0.31` — so the model can tell, at the moment it decides whether to resume, when a child is too full to keep resuming. Cost is scoped to **the run** (one pi process), not the session lifetime: a lifetime figure would count forked-in parent history as child spend. It visibly resets on each resume.
+Every result message — completion, failure, or stopped-by-user — also carries the child's closing economics on one line when a liveness snapshot arrived: `Context: 84k/200k tokens (42%) · cost this run $0.31`. It sits directly before the resume/retry hint, so the model can tell, at the moment it decides whether to resume, when a child is too full to keep resuming. When a snapshot exists but no context share was ever reported (e.g. the child died before finishing a turn) the line reads `Context: unknown · cost this run $0.12`; when no snapshot ever arrived the line is omitted entirely, never guessed. Cost is scoped to **the run** (one pi process), not the session lifetime: a lifetime figure would count forked-in parent history as child spend. It visibly resets on each resume.
 
 Two honest limitations, by design:
 
 - **A frozen valid-`active` snapshot never stalls.** A child that wedges (or is SIGSTOPped) mid-run keeps reading `active` indefinitely: a 3-hour tool run with zero events is legal, so there is no heartbeat to age a valid snapshot against. The pane stays visible and the exit sentinel still catches real death.
-- **A child clock stepping backwards defers acceptance.** Snapshots are ordered by the child's own clock, so if that clock steps back (e.g. across an in-pane `/reload`), newer snapshots are rejected until it catches up — the watchdog then reports `stalled`, the correct loud failure, never a false `active`.
+- **A child clock stepping backwards defers acceptance.** Snapshots are ordered by the child's own clock, so if that clock steps back (e.g. an NTP step or a VM clock change), newer writes are time-stamped before the last accepted snapshot and read as stale until the clock catches up — after 60s of continuously stale reports the watchdog reports `stalled`, the correct loud failure, never an indefinite false `active`.
 
 ## Also worth knowing
 
