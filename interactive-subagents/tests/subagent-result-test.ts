@@ -53,6 +53,26 @@ const subagentSource = readFileSync(`${directory}/tool-subagent.ts`, "utf8");
 const resumeSource = readFileSync(`${directory}/tool-resume.ts`, "utf8");
 eq("subagent uses the shared result renderer", subagentSource.includes("renderSubagentLaunchResult(result, context.isError"), true);
 eq("subagent_resume uses the shared result renderer", resumeSource.includes("renderSubagentLaunchResult(result, context.isError"), true);
+for (const [tool, source] of [["subagent", subagentSource], ["subagent_resume", resumeSource]]) {
+	eq(`${tool} advertises the shared concurrency ceiling`, source.includes("Up to 9 new or"), true);
+	eq(`${tool} counts resumed agents toward concurrency`, source.includes("resumed sub-agents may run concurrently."), true);
+	eq(`${tool} says the ceiling is not a target`, source.includes("capacity ceiling, not a target."), true);
+}
+eq(
+	"subagent limits parallel encouragement to independent bounded tasks",
+	subagentSource.includes("are independent, bounded, and able to proceed concurrently."),
+	true,
+);
+eq(
+	"subagent guidance keeps unsuitable tasks in the parent",
+	subagentSource.includes("Keep trivial tasks, tightly coupled or sequential work, and critical-path blockers in the parent."),
+	true,
+);
+eq(
+	"subagent guidance prohibits overlapping parallel write scopes",
+	subagentSource.includes("Never give parallel sub-agents overlapping write scopes in the same checkout"),
+	true,
+);
 eq(
 	"subagent model-facing launch instruction remains in execute",
 	subagentSource.includes('"Its result will arrive automatically \u2014 do not poll; continue with other work or end your turn."'),
