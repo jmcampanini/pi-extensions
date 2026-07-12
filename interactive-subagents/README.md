@@ -21,7 +21,7 @@ The extension registers three caller-side tools:
 | `agent` | Agent definition to load defaults from (see `subagents_list`). **Default: `worker`** — there is no agent-less spawn; if `worker.md` doesn't exist, the spawn errors telling you to create it |
 | `context` | `"fresh"` or `"forked"` (default `"fresh"`) |
 | `model` | Model override — `provider/model`, or a bare id if unambiguous among configured providers; validated like the agent's `models` list (errors fast otherwise) |
-| `thinking` | Thinking/effort level override (`off`–`xhigh`); defaults to the agent definition's `thinking:` value |
+| `thinking` | Thinking/effort level override (`off` through `max`); defaults to the agent definition's `thinking:` value |
 | `tools` | Comma-separated tool allowlist, e.g. `read,bash` |
 | `cwd` | Child working directory (default: parent session's cwd) |
 | `worktree` | `true` = run the child in a fresh git worktree (own directory + own branch). Cannot be combined with `cwd` — the worktree *is* the child's working directory. See [Worktree isolation](#worktree-isolation) |
@@ -127,7 +127,7 @@ Definitions load from two places, most specific wins:
 |---|---|
 | `description` | Shown by `subagents_list` |
 | `models` | Ordered, comma-separated model candidates; the first one usable **on this machine** wins, so one agent file works across computers. An entry is `provider/model` (exact) or a bare id like `gpt-5.5` — a bare id wins only when exactly one configured provider offers it (ambiguity fails that entry; no guessing, no fuzzy matching). If nothing is usable, the spawn errors immediately with per-entry reasons. Omit to inherit pi's default model. |
-| `thinking` | Thinking/effort level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`), passed via `pi --thinking`. Works with or without `models`; the call's `thinking` param overrides it. Typos fail the spawn immediately. |
+| `thinking` | Thinking/effort level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`), passed via `pi --thinking`. Works with or without `models`; the call's `thinking` param overrides it. Typos fail the spawn immediately. |
 | `tools` | Comma-separated allowlist for `pi --tools` |
 | `context` | `fresh` or `forked` (default `fresh`) |
 | `auto-exit` | `true` (default) or `false` |

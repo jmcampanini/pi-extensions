@@ -22,7 +22,7 @@
  */
 
 /** Pi's thinking/effort levels (mirrors pi's ModelThinkingLevel). */
-export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 /** Fail fast on a typo'd thinking level instead of letting the child pane error. */
 export function assertValidThinkingLevel(level: string): void {
