@@ -38,7 +38,17 @@ import { sanitizeDisplayText } from "./display-text.ts";
 import { computeStatus, STALL_AFTER_MS, type SubagentStatus } from "./status.ts";
 import { closePane, pollForExit, refreshLayout, type ExitResult } from "./tmux.ts";
 import { extractSummary } from "./session.ts";
-import { delivering, ledger, moduleSignal, running, type RunningSubagent } from "./state.ts";
+import {
+	deliveryRecord,
+	deliveryRecords,
+	ledger,
+	moduleGeneration,
+	moduleSignal,
+	running,
+	setDeliveryRecord,
+	type DeliveryRecord,
+	type RunningSubagent,
+} from "./state.ts";
 import { ensureWidgetTimer, updateRunningWidget } from "./running-widget.ts";
 import { formatResultContextLine } from "./widget.ts";
 import { finishWorktree, type WorktreeInfo, type WorktreeOutcome } from "./worktree.ts";
@@ -180,24 +190,65 @@ function sendRecoveredSteer(pi: ExtensionAPI, child: RunningSubagent, status: Su
 	);
 }
 
+function startWatcher(pi: ExtensionAPI, child: RunningSubagent): void {
+	const generation = moduleGeneration();
+	if (child.watcherGeneration === generation) return;
+	child.watcherGeneration = generation;
+	void watchSubagent(pi, child, generation);
+}
+
 /** Register a child and start its supervision machinery. */
 export function trackChild(pi: ExtensionAPI, child: RunningSubagent): void {
-	// The liveness observation is created HERE, not by the spawn tools, so
-	// neither call site can forget it — and it dies with this record, which
-	// is the whole /reload story (see state.ts).
 	child.activity = newActivityObservation(Date.now());
 	running.set(child.id, child);
 	ledger.set(child.id, { sessionFile: child.sessionFile, name: child.name });
 	ensureWidgetTimer();
 	updateRunningWidget();
-	void watchSubagent(pi, child);
+	startWatcher(pi, child);
 }
 
-async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<void> {
-	// AbortSignal.any fires when EITHER source aborts: the module-wide signal
-	// (session shutdown or /reload) or this child's own controller (x = stop
-	// in the /subagents-running picker). Hoisted to a local so the steer gate
-	// and the poller share the same instance.
+/** Rebind every live or finalizing child to the replacement runtime. */
+export function adoptRunningChildren(pi: ExtensionAPI): void {
+	if (running.size === 0 && [...deliveryRecords()].length === 0) return;
+	ensureWidgetTimer();
+	updateRunningWidget();
+	for (const child of running.values()) startWatcher(pi, child);
+	for (const record of deliveryRecords()) startFinalizer(pi, record);
+}
+
+function ownsActiveWatcher(child: RunningSubagent, generation: number): boolean {
+	return !moduleSignal().aborted
+		&& generation === moduleGeneration()
+		&& child.watcherGeneration === generation
+		&& running.get(child.id) === child;
+}
+
+function ownsFinalizer(record: DeliveryRecord, generation: number): boolean {
+	return !moduleSignal().aborted
+		&& generation === moduleGeneration()
+		&& record.finalizerGeneration === generation
+		&& deliveryRecord(record.id) === record;
+}
+
+function startFinalizer(pi: ExtensionAPI, record: DeliveryRecord): void {
+	const generation = moduleGeneration();
+	if (record.finalizerGeneration === generation) return;
+	record.finalizerGeneration = generation;
+	void finalizeDelivery(pi, record, generation);
+}
+
+function sendDelivery(record: DeliveryRecord, generation: number, send: () => void): void {
+	if (!ownsFinalizer(record, generation) || record.sendAccepted) return;
+	try {
+		send();
+		record.sendAccepted = true;
+	} catch {
+		// Keep the sole record for replacement-generation retry. A successful
+		// queued send survives reload and is never sent a second time.
+	}
+}
+
+async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generation: number): Promise<void> {
 	const signal = AbortSignal.any([moduleSignal(), child.abort.signal]);
 
 	// trackChild created the observation just before starting us; the ??= only
@@ -208,7 +259,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 
 	let result: ExitResult;
 	try {
-		result = await pollForExit({
+		result = child.pendingExit ?? await pollForExit({
 			paneId: child.paneId,
 			sessionFile: child.sessionFile,
 			signal,
@@ -262,44 +313,48 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 		};
 	}
 
-	// One explicit final read: onTick never fires on the poll's resolving
-	// iteration, so without this the snapshot carrying the finished child's
-	// closing economics would never be observed. (The poller can consume the
-	// `.exit` sidecar before the child's final write lands, so these numbers
-	// are guaranteed only as-of the last turn_end — which is the right number
-	// for context anyway, and at most one settle-refresh behind for cost.)
-	observeActivity(obs, readActivityFile(activityFile, child.id), Date.now());
+	// A reload can land after the poll consumed a one-shot sidecar. Preserve
+	// that exit on the stable child record so the replacement watcher can
+	// finish it instead of waiting forever or losing a ping payload.
+	if (result.reason !== "aborted") child.pendingExit ??= result;
 
-	// Exit detected. The row must NOT vanish yet: every outcome below except
-	// the silent shutdown/reload abort sends exactly one steered message, and
-	// pi only delivers steers at the parent's next turn boundary - so the
-	// child moves to the delivering map and its row stays visible (restyled,
-	// clock frozen) until delivery.ts observes that message landing in the
-	// transcript. The transition happens HERE, before the sends below and
-	// before the awaited worktree cleanup: on an idle parent, message_end
-	// fires within microtasks of pi.sendMessage returning, so a row added
-	// after the send could clobber the listener's removal and stick forever.
-	// For the same reason nothing below may write to the delivering map after
-	// a send. The silent path sends nothing, so it never enters delivering -
-	// no event could ever clear that row.
-	const exitElapsedSeconds = Math.round((Date.now() - child.startTime) / 1000);
-	running.delete(child.id);
-	const sendsMessage = result.reason !== "aborted" || child.stoppedByUser === true;
-	if (sendsMessage) {
-		delivering.set(child.id, {
-			id: child.id,
-			name: child.name,
-			agent: child.agent,
-			elapsedSeconds: exitElapsedSeconds,
-			forked: child.context === "forked",
-			worktree: child.worktree !== undefined,
-		});
+	if (!ownsActiveWatcher(child, generation)) return;
+	if (result.reason === "aborted" && !child.stoppedByUser) {
+		running.delete(child.id);
+		child.pendingExit = undefined;
+		closePane(child.paneId);
+		updateRunningWidget();
+		if (running.size > 0) refreshLayout();
+		return;
 	}
-	updateRunningWidget();
+
+	observeActivity(obs, readActivityFile(activityFile, child.id), Date.now());
+	const record: DeliveryRecord = {
+		id: child.id,
+		name: child.name,
+		agent: child.agent,
+		elapsedSeconds: Math.round((Date.now() - child.startTime) / 1000),
+		forked: child.context === "forked",
+		worktree: child.worktree !== undefined,
+		child,
+		exit: result,
+	};
+	// Publish before any async cleanup or send. The listener may delete this
+	// record in the same microtask as sendMessage, so it is never reinserted.
+	running.delete(child.id);
+	child.pendingExit = undefined;
+	setDeliveryRecord(record);
 	closePane(child.paneId);
-	// Re-flow the remaining subagent panes so they reclaim this one's space.
-	// Deliberately counts only RUNNING children - delivering ones have no pane.
+	updateRunningWidget();
 	if (running.size > 0) refreshLayout();
+	startFinalizer(pi, record);
+}
+
+async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, generation: number): Promise<void> {
+	const child = record.child;
+	const result = record.exit;
+	const obs = child.activity ?? newActivityObservation(Date.now());
+	const exitElapsedSeconds = record.elapsedSeconds;
 
 	const elapsed = humanElapsed(exitElapsedSeconds);
 	const childName = sanitizeDisplayText(child.name);
@@ -320,7 +375,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 		// promised a result for this child and would otherwise wait for
 		// one that can never arrive.
 		if (child.stoppedByUser) {
-			pi.sendMessage(
+			sendDelivery(record, generation, () => pi.sendMessage(
 				{
 					customType: "subagent_result",
 					content:
@@ -337,7 +392,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 					details: { id: child.id, name: child.name, reason: "stopped", sessionFile: child.sessionFile },
 				},
 				{ triggerTurn: true, deliverAs: "steer" },
-			);
+			));
 		}
 		return;
 	}
@@ -347,7 +402,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 	if (result.reason === "ping") {
 		const pingName = sanitizeDisplayText(result.pingName ?? child.name);
 		const pingMessage = sanitizeDisplayText(result.pingMessage);
-		pi.sendMessage(
+		sendDelivery(record, generation, () => pi.sendMessage(
 			{
 				customType: "subagent_ping",
 				content:
@@ -359,7 +414,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 				details: { id: child.id, name: child.name, sessionFile: child.sessionFile },
 			},
 			{ triggerTurn: true, deliverAs: "steer" },
-		);
+		));
 		return;
 	}
 
@@ -370,17 +425,18 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 	const generatedSummary = summary === null ? null : sanitizeDisplayText(summary);
 	const failed = result.exitCode !== 0 || result.reason === "error" || result.reason === "pane-closed";
 
-	// Worktree cleanup runs BEFORE the result message is sent, so the status
-	// the parent model reads (removed/kept/cleanup-failed) is the truth, not a
-	// prediction. finishWorktree never throws, so result delivery is safe.
+	// Cleanup may overlap a reload. Store its promise on the stable record so
+	// every generation awaits the same outcome instead of running it twice.
 	let worktreeOutcome: WorktreeOutcome | undefined;
 	if (child.worktree) {
-		worktreeOutcome = await finishWorktree({
+		record.worktreeCleanup ??= finishWorktree({
 			info: child.worktree,
 			mode: config.worktreeCleanupMode,
 			command: config.worktreeCleanupCommand,
 			childSucceeded: !failed,
 		});
+		worktreeOutcome = await record.worktreeCleanup;
+		if (!ownsFinalizer(record, generation)) return;
 	}
 
 	let content: string;
@@ -410,7 +466,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 		content += `\n\n${worktreeNote(child.worktree, worktreeOutcome)}`;
 	}
 
-	pi.sendMessage(
+	sendDelivery(record, generation, () => pi.sendMessage(
 		{
 			customType: "subagent_result",
 			content,
@@ -435,5 +491,5 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 			},
 		},
 		{ triggerTurn: true, deliverAs: "steer" },
-	);
+	));
 }

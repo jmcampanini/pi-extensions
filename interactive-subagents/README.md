@@ -114,6 +114,19 @@ Children are always created detached — a spawning child never steals your focu
 
 In `main`, the `mainWidth` setting sets the parent pane's width — a percentage like `60%` (default) or absolute columns like `120`. Layout application is best-effort: if a tmux layout command fails, the spawn still succeeds with a raw split.
 
+## Reload continuity
+
+Running and finalizing children survive `/reload` in the parent. Existing panes and processes stay alive, while an exited child's enriched delivery record retains its pending exit, cleanup promise, and send ownership. The replacement extension republishes the widget and adopts each record under a new fenced generation. Repeated reloads still produce one cleanup and one eventual result per child; a send that threw can be retried by a replacement, while a send already accepted by pi is never duplicated.
+
+This guarantee is deliberately limited to hot reload in the same parent pi process. Quit, `/new`, `/resume`, `/fork`, a parent crash, and a parent process restart remain destructive boundaries. Child session files still survive those boundaries and can be reopened by path, but live supervision is not reconstructed after a process restart. If a replacement extension fails to load and never adopts the children, a 30-second fallback closes their panes rather than leaving unsupervised processes running.
+
+### Accepted delivery limitations
+
+These are known, acceptable behaviors and should not be reported as errors:
+
+- If `pi.sendMessage` throws, the enriched delivery record remains available for retry by the next successful `/reload`; there is intentionally no timer-based retry in the current implementation.
+- If Pi accepts a queued steer and the user presses Escape before it lands, Pi can silently drop it. The frozen `delivering` row remains as the honest signal that delivery was lost; the extension intentionally does not resend an accepted message because that could duplicate a result that actually landed.
+
 ## Agent definitions
 
 An agent definition is a Markdown file: optional frontmatter for settings, and a body that becomes the child's appended system prompt (`pi --append-system-prompt`). The `worker` agent is the **default** — a spawn that names no agent runs as `worker`, so `worker.md` should always exist. The **filename is the agent name** (`scout.md` → `agent: "scout"`); there is no `name:` key.
@@ -164,7 +177,7 @@ While a child runs, its implant writes a small JSON snapshot — `<child-session
 | `waiting` | idle after at least one completed run, or an interactive pane handed to a human |
 | `stalled` | the 60s watchdog fired: the snapshot has been continuously missing/unreadable for 60s, or the prompted run never began within 60s of launch |
 
-The widget has one more state the liveness watchdog never produces: `delivering` - the child's process has exited and its result message is queued behind the parent's current turn. The row's clock freezes at exit. On an idle parent it flashes for well under a second, but it can legitimately persist for a whole multi-tool turn (results deliver one per turn boundary). If you press Escape while the parent is streaming, pi silently drops queued messages - a `delivering` row that never clears means exactly that: the result was lost. `/reload` clears stuck rows. `subagents_list` reports these children under 'Finished, result on its way'.
+The widget has one more state the liveness watchdog never produces: `delivering` - the child's process has exited and its result message is queued behind the parent's current turn. The row's clock freezes at exit. On an idle parent it flashes for well under a second, but it can legitimately persist for a whole multi-tool turn (results deliver one per turn boundary). If you press Escape while the parent is streaming, pi silently drops queued messages - a `delivering` row that never clears means exactly that: the result was lost. `/reload` preserves that honest signal rather than guessing whether to resend. `subagents_list` reports these children under 'Finished, result on its way'.
 
 When an **autonomous** child flips to stalled, the parent model is woken with a `subagent_stalled` steer — and with a `subagent_recovered` one if the child comes back. Stalled is a warning, not a failure: the child stays supervised and its result or failure message still arrives when it exits. Interactive (non-auto-exit) children never steer — a human is expected to be looking at the pane; the widget still shows their state. Stall steers stop after three episodes per child.
 

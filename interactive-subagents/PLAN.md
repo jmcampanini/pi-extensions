@@ -125,8 +125,7 @@ One file per job; `index.ts` only wires them into pi:
   the exit poller (sidecar → screen sentinel → pane-closed grace).
 - `launch.ts` — the ONE builder for a child's launch command, plus the
   `.meta` launch-metadata sidecar.
-- `state.ts` — shared runtime state: running children, delivering children
-  (result in flight), the resume ledger, /reload-safe teardown.
+- `state.ts` — process-stable running and enriched delivering registries, the resume ledger, and generation-owned `/reload` handoff.
 - `widget.ts` / `running-widget.ts` — pure renderer / stateful controller for
   the running widget (liveness segment plus the delivering exit state).
 - `watcher.ts` — per-child supervision and the steered result/ping messages.
@@ -162,6 +161,15 @@ Deliberate improvements over the reference implementation:
   approach, kept only as the `sessionPath` fallback for after restarts).
 - Watchers **skip steering after shutdown abort** (reference attempted to
   steer into a dying session).
+- Parent `/reload` performs a live handoff instead of teardown: running and
+  enriched delivering records plus the short-id ledger live in a stable
+  process-local coordinator. Old generations stop without closing live panes,
+  and the replacement adopts each watcher or finalizer exactly once. A pending
+  exit is retained until it moves atomically into delivery; cleanup promises
+  and accepted-send state live only on that delivery record, so repeated
+  reloads still produce one cleanup and one result. A 30-second failed-adoption
+  reaper closes live panes and discards both registries. This does not extend
+  to parent process restarts or other session replacements.
 
 ### v2 — liveness (shipped)
 
@@ -194,7 +202,10 @@ Deliberate improvements over the reference implementation:
   restyled `delivering`, clock frozen at exit - until the message lands.
 - Escape while the parent streams drops queued steers silently, so a
   `delivering` row that never clears is the deliberate, honest signal of a
-  lost result. No re-send, no coalescing (out of scope); /reload clears it.
+  lost result. Accepted sends are not re-sent, and /reload preserves the row.
+- A thrown `pi.sendMessage` is retried only after a later successful `/reload`.
+  This and the preceding Escape behavior are accepted known limitations, not
+  errors.
 - `subagents_list` gains a "Finished, result on its way" section so a child
   is never invisible between exit and delivery.
 

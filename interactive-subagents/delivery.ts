@@ -20,8 +20,8 @@
  * The deliberate gap: if the human presses Escape while the parent streams,
  * pi drops the queued steer silently - no event ever fires, nothing can be
  * polled - and the row sticks. That stuck "delivering" row is the one honest
- * signal that a result was lost (/reload clears it; re-sending is out of
- * scope by design).
+ * signal that a result was lost. /reload preserves it; an accepted send is
+ * never guessed lost and re-sent.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -54,9 +54,9 @@ export function deliveredChildId(message: unknown): string | undefined {
  * child can exist: on an idle parent, message_end for a result fires within
  * microtasks of the watcher's pi.sendMessage call, so late registration
  * would miss it. The body stays trivial on purpose - pi survives a throwing
- * handler but the row would be stranded. Unknown ids are normal (results
- * queued before a /reload) and Map.delete is idempotent, so redelivery is
- * harmless too.
+ * handler but the row would be stranded. Unknown ids are normal after a
+ * destructive session boundary, and Map.delete is idempotent, so redelivery
+ * is harmless too.
  */
 export function registerDeliveryListener(pi: ExtensionAPI): void {
 	pi.on("message_end", (event) => {

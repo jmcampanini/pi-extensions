@@ -43,10 +43,12 @@ import { resetOverview, registerSubagentsAvailableCommand } from "./command-avai
 import { registerSubagentsRunningCommand } from "./command-running.ts";
 import { registerDeliveryListener } from "./delivery.ts";
 import { stopWidgetTimer } from "./running-widget.ts";
-import { resetForShutdown, setLatestCtx } from "./state.ts";
+import { completeReloadHandoff, prepareForReload, resetForShutdown, setLatestCtx } from "./state.ts";
 import { registerSubagentsListTool } from "./tool-list.ts";
 import { registerSubagentResumeTool } from "./tool-resume.ts";
 import { registerSubagentTool } from "./tool-subagent.ts";
+import { closePane } from "./tmux.ts";
+import { adoptRunningChildren } from "./watcher.ts";
 
 // ── am I running inside a subagent? ──────────────────────────────────────
 // This extension is installed globally, so it also loads inside every child
@@ -59,14 +61,24 @@ const IS_SUBAGENT_CHILD = Boolean(process.env.PI_SUBAGENT_SESSION);
 export default function (pi: ExtensionAPI) {
 	// Track the live context for widget updates, and clean everything up when
 	// the session ends or is replaced (/new, /resume, quit, reload).
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", (event, ctx) => {
 		setLatestCtx(ctx);
+		if (event.reason === "reload") {
+			adoptRunningChildren(pi);
+			completeReloadHandoff();
+		}
 	});
 
-	pi.on("session_shutdown", () => {
+	pi.on("session_shutdown", (event) => {
 		stopWidgetTimer();
 		resetOverview();
-		resetForShutdown(); // stops all watchers, forgets running children
+		if (event.reason === "reload") {
+			prepareForReload((children) => {
+				for (const child of children) closePane(child.paneId);
+			});
+			return;
+		}
+		for (const child of resetForShutdown()) closePane(child.paneId);
 	});
 
 	// Inside a child: register nothing. The implant (loaded via -e) provides
