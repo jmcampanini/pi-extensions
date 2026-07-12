@@ -1,3 +1,4 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	FORK_MARK,
 	WORKTREE_MARK,
@@ -308,9 +309,8 @@ eq("long tool name clamps at 12 chars + ellipsis", longTool[1].includes("0123456
 eq("no 13th tool char leaks", longTool[1].includes("0123456789012"), false);
 
 // ── display-column safety: wide glyphs, whitespace, surrogate pairs ───────
-// pi-tui's fatal overflow check measures DISPLAY COLUMNS, not code units, so
-// these pin the renderer's single-line normalization, the lone-surrogate
-// strip, and the displayColumns fallback that keeps wide-glyph rows safe.
+// pi-tui's fatal overflow check measures display columns, so these use its
+// public visibleWidth implementation as an independent sweep oracle.
 
 // displayColumns value table.
 eq("displayColumns: ASCII is 1 column per char", displayColumns("active, bash 7m"), 15);
@@ -318,6 +318,8 @@ eq("displayColumns: the middle dot separator is 1 column", displayColumns("activ
 eq("displayColumns: CJK is 2 columns each", displayColumns("検索"), 4);
 eq("displayColumns: Hangul is 2 columns each", displayColumns("한글"), 4);
 eq("displayColumns: emoji is 2 columns", displayColumns("💥"), 2);
+eq("displayColumns: regional-indicator flag is 2 columns", displayColumns("🇺🇸"), 2);
+eq("displayColumns: BMP emoji grapheme is 2 columns", displayColumns("♥️"), 2);
 eq("displayColumns: fullwidth forms are 2 columns", displayColumns("Ａ１"), 4);
 eq("displayColumns: empty string is 0", displayColumns(""), 0);
 
@@ -350,28 +352,30 @@ eq("clampToolName strips a split pair's dangling high surrogate",
 	clampToolName("x𝐀𝐁𝐂𝐃𝐄𝐅"), "x𝐀𝐁𝐂𝐃𝐄…");
 eq("clampToolName leaves a whole-pair boundary alone", clampToolName("012345678901💥"), "012345678901…");
 
-// The finding-6 crash case: a 12-code-unit CJK tool name is 24 display
-// columns; the .length math undercounts it, so the row must take the
-// column-clamped fallback instead of overflowing pi-tui's fatal check.
+// Wide names and tools must truncate without exceeding pi-tui's metric.
 const hostileWideRows: WidgetRow[] = [
 	{ name: "検索統合テストの実行", agent: "scout", elapsedSeconds: 192, status: "active",
 	  toolName: "検索工具調用器検索工具調用器", toolElapsedSeconds: 420, contextTokens: 84_000 },
 	{ name: "e" + "💥".repeat(10), agent: "worker", elapsedSeconds: 41, status: "waiting", contextTokens: 6_000 },
-	{ name: "Auth", agent: "judge", elapsedSeconds: 72, status: "stalled" },
+	{ name: "🇺🇸".repeat(10), agent: "judge", elapsedSeconds: 72, status: "active", contextTokens: 25_000 },
+	{ name: "♥️".repeat(10), agent: "worker", elapsedSeconds: 73, status: "waiting", contextTokens: 106_000 },
+	{ name: "Auth", agent: "judge", elapsedSeconds: 74, status: "stalled" },
 ];
 let wideColumnViolations = 0;
-let wideLengthViolations = 0;
 let loneSurrogateLines = 0;
 for (let w = -2; w <= 120; w++) {
 	for (const line of formatRunningWidgetLines(hostileWideRows, w)) {
-		if (displayColumns(line) > Math.max(0, w)) wideColumnViolations++;
-		if (line.length > Math.max(0, w)) wideLengthViolations++;
+		if (visibleWidth(line) > Math.max(0, w)) wideColumnViolations++;
 		if (hasLoneSurrogate(line)) loneSurrogateLines++;
 	}
 }
-eq("wide-glyph rows never exceed the width in display columns", wideColumnViolations, 0);
-eq("wide-glyph rows never exceed the width in code units either", wideLengthViolations, 0);
+eq("wide-glyph rows never exceed pi-tui's visible width", wideColumnViolations, 0);
 eq("no width ever emits a lone surrogate", loneSurrogateLines, 0);
+const flagRegression = formatRunningWidgetLines(
+	[{ name: "🇺🇸".repeat(6), agent: "scout", elapsedSeconds: 47 }] as WidgetRow[], 22)[1];
+eq("regional-indicator truncation fits pi-tui at the reported width", visibleWidth(flagRegression) <= 22, true);
+eq("regional-indicator truncation never splits a flag pair",
+	flagRegression.includes("🇺…") || flagRegression.includes("🇸…"), false);
 const wideNameCore = formatRunningWidgetLines(
 	[{ name: "検索検索検索検索検索検索", agent: "scout", elapsedSeconds: 47,
 	   status: "active", contextTokens: 6_000 }] as WidgetRow[], 50);
@@ -397,7 +401,7 @@ eq("worst-case segment appears once the full name and tool fit",
 let v2WidthViolations = 0;
 for (let w = -2; w <= 90; w++) {
 	for (const line of formatRunningWidgetLines(v2OverflowRows, w)) {
-		if (line.length > Math.max(0, w)) v2WidthViolations++;
+		if (visibleWidth(line) > Math.max(0, w)) v2WidthViolations++;
 	}
 }
 eq("no v2 line ever exceeds the render width", v2WidthViolations, 0);

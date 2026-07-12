@@ -29,6 +29,7 @@
  * module stays dependency-free and unit-testable.
  */
 
+import { sliceByColumn, visibleWidth } from "@earendil-works/pi-tui";
 import { sanitizeDisplayText } from "./display-text.ts";
 
 // ── the state marks ──────────────────────────────────────────────────────
@@ -171,54 +172,14 @@ export function stripAgentPrefix(name: string, agent: string | undefined): strin
 // Layout uses terminal display columns rather than UTF-16 length so wide
 // names and tags cannot consume the fixed right-side telemetry budget.
 
-/** The standard East-Asian-wide ranges plus emoji/astral pictographs, all
- * counted 2 columns; everything else 1. A small conservative table, not a
- * full Unicode width database — it only needs to agree with pi-tui about
- * which glyphs are wide enough to overflow. */
-function isWideCodePoint(code: number): boolean {
-	return (
-		(code >= 0x1100 && code <= 0x115f) || // Hangul Jamo
-		(code >= 0x2e80 && code <= 0xa4cf) || // CJK radicals … Yi syllables
-		(code >= 0xac00 && code <= 0xd7a3) || // Hangul syllables
-		(code >= 0xf900 && code <= 0xfaff) || // CJK compatibility ideographs
-		(code >= 0xfe30 && code <= 0xfe4f) || // CJK compatibility forms
-		(code >= 0xff00 && code <= 0xff60) || // fullwidth forms
-		(code >= 0xffe0 && code <= 0xffe6) || // fullwidth signs
-		(code >= 0x1f300 && code <= 0x1f9ff) || // emoji & pictographs
-		(code >= 0x1fa00 && code <= 0x1faff) || // more astral pictographs
-		code >= 0x20000 // CJK ideograph extensions B and beyond
-	);
-}
-
-/** Terminal columns a plain-text string occupies (ASCII fast path: one
- * column per char). Exported so the tests can use it as the sweep oracle. */
+/** Terminal columns using the exact metric enforced by pi-tui. */
 export function displayColumns(text: string): number {
-	let ascii = true;
-	for (let i = 0; i < text.length; i++) {
-		if (text.charCodeAt(i) > 0x7f) {
-			ascii = false;
-			break;
-		}
-	}
-	if (ascii) return text.length;
-	let columns = 0;
-	for (const char of text) {
-		columns += isWideCodePoint(char.codePointAt(0) ?? 0) ? 2 : 1;
-	}
-	return columns;
+	return visibleWidth(text);
 }
 
-/** Column-aware clamp: walk code points until the width budget is hit. */
+/** Grapheme-safe clamp using pi-tui's own column slicing semantics. */
 function clampToColumns(text: string, maxColumns: number): string {
-	let columns = 0;
-	let out = "";
-	for (const char of text) {
-		const width = isWideCodePoint(char.codePointAt(0) ?? 0) ? 2 : 1;
-		if (columns + width > maxColumns) break;
-		columns += width;
-		out += char;
-	}
-	return out;
+	return sliceByColumn(text, 0, Math.max(0, maxColumns), true);
 }
 
 function padToColumns(text: string, width: number): string {
