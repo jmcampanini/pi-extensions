@@ -46,7 +46,8 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 		description:
 			"Resume a previous sub-agent session with an optional follow-up message. Pass the `id` from a " +
 			"result/ping message (preferred), or `sessionPath` if the id is no longer known (e.g. after a restart). " +
-			"ASYNC — returns immediately; the result steers back automatically. Do not poll.",
+			"ASYNC — returns immediately; the result steers back automatically. Do not poll. Up to 9 new or " +
+			"resumed sub-agents may run concurrently. This is a capacity ceiling, not a target.",
 		parameters: ResumeParams,
 		renderResult(result, _options, theme, context) {
 			return renderSubagentLaunchResult(result, context.isError, (text) =>
