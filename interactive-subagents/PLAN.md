@@ -209,6 +209,15 @@ Deliberate improvements over the reference implementation:
 - `subagents_list` gains a "Finished, result on its way" section so a child
   is never invisible between exit and delivery.
 
+### v2.2 - compact delivered results
+
+- A `subagent_result` message renderer uses structured presentation details to
+  show a status sentence plus at most two response-preview lines by default.
+- Global tool expansion reveals the complete existing Markdown content; no
+  model-facing or persisted message content is truncated or replaced.
+- Completed, failed, and user-stopped results have distinct styling, while
+  `subagent_ping` keeps Pi's full default renderer so help remains actionable.
+
 ### v3 — interrupt
 
 - `subagent_interrupt`: send Escape to the pane (turn-level abort; session

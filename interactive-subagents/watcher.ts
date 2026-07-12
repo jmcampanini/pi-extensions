@@ -50,16 +50,9 @@ import {
 	type RunningSubagent,
 } from "./state.ts";
 import { ensureWidgetTimer, updateRunningWidget } from "./running-widget.ts";
+import { humanElapsed, resultPresentation, type SubagentResultPresentation } from "./result-message.ts";
 import { formatResultContextLine } from "./widget.ts";
 import { finishWorktree, type WorktreeInfo, type WorktreeOutcome } from "./worktree.ts";
-
-/** Elapsed time as prose ("3m 42s") for the steered messages. The widget's
- * clock format (03:42) lives separately in widget.ts — different surface.
- * Exported for subagents_list, whose lines are the same prose surface. */
-export function humanElapsed(totalSeconds: number): string {
-	if (totalSeconds < 60) return `${totalSeconds}s`;
-	return `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`;
-}
 
 /**
  * The worktree sentence appended to a result message. The model never sees
@@ -389,7 +382,18 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 						// decision the line informs.
 						`\n\n${contextBlock}Session: ${child.sessionFile}\nResume with subagent_resume({ id: "${child.id}", message: "..." }) if the work should continue.`,
 					display: true,
-					details: { id: child.id, name: child.name, reason: "stopped", sessionFile: child.sessionFile },
+					details: {
+						id: child.id,
+						name: child.name,
+						agent: child.agent,
+						reason: "stopped",
+						sessionFile: child.sessionFile,
+						presentation: resultPresentation(
+							"stopped",
+							exitElapsedSeconds,
+							"No final result was delivered. Partial work may remain; expand for resume and worktree details.",
+						),
+					},
 				},
 				{ triggerTurn: true, deliverAs: "steer" },
 			));
@@ -440,12 +444,15 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 	}
 
 	let content: string;
+	let presentation: SubagentResultPresentation;
 	if (!failed) {
+		const response = generatedSummary ?? "(the subagent produced no final message)";
 		content =
 			`Sub-agent "${childName}" (id ${child.id}) completed (${elapsed}).\n\n` +
-			`${generatedSummary ?? "(the subagent produced no final message)"}\n\n` +
+			`${response}\n\n` +
 			contextBlock +
 			`For follow-up work: subagent_resume({ id: "${child.id}", message: "..." }). Session: ${child.sessionFile}`;
+		presentation = resultPresentation("completed", exitElapsedSeconds, response);
 	} else {
 		const reasonText =
 			result.reason === "error"
@@ -458,6 +465,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 			(generatedSummary ? `Last output:\n${generatedSummary}\n\n` : "") +
 			contextBlock +
 			`You can retry with subagent_resume({ id: "${child.id}", message: "<guidance>" }). Session: ${child.sessionFile}`;
+		presentation = resultPresentation("failed", exitElapsedSeconds, generatedSummary ?? reasonText);
 	}
 
 	// The worktree's fate is part of the result — appended to the prose (the
@@ -488,6 +496,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 				contextTokens: obs.snapshot?.context?.tokens,
 				contextWindow: obs.snapshot?.context?.window,
 				costUsd: obs.snapshot?.costUsd,
+				presentation,
 			},
 		},
 		{ triggerTurn: true, deliverAs: "steer" },
