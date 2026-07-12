@@ -235,42 +235,32 @@ export function formatWidgetContextTokens(count: number): string {
 	return `${String(thousands).padStart(CONTEXT_DIGITS, " ")}k`;
 }
 
-/** Candidate segments, widest first. The optional tool drops before the
- * task name truncates. State and the fixed context suffix form the core. */
-function segmentCandidates(row: WidgetRow): string[] {
-	if (row.status === undefined) return [];
+/** Build the required state/context core and optional tool prefix. */
+function buildSegments(row: WidgetRow): { core: string; full?: string } | undefined {
+	if (row.status === undefined) return undefined;
 	const contextTokens = row.contextTokens;
 	const contextPart = contextTokens !== undefined && Number.isFinite(contextTokens)
 		? ` · ${formatWidgetContextTokens(contextTokens)}`
 		: " ".repeat(CONTEXT_SUFFIX_WIDTH);
 	const core = row.status + contextPart;
-	// Tool part: only while active, and only when a name survives sanitizing.
-	if (row.status === "active" && row.toolName !== undefined) {
-		const tool = clampToolName(row.toolName);
-		if (tool !== "") return [`${tool} ${formatToolElapsed(row.toolElapsedSeconds ?? 0)} · ${core}`, core];
-	}
-	return [core];
+	if (row.status !== "active" || row.toolName === undefined) return { core };
+
+	const tool = clampToolName(row.toolName);
+	return tool === ""
+		? { core }
+		: { core, full: `${tool} ${formatToolElapsed(row.toolElapsedSeconds ?? 0)} · ${core}` };
 }
 
-/** Keep the tool only when the complete name still fits. Otherwise drop the
- * tool and preserve the core,
- * allowing the name to truncate around the fixed right-side telemetry. If
- * even the core cannot fit beside the identity and clock, omit it so the
- * renderer retains its pre-telemetry narrow-width safety. */
-function chooseSegment(row: WidgetRow, width: number, prefix: string, slot: string, elapsed: string, name: string): string {
-	const candidates = segmentCandidates(row);
-	if (candidates.length === 0) return "";
-	const full = candidates[0];
-	if (candidates.length > 1) {
-		const fixedWidth = displayColumns(prefix) + displayColumns(slot) + 1
-			+ displayColumns(full) + 2 + displayColumns(elapsed) + 1;
-		const candidateMaxName = width - fixedWidth - 2;
-		if (candidateMaxName >= displayColumns(name)) return full;
+/** Keep the optional tool only when the complete name still fits. Keep the
+ * core whenever it fits, allowing the name to truncate around it. */
+function chooseSegment(row: WidgetRow, availableWidth: number, nameWidth: number): string {
+	const segments = buildSegments(row);
+	if (segments === undefined) return "";
+	if (segments.full !== undefined) {
+		const fullWidth = displayColumns(segments.full) + 2;
+		if (fullWidth + nameWidth + 2 <= availableWidth) return segments.full;
 	}
-	const core = candidates[candidates.length - 1];
-	const coreFixedWidth = displayColumns(prefix) + displayColumns(slot) + 1
-		+ displayColumns(core) + 2 + displayColumns(elapsed) + 1;
-	return coreFixedWidth <= width ? core : "";
+	return displayColumns(segments.core) + 2 <= availableWidth ? segments.core : "";
 }
 
 export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style: WidgetStyle = {}): string[] {
@@ -325,10 +315,11 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 		// Everything except the name and the flex gap has a fixed width: the
 		// prefix, the slot, its padding space, the segment plus its two-space
 		// joint to the clock, the clock, its trailing space.
-		const segment = chooseSegment(row, width, prefix, slot, elapsed, name);
+		const baseWidth = displayColumns(prefix) + displayColumns(slot) + 1
+			+ displayColumns(elapsed) + 1;
+		const segment = chooseSegment(row, width - baseWidth, displayColumns(name));
 		const segmentWidth = segment === "" ? 0 : displayColumns(segment) + 2;
-		const fixedWidth = displayColumns(prefix) + displayColumns(slot) + 1
-			+ segmentWidth + displayColumns(elapsed) + 1;
+		const fixedWidth = baseWidth + segmentWidth;
 		const maxName = width - fixedWidth - 2; // reserve a 2-column minimum gap
 		const clippedName = truncateToColumns(name, maxName);
 		const gap = Math.max(0, width - fixedWidth - displayColumns(clippedName));
