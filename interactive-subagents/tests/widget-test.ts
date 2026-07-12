@@ -148,23 +148,23 @@ const exampleRows: WidgetRow[] = [
 ];
 const exampleLines = formatRunningWidgetLines(exampleRows, 78);
 eq("example block: active row", exampleLines[1],
-	" [scout]  fw Auth" + " ".repeat(30) + "bash 7m · active ·  84k  03:12 ");
+	" [scout]  fw Auth" + " ".repeat(29) + "bash 7m · active ·  84k · 03:12 ");
 eq("example block: waiting row rounds and pads the tokens", exampleLines[2],
-	" [worker]    quick fix" + " ".repeat(34) + "waiting ·   6k  00:41 ");
+	" [worker]    quick fix" + " ".repeat(33) + "waiting ·   6k · 00:41 ");
 eq("example block: stalled row reserves unknown context columns", exampleLines[3],
-	" [judge]   w API review" + " ".repeat(33) + "stalled" + " ".repeat(9) + "01:12 ");
+	" [judge]   w API review" + " ".repeat(32) + "stalled" + " ".repeat(8) + "· 01:12 ");
 eq("example block rows exactly width wide", exampleLines.every((l) => l.length === 78), true);
 
 // starting row exact string
 const startingLines = formatRunningWidgetLines(
 	[{ name: "boot up", agent: "worker", elapsedSeconds: 5, status: "starting" }] as WidgetRow[], 50);
 eq("starting row reserves unknown context columns", startingLines[1],
-	" [worker]    boot up" + " ".repeat(7) + "starting" + " ".repeat(9) + "00:05 ");
+	" [worker]    boot up" + " ".repeat(6) + "starting" + " ".repeat(8) + "· 00:05 ");
 
 // stalled-only row exact string
 const stalledLines = formatRunningWidgetLines(
 	[{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "stalled" }] as WidgetRow[], 40);
-eq("stalled-only row", stalledLines[1], " [judge]    API…  stalled" + " ".repeat(9) + "01:12 ");
+eq("stalled-only row", stalledLines[1], " [judge]    AP…  stalled" + " ".repeat(8) + "· 01:12 ");
 
 // The degradation ladder on one row at descending widths: the tool drops,
 // then the name truncates around the fixed state/context/clock core. Once the
@@ -173,34 +173,34 @@ const ladderRow: WidgetRow[] = [{ name: "Auth refactor", agent: "scout", elapsed
 	status: "active", toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 }];
 const ladderAt = (w: number) => formatRunningWidgetLines(ladderRow, w)[1];
 eq("ladder 54: tool drops before the name truncates", ladderAt(54),
-	" [scout]    Auth refactor" + " ".repeat(8) + "active ·  84k  03:12 ");
+	" [scout]    Auth refactor" + " ".repeat(7) + "active ·  84k · 03:12 ");
 eq("tool remains absent through the full-name boundary",
-	[55, 56, 57].every((width) => !ladderAt(width).includes("bash") && ladderAt(width).includes("Auth refactor")), true);
-eq("tool returns only when it and the full name fit", ladderAt(58).includes("Auth refactor  bash 7m"), true);
+	[55, 56, 57, 58].every((width) => !ladderAt(width).includes("bash") && ladderAt(width).includes("Auth refactor")), true);
+eq("tool returns only when it and the full name fit", ladderAt(59).includes("Auth refactor  bash 7m"), true);
 eq("ladder 53: fixed core remains aligned", ladderAt(53),
-	" [scout]    Auth refactor" + " ".repeat(7) + "active ·  84k  03:12 ");
+	" [scout]    Auth refactor" + " ".repeat(6) + "active ·  84k · 03:12 ");
 eq("ladder 44: name truncates around the fixed core", ladderAt(44),
-	" [scout]    Auth ref…  active ·  84k  03:12 ");
+	" [scout]    Auth re…  active ·  84k · 03:12 ");
 eq("ladder 43: fixed core wins another name column", ladderAt(43),
-	" [scout]    Auth re…  active ·  84k  03:12 ");
+	" [scout]    Auth r…  active ·  84k · 03:12 ");
 eq("ladder 38: fixed core remains while the name shrinks", ladderAt(38),
-	" [scout]    Au…  active ·  84k  03:12 ");
+	" [scout]    A…  active ·  84k · 03:12 ");
 eq("ladder 37: fixed core remains at its identity-width limit", ladderAt(37),
-	" [scout]    A…  active ·  84k  03:12 ");
+	" [scout]    …  active ·  84k · 03:12 ");
 eq("ladder 32: core no longer fits, so the safe v1 row returns", ladderAt(32), " [scout]    Auth refact…  03:12 ");
 eq("ladder 17: identity-only plain clamp", ladderAt(17), " [scout]    03:12");
 
 // A short name is never truncated to keep the optional tool. Once the tool
 // drops, the required core can truncate a long name below the old floor.
-eq("required core may shrink a long name below 10 columns", ladderAt(44).includes(" Auth ref… "), true);
+eq("required core may shrink a long name below 10 columns", ladderAt(44).includes(" Auth re… "), true);
 const shortNameRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 192,
 	status: "active", toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 }];
 eq("short name 48: tool drops before truncating the whole name",
 	formatRunningWidgetLines(shortNameRow, 48)[1],
-	" [scout]    Auth" + " ".repeat(11) + "active ·  84k  03:12 ");
+	" [scout]    Auth" + " ".repeat(10) + "active ·  84k · 03:12 ");
 eq("short name 47: fixed core stays and name remains whole",
 	formatRunningWidgetLines(shortNameRow, 47)[1],
-	" [scout]    Auth" + " ".repeat(10) + "active ·  84k  03:12 ");
+	" [scout]    Auth" + " ".repeat(9) + "active ·  84k · 03:12 ");
 eq("short name never gains an ellipsis for a segment",
 	formatRunningWidgetLines(shortNameRow, 47)[1].includes("…"), false);
 
@@ -213,9 +213,9 @@ const mixedTierRows: WidgetRow[] = [
 ];
 const mixedTier = formatRunningWidgetLines(mixedTierRows, 60);
 eq("mixed tiers: full-segment row", mixedTier[1],
-	" [scout]    Auth" + " ".repeat(13) + "bash 7m · active ·  84k  03:12 ");
+	" [scout]    Auth" + " ".repeat(12) + "bash 7m · active ·  84k · 03:12 ");
 eq("mixed tiers: stalled row", mixedTier[2],
-	" [judge]    API review" + " ".repeat(16) + "stalled" + " ".repeat(9) + "01:12 ");
+	" [judge]    API review" + " ".repeat(15) + "stalled" + " ".repeat(8) + "· 01:12 ");
 eq("mixed tiers: rows exactly width wide", mixedTier.every((l) => l.length === 60), true);
 eq("mixed tiers: both clocks end at the right edge",
 	mixedTier[1].endsWith("03:12 ") && mixedTier[2].endsWith("01:12 "), true);
@@ -224,15 +224,15 @@ eq("mixed tiers: both clocks end at the right edge",
 // clock stays dim; stripping the tags recovers the exact plain width.
 const segStyled = formatRunningWidgetLines(mixedTierRows, 60,
 	{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
-eq("segment dim on active", segStyled[1].includes("<D>bash 7m · active ·  84k</D>  <D>03:12</D> "), true);
-eq("segment warn on stalled, clock still dim", segStyled[2].includes(`<W>stalled${" ".repeat(7)}</W>  <D>01:12</D> `), true);
+eq("segment dim on active", segStyled[1].includes("<D>bash 7m · active ·  84k</D><D> · </D><D>03:12</D> "), true);
+eq("segment warn on stalled, clock separator and clock stay dim", segStyled[2].includes(`<W>stalled${" ".repeat(7)}</W><D> · </D><D>01:12</D> `), true);
 eq("warn never touches a non-stalled row", segStyled[1].includes("<W>"), false);
 eq("stripped active row length still exact", segStyled[1]
 	.replaceAll("<D>", "").replaceAll("</D>", "").length, 60);
 eq("stripped stalled row length still exact", segStyled[2]
 	.replaceAll("<D>", "").replaceAll("</D>", "").replaceAll("<W>", "").replaceAll("</W>", "").length, 60);
 const warnFallback = formatRunningWidgetLines(mixedTierRows, 60, { dim: (t) => `<D>${t}</D>` });
-eq("warn falls back to dim", warnFallback[2].includes(`<D>stalled${" ".repeat(7)}</D>  <D>01:12</D> `), true);
+eq("warn falls back to dim", warnFallback[2].includes(`<D>stalled${" ".repeat(7)}</D><D> · </D><D>01:12</D> `), true);
 
 // Tool part renders only while active — waiting rows keep the tokens alone.
 const waitingTool = formatRunningWidgetLines(
@@ -246,7 +246,7 @@ eq("waiting keeps and pads the tokens", waitingTool[1].includes("waiting ·   6k
 const noTokens = formatRunningWidgetLines(
 	[{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
 	   toolName: "bash", toolElapsedSeconds: 420 }] as WidgetRow[], 60);
-eq("unknown context renders as a reserved blank cell", noTokens[1].includes(`bash 7m · active${" ".repeat(9)}03:12 `), true);
+eq("unknown context renders as a reserved blank cell", noTokens[1].includes(`bash 7m · active${" ".repeat(8)}· 03:12 `), true);
 eq("no stray tokens part", /\d+k/.test(noTokens[1]), false);
 const bigTokens = formatRunningWidgetLines(
 	[{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting", contextTokens: 1_234_900 }] as WidgetRow[], 60);
@@ -272,12 +272,15 @@ const alignedTelemetry = formatRunningWidgetLines([
 	{ name: "wait", agent: "worker", elapsedSeconds: 49, status: "waiting", contextTokens: 25_000 },
 	{ name: "stall", agent: "worker", elapsedSeconds: 50, status: "stalled", contextTokens: 18_000 },
 ] as WidgetRow[], 78);
-eq("bash telemetry has one separator and a fixed context cell",
-	alignedTelemetry[1].includes("bash 29s · active ·   6k  00:47 "), true);
+eq("bash telemetry has ordered dot-separated fields and a fixed context cell",
+	alignedTelemetry[1].includes("bash 29s · active ·   6k · 00:47 "), true);
+const contextDelimiterIndex = (line: string) => line.lastIndexOf("·", line.lastIndexOf("·") - 1);
 eq("state-to-context delimiters align",
-	alignedTelemetry.slice(1).map((line) => line.lastIndexOf("·")), [64, 64, 64, 64]);
+	alignedTelemetry.slice(1).map(contextDelimiterIndex), [63, 63, 63, 63]);
 eq("context suffixes align at their right edge",
-	alignedTelemetry.slice(1).map((line) => line.lastIndexOf("k")), [69, 69, 69, 69]);
+	alignedTelemetry.slice(1).map((line) => line.lastIndexOf("k")), [68, 68, 68, 68]);
+eq("context-to-clock separators align",
+	alignedTelemetry.slice(1).map((line) => line.lastIndexOf("·")), [70, 70, 70, 70]);
 
 // Clock cells reserve the widest current clock so crossing one hour does not
 // move the state or context columns on shorter-running rows.
@@ -286,9 +289,11 @@ const mixedClockWidths = formatRunningWidgetLines([
 	{ name: "long", agent: "scout", elapsedSeconds: 3_723, status: "active", contextTokens: 106_000 },
 ] as WidgetRow[], 78);
 eq("mixed clock widths keep context delimiters aligned",
-	mixedClockWidths.slice(1).map((line) => line.lastIndexOf("·")), [62, 62]);
+	mixedClockWidths.slice(1).map(contextDelimiterIndex), [61, 61]);
 eq("mixed clock widths keep context right edges aligned",
-	mixedClockWidths.slice(1).map((line) => line.lastIndexOf("k")), [67, 67]);
+	mixedClockWidths.slice(1).map((line) => line.lastIndexOf("k")), [66, 66]);
+eq("mixed clock widths keep context-to-clock separators aligned",
+	mixedClockWidths.slice(1).map((line) => line.lastIndexOf("·")), [68, 68]);
 eq("mixed clock widths keep clocks on the right edge",
 	mixedClockWidths[1].endsWith("00:47 ") && mixedClockWidths[2].endsWith("1:02:03 "), true);
 
@@ -380,7 +385,7 @@ const wideNameCore = formatRunningWidgetLines(
 	[{ name: "検索検索検索検索検索検索", agent: "scout", elapsedSeconds: 47,
 	   status: "active", contextTokens: 6_000 }] as WidgetRow[], 50);
 eq("wide names truncate before the fixed telemetry core",
-	wideNameCore[1].endsWith("active ·   6k  00:47 "), true);
+	wideNameCore[1].endsWith("active ·   6k · 00:47 "), true);
 
 // Column-aware rows retain styling whenever the complete layout fits.
 const asciiGuardCheck = formatRunningWidgetLines(mixedTierRows, 60, { dim: (t) => `<D>${t}</D>` });

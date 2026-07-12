@@ -11,12 +11,12 @@
  * when a state doesn't apply), one padding space, then the name. The marks
  * render extra-faint — quieter than the clock — so they read as texture.
  * When the controller supplies a live status, a telemetry segment sits
- * immediately left of the clock, joined to it by two spaces:
+ * immediately left of the clock, joined by a middle-dot separator:
  *
  *   ──────────────────────────────────────────────────────────────────
- *   [scout]  fw Auth                   bash 7m · active ·  84k  03:12
- *   [worker]    quick fix                       waiting ·   6k  00:41
- *   [judge]   w API review                             stalled  01:12
+ *   [scout]  fw Auth                  bash 7m · active ·  84k · 03:12
+ *   [worker]    quick fix                      waiting ·   6k · 00:41
+ *   [judge]   w API review                            stalled         · 01:12
  *
  * The optional tool sits at the segment's variable left edge. It drops
  * before the name truncates, while state and known context stay visible.
@@ -211,8 +211,7 @@ function stripTrailingLoneSurrogate(text: string): string {
 // ── the status segment ───────────────────────────────────────────────────
 // Grammar: `[<tool> <elapsed> · ]<status><context>`. Context is a fixed
 // seven-column suffix: ` · ` plus three right-aligned digits and `k`, or seven
-// blank columns when unknown. The segment sits immediately left of the clock,
-// joined to it by two spaces.
+// blank columns when unknown. A ` · ` separator joins the segment to the clock.
 
 /** Tool names come out of the child's own activity writes — hostile by
  * definition — so they are sanitized AGAIN here regardless of what the
@@ -226,6 +225,8 @@ export function clampToolName(rawName: string): string {
 const CONTEXT_DIGITS = 3;
 const CONTEXT_CELL_WIDTH = CONTEXT_DIGITS + 1;
 const CONTEXT_SUFFIX_WIDTH = 3 + CONTEXT_CELL_WIDTH;
+const CLOCK_SEPARATOR = " · ";
+const CLOCK_SEPARATOR_WIDTH = 3;
 
 /** Widget-only context formatter: three right-aligned whole-thousands digits
  * plus `k`. Saturating at 999 keeps the display contract fixed even if a
@@ -257,10 +258,10 @@ function chooseSegment(row: WidgetRow, availableWidth: number, nameWidth: number
 	const segments = buildSegments(row);
 	if (segments === undefined) return "";
 	if (segments.full !== undefined) {
-		const fullWidth = displayColumns(segments.full) + 2;
+		const fullWidth = displayColumns(segments.full) + CLOCK_SEPARATOR_WIDTH;
 		if (fullWidth + nameWidth + 2 <= availableWidth) return segments.full;
 	}
-	return displayColumns(segments.core) + 2 <= availableWidth ? segments.core : "";
+	return displayColumns(segments.core) + CLOCK_SEPARATOR_WIDTH <= availableWidth ? segments.core : "";
 }
 
 export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style: WidgetStyle = {}): string[] {
@@ -313,12 +314,12 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 		// participates in fixedWidth. A line wider than the terminal is
 		// FATAL upstream, so the segment can never be bolted on afterwards.
 		// Everything except the name and the flex gap has a fixed width: the
-		// prefix, the slot, its padding space, the segment plus its two-space
-		// joint to the clock, the clock, its trailing space.
+		// prefix, the slot, its padding space, the segment plus its separator,
+		// the clock, and its trailing space.
 		const baseWidth = displayColumns(prefix) + displayColumns(slot) + 1
 			+ displayColumns(elapsed) + 1;
 		const segment = chooseSegment(row, width - baseWidth, displayColumns(name));
-		const segmentWidth = segment === "" ? 0 : displayColumns(segment) + 2;
+		const segmentWidth = segment === "" ? 0 : displayColumns(segment) + CLOCK_SEPARATOR_WIDTH;
 		const fixedWidth = baseWidth + segmentWidth;
 		const maxName = width - fixedWidth - 2; // reserve a 2-column minimum gap
 		const clippedName = truncateToColumns(name, maxName);
@@ -336,11 +337,11 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 		// styled line exact without sacrificing the right-side suffix.
 		const segmentStyle = row.status === "stalled" ? warn : dim;
 		const plainLine = prefix + slot + " " + clippedName + " ".repeat(gap)
-			+ (segment !== "" ? segment + "  " : "") + elapsed + " ";
+			+ (segment !== "" ? segment + CLOCK_SEPARATOR : "") + elapsed + " ";
 		lines.push(
 			displayColumns(plainLine) <= width
 				? prefix + slotStyle(slot) + " " + clippedName + " ".repeat(gap)
-					+ (segment !== "" ? segmentStyle(segment) + "  " : "") + dim(elapsed) + " "
+					+ (segment !== "" ? segmentStyle(segment) + dim(CLOCK_SEPARATOR) : "") + dim(elapsed) + " "
 				: clampToColumns(plainLine, safeWidth),
 		);
 	}
