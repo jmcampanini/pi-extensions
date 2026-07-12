@@ -89,7 +89,7 @@ export function updateRunningWidget(): void {
 				tool && snap && obs?.acceptedAtMs !== undefined
 					? toolElapsedSeconds(snap, tool, obs.acceptedAtMs, now)
 					: undefined,
-			contextPercent: snap?.context?.percent ?? undefined,
+			contextTokens: snap?.context?.tokens ?? undefined,
 		};
 	});
 	ctx.ui.setWidget(

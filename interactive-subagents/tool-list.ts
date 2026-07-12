@@ -9,7 +9,7 @@
  * inventory (agents.ts).
  *
  * v2 appends a running-children section: one bullet per live child with its
- * status, context share, and cost — the numbers the model needs to decide
+ * status, context tokens, and cost — the numbers the model needs to decide
  * whether a child is too full to keep resuming. Status comes from the SAME
  * computeStatus inputs the widget and the watcher use, so the three surfaces
  * can never disagree. Finished children are not listed: their closing
@@ -88,12 +88,10 @@ function describeRunningChildren(nowMs: number): { lines: string[]; details: unk
 		let contextClause: string;
 		if (snap === undefined || snap.context === null) {
 			contextClause = "context unknown";
-		} else if (snap.context.tokens === null || snap.context.percent === null) {
+		} else if (snap.context.tokens === null) {
 			contextClause = "context unknown (just compacted)";
 		} else {
-			contextClause =
-				`context ${formatTokens(snap.context.tokens)}/${formatTokens(snap.context.window)} tokens ` +
-				`(${Math.round(snap.context.percent)}%)`;
+			contextClause = `context ${formatTokens(snap.context.tokens)}/${formatTokens(snap.context.window)} tokens`;
 		}
 
 		// Cost only when a snapshot exists — without one there is no number to
@@ -113,7 +111,6 @@ function describeRunningChildren(nowMs: number): { lines: string[]; details: unk
 			status,
 			contextTokens: snap?.context?.tokens ?? null,
 			contextWindow: snap?.context?.window ?? null,
-			contextPercent: snap?.context?.percent ?? null,
 			costUsd: snap?.costUsd ?? null,
 			elapsedSeconds,
 		});

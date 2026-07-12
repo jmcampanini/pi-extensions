@@ -14,12 +14,12 @@
  * immediately left of the clock, joined to it by two spaces:
  *
  *   ──────────────────────────────────────────────────────────────────
- *   [scout]  fw Auth                    active · bash 7m · 42%  03:12
- *   [worker]    quick fix                         waiting · 6%  00:41
+ *   [scout]  fw Auth                    active · bash 7m · 84k  03:12
+ *   [worker]    quick fix                         waiting · 6k  00:41
  *   [judge]   w API review                             stalled  01:12
  *
  * The segment degrades before the name does (tool part first, then the
- * percent, then the whole segment — see the ladder at chooseSegment), and
+ * tokens, then the whole segment — see the ladder at chooseSegment), and
  * a row WITHOUT a status renders byte-identical to the v1 row, which the
  * v1 exact-string tests pin.
  *
@@ -76,10 +76,10 @@ export interface WidgetRow {
 	toolName?: string;
 	/** How long that tool has been running (skew-free parent-side estimate). */
 	toolElapsedSeconds?: number;
-	/** Pi's own unrounded context percent, pre-computed by the controller.
+	/** Pi's own context-token count, pre-computed by the controller.
 	 * Absent (or non-finite) context renders as absence, not "?" — quieter,
 	 * and the number returns on the next turn_end. */
-	contextPercent?: number;
+	contextTokens?: number;
 }
 
 /** Zero-padded MM:SS, growing to H:MM:SS past an hour. */
@@ -245,7 +245,7 @@ function stripTrailingLoneSurrogate(text: string): string {
 }
 
 // ── the status segment ───────────────────────────────────────────────────
-// Grammar: `<status>[ · <tool> <elapsed>][ · <pct>%]`, parts omitted (with
+// Grammar: `<status>[ · <tool> <elapsed>][ · <tokens>k]`, parts omitted (with
 // their separators) when absent. The segment sits immediately left of the
 // clock, joined to it by two spaces.
 
@@ -259,8 +259,8 @@ export function clampToolName(rawName: string): string {
 }
 
 /** Candidate segments, widest first — the degradation ladder. The tool part
- * drops before the percent (most volatile, least identifying; the context
- * share is the segment's stated purpose), the percent before the status
+ * drops before the tokens (most volatile, least identifying; the context
+ * size is the segment's stated purpose), the tokens before the status
  * word, and the whole segment before the name. */
 function segmentCandidates(row: WidgetRow): string[] {
 	if (row.status === undefined) return [];
@@ -270,12 +270,13 @@ function segmentCandidates(row: WidgetRow): string[] {
 		const tool = clampToolName(row.toolName);
 		if (tool !== "") toolPart = ` · ${tool} ${formatToolElapsed(row.toolElapsedSeconds ?? 0)}`;
 	}
-	// Percent part: unknown context renders as absence, not "?".
-	let pctPart = "";
-	if (row.contextPercent !== undefined && Number.isFinite(row.contextPercent)) {
-		pctPart = ` · ${Math.min(999, Math.max(0, Math.round(row.contextPercent)))}%`;
+	// Tokens part: unknown context renders as absence, not "?". Whole
+	// thousands only — how full the child is, nothing finer.
+	let tokensPart = "";
+	if (row.contextTokens !== undefined && Number.isFinite(row.contextTokens)) {
+		tokensPart = ` · ${Math.max(0, Math.round(row.contextTokens / 1000))}k`;
 	}
-	return [row.status + toolPart + pctPart, row.status + pctPart, row.status];
+	return [row.status + toolPart + tokensPart, row.status + tokensPart, row.status];
 }
 
 /** Pick the widest candidate that leaves the name at least 10 columns

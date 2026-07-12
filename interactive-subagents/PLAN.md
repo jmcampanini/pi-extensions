@@ -173,8 +173,8 @@ Deliberate improvements over the reference implementation:
 - `status.ts`: pure state machine — `starting / active / waiting / stalled`
   with a 60s watchdog. Only *invalid/missing/stuck-at-starting* snapshots can
   stall; a valid `active` snapshot never ages out (long tool runs are fine).
-- Widget upgrades to real states plus the context share on the reserved
-  right edge (`active · bash 7m · 42%`); edge-triggered stalled/recovered
+- Widget upgrades to real states plus the context tokens on the reserved
+  right edge (`active · bash 7m · 84k`); edge-triggered stalled/recovered
   steer messages, suppressed for interactive (non-auto-exit) children.
 - `subagents_list` reports each child's context tokens/window and cost, so
   the parent model can decide when a child is too full to keep resuming.

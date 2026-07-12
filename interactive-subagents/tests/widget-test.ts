@@ -131,24 +131,24 @@ eq("widget preserves safe identity text", hostileRow[1].includes("[worker]    sa
 // A row without a status renders byte-identical to the v1 row even when the
 // other segment fields are present — the whole v1 block above is the oracle.
 const v2NoStatusRows: WidgetRow[] = [
-	{ name: "Scout: Auth", agent: "scout", elapsedSeconds: 23, toolName: "bash", toolElapsedSeconds: 420, contextPercent: 42 },
+	{ name: "Scout: Auth", agent: "scout", elapsedSeconds: 23, toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 },
 	{ name: "quick fix", agent: "worker", elapsedSeconds: 4 },
 ];
 eq("rows without status render exact v1 rows", formatRunningWidgetLines(v2NoStatusRows, 60), lines);
 
 // The section-6 example block, pinned exactly at width 78: full segment on
-// the active row, percent-only on the waiting row, bare word on the stalled.
+// the active row, tokens-only on the waiting row, bare word on the stalled.
 const exampleRows: WidgetRow[] = [
 	{ name: "Auth", agent: "scout", elapsedSeconds: 192, forked: true, worktree: true,
-	  status: "active", toolName: "bash", toolElapsedSeconds: 420, contextPercent: 42 },
-	{ name: "quick fix", agent: "worker", elapsedSeconds: 41, status: "waiting", contextPercent: 5.7 },
+	  status: "active", toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 },
+	{ name: "quick fix", agent: "worker", elapsedSeconds: 41, status: "waiting", contextTokens: 5_700 },
 	{ name: "API review", agent: "judge", elapsedSeconds: 72, worktree: true, status: "stalled" },
 ];
 const exampleLines = formatRunningWidgetLines(exampleRows, 78);
 eq("example block: active row", exampleLines[1],
-	" [scout]  fw Auth" + " ".repeat(31) + "active · bash 7m · 42%  03:12 ");
-eq("example block: waiting row rounds the percent", exampleLines[2],
-	" [worker]    quick fix" + " ".repeat(36) + "waiting · 6%  00:41 ");
+	" [scout]  fw Auth" + " ".repeat(31) + "active · bash 7m · 84k  03:12 ");
+eq("example block: waiting row rounds the tokens", exampleLines[2],
+	" [worker]    quick fix" + " ".repeat(36) + "waiting · 6k  00:41 ");
 eq("example block: stalled row", exampleLines[3],
 	" [judge]   w API review" + " ".repeat(40) + "stalled  01:12 ");
 eq("example block rows exactly width wide", exampleLines.every((l) => l.length === 78), true);
@@ -165,17 +165,17 @@ const stalledLines = formatRunningWidgetLines(
 eq("stalled-only row", stalledLines[1], " [judge]    API review   stalled  01:12 ");
 
 // The degradation ladder on one row at descending widths: full segment, then
-// the tool drops, then the percent, then the whole segment, then the name
+// the tool drops, then the tokens, then the whole segment, then the name
 // goes to ellipsis, then the identity-only plain clamp — in that order.
 const ladderRow: WidgetRow[] = [{ name: "Auth refactor", agent: "scout", elapsedSeconds: 192,
-	status: "active", toolName: "bash", toolElapsedSeconds: 420, contextPercent: 42 }];
+	status: "active", toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 }];
 const ladderAt = (w: number) => formatRunningWidgetLines(ladderRow, w)[1];
 eq("ladder 54: full segment, name clipped to the 10-col floor", ladderAt(54),
-	" [scout]    Auth refa…  active · bash 7m · 42%  03:12 ");
+	" [scout]    Auth refa…  active · bash 7m · 84k  03:12 ");
 eq("ladder 53: tool drops first, full name returns", ladderAt(53),
-	" [scout]    Auth refactor" + " ".repeat(8) + "active · 42%  03:12 ");
-eq("ladder 44: percent kept, name back at the floor", ladderAt(44),
-	" [scout]    Auth refa…  active · 42%  03:12 ");
+	" [scout]    Auth refactor" + " ".repeat(8) + "active · 84k  03:12 ");
+eq("ladder 44: tokens kept, name back at the floor", ladderAt(44),
+	" [scout]    Auth refa…  active · 84k  03:12 ");
 eq("ladder 43: status word only, full name", ladderAt(43),
 	" [scout]    Auth refactor    active  03:12 ");
 eq("ladder 38: status word only, name at the floor", ladderAt(38),
@@ -189,13 +189,13 @@ eq("ladder 17: identity-only plain clamp", ladderAt(17), " [scout]    03:12");
 // its own length and is NEVER truncated to make room for a segment.
 eq("floor: clipped name is exactly 10 columns", ladderAt(54).includes(" Auth refa… "), true);
 const shortNameRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 192,
-	status: "active", toolName: "bash", toolElapsedSeconds: 420, contextPercent: 42 }];
+	status: "active", toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 }];
 eq("short name 48: full segment fits alongside the whole name",
 	formatRunningWidgetLines(shortNameRow, 48)[1],
-	" [scout]    Auth  active · bash 7m · 42%  03:12 ");
+	" [scout]    Auth  active · bash 7m · 84k  03:12 ");
 eq("short name 47: segment degrades, name stays whole",
 	formatRunningWidgetLines(shortNameRow, 47)[1],
-	" [scout]    Auth" + " ".repeat(11) + "active · 42%  03:12 ");
+	" [scout]    Auth" + " ".repeat(11) + "active · 84k  03:12 ");
 eq("short name never gains an ellipsis for a segment",
 	formatRunningWidgetLines(shortNameRow, 47)[1].includes("…"), false);
 
@@ -203,12 +203,12 @@ eq("short name never gains an ellipsis for a segment",
 // tagWidth — every line exactly the width, both clocks on the right edge.
 const mixedTierRows: WidgetRow[] = [
 	{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
-	  toolName: "bash", toolElapsedSeconds: 420, contextPercent: 42 },
+	  toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 },
 	{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "stalled" },
 ];
 const mixedTier = formatRunningWidgetLines(mixedTierRows, 60);
 eq("mixed tiers: full-segment row", mixedTier[1],
-	" [scout]    Auth" + " ".repeat(14) + "active · bash 7m · 42%  03:12 ");
+	" [scout]    Auth" + " ".repeat(14) + "active · bash 7m · 84k  03:12 ");
 eq("mixed tiers: stalled row", mixedTier[2],
 	" [judge]    API review" + " ".repeat(23) + "stalled  01:12 ");
 eq("mixed tiers: rows exactly width wide", mixedTier.every((l) => l.length === 60), true);
@@ -219,7 +219,7 @@ eq("mixed tiers: both clocks end at the right edge",
 // clock stays dim; stripping the tags recovers the exact plain width.
 const segStyled = formatRunningWidgetLines(mixedTierRows, 60,
 	{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
-eq("segment dim on active", segStyled[1].includes("<D>active · bash 7m · 42%</D>  <D>03:12</D> "), true);
+eq("segment dim on active", segStyled[1].includes("<D>active · bash 7m · 84k</D>  <D>03:12</D> "), true);
 eq("segment warn on stalled, clock still dim", segStyled[2].includes("<W>stalled</W>  <D>01:12</D> "), true);
 eq("warn never touches a non-stalled row", segStyled[1].includes("<W>"), false);
 eq("stripped active row length still exact", segStyled[1]
@@ -229,37 +229,41 @@ eq("stripped stalled row length still exact", segStyled[2]
 const warnFallback = formatRunningWidgetLines(mixedTierRows, 60, { dim: (t) => `<D>${t}</D>` });
 eq("warn falls back to dim", warnFallback[2].includes("<D>stalled</D>  <D>01:12</D> "), true);
 
-// Tool part renders only while active — waiting rows keep the percent alone.
+// Tool part renders only while active — waiting rows keep the tokens alone.
 const waitingTool = formatRunningWidgetLines(
 	[{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting",
-	   toolName: "bash", toolElapsedSeconds: 9, contextPercent: 6 }] as WidgetRow[], 60);
+	   toolName: "bash", toolElapsedSeconds: 9, contextTokens: 6_000 }] as WidgetRow[], 60);
 eq("tool part only renders while active", waitingTool[1].includes("bash"), false);
-eq("waiting keeps the percent", waitingTool[1].includes("waiting · 6%"), true);
+eq("waiting keeps the tokens", waitingTool[1].includes("waiting · 6k"), true);
 
-// Unknown context renders as absence, not "?"; percent clamps at 0..999.
-const noPct = formatRunningWidgetLines(
+// Unknown context renders as absence, not "?"; tokens render as whole
+// thousands and clamp at 0 below.
+const noTokens = formatRunningWidgetLines(
 	[{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
 	   toolName: "bash", toolElapsedSeconds: 420 }] as WidgetRow[], 60);
-eq("unknown context renders as absence", noPct[1].includes("active · bash 7m  03:12 "), true);
-eq("no stray percent part", noPct[1].includes("%"), false);
-const bigPct = formatRunningWidgetLines(
-	[{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting", contextPercent: 1234.9 }] as WidgetRow[], 60);
-eq("percent clamps at 999", bigPct[1].includes("waiting · 999%"), true);
+eq("unknown context renders as absence", noTokens[1].includes("active · bash 7m  03:12 "), true);
+eq("no stray tokens part", /\d+k/.test(noTokens[1]), false);
+const bigTokens = formatRunningWidgetLines(
+	[{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting", contextTokens: 1_234_900 }] as WidgetRow[], 60);
+eq("big counts stay whole thousands", bigTokens[1].includes("waiting · 1235k"), true);
+const negativeTokens = formatRunningWidgetLines(
+	[{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting", contextTokens: -5 }] as WidgetRow[], 60);
+eq("negative counts clamp at 0k", negativeTokens[1].includes("waiting · 0k"), true);
 
 // Hostile toolName: child-written, so the renderer re-sanitizes it and no
 // escape byte may survive into the joined output.
 const hostileTool = formatRunningWidgetLines(
 	[{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
-	   toolName: "ba\x1b]52;c;Zm9v\x07sh\x1b[2J\0", toolElapsedSeconds: 420, contextPercent: 42 }] as WidgetRow[], 60);
+	   toolName: "ba\x1b]52;c;Zm9v\x07sh\x1b[2J\0", toolElapsedSeconds: 420, contextTokens: 84_000 }] as WidgetRow[], 60);
 eq("hostile tool name yields no escape bytes", hostileTool.join("").includes("\x1b"), false);
 eq("hostile tool name yields no NUL bytes", hostileTool.join("").includes("\0"), false);
-eq("hostile tool name keeps the safe text", hostileTool[1].includes("active · bash 7m · 42%"), true);
+eq("hostile tool name keeps the safe text", hostileTool[1].includes("active · bash 7m · 84k"), true);
 
 // A 40-char tool name clamps to 12 chars plus a trailing ellipsis.
 const longTool = formatRunningWidgetLines(
 	[{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
-	   toolName: "0123456789012345678901234567890123456789", toolElapsedSeconds: 420, contextPercent: 42 }] as WidgetRow[], 70);
-eq("long tool name clamps at 12 chars + ellipsis", longTool[1].includes("active · 012345678901… 7m · 42%"), true);
+	   toolName: "0123456789012345678901234567890123456789", toolElapsedSeconds: 420, contextTokens: 84_000 }] as WidgetRow[], 70);
+eq("long tool name clamps at 12 chars + ellipsis", longTool[1].includes("active · 012345678901… 7m · 84k"), true);
 eq("no 13th tool char leaks", longTool[1].includes("0123456789012"), false);
 
 // ── display-column safety: wide glyphs, whitespace, surrogate pairs ───────
@@ -269,7 +273,7 @@ eq("no 13th tool char leaks", longTool[1].includes("0123456789012"), false);
 
 // displayColumns value table.
 eq("displayColumns: ASCII is 1 column per char", displayColumns("active, bash 7m"), 15);
-eq("displayColumns: the middle dot separator is 1 column", displayColumns("active · 42%"), 12);
+eq("displayColumns: the middle dot separator is 1 column", displayColumns("active · 84k"), 12);
 eq("displayColumns: CJK is 2 columns each", displayColumns("検索"), 4);
 eq("displayColumns: Hangul is 2 columns each", displayColumns("한글"), 4);
 eq("displayColumns: emoji is 2 columns", displayColumns("💥"), 2);
@@ -282,7 +286,7 @@ eq("displayColumns: empty string is 0", displayColumns(""), 0);
 // overflow) and a raw \n or \r corrupts the TUI's row accounting.
 const whitespaceRows = formatRunningWidgetLines(
 	[{ name: "Au\tth", agent: "sc\nout", elapsedSeconds: 192, status: "active",
-	   toolName: "a\tb\nc\rd", toolElapsedSeconds: 420, contextPercent: 42 }] as WidgetRow[], 70);
+	   toolName: "a\tb\nc\rd", toolElapsedSeconds: 420, contextTokens: 84_000 }] as WidgetRow[], 70);
 eq("no tab/newline/CR ever survives into a widget line", /[\t\n\r]/.test(whitespaceRows.join("")), false);
 eq("tab and newline in toolName become single spaces", whitespaceRows[1].includes("a b c d 7m"), true);
 eq("newline in agent becomes a single space", whitespaceRows[1].includes("[sc out]"), true);
@@ -310,8 +314,8 @@ eq("clampToolName leaves a whole-pair boundary alone", clampToolName("0123456789
 // column-clamped fallback instead of overflowing pi-tui's fatal check.
 const hostileWideRows: WidgetRow[] = [
 	{ name: "検索統合テストの実行", agent: "scout", elapsedSeconds: 192, status: "active",
-	  toolName: "検索工具調用器検索工具調用器", toolElapsedSeconds: 420, contextPercent: 42 },
-	{ name: "e" + "💥".repeat(10), agent: "worker", elapsedSeconds: 41, status: "waiting", contextPercent: 6 },
+	  toolName: "検索工具調用器検索工具調用器", toolElapsedSeconds: 420, contextTokens: 84_000 },
+	{ name: "e" + "💥".repeat(10), agent: "worker", elapsedSeconds: 41, status: "waiting", contextTokens: 6_000 },
 	{ name: "Auth", agent: "judge", elapsedSeconds: 72, status: "stalled" },
 ];
 let wideColumnViolations = 0;
@@ -340,11 +344,11 @@ eq("ASCII rows keep the styled branch under the column guard",
 const v2OverflowRows: WidgetRow[] = [
 	{ name: "a very long task name that cannot possibly fit", agent: "code-reviewer", elapsedSeconds: 3723,
 	  forked: true, worktree: true, status: "active", toolName: "twelvechartool",
-	  toolElapsedSeconds: 86340, contextPercent: 100 },
+	  toolElapsedSeconds: 86340, contextTokens: 100_000 },
 	{ name: "x", elapsedSeconds: 0, status: "stalled" },
 ];
 eq("worst-case segment appears at a wide width",
-	formatRunningWidgetLines(v2OverflowRows, 90)[1].includes("active · twelvecharto… 23h59m · 100%"), true);
+	formatRunningWidgetLines(v2OverflowRows, 90)[1].includes("active · twelvecharto… 23h59m · 100k"), true);
 let v2WidthViolations = 0;
 for (let w = -2; w <= 90; w++) {
 	for (const line of formatRunningWidgetLines(v2OverflowRows, w)) {

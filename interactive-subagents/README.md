@@ -160,7 +160,7 @@ While a child runs, its implant writes a small JSON snapshot — `<child-session
 | State | Meaning |
 |---|---|
 | `starting` | pi is coming up in the pane, or the prompted run has not begun yet |
-| `active` | mid-run — shown with the longest-running tool and the context share when known: `active · bash 7m · 42%` |
+| `active` | mid-run — shown with the longest-running tool and the context tokens (whole thousands) when known: `active · bash 7m · 84k` |
 | `waiting` | idle after at least one completed run, or an interactive pane handed to a human |
 | `stalled` | the 60s watchdog fired: the snapshot has been continuously missing/unreadable for 60s, or the prompted run never began within 60s of launch |
 
