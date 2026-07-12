@@ -18,7 +18,10 @@ rebuilt deliberately smaller.
    of last resort.
 3. **The LLM stays in the loop.** Results arrive as steered messages
    (`pi.sendMessage(…, { triggerTurn: true, deliverAs: "steer" })`) that wake
-   the parent model. The prose of those messages is the protocol.
+   the parent model. The prose of those messages is the protocol. Delivery is
+   observed, not assumed: the extension watches `message_end` for its own
+   sends and keeps the child's widget row visible (`delivering`) until the
+   message lands.
 
 ## Scope decisions (locked)
 
@@ -122,10 +125,9 @@ One file per job; `index.ts` only wires them into pi:
   the exit poller (sidecar → screen sentinel → pane-closed grace).
 - `launch.ts` — the ONE builder for a child's launch command, plus the
   `.meta` launch-metadata sidecar.
-- `state.ts` — shared runtime state: running children, the resume ledger,
-  and generation-owned `/reload` handoff.
+- `state.ts` — process-stable running and enriched delivering registries, the resume ledger, and generation-owned `/reload` handoff.
 - `widget.ts` / `running-widget.ts` — pure renderer / stateful controller for
-  the dumb running widget (name + elapsed time, no state machine).
+  the running widget (liveness segment plus the delivering exit state).
 - `watcher.ts` — per-child supervision and the steered result/ping messages.
 - `implant.ts` — child-side: `subagent_done`, `caller_ping`, auto-exit.
 - `tool-subagent.ts`, `tool-resume.ts`, `tool-list.ts` — one file per
@@ -159,17 +161,17 @@ Deliberate improvements over the reference implementation:
   approach, kept only as the `sessionPath` fallback for after restarts).
 - Watchers **skip steering after shutdown abort** (reference attempted to
   steer into a dying session).
-- Parent `/reload` performs a live handoff instead of teardown: running records
-  and the short-id ledger live in a stable process-local coordinator, old
-  watcher generations stop without closing panes, and the replacement runtime
-  republishes the widget and adopts each child exactly once. An exit consumed
-  during the handoff is retained on the child record, and overlapping worktree
-  cleanup is shared, so repeated reloads still produce one final result. A
-  30-second fallback closes preserved panes if no replacement runtime adopts
-  them. This does not extend to parent process restarts or other session
-  replacements.
+- Parent `/reload` performs a live handoff instead of teardown: running and
+  enriched delivering records plus the short-id ledger live in a stable
+  process-local coordinator. Old generations stop without closing live panes,
+  and the replacement adopts each watcher or finalizer exactly once. A pending
+  exit is retained until it moves atomically into delivery; cleanup promises
+  and accepted-send state live only on that delivery record, so repeated
+  reloads still produce one cleanup and one result. A 30-second failed-adoption
+  reaper closes live panes and discards both registries. This does not extend
+  to parent process restarts or other session replacements.
 
-### v2 — liveness (this version)
+### v2 — liveness (shipped)
 
 - `activity.ts`: implant-side recorder (pi lifecycle events → atomic
   tmp+rename JSON snapshot with `(updatedAt, sequence)` ordering + run-id
@@ -182,11 +184,27 @@ Deliberate improvements over the reference implementation:
 - `status.ts`: pure state machine — `starting / active / waiting / stalled`
   with a 60s watchdog. Only *invalid/missing/stuck-at-starting* snapshots can
   stall; a valid `active` snapshot never ages out (long tool runs are fine).
-- Widget upgrades to real states plus the context tokens on the reserved
-  right edge (`active · bash 7m · 84k`); edge-triggered stalled/recovered
+- Widget upgrades to real states plus fixed-width context tokens on the
+  right edge (`bash 7m · active ·  84k · 03:12`); edge-triggered stalled/recovered
   steer messages, suppressed for interactive (non-auto-exit) children.
 - `subagents_list` reports each child's context tokens/window and cost, so
   the parent model can decide when a child is too full to keep resuming.
+
+### v2.1 - observed delivery (this version)
+
+- `delivery.ts`: a `message_end` listener that observes this extension's own
+  `subagent_result` / `subagent_ping` messages landing in the parent
+  transcript, matched by customType plus `details.id` (the stalled/recovered
+  liveness steers share the id shape and are deliberately excluded).
+- Exited children move from `running` to a `delivering` map at exit
+  detection, BEFORE any send or await (on an idle parent the landing event
+  fires within microtasks of the send), and their widget row stays visible -
+  restyled `delivering`, clock frozen at exit - until the message lands.
+- Escape while the parent streams drops queued steers silently, so a
+  `delivering` row that never clears is the deliberate, honest signal of a
+  lost result. Accepted sends are not re-sent, and /reload preserves the row.
+- `subagents_list` gains a "Finished, result on its way" section so a child
+  is never invisible between exit and delivery.
 
 ### v3 — interrupt
 
@@ -201,7 +219,8 @@ Two layers:
 - **Unit tests** (`tests/*.ts`, run with `node --experimental-strip-types`)
   cover the pure leaf modules: config layering and fail-fast, model
   resolution, widget rendering, fork cut-point selection, agent-definition
-  parsing/shadowing, and the exact launch-command bytes.
+  parsing/shadowing, delivery matching (customType + id narrowing, fakePi
+  listener round trip), and the exact launch-command bytes.
 - **E2E scripts** (`.sandbox/e2e-*.sh`) prove the real thing: each starts a
   detached tmux session, launches an interactive
   `pi -e interactive-subagents/index.ts` parent, writes throwaway agent
@@ -210,4 +229,6 @@ Two layers:
   `subagent_ping` entries. The suite covers spawn/echo, the `caller_ping` →
   `subagent_resume` round trip, fork seeding, model fallback + fail-fast,
   config load failure, the layout strategies, the human commands, the
-  running picker (jump/zoom/stop), and project-local agents.
+  running picker (jump/zoom/stop), project-local agents, and the delivering
+  widget state (a row survives a mid-turn exit and clears when the result
+  lands).

@@ -1,6 +1,7 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { registerDeliveryListener } from "../delivery.ts";
 import * as initial from "../state.ts";
-import type { RunningSubagent } from "../state.ts";
+import type { DeliveryRecord, RunningSubagent } from "../state.ts";
 
 let pass = 0;
 let fail = 0;
@@ -73,6 +74,50 @@ const expiredGeneration = replacement.moduleGeneration();
 replacement.completeReloadHandoff();
 eq("late successful adoption advances the stopped generation", replacement.moduleGeneration() > expiredGeneration, true);
 eq("late successful adoption rearms a live signal", replacement.moduleSignal().aborted, false);
+
+// Deterministic lifecycle E2E: an exited child and its accepted queued send
+// cross two reload generations, then exactly one landed result clears the row.
+let cleanupRuns = 0;
+const sharedCleanup = Promise.resolve().then(() => {
+	cleanupRuns++;
+	return { status: "kept" as const, code: "mode-never" as const, reason: "test" };
+});
+const delivery: DeliveryRecord = {
+	id: child.id,
+	name: child.name,
+	agent: "worker",
+	elapsedSeconds: 42,
+	forked: false,
+	worktree: false,
+	child,
+	exit: { reason: "exited", exitCode: 0 },
+	worktreeCleanup: sharedCleanup,
+	sendAccepted: true,
+};
+replacement.setDeliveryRecord(delivery);
+replacement.prepareForReload(() => {});
+const second = await import(new URL(`../state.ts?reload-test-2=${Date.now()}`, import.meta.url).href) as typeof initial;
+eq("first delivery reload keeps the sole enriched record", second.deliveryRecord(child.id), delivery);
+second.completeReloadHandoff();
+second.prepareForReload(() => {});
+const third = await import(new URL(`../state.ts?reload-test-3=${Date.now()}`, import.meta.url).href) as typeof initial;
+eq("second delivery reload keeps the same accepted-send record", third.deliveryRecord(child.id), delivery);
+eq("two reloads retain one cleanup promise", third.deliveryRecord(child.id)?.worktreeCleanup, sharedCleanup);
+await third.deliveryRecord(child.id)?.worktreeCleanup;
+eq("the retained cleanup executes once", cleanupRuns, 1);
+third.completeReloadHandoff();
+
+let landedHandlers = 0;
+let handler: ((event: unknown) => void) | undefined;
+registerDeliveryListener({
+	on(_type: string, callback: (event: unknown) => void): void {
+		landedHandlers++;
+		handler = callback;
+	},
+} as unknown as ExtensionAPI);
+eq("one active delivery listener is registered", landedHandlers, 1);
+handler?.({ message: { role: "custom", customType: "subagent_result", details: { id: child.id } } });
+eq("one landed result clears the delivery row after two reloads", third.deliveryRecord(child.id), undefined);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

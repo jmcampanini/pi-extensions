@@ -12,8 +12,9 @@
  * status, context tokens, and cost — the numbers the model needs to decide
  * whether a child is too full to keep resuming. Status comes from the SAME
  * computeStatus inputs the widget and the watcher use, so the three surfaces
- * can never disagree. Finished children are not listed: their closing
- * numbers already arrived in their result message.
+ * can never disagree. Finished children appear in a second section only
+ * while their result message is still queued behind the parent's current
+ * turn; once it lands they vanish - their closing numbers arrived with it.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -21,7 +22,7 @@ import { Type } from "@sinclair/typebox";
 import { oldestActiveTool, toolElapsedSeconds, type ActivityObservation } from "./activity.ts";
 import { agentDefsDir, collectAgentInventory, projectDefsDir } from "./agents.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
-import { running } from "./state.ts";
+import { delivering, running } from "./state.ts";
 import { computeStatus, STALL_AFTER_MS, type SubagentStatus } from "./status.ts";
 import { humanElapsed } from "./watcher.ts";
 import { clampToolName, formatCost, formatTokens, formatToolElapsed } from "./widget.ts";
@@ -118,27 +119,67 @@ function describeRunningChildren(nowMs: number): { lines: string[]; details: unk
 	return { lines, details };
 }
 
+/**
+ * The "Finished, result on its way" section: children whose pi process has
+ * exited but whose result message is still queued behind the parent's
+ * current turn (state.ts's delivering map). Without these bullets the model
+ * would see a child it spawned in NEITHER list during that window and might
+ * respawn finished work. The elapsed number is frozen at exit - the same
+ * number the widget row shows. The economics fields are null on purpose:
+ * the closing numbers travel in the result message itself.
+ */
+function describeDeliveringChildren(): { lines: string[]; details: unknown[] } {
+	const lines: string[] = [];
+	const details: unknown[] = [];
+	for (const child of delivering.values()) {
+		const name = sanitizeDisplayText(child.name);
+		const agent = child.agent === undefined ? undefined : sanitizeDisplayText(child.agent);
+		const identity = agent ? `(id ${child.id}, agent ${agent})` : `(id ${child.id})`;
+		lines.push(
+			`• "${name}" ${identity}: finished after ${humanElapsed(child.elapsedSeconds)} - its result message is queued and will arrive automatically (do not poll or respawn)`,
+		);
+		details.push({
+			id: child.id,
+			name: child.name,
+			agent: child.agent ?? null,
+			status: "delivering",
+			contextTokens: null,
+			contextWindow: null,
+			costUsd: null,
+			elapsedSeconds: child.elapsedSeconds,
+		});
+	}
+	return { lines, details };
+}
+
 export function registerSubagentsListTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "subagents_list",
 		label: "List Subagent Definitions",
 		description:
 			"List the available agent definitions (<name>.md files from the project's .pi/subagents/ or the global subagents dir; project shadows global) usable as the `agent` parameter of the subagent tool. " +
-			"Also reports currently running sub-agents with their live status, context usage, and cost.",
+			"Also reports currently running sub-agents with their live status, context usage, and cost, plus just-finished sub-agents whose result message is still on its way.",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			const inventory = collectAgentInventory(ctx.modelRegistry, ctx.cwd);
-			const children = describeRunningChildren(Date.now());
-			const runningSection =
-				children.lines.length === 0 ? undefined : `Currently running (${children.lines.length}):\n${children.lines.join("\n")}`;
+			const runningChildren = describeRunningChildren(Date.now());
+			const deliveringChildren = describeDeliveringChildren();
+			const sections: string[] = [];
+			if (runningChildren.lines.length > 0) {
+				sections.push(`Currently running (${runningChildren.lines.length}):\n${runningChildren.lines.join("\n")}`);
+			}
+			if (deliveringChildren.lines.length > 0) {
+				sections.push(`Finished, result on its way (${deliveringChildren.lines.length}):\n${deliveringChildren.lines.join("\n")}`);
+			}
+			const childrenSection = sections.length === 0 ? undefined : sections.join("\n\n");
 
 			if (inventory.length === 0) {
 				const noAgents =
 					`No agent definitions found in ${agentDefsDir()} or ${projectDefsDir(ctx.cwd)}. ` +
 					"The subagent tool defaults to the 'worker' agent, so create worker.md in one of those directories before spawning.";
 				return {
-					content: [{ type: "text", text: runningSection ? `${noAgents}\n\n${runningSection}` : noAgents }],
-					details: { count: 0, running: children.details },
+					content: [{ type: "text", text: childrenSection ? `${noAgents}\n\n${childrenSection}` : noAgents }],
+					details: { count: 0, running: runningChildren.details, delivering: deliveringChildren.details },
 				};
 			}
 			const lines = inventory.map((agent) => {
@@ -154,10 +195,10 @@ export function registerSubagentsListTool(pi: ExtensionAPI): void {
 				const source = agent.source === "project" ? " (project)" : "";
 				return `• ${agent.name}${isDefault}${source}${interactive}${worktree}${warning} — ${agent.description ?? "(no description)"}`;
 			});
-			const text = runningSection ? `${lines.join("\n")}\n\n${runningSection}` : lines.join("\n");
+			const text = childrenSection ? `${lines.join("\n")}\n\n${childrenSection}` : lines.join("\n");
 			return {
 				content: [{ type: "text", text }],
-				details: { count: inventory.length, running: children.details },
+				details: { count: inventory.length, running: runningChildren.details, delivering: deliveringChildren.details },
 			};
 		},
 	});
