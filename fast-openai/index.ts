@@ -49,7 +49,13 @@ const DEFAULT_CONFIG: FastOpenAIConfig = {
 const CONFIG_FILE = path.join(getAgentDir(), "extensions", "fast-openai.json");
 const SUPPORTED_PROVIDER = "openai-codex" as const;
 const SUPPORTED_API = "openai-codex-responses" as const;
-const SUPPORTED_MODELS = new Set(["gpt-5.4", "gpt-5.5"]);
+const SUPPORTED_MODELS = new Set([
+	"gpt-5.4",
+	"gpt-5.5",
+	"gpt-5.6-luna",
+	"gpt-5.6-sol",
+	"gpt-5.6-terra",
+]);
 const PRIORITY_SERVICE_TIER = "priority" as const;
 const COST_ACCOUNTING_WARNING =
 	"warning: raw service_tier injection may not apply Pi's native priority cost multiplier; actual billed cost can be higher than Pi displays";
@@ -259,7 +265,7 @@ function formatCurrentModelStatus(
 		`provider listed: ${eligibility.providerListed ? "yes" : "no"}`,
 		`provider supported: ${eligibility.providerSupported ? "yes" : `no (requires ${SUPPORTED_PROVIDER})`}`,
 		`api supported: ${eligibility.apiSupported ? "yes" : `no (requires ${SUPPORTED_API})`}`,
-		`model supported: ${eligibility.modelSupported ? "yes" : "no (requires gpt-5.4 or gpt-5.5)"}`,
+		`model supported: ${eligibility.modelSupported ? "yes" : `no (requires ${[...SUPPORTED_MODELS].join(", ")})`}`,
 		`using OAuth: ${eligibility.usingOAuth ? "yes" : "no (required)"}`,
 		"request payload check: must be an object, match the current model when payload.model is present, and omit service_tier",
 		`would inject: ${eligibility.eligible ? "yes (service_tier: priority)" : "no"}`,
