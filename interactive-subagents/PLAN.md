@@ -123,7 +123,7 @@ One file per job; `index.ts` only wires them into pi:
 - `launch.ts` — the ONE builder for a child's launch command, plus the
   `.meta` launch-metadata sidecar.
 - `state.ts` — shared runtime state: running children, the resume ledger,
-  /reload-safe teardown.
+  and generation-owned `/reload` handoff.
 - `widget.ts` / `running-widget.ts` — pure renderer / stateful controller for
   the dumb running widget (name + elapsed time, no state machine).
 - `watcher.ts` — per-child supervision and the steered result/ping messages.
@@ -159,6 +159,15 @@ Deliberate improvements over the reference implementation:
   approach, kept only as the `sessionPath` fallback for after restarts).
 - Watchers **skip steering after shutdown abort** (reference attempted to
   steer into a dying session).
+- Parent `/reload` performs a live handoff instead of teardown: running records
+  and the short-id ledger live in a stable process-local coordinator, old
+  watcher generations stop without closing panes, and the replacement runtime
+  republishes the widget and adopts each child exactly once. An exit consumed
+  during the handoff is retained on the child record, and overlapping worktree
+  cleanup is shared, so repeated reloads still produce one final result. A
+  30-second fallback closes preserved panes if no replacement runtime adopts
+  them. This does not extend to parent process restarts or other session
+  replacements.
 
 ### v2 — liveness (this version)
 

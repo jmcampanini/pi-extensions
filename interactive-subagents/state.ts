@@ -17,7 +17,8 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ActivityObservation } from "./activity.ts";
 import type { SubagentStatus } from "./status.ts";
-import type { WorktreeInfo } from "./worktree.ts";
+import type { ExitResult } from "./tmux.ts";
+import type { WorktreeInfo, WorktreeOutcome } from "./worktree.ts";
 
 // ── the per-child record ─────────────────────────────────────────────────
 
@@ -57,65 +58,119 @@ export interface RunningSubagent {
 	stallEpisodes?: number;
 	/** True while the current stall episode's steer was actually sent. */
 	stallSteerSent?: boolean;
+	/** Reload generation currently supervising this child. */
+	watcherGeneration?: number;
+	/** Exit already observed by an old generation during reload handoff. */
+	pendingExit?: ExitResult;
+	/** Shared cleanup work, so two generations cannot clean a worktree twice. */
+	worktreeCleanup?: Promise<WorktreeOutcome>;
+	resultDelivered?: boolean;
 }
+
+interface ModuleLifetime {
+	controller: AbortController;
+	generation: number;
+}
+
+interface ReloadState {
+	running: Map<string, RunningSubagent>;
+	ledger: Map<string, { sessionFile: string; name: string }>;
+	latestCtx: ExtensionContext | null;
+	lifetime?: ModuleLifetime;
+	nextGeneration: number;
+	handoffTimer?: ReturnType<typeof setTimeout>;
+}
+
+const STATE_KEY = Symbol.for("interactive-subagents/reload-state");
+const slots = globalThis as Record<symbol, unknown>;
+const reloadState = (slots[STATE_KEY] as ReloadState | undefined) ?? {
+	running: new Map<string, RunningSubagent>(),
+	ledger: new Map<string, { sessionFile: string; name: string }>(),
+	latestCtx: null,
+	nextGeneration: 0,
+};
+slots[STATE_KEY] = reloadState;
+
+reloadState.lifetime?.controller.abort();
+
+function newLifetime(): ModuleLifetime {
+	return {
+		controller: new AbortController(),
+		generation: ++reloadState.nextGeneration,
+	};
+}
+
+let lifetime = newLifetime();
+reloadState.lifetime = lifetime;
 
 /** All children currently running, keyed by their 8-char run id. */
-export const running = new Map<string, RunningSubagent>();
+export const running = reloadState.running;
 
-/**
- * Every child this session has ever tracked (running or finished), so
- * subagent_resume can accept a short id instead of a long session path.
- * The path fallback still exists because this ledger is in-memory only —
- * it dies with the parent process, but the session file doesn't.
- */
-export const ledger = new Map<string, { sessionFile: string; name: string }>();
+/** Every child known to this parent process, used for short-id resume. */
+export const ledger = reloadState.ledger;
 
-// ── the module-wide abort signal (survives /reload) ──────────────────────
-// One AbortController for "this import of the extension is done": aborted on
-// session shutdown AND on re-import (so the previous import's watchers stop).
-// The two accessors below are the ONLY places that touch the globalThis slot.
-
-const ABORT_KEY = Symbol.for("interactive-subagents/abort-controller");
-const slots = globalThis as Record<symbol, unknown>;
-
-function moduleAbort(): AbortController {
-	return slots[ABORT_KEY] as AbortController;
-}
-
-// On import: abort whatever a previous import left behind, then start fresh.
-{
-	const previous = slots[ABORT_KEY] as AbortController | undefined;
-	if (previous) previous.abort();
-	slots[ABORT_KEY] = new AbortController();
-}
-
-/** Signal that fires when the session shuts down or the module is reloaded. */
+/** Signal that fires when this imported runtime must stop supervising. */
 export function moduleSignal(): AbortSignal {
-	return moduleAbort().signal;
+	return lifetime.controller.signal;
 }
 
-/**
- * Session teardown (/new, /resume, quit): stop every watcher by aborting the
- * module signal, arm a fresh controller for the next session, and forget the
- * running children. The ledger is deliberately kept — its session FILES still
- * exist on disk, so their ids remain resumable.
- */
-export function resetForShutdown(): void {
-	moduleAbort().abort();
-	slots[ABORT_KEY] = new AbortController();
+export function moduleGeneration(): number {
+	return lifetime.generation;
+}
+
+export const RELOAD_HANDOFF_TIMEOUT_MS = 30_000;
+
+function clearTrackedState(): RunningSubagent[] {
+	const children = [...running.values()];
 	running.clear();
+	reloadState.latestCtx = null;
+	return children;
 }
 
-// ── the latest ExtensionContext ──────────────────────────────────────────
-// Captured at session_start. Widget updates happen from timers and watchers
-// where pi hands us no ctx, so they reach the UI through this.
+/** Stop old-generation work without destroying live child records or panes. */
+export function prepareForReload(
+	onExpired: (children: RunningSubagent[]) => void,
+	timeoutMs = RELOAD_HANDOFF_TIMEOUT_MS,
+): void {
+	lifetime.controller.abort();
+	reloadState.latestCtx = null;
+	if (reloadState.handoffTimer) clearTimeout(reloadState.handoffTimer);
+	if (running.size === 0) return;
+	const timer = setTimeout(() => {
+		if (reloadState.handoffTimer !== timer) return;
+		reloadState.handoffTimer = undefined;
+		reloadState.lifetime?.controller.abort();
+		onExpired(clearTrackedState());
+	}, timeoutMs);
+	reloadState.handoffTimer = timer;
+}
 
-let latestCtx: ExtensionContext | null = null;
+/** Confirm that the replacement runtime adopted every preserved child. */
+export function completeReloadHandoff(): void {
+	if (reloadState.handoffTimer) clearTimeout(reloadState.handoffTimer);
+	reloadState.handoffTimer = undefined;
+	if (lifetime.controller.signal.aborted) {
+		lifetime = newLifetime();
+		reloadState.lifetime = lifetime;
+	}
+}
+
+/** Stop live supervision at every boundary other than reload. */
+export function resetForShutdown(): RunningSubagent[] {
+	completeReloadHandoff();
+	lifetime.controller.abort();
+	const children = clearTrackedState();
+	// Pi can reuse this imported factory for a same-cwd session replacement.
+	// Re-arm it now while old watchers remain fenced by their generation.
+	lifetime = newLifetime();
+	reloadState.lifetime = lifetime;
+	return children;
+}
 
 export function setLatestCtx(ctx: ExtensionContext): void {
-	latestCtx = ctx;
+	reloadState.latestCtx = ctx;
 }
 
 export function getLatestCtx(): ExtensionContext | null {
-	return latestCtx;
+	return reloadState.latestCtx;
 }

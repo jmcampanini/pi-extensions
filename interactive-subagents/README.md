@@ -114,6 +114,12 @@ Children are always created detached — a spawning child never steals your focu
 
 In `main`, the `mainWidth` setting sets the parent pane's width — a percentage like `60%` (default) or absolute columns like `120`. Layout application is best-effort: if a tmux layout command fails, the spawn still succeeds with a raw split.
 
+## Reload continuity
+
+Running children survive `/reload` in the parent. Their existing panes and processes stay alive, the replacement extension republishes the widget with the original elapsed time and liveness state, and fresh watchers continue completion delivery. Repeated reloads still leave exactly one watcher and one eventual result per child.
+
+This guarantee is deliberately limited to hot reload in the same parent pi process. Quit, `/new`, `/resume`, `/fork`, a parent crash, and a parent process restart remain destructive boundaries. Child session files still survive those boundaries and can be reopened by path, but live supervision is not reconstructed after a process restart. If a replacement extension fails to load and never adopts the children, a 30-second fallback closes their panes rather than leaving unsupervised processes running.
+
 ## Agent definitions
 
 An agent definition is a Markdown file: optional frontmatter for settings, and a body that becomes the child's appended system prompt (`pi --append-system-prompt`). The `worker` agent is the **default** — a spawn that names no agent runs as `worker`, so `worker.md` should always exist. The **filename is the agent name** (`scout.md` → `agent: "scout"`); there is no `name:` key.
