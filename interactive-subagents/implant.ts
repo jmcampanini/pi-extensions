@@ -6,10 +6,12 @@
  * identity comes from the env vars the parent baked into the launch command —
  * the `ChildEnvVars` half of the contract in protocol.ts:
  *
- *   PI_SUBAGENT_SESSION    where to write the `.exit` sidecar (required)
- *   PI_SUBAGENT_NAME       display name, echoed in ping messages
- *   PI_SUBAGENT_AGENT      agent-definition name, shown in the banner
- *   PI_SUBAGENT_AUTO_EXIT  "1" = exit automatically when a turn completes
+ *   PI_SUBAGENT_SESSION        where to write the `.exit` sidecar (required)
+ *   PI_SUBAGENT_NAME           display name, echoed in ping messages
+ *   PI_SUBAGENT_AGENT          agent-definition name, shown in the banner
+ *   PI_SUBAGENT_AUTO_EXIT      "1" = exit automatically when a turn completes
+ *   PI_SUBAGENT_ID             run id stamping liveness-snapshot ownership
+ *   PI_SUBAGENT_ACTIVITY_FILE  where the liveness recorder writes (activity.ts)
  *
  * If PI_SUBAGENT_SESSION is missing we register nothing at all, so this file
  * is harmless if it ever gets loaded into a regular session.
@@ -28,6 +30,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { writeFileSync } from "node:fs";
+import { registerActivityRecorder } from "./activity.ts";
 import { formatBannerLine } from "./banner.ts";
 import type { ChildEnvVars, ExitSidecar } from "./protocol.ts";
 
@@ -47,6 +50,16 @@ export default function (pi: ExtensionAPI) {
 
 	// Not launched as a subagent — do nothing.
 	if (!sessionFile) return;
+
+	// ── liveness reporting ─────────────────────────────────────────────────
+	// The v2 recorder (activity.ts) overwrites one small snapshot file on
+	// every recorded pi event; the parent's watcher reads it to tell starting
+	// from active from stalled. When either var is missing there is no
+	// fallback: the recorder never registers and the parent shows starting
+	// then stalled — documented degradation, not an error.
+	const runId = env.PI_SUBAGENT_ID;
+	const activityFile = env.PI_SUBAGENT_ACTIVITY_FILE;
+	if (runId && activityFile) registerActivityRecorder(pi, { runId, activityFile });
 
 	// ── the identity banner ────────────────────────────────────────────────
 	// banner.ts is the pure renderer; this pushes it into pi's UI. Passing a

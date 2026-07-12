@@ -49,6 +49,7 @@ Files, per child:
 | `<child-session>.jsonl` | parent (fork seed) + child (transcript) | context, result extraction, resume anchor |
 | `<child-session>.jsonl.exit` | child implant | typed exit intent: `{type: "done" \| "ping" \| "error"}` — one-shot, parent deletes on read |
 | `<child-session>.jsonl.meta` | parent (at launch) | launch metadata (name, agent, tools, model, thinking, system-prompt file, auto-exit, worktree snapshot) so `subagent_resume` reapplies the child's identity |
+| `<child-session>.jsonl.activity` | child implant | liveness snapshot (atomic tmp+rename overwrite, `(updatedAt, sequence)` ordering, run-id ownership) — read by the parent's poll tick; kept after exit (it carries the closing context/cost numbers), cleared by the next (re)launch into that session |
 | `artifacts/<sid>/interactive-subagents/…` | parent | task files (`@file` delivery), system prompts, resume follow-up messages, launch scripts |
 | pane screen | child's shell | `__SUBAGENT_DONE_<code>__` sentinel — crash net |
 
@@ -78,7 +79,8 @@ run a fresh shell and inherit nothing):
 | `PI_SUBAGENT_NAME` | display name (ping messages) |
 | `PI_SUBAGENT_AUTO_EXIT=1` | child exits when its turn completes (autonomous agents) |
 | `PI_CODING_AGENT_DIR` | propagated when the parent has a custom config root |
-| `PI_SUBAGENT_ID`, `PI_SUBAGENT_ACTIVITY_FILE` | *(reserved for v2 liveness)* |
+| `PI_SUBAGENT_ID` | 8-char run id minted per launch — stamps liveness-snapshot ownership |
+| `PI_SUBAGENT_ACTIVITY_FILE` | absolute path of the liveness snapshot the implant's recorder writes |
 
 ## Known v1 limitations
 
@@ -165,7 +167,7 @@ Deliberate improvements over the reference implementation:
   ownership) and parent-side validating reader. The snapshot carries the
   state inputs (current tool name + start time from
   `tool_execution_start`/`_end`, turn boundaries from
-  `agent_start`/`agent_end`) and the child's context economics, refreshed
+  `agent_start`/`agent_settled`) and the child's context economics, refreshed
   from each `turn_end` message's `usage`: context tokens in use, the model's
   context window, and cumulative cost.
 - `status.ts`: pure state machine — `starting / active / waiting / stalled`
@@ -174,7 +176,7 @@ Deliberate improvements over the reference implementation:
 - Widget upgrades to real states plus the context share on the reserved
   right edge (`active · bash 7m · 42%`); edge-triggered stalled/recovered
   steer messages, suppressed for interactive (non-auto-exit) children.
-- `subagent_list` reports each child's context tokens/window and cost, so
+- `subagents_list` reports each child's context tokens/window and cost, so
   the parent model can decide when a child is too full to keep resuming.
 
 ### v3 — interrupt

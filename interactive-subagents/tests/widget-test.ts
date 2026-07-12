@@ -1,4 +1,14 @@
-import { FORK_MARK, WORKTREE_MARK, formatElapsed, formatRunningWidgetLines, stripAgentPrefix } from "../widget.ts";
+import {
+	FORK_MARK,
+	WORKTREE_MARK,
+	formatElapsed,
+	formatResultContextLine,
+	formatRunningWidgetLines,
+	formatTokens,
+	formatToolElapsed,
+	stripAgentPrefix,
+	type WidgetRow,
+} from "../widget.ts";
 
 let pass = 0, fail = 0;
 function eq(label: string, got: unknown, want: unknown) {
@@ -113,6 +123,192 @@ const hostileRow = formatRunningWidgetLines(
 );
 eq("widget removes input terminal controls", hostileRow.join("").includes("\x1b"), false);
 eq("widget preserves safe identity text", hostileRow[1].includes("[worker]    safe name"), true);
+
+// ── v2 liveness: the status segment ──────────────────────────────────────
+
+// A row without a status renders byte-identical to the v1 row even when the
+// other segment fields are present — the whole v1 block above is the oracle.
+const v2NoStatusRows: WidgetRow[] = [
+	{ name: "Scout: Auth", agent: "scout", elapsedSeconds: 23, toolName: "bash", toolElapsedSeconds: 420, contextPercent: 42 },
+	{ name: "quick fix", agent: "worker", elapsedSeconds: 4 },
+];
+eq("rows without status render exact v1 rows", formatRunningWidgetLines(v2NoStatusRows, 60), lines);
+
+// The section-6 example block, pinned exactly at width 78: full segment on
+// the active row, percent-only on the waiting row, bare word on the stalled.
+const exampleRows: WidgetRow[] = [
+	{ name: "Auth", agent: "scout", elapsedSeconds: 192, forked: true, worktree: true,
+	  status: "active", toolName: "bash", toolElapsedSeconds: 420, contextPercent: 42 },
+	{ name: "quick fix", agent: "worker", elapsedSeconds: 41, status: "waiting", contextPercent: 5.7 },
+	{ name: "API review", agent: "judge", elapsedSeconds: 72, worktree: true, status: "stalled" },
+];
+const exampleLines = formatRunningWidgetLines(exampleRows, 78);
+eq("example block: active row", exampleLines[1],
+	" [scout]  fw Auth" + " ".repeat(31) + "active · bash 7m · 42%  03:12 ");
+eq("example block: waiting row rounds the percent", exampleLines[2],
+	" [worker]    quick fix" + " ".repeat(36) + "waiting · 6%  00:41 ");
+eq("example block: stalled row", exampleLines[3],
+	" [judge]   w API review" + " ".repeat(40) + "stalled  01:12 ");
+eq("example block rows exactly width wide", exampleLines.every((l) => l.length === 78), true);
+
+// starting row exact string
+const startingLines = formatRunningWidgetLines(
+	[{ name: "boot up", agent: "worker", elapsedSeconds: 5, status: "starting" }] as WidgetRow[], 50);
+eq("starting row", startingLines[1],
+	" [worker]    boot up" + " ".repeat(14) + "starting" + "  00:05 ");
+
+// stalled-only row exact string
+const stalledLines = formatRunningWidgetLines(
+	[{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "stalled" }] as WidgetRow[], 40);
+eq("stalled-only row", stalledLines[1], " [judge]    API review   stalled  01:12 ");
+
+// The degradation ladder on one row at descending widths: full segment, then
+// the tool drops, then the percent, then the whole segment, then the name
+// goes to ellipsis, then the identity-only plain clamp — in that order.
+const ladderRow: WidgetRow[] = [{ name: "Auth refactor", agent: "scout", elapsedSeconds: 192,
+	status: "active", toolName: "bash", toolElapsedSeconds: 420, contextPercent: 42 }];
+const ladderAt = (w: number) => formatRunningWidgetLines(ladderRow, w)[1];
+eq("ladder 54: full segment, name clipped to the 10-col floor", ladderAt(54),
+	" [scout]    Auth refa…  active · bash 7m · 42%  03:12 ");
+eq("ladder 53: tool drops first, full name returns", ladderAt(53),
+	" [scout]    Auth refactor" + " ".repeat(8) + "active · 42%  03:12 ");
+eq("ladder 44: percent kept, name back at the floor", ladderAt(44),
+	" [scout]    Auth refa…  active · 42%  03:12 ");
+eq("ladder 43: status word only, full name", ladderAt(43),
+	" [scout]    Auth refactor    active  03:12 ");
+eq("ladder 38: status word only, name at the floor", ladderAt(38),
+	" [scout]    Auth refa…  active  03:12 ");
+eq("ladder 37: no segment — geometrically the exact v1 row", ladderAt(37),
+	" [scout]    Auth refactor      03:12 ");
+eq("ladder 32: v1 name ellipsis", ladderAt(32), " [scout]    Auth refact…  03:12 ");
+eq("ladder 17: identity-only plain clamp", ladderAt(17), " [scout]    03:12");
+
+// Name floor: 10 columns minimum for a long name; a short name only demands
+// its own length and is NEVER truncated to make room for a segment.
+eq("floor: clipped name is exactly 10 columns", ladderAt(54).includes(" Auth refa… "), true);
+const shortNameRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 192,
+	status: "active", toolName: "bash", toolElapsedSeconds: 420, contextPercent: 42 }];
+eq("short name 48: full segment fits alongside the whole name",
+	formatRunningWidgetLines(shortNameRow, 48)[1],
+	" [scout]    Auth  active · bash 7m · 42%  03:12 ");
+eq("short name 47: segment degrades, name stays whole",
+	formatRunningWidgetLines(shortNameRow, 47)[1],
+	" [scout]    Auth" + " ".repeat(11) + "active · 42%  03:12 ");
+eq("short name never gains an ellipsis for a segment",
+	formatRunningWidgetLines(shortNameRow, 47)[1].includes("…"), false);
+
+// Mixed tiers at ONE width: a full-segment row and a stalled row sharing a
+// tagWidth — every line exactly the width, both clocks on the right edge.
+const mixedTierRows: WidgetRow[] = [
+	{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
+	  toolName: "bash", toolElapsedSeconds: 420, contextPercent: 42 },
+	{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "stalled" },
+];
+const mixedTier = formatRunningWidgetLines(mixedTierRows, 60);
+eq("mixed tiers: full-segment row", mixedTier[1],
+	" [scout]    Auth" + " ".repeat(14) + "active · bash 7m · 42%  03:12 ");
+eq("mixed tiers: stalled row", mixedTier[2],
+	" [judge]    API review" + " ".repeat(23) + "stalled  01:12 ");
+eq("mixed tiers: rows exactly width wide", mixedTier.every((l) => l.length === 60), true);
+eq("mixed tiers: both clocks end at the right edge",
+	mixedTier[1].endsWith("03:12 ") && mixedTier[2].endsWith("01:12 "), true);
+
+// Style hooks: the segment renders dim normally and warn iff stalled; the
+// clock stays dim; stripping the tags recovers the exact plain width.
+const segStyled = formatRunningWidgetLines(mixedTierRows, 60,
+	{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
+eq("segment dim on active", segStyled[1].includes("<D>active · bash 7m · 42%</D>  <D>03:12</D> "), true);
+eq("segment warn on stalled, clock still dim", segStyled[2].includes("<W>stalled</W>  <D>01:12</D> "), true);
+eq("warn never touches a non-stalled row", segStyled[1].includes("<W>"), false);
+eq("stripped active row length still exact", segStyled[1]
+	.replaceAll("<D>", "").replaceAll("</D>", "").length, 60);
+eq("stripped stalled row length still exact", segStyled[2]
+	.replaceAll("<D>", "").replaceAll("</D>", "").replaceAll("<W>", "").replaceAll("</W>", "").length, 60);
+const warnFallback = formatRunningWidgetLines(mixedTierRows, 60, { dim: (t) => `<D>${t}</D>` });
+eq("warn falls back to dim", warnFallback[2].includes("<D>stalled</D>  <D>01:12</D> "), true);
+
+// Tool part renders only while active — waiting rows keep the percent alone.
+const waitingTool = formatRunningWidgetLines(
+	[{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting",
+	   toolName: "bash", toolElapsedSeconds: 9, contextPercent: 6 }] as WidgetRow[], 60);
+eq("tool part only renders while active", waitingTool[1].includes("bash"), false);
+eq("waiting keeps the percent", waitingTool[1].includes("waiting · 6%"), true);
+
+// Unknown context renders as absence, not "?"; percent clamps at 0..999.
+const noPct = formatRunningWidgetLines(
+	[{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
+	   toolName: "bash", toolElapsedSeconds: 420 }] as WidgetRow[], 60);
+eq("unknown context renders as absence", noPct[1].includes("active · bash 7m  03:12 "), true);
+eq("no stray percent part", noPct[1].includes("%"), false);
+const bigPct = formatRunningWidgetLines(
+	[{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting", contextPercent: 1234.9 }] as WidgetRow[], 60);
+eq("percent clamps at 999", bigPct[1].includes("waiting · 999%"), true);
+
+// Hostile toolName: child-written, so the renderer re-sanitizes it and no
+// escape byte may survive into the joined output.
+const hostileTool = formatRunningWidgetLines(
+	[{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
+	   toolName: "ba\x1b]52;c;Zm9v\x07sh\x1b[2J\0", toolElapsedSeconds: 420, contextPercent: 42 }] as WidgetRow[], 60);
+eq("hostile tool name yields no escape bytes", hostileTool.join("").includes("\x1b"), false);
+eq("hostile tool name yields no NUL bytes", hostileTool.join("").includes("\0"), false);
+eq("hostile tool name keeps the safe text", hostileTool[1].includes("active · bash 7m · 42%"), true);
+
+// A 40-char tool name clamps to 12 chars plus a trailing ellipsis.
+const longTool = formatRunningWidgetLines(
+	[{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
+	   toolName: "0123456789012345678901234567890123456789", toolElapsedSeconds: 420, contextPercent: 42 }] as WidgetRow[], 70);
+eq("long tool name clamps at 12 chars + ellipsis", longTool[1].includes("active · 012345678901… 7m · 42%"), true);
+eq("no 13th tool char leaks", longTool[1].includes("0123456789012"), false);
+
+// Width sweep with the v2 worst case: the longest possible segment on the
+// long-tag long-name row, plus a stalled row. No width — including negative
+// widths — may ever overflow (pi's TUI crashes on an overflowing line).
+const v2OverflowRows: WidgetRow[] = [
+	{ name: "a very long task name that cannot possibly fit", agent: "code-reviewer", elapsedSeconds: 3723,
+	  forked: true, worktree: true, status: "active", toolName: "twelvechartool",
+	  toolElapsedSeconds: 86340, contextPercent: 100 },
+	{ name: "x", elapsedSeconds: 0, status: "stalled" },
+];
+eq("worst-case segment appears at a wide width",
+	formatRunningWidgetLines(v2OverflowRows, 90)[1].includes("active · twelvecharto… 23h59m · 100%"), true);
+let v2WidthViolations = 0;
+for (let w = -2; w <= 90; w++) {
+	for (const line of formatRunningWidgetLines(v2OverflowRows, w)) {
+		if (line.length > Math.max(0, w)) v2WidthViolations++;
+	}
+}
+eq("no v2 line ever exceeds the render width", v2WidthViolations, 0);
+
+// value table: formatToolElapsed
+eq("tool elapsed seconds", formatToolElapsed(42), "42s");
+eq("tool elapsed minutes", formatToolElapsed(420), "7m");
+eq("tool elapsed hours+minutes", formatToolElapsed(3780), "1h3m");
+eq("tool elapsed near a day", formatToolElapsed(86340), "23h59m");
+eq("tool elapsed minute boundary", formatToolElapsed(60), "1m");
+eq("tool elapsed hour boundary", formatToolElapsed(3600), "1h0m");
+eq("tool elapsed negative clamps to zero", formatToolElapsed(-5), "0s");
+
+// value table: formatTokens, pinned to pi's own footer tiers
+eq("tokens under 1k", formatTokens(999), "999");
+eq("tokens decimal k", formatTokens(9500), "9.5k");
+eq("tokens whole k", formatTokens(372000), "372k");
+eq("tokens decimal M", formatTokens(1200000), "1.2M");
+eq("tokens whole M", formatTokens(12000000), "12M");
+
+// the three result-line shapes (plus the cost floor)
+eq("result line: known context",
+	formatResultContextLine({ context: { tokens: 84000, window: 200000, percent: 42.4 }, costUsd: 0.31 }),
+	"Context: 84k/200k tokens (42%) · cost this run $0.31");
+eq("result line: post-compaction unknown",
+	formatResultContextLine({ context: { tokens: null, window: 200000, percent: null }, costUsd: 0.31 }),
+	"Context: unknown (just compacted) · cost this run $0.31");
+eq("result line: no snapshot omits the line", formatResultContextLine(undefined), undefined);
+eq("result line: sub-cent cost floors, never $0.00",
+	formatResultContextLine({ context: { tokens: 500, window: 200000, percent: 0.25 }, costUsd: 0.003 }),
+	"Context: 500/200k tokens (0%) · cost this run < $0.01");
+eq("result line: truly zero cost stays $0.00",
+	formatResultContextLine({ context: null, costUsd: 0 }),
+	"Context: unknown · cost this run $0.00");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

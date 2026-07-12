@@ -14,6 +14,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { activityFilePath, clearActivityFile } from "./activity.ts";
 import { config } from "./config.ts";
 import { artifactBase, buildChildEnv, buildLaunchCommand, clearExitSidecar, readLaunchMeta, slugify } from "./launch.ts";
 import { resolveUsableModel } from "./models.ts";
@@ -93,6 +94,14 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				}
 			}
 
+			// The previous run's activity file is cleared only HERE, after the
+			// guard above — unlike the .exit sidecar. A live child has no exit
+			// sidecar, so clearing that early is safe; but a live child's
+			// `.activity` is ALWAYS present, and clearing it before the guard
+			// would let a rejected resume of a busy child delete the live
+			// child's snapshot and manufacture a false stall steer ~60s later.
+			clearActivityFile(sessionPath);
+
 			// Reapply the child's original launch settings from the `.meta`
 			// sidecar written at launch. Explicit params always win; a missing
 			// meta file (e.g. a session not created by this extension) just
@@ -171,6 +180,11 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				env: buildChildEnv({
 					PI_SUBAGENT_SESSION: sessionPath,
 					PI_SUBAGENT_NAME: name,
+					// The liveness pair (see activity.ts): a resume mints a FRESH
+					// run id, so any snapshot surviving the clear above is fenced
+					// off as foreign by the reader.
+					PI_SUBAGENT_ID: id,
+					PI_SUBAGENT_ACTIVITY_FILE: activityFilePath(sessionPath),
 					PI_SUBAGENT_AGENT: meta.agent,
 					PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
 				}),
@@ -204,6 +218,10 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				// still counts as "changes" when this run's cleanup decides.
 				worktree: meta.worktree,
 				abort: new AbortController(),
+				// A resume without a message hands the pane to a human — that
+				// child legitimately idles forever and must read "waiting", not
+				// stuck-at-"starting" (see status.ts).
+				expectsRun: Boolean(params.message),
 			});
 
 			return {
