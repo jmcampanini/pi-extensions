@@ -3,8 +3,8 @@
  *
  * widget.ts is the PURE renderer (rows in, styled lines out — unit-tested
  * under plain node); this file is its stateful controller: it owns the
- * 1-second refresh timer, feeds the renderer from the running map, and
- * pushes the result into pi's UI.
+ * 1-second refresh timer, feeds the renderer from the running and delivering
+ * maps, and pushes the result into pi's UI.
  *
  * pi API in play: `ctx.ui.setWidget(key, content, options)` shows persistent
  * lines anchored to the TUI (here: above the editor). Passing a COMPONENT
@@ -15,8 +15,8 @@
 
 import { oldestActiveTool, toolElapsedSeconds } from "./activity.ts";
 import { computeStatus } from "./status.ts";
-import { formatRunningWidgetLines } from "./widget.ts";
-import { getLatestCtx, running } from "./state.ts";
+import { formatRunningWidgetLines, type WidgetRow } from "./widget.ts";
+import { delivering, getLatestCtx, running } from "./state.ts";
 
 const WIDGET_KEY = "interactive-subagents";
 
@@ -42,17 +42,24 @@ function rememberTimer(timer: ReturnType<typeof setInterval> | null): void {
 	rememberTimer(null);
 }
 
-/** Re-render the widget from the running map; remove it when nothing runs. */
+/** Re-render the widget from the running and delivering maps; remove it when both are empty. */
 export function updateRunningWidget(): void {
 	const ctx = getLatestCtx();
 	if (!ctx || !ctx.hasUI) return;
 
-	if (running.size === 0) {
+	if (running.size === 0 && delivering.size === 0) {
 		// Passing undefined for content removes the widget.
 		ctx.ui.setWidget(WIDGET_KEY, undefined);
 		stopWidgetTimer();
 		return;
 	}
+	// Delivering rows are frozen (clock and word never change), so the 1 Hz
+	// repaint only earns its keep while live children run. The delivering-only
+	// phase is repainted event-driven instead: the delivery listener on
+	// removal, trackChild (via ensureWidgetTimer) on the next spawn. This
+	// also means a permanently stuck row - a result dropped by Escape - never
+	// becomes a permanent wakeup source.
+	if (running.size === 0) stopWidgetTimer();
 
 	// Snapshot the rows now; the component form gets the real terminal width
 	// at render time, which is what lets the elapsed clock right-anchor.
@@ -63,7 +70,7 @@ export function updateRunningWidget(): void {
 	// timers are unsynchronized), which is display-only: steer decisions live
 	// in the watcher path, never in widget renders.
 	const now = Date.now();
-	const rows = [...running.values()].map((child) => {
+	const rows: WidgetRow[] = [...running.values()].map((child) => {
 		const obs = child.activity;
 		const snap = obs?.snapshot;
 		const status = obs
@@ -92,6 +99,19 @@ export function updateRunningWidget(): void {
 			contextTokens: snap?.context?.tokens ?? undefined,
 		};
 	});
+	// Exited children whose result is still queued render below the live
+	// ones: identity plus the frozen exit clock, no telemetry - the process
+	// is gone, and the closing economics travel in the result message itself.
+	for (const child of delivering.values()) {
+		rows.push({
+			name: child.name,
+			agent: child.agent,
+			elapsedSeconds: child.elapsedSeconds,
+			forked: child.forked,
+			worktree: child.worktree,
+			status: "delivering",
+		});
+	}
 	ctx.ui.setWidget(
 		WIDGET_KEY,
 		(_tui, theme) => ({

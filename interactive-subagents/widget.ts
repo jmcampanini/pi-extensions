@@ -3,7 +3,9 @@
  *
  * The style: a bracketed agent-type tag, the task-focused display name, and
  * a right-anchored elapsed clock — no counts or hints. A row EXISTING means
- * that child is running; the right edge carries the live status segment.
+ * that child is running, or has exited with its result message still queued
+ * for the parent (status `delivering`, frozen clock); the right edge carries
+ * the live status segment.
  *
  * Each row is a fixed four-column grid: the bracketed agent-type tag
  * (padded to the widest tag), one space, a two-column state slot (`f` when
@@ -68,8 +70,12 @@ export interface WidgetRow {
 	worktree?: boolean;
 	/** Live status computed by the parent's watcher. All four segment fields
 	 * are optional: a row without a status renders byte-identical to the v1
-	 * row, so the segment machinery only engages when the controller opts in. */
-	status?: "starting" | "active" | "waiting" | "stalled";
+	 * row, so the segment machinery only engages when the controller opts in.
+	 * "delivering" is the one exit-lifecycle state, supplied by the controller
+	 * from the delivering map and never produced by computeStatus - the child
+	 * has exited and its result message is still queued for the parent; the
+	 * controller passes no tool/token telemetry with it. */
+	status?: "starting" | "active" | "waiting" | "stalled" | "delivering";
 	/** Longest-running tool call's name. Child-written and therefore hostile:
 	 * re-sanitized inside the renderer, never trusted. Shown only while
 	 * status is "active". */

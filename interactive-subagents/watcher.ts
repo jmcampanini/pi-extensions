@@ -5,7 +5,9 @@
  * trackChild() is a child's ONLY supervisor: it polls for the exit, cleans
  * up the pane, and steers the outcome back into the parent conversation.
  * It must never reject silently — every path ends in either a steered
- * message or a deliberate no-op.
+ * message or a deliberate no-op. Exit paths that send a message first park
+ * the child in state.ts's delivering map, so its widget row survives until
+ * delivery.ts sees the message land; the silent no-op path never parks one.
  *
  * pi API in play: `pi.sendMessage(message, options)` is the one way to wake
  * the parent model asynchronously. `customType` tags the entry in the
@@ -15,7 +17,10 @@
  * `details`, which is why the content prose must carry everything the model
  * needs (ids, paths, next steps): the prose IS the protocol.
  * `{ triggerTurn: true, deliverAs: "steer" }` makes the message start/steer
- * a turn instead of waiting for the human to type something.
+ * a turn instead of waiting for the human to type something. Those exact
+ * options are also LOAD-BEARING for the delivering row: delivery.ts only
+ * observes messages that travel the agent event stream, so a weakened send
+ * would strand its row forever.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -33,7 +38,7 @@ import { sanitizeDisplayText } from "./display-text.ts";
 import { computeStatus, STALL_AFTER_MS, type SubagentStatus } from "./status.ts";
 import { closePane, pollForExit, refreshLayout, type ExitResult } from "./tmux.ts";
 import { extractSummary } from "./session.ts";
-import { ledger, moduleSignal, running, type RunningSubagent } from "./state.ts";
+import { delivering, ledger, moduleSignal, running, type RunningSubagent } from "./state.ts";
 import { ensureWidgetTimer, updateRunningWidget } from "./running-widget.ts";
 import { formatResultContextLine } from "./widget.ts";
 import { finishWorktree, type WorktreeInfo, type WorktreeOutcome } from "./worktree.ts";
@@ -265,13 +270,38 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent): Promise<
 	// for context anyway, and at most one settle-refresh behind for cost.)
 	observeActivity(obs, readActivityFile(activityFile, child.id), Date.now());
 
+	// Exit detected. The row must NOT vanish yet: every outcome below except
+	// the silent shutdown/reload abort sends exactly one steered message, and
+	// pi only delivers steers at the parent's next turn boundary - so the
+	// child moves to the delivering map and its row stays visible (restyled,
+	// clock frozen) until delivery.ts observes that message landing in the
+	// transcript. The transition happens HERE, before the sends below and
+	// before the awaited worktree cleanup: on an idle parent, message_end
+	// fires within microtasks of pi.sendMessage returning, so a row added
+	// after the send could clobber the listener's removal and stick forever.
+	// For the same reason nothing below may write to the delivering map after
+	// a send. The silent path sends nothing, so it never enters delivering -
+	// no event could ever clear that row.
+	const exitElapsedSeconds = Math.round((Date.now() - child.startTime) / 1000);
 	running.delete(child.id);
+	const sendsMessage = result.reason !== "aborted" || child.stoppedByUser === true;
+	if (sendsMessage) {
+		delivering.set(child.id, {
+			id: child.id,
+			name: child.name,
+			agent: child.agent,
+			elapsedSeconds: exitElapsedSeconds,
+			forked: child.context === "forked",
+			worktree: child.worktree !== undefined,
+		});
+	}
 	updateRunningWidget();
 	closePane(child.paneId);
 	// Re-flow the remaining subagent panes so they reclaim this one's space.
+	// Deliberately counts only RUNNING children - delivering ones have no pane.
 	if (running.size > 0) refreshLayout();
 
-	const elapsed = humanElapsed(Math.round((Date.now() - child.startTime) / 1000));
+	const elapsed = humanElapsed(exitElapsedSeconds);
 	const childName = sanitizeDisplayText(child.name);
 
 	// The child's closing economics — "Context: 84k/200k tokens (42%) · cost

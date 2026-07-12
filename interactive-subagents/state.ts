@@ -62,6 +62,43 @@ export interface RunningSubagent {
 /** All children currently running, keyed by their 8-char run id. */
 export const running = new Map<string, RunningSubagent>();
 
+// ── the delivering map ───────────────────────────────────────────────────
+// pi delivers steered messages one at a time, only at the parent's next turn
+// boundary, so a child's result can sit queued for a whole multi-tool turn
+// after its pane closed. Children in that window live here: the watcher adds
+// an entry at exit detection (before it sends the message - see watcher.ts),
+// and delivery.ts removes it when it observes the result/ping message
+// actually landing in the parent transcript.
+
+/** The slice of a finished child the widget still needs to draw its row.
+ * The elapsed clock is FROZEN at exit detection - a counting clock on a
+ * finished row would read as still-running, and this number matches the
+ * elapsed prose in the result message. */
+export interface DeliveringSubagent {
+	id: string;
+	name: string;
+	agent?: string;
+	/** Seconds from launch to exit detection - frozen. */
+	elapsedSeconds: number;
+	forked: boolean;
+	worktree: boolean;
+}
+
+/**
+ * Children between exit and result delivery, keyed by their 8-char run id.
+ * A row that never clears is DELIBERATE: pi drops queued steers silently
+ * when the human presses Escape mid-turn, no event fires, and there is no
+ * API to poll the queue - the stuck row is the one honest signal that a
+ * result was lost. /reload clears it; re-sending is out of scope by design.
+ *
+ * /reload story: a plain module map, recreated empty on re-import, and the
+ * old import's message_end listener dies with it. A steer queued BEFORE the
+ * reload survives inside pi's agent core and still lands afterwards; its row
+ * is simply gone by then (the new listener's delete is a no-op). Accepted:
+ * the result still arrives, only the row disappears early.
+ */
+export const delivering = new Map<string, DeliveringSubagent>();
+
 /**
  * Every child this session has ever tracked (running or finished), so
  * subagent_resume can accept a short id instead of a long session path.
@@ -97,13 +134,15 @@ export function moduleSignal(): AbortSignal {
 /**
  * Session teardown (/new, /resume, quit): stop every watcher by aborting the
  * module signal, arm a fresh controller for the next session, and forget the
- * running children. The ledger is deliberately kept — its session FILES still
- * exist on disk, so their ids remain resumable.
+ * running children and any results still awaiting delivery. The ledger is
+ * deliberately kept — its session FILES still exist on disk, so their ids
+ * remain resumable.
  */
 export function resetForShutdown(): void {
 	moduleAbort().abort();
 	slots[ABORT_KEY] = new AbortController();
 	running.clear();
+	delivering.clear();
 }
 
 // ── the latest ExtensionContext ──────────────────────────────────────────

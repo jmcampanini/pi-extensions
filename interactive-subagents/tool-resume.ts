@@ -85,6 +85,10 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			// running — two processes appending to one .jsonl corrupts it.
 			// Checked synchronously (before any await) so parallel resume calls
 			// cannot race past each other.
+			// Children in state.ts's delivering map are deliberately NOT
+			// blocked: their pi process has exited, so there is no second
+			// writer. A resume during that window mints a new id; the old
+			// result still arrives later and describes the pre-resume run.
 			const targetPath = resolve(sessionPath);
 			for (const child of running.values()) {
 				if (resolve(child.sessionFile) === targetPath) {

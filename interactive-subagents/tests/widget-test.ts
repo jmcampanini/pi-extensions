@@ -357,6 +357,45 @@ for (let w = -2; w <= 90; w++) {
 }
 eq("no v2 line ever exceeds the render width", v2WidthViolations, 0);
 
+// ── the delivering exit state ────────────────────────────────────────────
+// An exit-lifecycle state supplied by the controller from the delivering
+// map, never by computeStatus: frozen clock, no tool/token telemetry, dim
+// (never warn). "delivering" is 10 chars - the widest status word - so the
+// ladder and the sweep must absorb it.
+const deliveringRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "delivering" }];
+eq("delivering row exact string", formatRunningWidgetLines(deliveringRow, 50)[1],
+	" [scout]    Auth" + " ".repeat(16) + "delivering  03:12 ");
+eq("delivering row at the 10-char name boundary",
+	formatRunningWidgetLines(
+		[{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "delivering" }] as WidgetRow[], 43)[1],
+	" [judge]    API review   delivering  01:12 ");
+const deliveringStyled = formatRunningWidgetLines(deliveringRow, 50,
+	{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
+eq("delivering renders dim, joined to a dim clock",
+	deliveringStyled[1].includes("<D>delivering</D>  <D>03:12</D> "), true);
+eq("delivering never uses the warn hook", deliveringStyled[1].includes("<W>"), false);
+// The ladder: the segment stays while the name can hold its 10-column
+// floor, then the whole segment drops to exact v1 geometry.
+const deliveringLadder: WidgetRow[] = [{ name: "Auth refactor", agent: "scout", elapsedSeconds: 192, status: "delivering" }];
+eq("delivering ladder 42: segment kept, name at the floor",
+	formatRunningWidgetLines(deliveringLadder, 42)[1], " [scout]    Auth refa…  delivering  03:12 ");
+eq("delivering ladder 41: segment drops, exact v1 geometry",
+	formatRunningWidgetLines(deliveringLadder, 41)[1], " [scout]    Auth refactor" + " ".repeat(10) + "03:12 ");
+// Width sweep with delivering rows: worst-case tag, both marks, H:MM:SS
+// clock. No width - including negative - may ever overflow.
+const deliveringOverflowRows: WidgetRow[] = [
+	{ name: "a very long task name that cannot possibly fit", agent: "code-reviewer", elapsedSeconds: 3723,
+	  forked: true, worktree: true, status: "delivering" },
+	{ name: "x", elapsedSeconds: 0, status: "delivering" },
+];
+let deliveringWidthViolations = 0;
+for (let w = -2; w <= 70; w++) {
+	for (const line of formatRunningWidgetLines(deliveringOverflowRows, w)) {
+		if (line.length > Math.max(0, w)) deliveringWidthViolations++;
+	}
+}
+eq("no delivering line ever exceeds the render width", deliveringWidthViolations, 0);
+
 // value table: formatToolElapsed
 eq("tool elapsed seconds", formatToolElapsed(42), "42s");
 eq("tool elapsed minutes", formatToolElapsed(420), "7m");
