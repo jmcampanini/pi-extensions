@@ -40,10 +40,18 @@ const METRICS: ResultMetrics = {
 
 const MAX_STORED_PREVIEW_CODE_POINTS = 2000;
 
-const STATUS_COPY: Record<SubagentResultStatus, { icon: string; verb: string }> = {
-	completed: { icon: "✓", verb: "completed" },
-	failed: { icon: "✗", verb: "failed" },
-	stopped: { icon: "■", verb: "was stopped" },
+const STATUS_COPY = {
+	completed: { icon: "✓", verb: "completed", timing: "in", color: "success" },
+	failed: { icon: "✗", verb: "failed", timing: "after", color: "error" },
+	stopped: { icon: "■", verb: "was stopped", timing: "after", color: "warning" },
+} as const;
+
+const PLAIN_STYLE: ResultStyle = {
+	status: (_status, text) => text,
+	text: (text) => text,
+	name: (text) => text,
+	agent: (text) => text,
+	preview: (text) => text,
 };
 
 function inline(text: string): string {
@@ -137,7 +145,7 @@ function formatHeader(
 
 	for (const variant of variants) {
 		const agentText = variant.agent && agent !== undefined ? ` ${style.agent(`[${agent}]`)}` : "";
-		const durationText = variant.duration ? style.text(` ${status === "completed" ? "in" : "after"} ${duration}`) : "";
+		const durationText = variant.duration ? style.text(` ${copy.timing} ${duration}`) : "";
 		const hintText = variant.hint && hint ? style.text(" · ") + hint : "";
 		const prefix = `${icon}${style.text(' Sub-agent "')}`;
 		const suffix = `${style.text('"')}${agentText}${style.text(" ")}${verb}${durationText}${hintText}`;
@@ -156,13 +164,7 @@ export function formatCollapsedSubagentResult(
 	width: number,
 	hint: string,
 	metrics: ResultMetrics = METRICS,
-	style: ResultStyle = {
-		status: (_status, text) => text,
-		text: (text) => text,
-		name: (text) => text,
-		agent: (text) => text,
-		preview: (text) => text,
-	},
+	style: ResultStyle = PLAIN_STYLE,
 ): string[] {
 	const maxWidth = availableWidth(width);
 	if (maxWidth === 0) return [];
@@ -226,7 +228,7 @@ export function registerSubagentResultRenderer(pi: ExtensionAPI): void {
 
 		const hint = keyHint("app.tools.expand", "to expand");
 		const style: ResultStyle = {
-			status: (status, text) => theme.fg(status === "completed" ? "success" : status === "failed" ? "error" : "warning", text),
+			status: (status, text) => theme.fg(STATUS_COPY[status].color, text),
 			text: (text) => theme.fg("customMessageText", text),
 			name: (text) => theme.fg("customMessageText", theme.bold(text)),
 			agent: (text) => theme.fg("accent", text),
