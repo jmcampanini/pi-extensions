@@ -101,7 +101,7 @@ run a fresh shell and inherit nothing):
 
 ## Versions
 
-### v1 — the primitive (this version)
+### v1 — the primitive (shipped)
 
 One file per job; `index.ts` only wires them into pi:
 
@@ -160,7 +160,7 @@ Deliberate improvements over the reference implementation:
 - Watchers **skip steering after shutdown abort** (reference attempted to
   steer into a dying session).
 
-### v2 — liveness
+### v2 — liveness (this version)
 
 - `activity.ts`: implant-side recorder (pi lifecycle events → atomic
   tmp+rename JSON snapshot with `(updatedAt, sequence)` ordering + run-id
