@@ -21,7 +21,7 @@
     ]
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.34.50"
+    "@sinclair/typebox": "^0.34.52"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
