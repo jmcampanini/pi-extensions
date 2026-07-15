@@ -211,12 +211,18 @@ Deliberate improvements over the reference implementation:
 
 ### v2.2 - compact delivered results
 
+- The parent `subagent` call uses native tool typography: bold lowercase
+  `subagent`, an accent invocation name, muted unbracketed agent metadata, and
+  a configured expansion-key hint whenever its one-line preview hides detail.
+  Expansion renders the complete task with `toolOutput` styling.
 - A `subagent_result` message renderer uses structured presentation details to
-  show a status sentence plus at most two response-preview lines by default.
+  show a native-style `subagent <name> · <agent> · <status>` header, a blank
+  line, and at most two response-preview lines by default.
 - Global tool expansion reveals the complete existing Markdown content; no
   model-facing or persisted message content is truncated or replaced.
-- Completed, failed, and user-stopped results have distinct styling, while
-  `subagent_ping` keeps Pi's full default renderer so help remains actionable.
+- Results use `Box(1, 1)` with Pi's tool-success or tool-error background and
+  no leading status icon. `subagent_ping` keeps Pi's full default renderer so
+  help remains actionable.
 
 ### v3 — interrupt
 

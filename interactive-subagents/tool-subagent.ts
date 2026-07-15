@@ -18,8 +18,8 @@
  * steered message.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Type, type Static } from "@sinclair/typebox";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -108,6 +108,7 @@ const SubagentParams = Type.Object({
 type SubagentParamsType = Static<typeof SubagentParams>;
 
 const CALL_TEXT_METRICS = {
+	visibleWidth,
 	truncateToWidth,
 	renderText: (text: string, width: number) => new Text(text, 0, 0).render(width),
 };
@@ -133,17 +134,20 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 		renderCall(args, theme, context) {
 			const style = {
 				title: (text: string) => theme.fg("toolTitle", theme.bold(text)),
-				agent: (text: string) => theme.fg("accent", text),
-				name: (text: string) => theme.fg("toolOutput", text),
+				name: (text: string) => theme.fg("accent", text),
+				agent: (text: string) => theme.fg("muted", text),
+				hint: (text: string) => theme.fg("dim", text),
 				preview: (text: string) => theme.fg("dim", text),
+				body: (text: string) => theme.fg("toolOutput", text),
 			};
+			const expandHint = keyHint("app.tools.expand", "to expand");
 			return {
 				invalidate(): void {},
 				render(width: number): string[] {
 					if (context.expanded) {
 						return formatExpandedSubagentCall(args, width, CALL_TEXT_METRICS, style);
 					}
-					return formatCollapsedSubagentCall(args, width, CALL_TEXT_METRICS, style);
+					return formatCollapsedSubagentCall(args, width, CALL_TEXT_METRICS, style, expandHint);
 				},
 			};
 		},
