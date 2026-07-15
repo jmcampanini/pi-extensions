@@ -216,6 +216,86 @@ for (const [status, marker] of [["failed", "FULL_FAILURE_GUIDANCE"], ["stopped",
 }
 eq("expanded rendering strips terminal controls", expandedLines.join("").includes("\x1b]52"), false);
 eq("expanded rendering does not mutate model-facing content", message.content, originalContent);
+
+const structuredResponse = "# Complete report\n\nThe child found two authentication risks.\x1b]52;c;Zm9v\x07";
+const structuredPrefix = 'Sub-agent "API review" (id abc12345) completed (2m 14s).\n\n';
+const structuredContent =
+	structuredPrefix + structuredResponse +
+	'\n\nContext: 84k/200k tokens (42%) · cost this run $0.31\n' +
+	'For follow-up work: subagent_resume({ id: "abc12345", message: "..." }). Session: /sessions/child.jsonl\n\n' +
+	'Worktree: kept at /repo/worktree on branch pi/api-review.';
+const structuredDetails: SubagentResultDetails = {
+	...current,
+	costUsd: 0.31,
+	sessionFile: "/sessions/child.jsonl",
+	expanded: {
+		version: 1,
+		response: { start: structuredPrefix.length, end: structuredPrefix.length + structuredResponse.length },
+		worktreeNote: "Worktree: kept at /repo/worktree on branch pi/api-review.",
+	},
+};
+const structuredMessage = { ...message, content: structuredContent, details: structuredDetails };
+const structuredExpanded = renderer?.(structuredMessage, { expanded: true }, theme);
+const structuredLines = structuredExpanded?.render(120).map(plain) ?? [];
+const structuredText = structuredLines.join("\n");
+eq("structured expanded result uses the native header",
+	structuredText.includes("subagent result · code-reviewer · API review · completed in 2m 14s · context 84k · result ~1.8k"), true);
+eq("structured expanded result removes the old lead sentence", structuredText.includes('Sub-agent "API review"'), false);
+eq("structured expanded result renders only the child response from model-facing prose",
+	structuredText.includes("The child found two authentication risks."), true);
+eq("structured expanded result hides the old context-window prose", structuredText.includes("84k/200k"), false);
+eq("structured expanded result shows compact cost metadata", structuredText.includes("cost this run $0.31"), true);
+eq("structured expanded result shows the session path", structuredText.includes("/sessions/child.jsonl"), true);
+eq("structured expanded result shows resume guidance", structuredText.includes("resume subagent_resume"), true);
+eq("structured expanded result shows the worktree outcome", structuredText.includes("Worktree: kept"), true);
+eq("structured expanded result strips terminal controls", structuredLines.join("").includes("\x1b]52"), false);
+eq("structured expanded rendering leaves model-facing content byte-identical", structuredMessage.content, structuredContent);
+
+const structuredMarked = renderer?.(structuredMessage, { expanded: true }, markedTheme)?.render(500).join("") ?? "";
+eq("structured expanded result styles its title as a tool title",
+	structuredMarked.includes("<toolTitle>subagent result</toolTitle>"), true);
+eq("structured expanded result styles session paths as accents",
+	structuredMarked.includes("<accent>/sessions/child.jsonl</accent>"), true);
+eq("structured expanded result styles footer labels as metadata",
+	structuredMarked.includes("<muted>cost this run $0.31</muted>"), true);
+
+const failedResponse = "The provider returned partial output.";
+const failedPrefix = 'Sub-agent "API review" (id abc12345) failed after 2m 14s (exit code 1).\n\nLast output:\n';
+const failedStructuredMessage = {
+	...message,
+	content: failedPrefix + failedResponse + "\n\nMODEL_FAILURE_FOOTER",
+	details: {
+		...details("failed", failedResponse),
+		costUsd: 0.04,
+		sessionFile: "/sessions/failed.jsonl",
+		expanded: {
+			version: 1 as const,
+			failureReason: "exit code 1",
+			response: { start: failedPrefix.length, end: failedPrefix.length + failedResponse.length },
+		},
+	},
+};
+const failedStructuredText = renderer?.(failedStructuredMessage, { expanded: true }, theme)?.render(100).map(plain).join("\n") ?? "";
+eq("structured failed result shows its failure reason", failedStructuredText.includes("failure · exit code 1"), true);
+eq("structured failed result labels partial output", failedStructuredText.includes("last output"), true);
+eq("structured failed result shows retry guidance", failedStructuredText.includes("retry subagent_resume"), true);
+eq("structured failed result does not leak old footer prose", failedStructuredText.includes("MODEL_FAILURE_FOOTER"), false);
+
+const stoppedStructuredMessage = {
+	...message,
+	content: "MODEL_STOPPED_CONTENT",
+	details: {
+		...stoppedDetails,
+		costUsd: 0.02,
+		sessionFile: "/sessions/stopped.jsonl",
+		expanded: { version: 1 as const, notice: "No final result was delivered. Partial work may remain." },
+	},
+};
+const stoppedStructuredText = renderer?.(stoppedStructuredMessage, { expanded: true }, theme)?.render(100).map(plain).join("\n") ?? "";
+eq("structured stopped result shows its notice", stoppedStructuredText.includes("No final result was delivered."), true);
+eq("structured stopped result shows resume guidance", stoppedStructuredText.includes("resume subagent_resume"), true);
+eq("structured stopped result does not leak old prose", stoppedStructuredText.includes("MODEL_STOPPED_CONTENT"), false);
+
 for (const width of [1, 2, 8, 20, 60]) {
 	const lines = expandedComponent?.render(width) ?? [];
 	eq(`expanded width ${width} stays within terminal columns`, lines.every((line) => visibleWidth(line) <= width), true);
@@ -236,6 +316,9 @@ eq("watcher emits failed presentation details", watcherSource.includes('resultPr
 eq("watcher emits stopped presentation details", watcherSource.includes('"stopped",\n'), true);
 eq("watcher estimates extracted result tokens", watcherSource.includes("estimateResultTokens(generatedSummary)"), true);
 eq("watcher emits result token details", watcherSource.includes("resultTokens,\n"), true);
+eq("watcher emits expanded result boundaries", watcherSource.includes("response: { start: prefix.length"), true);
+eq("watcher keeps structured expanded details out of model-facing content",
+	watcherSource.includes("expanded,\n\t\t\t\tpresentation,"), true);
 eq("parent extension registers the result renderer", indexSource.includes("registerSubagentResultRenderer(pi)"), true);
 eq("help requests do not get a compact renderer", indexSource.includes('registerMessageRenderer("subagent_ping"'), false);
 

@@ -54,6 +54,7 @@ import {
 	estimateResultTokens,
 	humanElapsed,
 	resultPresentation,
+	type SubagentExpandedResultPresentation,
 	type SubagentResultPresentation,
 } from "./result-message.ts";
 import { formatResultContextLine } from "./widget.ts";
@@ -373,6 +374,9 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		// promised a result for this child and would otherwise wait for
 		// one that can never arrive.
 		if (child.stoppedByUser) {
+			const stoppedWorktreeNote = child.worktree
+				? `Its worktree at ${child.worktree.dir} was kept (the work may be half-done).`
+				: undefined;
 			sendDelivery(record, generation, () => pi.sendMessage(
 				{
 					customType: "subagent_result",
@@ -381,7 +385,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 						`Do not treat this as a failure of the sub-agent.` +
 						// A stopped child's work may be half-done, so its worktree is
 						// deliberately NOT cleaned up — resume still needs it.
-						(child.worktree ? `\nIts worktree at ${child.worktree.dir} was kept (the work may be half-done).` : "") +
+						(stoppedWorktreeNote ? `\n${stoppedWorktreeNote}` : "") +
 						// The economics line rides along here too: this message
 						// explicitly invites subagent_resume, which is exactly the
 						// decision the line informs.
@@ -394,6 +398,12 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 						reason: "stopped",
 						sessionFile: child.sessionFile,
 						contextTokens: obs.snapshot?.context?.tokens,
+						costUsd: obs.snapshot?.costUsd,
+						expanded: {
+							version: 1,
+							notice: "No final result was delivered. Partial work may remain.",
+							worktreeNote: stoppedWorktreeNote,
+						} satisfies SubagentExpandedResultPresentation,
 						presentation: resultPresentation(
 							"stopped",
 							exitElapsedSeconds,
@@ -451,14 +461,20 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 	}
 
 	let content: string;
+	let expanded: SubagentExpandedResultPresentation;
 	let presentation: SubagentResultPresentation;
 	if (!failed) {
 		const response = generatedSummary ?? "(the subagent produced no final message)";
+		const prefix = `Sub-agent "${childName}" (id ${child.id}) completed (${elapsed}).\n\n`;
 		content =
-			`Sub-agent "${childName}" (id ${child.id}) completed (${elapsed}).\n\n` +
+			prefix +
 			`${response}\n\n` +
 			contextBlock +
 			`For follow-up work: subagent_resume({ id: "${child.id}", message: "..." }). Session: ${child.sessionFile}`;
+		expanded = {
+			version: 1,
+			response: { start: prefix.length, end: prefix.length + response.length },
+		};
 		presentation = resultPresentation("completed", exitElapsedSeconds, response);
 	} else {
 		const reasonText =
@@ -467,18 +483,33 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 				: result.reason === "pane-closed"
 					? result.errorMessage
 					: `exit code ${result.exitCode}`;
+		const prefix = `Sub-agent "${childName}" (id ${child.id}) failed after ${elapsed} (${reasonText}).\n\n`;
+		const outputLead = generatedSummary ? "Last output:\n" : "";
 		content =
-			`Sub-agent "${childName}" (id ${child.id}) failed after ${elapsed} (${reasonText}).\n\n` +
-			(generatedSummary ? `Last output:\n${generatedSummary}\n\n` : "") +
+			prefix +
+			outputLead +
+			(generatedSummary ? `${generatedSummary}\n\n` : "") +
 			contextBlock +
 			`You can retry with subagent_resume({ id: "${child.id}", message: "<guidance>" }). Session: ${child.sessionFile}`;
+		expanded = {
+			version: 1,
+			failureReason: reasonText,
+			response: generatedSummary
+				? {
+					start: prefix.length + outputLead.length,
+					end: prefix.length + outputLead.length + generatedSummary.length,
+				}
+				: undefined,
+		};
 		presentation = resultPresentation("failed", exitElapsedSeconds, generatedSummary ?? reasonText);
 	}
 
 	// The worktree's fate is part of the result — appended to the prose (the
 	// model only reads content) and mirrored in details for tooling.
 	if (child.worktree && worktreeOutcome) {
-		content += `\n\n${worktreeNote(child.worktree, worktreeOutcome)}`;
+		const note = worktreeNote(child.worktree, worktreeOutcome);
+		content += `\n\n${note}`;
+		expanded.worktreeNote = note;
 	}
 
 	sendDelivery(record, generation, () => pi.sendMessage(
@@ -504,6 +535,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 				contextWindow: obs.snapshot?.context?.window,
 				resultTokens,
 				costUsd: obs.snapshot?.costUsd,
+				expanded,
 				presentation,
 			},
 		},
