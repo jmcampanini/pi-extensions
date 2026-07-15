@@ -9,9 +9,9 @@ build: typecheck ## Verify the TypeScript extensions compile.
 typecheck: ## Type-check all TypeScript without emitting files.
 	./node_modules/.bin/tsc --noEmit
 
-test: ## Run the existing TypeScript tests.
+test: ## Run the TypeScript tests.
 	@set -e; \
-	for file in interactive-subagents/tests/*-test.ts; do \
+	for file in */tests/*-test.ts; do \
 		echo "==> $$file"; \
 		node --experimental-strip-types "$$file"; \
 	done
