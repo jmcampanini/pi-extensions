@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
+	estimateResultTokens,
 	formatCollapsedSubagentResult,
 	humanElapsed,
 	parseSubagentResultDetails,
@@ -33,6 +34,8 @@ const details = (
 	id: "abc12345",
 	name: "API review",
 	agent: "code-reviewer",
+	contextTokens: 84_000,
+	resultTokens: 1_800,
 	presentation: resultPresentation(status, 134, preview),
 });
 
@@ -41,21 +44,24 @@ eq("human elapsed minutes retain seconds", humanElapsed(134), "2m 14s");
 eq("human elapsed clamps negative values", humanElapsed(-2), "0s");
 eq("preview flattens whitespace", resultPreview("  First\n\nsecond\titem  "), "First second item");
 eq("preview removes terminal controls", resultPreview("safe\x1b]52;c;Zm9v\x07 text\0"), "safe text");
+eq("result tokens use pi's conservative estimate", estimateResultTokens("12345678"), 2);
+eq("result tokens omit empty sanitized text", estimateResultTokens(" \x1b]52;c;Zm9v\x07\0 "), undefined);
 const oversizedPresentation = resultPresentation("completed", 1, "x".repeat(10_000));
 eq("persisted preview is bounded without affecting message content", Array.from(oversizedPresentation.preview).length, 2001);
 eq("bounded persisted preview marks omitted text", oversizedPresentation.preview.endsWith("…"), true);
 
 const completed = formatCollapsedSubagentResult(details("completed"), 120, "Ctrl+O to expand").map(plain);
-eq("completed uses native tool identity and metadata", completed[0],
-	"subagent result · code-reviewer · API review · completed in 2m 14s (Ctrl+O to expand)");
+eq("completed uses native tool identity and size metadata", completed[0],
+	"subagent result · code-reviewer · API review · completed in 2m 14s · context 84k · result ~1.8k (Ctrl+O to expand)");
 eq("completed separates its preview from the header", completed[1], "");
 eq("completed includes its preview without extra indentation", completed[2], "Found two authentication bypass risks in the token refresh path.");
 const failed = formatCollapsedSubagentResult(details("failed", "Provider authentication expired."), 120, "Ctrl+O to expand").map(plain);
 eq("failed is explicit without a status icon", failed[0],
-	"subagent result · code-reviewer · API review · failed after 2m 14s (Ctrl+O to expand)");
-const stopped = formatCollapsedSubagentResult(details("stopped", "No final result was delivered."), 120, "Ctrl+O to expand").map(plain);
-eq("stopped is distinct from failure without a status icon", stopped[0],
-	"subagent result · code-reviewer · API review · stopped after 2m 14s (Ctrl+O to expand)");
+	"subagent result · code-reviewer · API review · failed after 2m 14s · context 84k · result ~1.8k (Ctrl+O to expand)");
+const stoppedDetails = { ...details("stopped", "No final result was delivered."), resultTokens: undefined };
+const stopped = formatCollapsedSubagentResult(stoppedDetails, 120, "Ctrl+O to expand").map(plain);
+eq("stopped omits unavailable result size", stopped[0],
+	"subagent result · code-reviewer · API review · stopped after 2m 14s · context 84k (Ctrl+O to expand)");
 eq("status headers have no leading symbols", [completed[0], failed[0], stopped[0]].every((line) => line.startsWith("subagent result ")), true);
 
 const longPreview = Array.from({ length: 40 }, (_, index) => `finding-${index}`).join(" ");
@@ -84,6 +90,17 @@ for (const width of [0, 1, 2, 8, 20, 40, 80]) {
 
 const current = details("completed");
 eq("current structured details parse", parseSubagentResultDetails(current)?.presentation.status, "completed");
+eq("current structured details preserve sizes", parseSubagentResultDetails(current), current);
+const { contextTokens: _legacyContext, resultTokens: _legacyResult, ...legacy } = current;
+eq("legacy persisted details still parse", parseSubagentResultDetails(legacy)?.presentation.status, "completed");
+eq("legacy persisted details render without sizes",
+	plain(formatCollapsedSubagentResult(legacy, 120, "Ctrl+O to expand")[0] ?? ""),
+	"subagent result · code-reviewer · API review · completed in 2m 14s (Ctrl+O to expand)");
+eq("invalid optional sizes are omitted", parseSubagentResultDetails({
+	...current,
+	contextTokens: -1,
+	resultTokens: Number.NaN,
+}), { ...current, contextTokens: undefined, resultTokens: undefined });
 eq("unknown presentation version uses normal renderer fallback", parseSubagentResultDetails({
 	id: "abc12345",
 	name: "API review",
@@ -175,6 +192,7 @@ for (const status of ["completed", "failed", "stopped"] as const) {
 	eq(`${status} uses accent styling for the task name`, styledOutput.includes("<accent>API review</accent>"), true);
 	eq(`${status} uses muted separator and agent metadata`, styledOutput.includes("<muted> · </muted><muted>code-reviewer</muted><muted> · </muted>"), true);
 	eq(`${status} uses muted status metadata`, styledOutput.includes(`<muted> · ${status === "stopped" ? "stopped after" : status === "failed" ? "failed after" : "completed in"} 2m 14s</muted>`), true);
+	eq(`${status} uses muted size metadata`, styledOutput.includes("<muted> · context 84k · result ~1.8k</muted>"), true);
 	eq(`${status} has no legacy status icon`, /[✓✗■]/u.test(styledOutput), false);
 }
 const expandedLines = expandedComponent?.render(60) ?? [];
@@ -216,6 +234,8 @@ const indexSource = readFileSync(`${directory}/index.ts`, "utf8");
 eq("watcher emits completed presentation details", watcherSource.includes('resultPresentation("completed"'), true);
 eq("watcher emits failed presentation details", watcherSource.includes('resultPresentation("failed"'), true);
 eq("watcher emits stopped presentation details", watcherSource.includes('"stopped",\n'), true);
+eq("watcher estimates extracted result tokens", watcherSource.includes("estimateResultTokens(generatedSummary)"), true);
+eq("watcher emits result token details", watcherSource.includes("resultTokens,\n"), true);
 eq("parent extension registers the result renderer", indexSource.includes("registerSubagentResultRenderer(pi)"), true);
 eq("help requests do not get a compact renderer", indexSource.includes('registerMessageRenderer("subagent_ping"'), false);
 

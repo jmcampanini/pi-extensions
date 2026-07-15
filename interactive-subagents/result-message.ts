@@ -1,6 +1,7 @@
-import { getMarkdownTheme, keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { estimateTokens, getMarkdownTheme, keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Markdown, Text, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { sanitizeDisplayText } from "./display-text.ts";
+import { formatTokens } from "./widget.ts";
 
 export type SubagentResultStatus = "completed" | "failed" | "stopped";
 
@@ -15,6 +16,8 @@ export interface SubagentResultDetails {
 	id: string;
 	name: string;
 	agent?: string;
+	contextTokens?: number;
+	resultTokens?: number;
 	presentation: SubagentResultPresentation;
 }
 
@@ -66,6 +69,18 @@ export function resultPreview(text: string): string {
 	return inline(text);
 }
 
+export function estimateResultTokens(text: string): number | undefined {
+	const safeText = sanitizeDisplayText(text);
+	if (safeText.trim() === "") return undefined;
+	return estimateTokens({
+		role: "custom",
+		customType: "subagent_result_size",
+		content: safeText,
+		display: false,
+		timestamp: 0,
+	});
+}
+
 export function resultPresentation(
 	status: SubagentResultStatus,
 	elapsedSeconds: number,
@@ -87,6 +102,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
+function optionalTokenCount(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 0
+		? value
+		: undefined;
+}
+
 export function parseSubagentResultDetails(value: unknown): SubagentResultDetails | undefined {
 	if (!isRecord(value) || typeof value.id !== "string" || typeof value.name !== "string") return undefined;
 	if (value.agent !== undefined && typeof value.agent !== "string") return undefined;
@@ -106,6 +127,8 @@ export function parseSubagentResultDetails(value: unknown): SubagentResultDetail
 		id: value.id,
 		name: value.name,
 		agent: value.agent,
+		contextTokens: optionalTokenCount(value.contextTokens),
+		resultTokens: optionalTokenCount(value.resultTokens),
 		presentation: {
 			version: 1,
 			status: presentation.status,
@@ -139,33 +162,57 @@ function formatHeader(
 	const prefix = titleText + agentText;
 	const statusText = style.metadata(` · ${copy.verb} ${copy.timing} ${duration}`);
 	const shortStatusText = style.metadata(` · ${copy.verb}`);
+	const sizeParts: string[] = [];
+	if (details.contextTokens !== undefined) sizeParts.push(`context ${formatTokens(details.contextTokens)}`);
+	if (details.resultTokens !== undefined) sizeParts.push(`result ~${formatTokens(details.resultTokens)}`);
+	const sizeText = sizeParts.length > 0 ? style.metadata(` · ${sizeParts.join(" · ")}`) : "";
 	const hintText = hint ? style.metadata(" (") + hint + style.metadata(")") : "";
 	const minimumNameWidth = Math.min(4, metrics.visibleWidth(name));
 
-	for (const suffix of hintText
-		? [statusText + hintText, statusText, shortStatusText]
-		: [statusText, shortStatusText]) {
-		const nameWidth = width - metrics.visibleWidth(prefix) - metrics.visibleWidth(suffix);
-		if (nameWidth < minimumNameWidth) continue;
-		const clippedName = metrics.truncateToWidth(style.name(name), nameWidth, "…");
-		return metrics.truncateToWidth(`${prefix}${clippedName}${suffix}`, width, "");
+	function withFullAgent(suffixes: string[]): string | undefined {
+		for (const suffix of suffixes) {
+			const nameWidth = width - metrics.visibleWidth(prefix) - metrics.visibleWidth(suffix);
+			if (nameWidth < minimumNameWidth) continue;
+			const clippedName = metrics.truncateToWidth(style.name(name), nameWidth, "…");
+			return metrics.truncateToWidth(`${prefix}${clippedName}${suffix}`, width, "");
+		}
+		return undefined;
 	}
 
-	const fixedAgentWidth = metrics.visibleWidth(agentLead) + metrics.visibleWidth(agentTrail);
-	const agentWidth = width - metrics.visibleWidth(titleText) - minimumNameWidth - metrics.visibleWidth(shortStatusText);
-	if (agentWidth > fixedAgentWidth) {
+	function withClippedAgent(suffix: string): string | undefined {
+		const fixedAgentWidth = metrics.visibleWidth(agentLead) + metrics.visibleWidth(agentTrail);
+		const agentWidth = width - metrics.visibleWidth(titleText) - minimumNameWidth - metrics.visibleWidth(suffix);
+		if (agentWidth <= fixedAgentWidth) return undefined;
 		const clippedAgentValue = metrics.truncateToWidth(agentValue, agentWidth - fixedAgentWidth, "…");
 		const clippedAgent = agentLead + clippedAgentValue + agentTrail;
 		const nameWidth = Math.max(
 			0,
-			width - metrics.visibleWidth(titleText) - metrics.visibleWidth(clippedAgent) - metrics.visibleWidth(shortStatusText),
+			width - metrics.visibleWidth(titleText) - metrics.visibleWidth(clippedAgent) - metrics.visibleWidth(suffix),
 		);
 		return metrics.truncateToWidth(
-			`${titleText}${clippedAgent}${metrics.truncateToWidth(style.name(name), nameWidth, "…")}${shortStatusText}`,
+			`${titleText}${clippedAgent}${metrics.truncateToWidth(style.name(name), nameWidth, "…")}${suffix}`,
 			width,
 			"",
 		);
 	}
+
+	if (sizeText) {
+		const sized = withFullAgent(hintText
+			? [statusText + sizeText + hintText, statusText + sizeText, shortStatusText + sizeText]
+			: [statusText + sizeText, shortStatusText + sizeText]);
+		if (sized !== undefined) return sized;
+		const clippedSized = withClippedAgent(shortStatusText + sizeText);
+		if (clippedSized !== undefined) return clippedSized;
+	}
+
+	const unsized = withFullAgent(sizeText
+		? [statusText, shortStatusText]
+		: hintText
+			? [statusText + hintText, statusText, shortStatusText]
+			: [statusText, shortStatusText]);
+	if (unsized !== undefined) return unsized;
+	const clipped = withClippedAgent(shortStatusText);
+	if (clipped !== undefined) return clipped;
 
 	const statusOnly = `${titleText}${style.metadata(` ${copy.verb}`)}`;
 	if (metrics.visibleWidth(statusOnly) <= width) return statusOnly;

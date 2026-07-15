@@ -50,7 +50,12 @@ import {
 	type RunningSubagent,
 } from "./state.ts";
 import { ensureWidgetTimer, updateRunningWidget } from "./running-widget.ts";
-import { humanElapsed, resultPresentation, type SubagentResultPresentation } from "./result-message.ts";
+import {
+	estimateResultTokens,
+	humanElapsed,
+	resultPresentation,
+	type SubagentResultPresentation,
+} from "./result-message.ts";
 import { formatResultContextLine } from "./widget.ts";
 import { finishWorktree, type WorktreeInfo, type WorktreeOutcome } from "./worktree.ts";
 
@@ -388,6 +393,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 						agent: child.agent,
 						reason: "stopped",
 						sessionFile: child.sessionFile,
+						contextTokens: obs.snapshot?.context?.tokens,
 						presentation: resultPresentation(
 							"stopped",
 							exitElapsedSeconds,
@@ -427,6 +433,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 	// point, if any).
 	const summary = extractSummary(child.sessionFile, child.skipEntries);
 	const generatedSummary = summary === null ? null : sanitizeDisplayText(summary);
+	const resultTokens = generatedSummary === null ? undefined : estimateResultTokens(generatedSummary);
 	const failed = result.exitCode !== 0 || result.reason === "error" || result.reason === "pane-closed";
 
 	// Cleanup may overlap a reload. Store its promise on the stable record so
@@ -495,6 +502,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 				// snapshot; tokens null right after a compaction).
 				contextTokens: obs.snapshot?.context?.tokens,
 				contextWindow: obs.snapshot?.context?.window,
+				resultTokens,
 				costUsd: obs.snapshot?.costUsd,
 				presentation,
 			},
