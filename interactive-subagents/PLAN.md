@@ -216,6 +216,10 @@ Deliberate improvements over the reference implementation:
   name, and a configured expansion-key hint whenever its one-line preview
   hides detail.
   Expansion renders the complete task with `toolOutput` styling.
+- The `subagent_resume` call uses the same presentation with a `subagent resume`
+  title and the resolved original child identity. Its collapsed preview shows
+  the follow-up message, while expansion restores the complete message. A
+  missing follow-up is labeled without an expansion hint.
 - A `subagent_result` message renderer uses structured presentation details to
   show a native-style `subagent result · <agent> · <name> · <status>` header, a blank
   line, and at most two response-preview lines by default.

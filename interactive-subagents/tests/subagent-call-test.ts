@@ -1,7 +1,10 @@
 import { initTheme, type ExtensionAPI, type Theme, type ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { ledger } from "../state.ts";
 import * as subagentCall from "../subagent-call.ts";
+import { registerSubagentResumeTool } from "../tool-resume.ts";
 import { registerSubagentTool } from "../tool-subagent.ts";
 
 let pass = 0, fail = 0;
@@ -112,8 +115,18 @@ const metrics = tui
 		renderText: fallbackRenderText,
 	};
 
-const { formatCollapsedSubagentCall, formatExpandedSubagentCall } = subagentCall;
-eq("module exports only production formatters", Object.keys(subagentCall).sort(), ["formatCollapsedSubagentCall", "formatExpandedSubagentCall"]);
+const {
+	formatCollapsedSubagentCall,
+	formatCollapsedSubagentResumeCall,
+	formatExpandedSubagentCall,
+	formatExpandedSubagentResumeCall,
+} = subagentCall;
+eq("module exports only production formatters", Object.keys(subagentCall).sort(), [
+	"formatCollapsedSubagentCall",
+	"formatCollapsedSubagentResumeCall",
+	"formatExpandedSubagentCall",
+	"formatExpandedSubagentResumeCall",
+]);
 
 const task = "Trace authentication from the HTTP entry point.";
 const args = { name: "Auth flow", agent: "scout", task };
@@ -123,6 +136,53 @@ eq("collapsed call has two content lines separated by a blank line", comfortable
 eq("comfortable heading", plainLines(comfortable)[0], "subagent start · scout · Auth flow");
 eq("comfortable spacer", plainLines(comfortable)[1], "");
 eq("comfortable task preview", plainLines(comfortable)[2], task);
+
+const resumeArgs = { name: "Auth flow", agent: "scout", message: "Apply the fix and rerun the tests." };
+const comfortableResume = formatCollapsedSubagentResumeCall(resumeArgs, 100, metrics);
+eq("resume call matches the start identity grammar", plainLines(comfortableResume)[0], "subagent resume · scout · Auth flow");
+eq("resume call separates its follow-up with a blank line", plainLines(comfortableResume)[1], "");
+eq("resume call previews its follow-up", plainLines(comfortableResume)[2], resumeArgs.message);
+eq(
+	"multiline resume follow-up advertises expansion",
+	plainLines(formatCollapsedSubagentResumeCall(
+		{ ...resumeArgs, message: "Apply the fix.\nRerun the tests." },
+		100,
+		metrics,
+		{},
+		"Ctrl+O to expand",
+	))[0],
+	"subagent resume · scout · Auth flow (Ctrl+O to expand)",
+);
+eq(
+	"resume without a follow-up has a neutral preview and no expansion hint",
+	plainLines(formatCollapsedSubagentResumeCall(
+		{ name: "Auth flow", agent: "scout" },
+		100,
+		metrics,
+		{},
+		"Ctrl+O to expand",
+	)),
+	["subagent resume · scout · Auth flow", "", "No follow-up message."],
+);
+eq(
+	"expanded resume preserves the complete follow-up",
+	plainLines(formatExpandedSubagentResumeCall(
+		{ ...resumeArgs, message: "Apply the fix.\n\nRerun the tests." },
+		100,
+		metrics,
+	)),
+	["subagent resume · scout · Auth flow", "", "Apply the fix.", "", "Rerun the tests."],
+);
+for (const width of [0, 1, 2, 8, 20, 36]) {
+	const lines = formatCollapsedSubagentResumeCall(
+		{ name: "界e\u0301 🙂 review", agent: "偵察", message: "漢字 e\u0301 🙂 continue the investigation" },
+		width,
+		metrics,
+		{},
+		"Ctrl+O to expand",
+	);
+	eq(`resume width ${width} never exceeds terminal columns`, lines.every((line) => metrics.visibleWidth(line) <= width), true);
+}
 
 const narrow = formatCollapsedSubagentCall(args, 44, metrics);
 eq("narrow heading preserves identity", plainLines(narrow)[0], "subagent start · scout · Auth flow");
@@ -156,6 +216,13 @@ eq("collapsed input keeps safe text", plainLines(hostileCollapsed), ["subagent s
 const hostileExpanded = formatExpandedSubagentCall(hostileArgs, 100, metrics);
 eq("expanded input terminal controls are removed", hostileExpanded.join("").includes("\x1b]52"), false);
 eq("expanded input keeps safe text", plainLines(hostileExpanded).slice(0, 3), ["subagent start · scout · Auth flow", "", "Trace authentication."]);
+const hostileResume = formatCollapsedSubagentResumeCall(
+	{ name: hostileArgs.name, agent: hostileArgs.agent, message: hostileArgs.task },
+	100,
+	metrics,
+);
+eq("resume input terminal controls are removed", hostileResume.join("").includes("\x1b]52"), false);
+eq("resume input keeps safe text", plainLines(hostileResume), ["subagent resume · scout · Auth flow", "", "Trace authentication."]);
 
 eq(
 	"multiline task is normalized for preview",
@@ -269,6 +336,86 @@ if (callRenderer === undefined) {
 	eq("registered renderer resolves the configured expansion binding", toolSource.includes('keyHint("app.tools.expand", "to expand")'), true);
 	const expandedOutput = callRenderer(renderArgs, markedTheme, renderContext(true)).render(120).join("\n");
 	eq("registered renderer styles the expanded task body as tool output", expandedOutput.includes("\x1b[36mfirst"), true);
+}
+
+let registeredResumeTool: ToolDefinition | undefined;
+registerSubagentResumeTool({
+	registerTool(tool: ToolDefinition): void {
+		registeredResumeTool = tool;
+	},
+} as unknown as ExtensionAPI);
+const resumeCallRenderer = registeredResumeTool?.renderCall;
+if (resumeCallRenderer === undefined) {
+	eq("registered subagent_resume tool has a call renderer", false, true);
+} else {
+	const sandboxRoot = join(process.cwd(), ".sandbox");
+	mkdirSync(sandboxRoot, { recursive: true });
+	const sandbox = mkdtempSync(join(sandboxRoot, "resume-call-test-"));
+	const sessionPath = join(sandbox, "child.jsonl");
+	const id = "resume01";
+	writeFileSync(`${sessionPath}.meta`, JSON.stringify({ name: "Auth flow", agent: "scout" }), "utf8");
+	ledger.set(id, { sessionFile: sessionPath, name: "Ledger fallback" });
+	try {
+		const colorCode: Record<string, number> = {
+			toolTitle: 31,
+			accent: 32,
+			muted: 33,
+			dim: 2,
+			toolOutput: 36,
+		};
+		const markedTheme = {
+			fg: (color: string, text: string) => `\x1b[${colorCode[color] ?? 37}m${text}\x1b[0m`,
+			bold: (text: string) => `\x1b[1m${text}\x1b[0m`,
+		} as unknown as Theme;
+		const renderContext = (expanded: boolean) => ({
+			args: {},
+			toolCallId: "resume-call-1",
+			invalidate(): void {},
+			lastComponent: undefined,
+			state: {},
+			cwd: process.cwd(),
+			executionStarted: true,
+			argsComplete: true,
+			isPartial: false,
+			expanded,
+			showImages: false,
+			isError: false,
+		}) as Parameters<typeof resumeCallRenderer>[2];
+		const renderArgs = { id, message: "Apply the fix.\nRerun the tests." } as Parameters<typeof resumeCallRenderer>[0];
+		const collapsedOutput = resumeCallRenderer(renderArgs, markedTheme, renderContext(false)).render(120).join("\n");
+		const collapsedPlain = stripVTControlCharacters(collapsedOutput);
+		eq("resume renderer resolves the original name through the short-id ledger", collapsedPlain.includes("Auth flow"), true);
+		eq("resume renderer resolves the original agent through launch metadata", collapsedPlain.includes("· scout ·"), true);
+		eq("resume renderer styles the action title as a bold tool title", collapsedOutput.includes("\x1b[31m\x1b[1msubagent resume"), true);
+		eq("resume renderer styles the resolved name as the primary accent", collapsedOutput.includes("\x1b[32mAuth flow\x1b[0m"), true);
+		eq("resume renderer styles the agent as muted metadata", collapsedOutput.includes("\x1b[33mscout\x1b[0m"), true);
+		eq("resume renderer styles the follow-up preview as dim", collapsedOutput.includes("\x1b[2mApply the fix. Rerun the tests.\x1b[0m"), true);
+		eq("resume renderer displays an expansion hint for hidden detail", collapsedPlain.includes("to expand"), true);
+		const expandedOutput = resumeCallRenderer(renderArgs, markedTheme, renderContext(true)).render(120).join("\n");
+		eq("resume renderer styles the expanded follow-up as tool output", expandedOutput.includes("\x1b[36mApply the fix."), true);
+		const expandedPlainLines = plainLines(expandedOutput.split("\n"));
+		const followUpStart = expandedPlainLines.indexOf("Apply the fix.");
+		eq("resume renderer preserves expanded follow-up line structure", expandedPlainLines[followUpStart + 1], "Rerun the tests.");
+		const noMessageOutput = resumeCallRenderer(
+			{ sessionPath, autoExit: false } as Parameters<typeof resumeCallRenderer>[0],
+			markedTheme,
+			renderContext(false),
+		).render(120).join("\n");
+		eq("resume renderer shows the neutral missing-message preview", stripVTControlCharacters(noMessageOutput).includes("No follow-up message."), true);
+		eq("resume renderer does not advertise expansion for a missing message", stripVTControlCharacters(noMessageOutput).includes("to expand"), false);
+		const renamedOutput = resumeCallRenderer(
+			{ sessionPath, name: "Verification" } as Parameters<typeof resumeCallRenderer>[0],
+			markedTheme,
+			renderContext(false),
+		).render(120).join("\n");
+		eq("explicit resume names override launch metadata", stripVTControlCharacters(renamedOutput).includes("· Verification"), true);
+		const resumeSource = readFileSync(new URL("../tool-resume.ts", import.meta.url), "utf8");
+		eq("resume renderer resolves the configured expansion binding", resumeSource.includes('keyHint("app.tools.expand", "to expand")'), true);
+		eq("resume name schema documents original-name fallback", resumeSource.includes("defaults to the child's original name, then 'Resumed'"), true);
+	} finally {
+		ledger.delete(id);
+		rmSync(sandbox, { recursive: true, force: true });
+	}
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${tui ? "pi-tui metrics" : "faithful fallback metrics"})`);

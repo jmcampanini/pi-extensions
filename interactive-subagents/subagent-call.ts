@@ -6,6 +6,20 @@ interface SubagentCallArgs {
 	agent?: string;
 }
 
+interface SubagentResumeCallArgs {
+	name?: string;
+	message?: string;
+	agent?: string;
+}
+
+interface SubagentActionArgs {
+	action: "start" | "resume";
+	name?: string;
+	agent?: string;
+	body?: string;
+	emptyBody?: string;
+}
+
 interface SubagentCallStyle {
 	title?: (text: string) => string;
 	name?: (text: string) => string;
@@ -31,18 +45,18 @@ function agentName(value: string | undefined): string {
 	return normalizedInline(value) || "worker";
 }
 
-function formatHeading(args: SubagentCallArgs, style: SubagentCallStyle): string {
+function formatHeading(args: SubagentActionArgs, style: SubagentCallStyle): string {
 	const title = style.title ?? plainText;
 	const nameStyle = style.name ?? plainText;
 	const agentStyle = style.agent ?? plainText;
 	const name = normalizedInline(args.name);
-	let heading = title("subagent start") + agentStyle(` · ${agentName(args.agent)}`);
+	let heading = title(`subagent ${args.action}`) + agentStyle(` · ${agentName(args.agent)}`);
 	if (name) heading += agentStyle(" · ") + nameStyle(name);
 	return heading;
 }
 
 function formatCollapsedHeading(
-	args: SubagentCallArgs,
+	args: SubagentActionArgs,
 	style: SubagentCallStyle,
 	width: number,
 	metrics: SubagentCallTextMetrics,
@@ -53,7 +67,7 @@ function formatCollapsedHeading(
 	const agentStyle = style.agent ?? plainText;
 	const hintStyle = style.hint ?? plainText;
 	const name = normalizedInline(args.name);
-	const titleText = title("subagent start");
+	const titleText = title(`subagent ${args.action}`);
 	const agentLead = agentStyle(" · ");
 	const agentValue = agentStyle(agentName(args.agent));
 	const agentTrail = agentStyle(" · ");
@@ -91,21 +105,57 @@ function availableWidth(width: number): number {
 	return Math.floor(width);
 }
 
-function normalizedTask(value: string | undefined): string {
+function normalizedBody(value: string | undefined): string {
 	return sanitizeDisplayText(value ?? "").replace(/\r\n?/g, "\n");
 }
 
-function taskHasHiddenDetail(args: SubagentCallArgs, width: number, metrics: SubagentCallTextMetrics): boolean {
-	const task = normalizedTask(args.task);
-	const preview = normalizedInline(args.task);
-	const fullLines = metrics.renderText(task, width).map((line) => line.trimEnd());
+function displayedBody(args: SubagentActionArgs): string {
+	const body = normalizedBody(args.body);
+	return normalizedInline(body) ? body : (args.emptyBody ?? body);
+}
+
+function bodyHasHiddenDetail(args: SubagentActionArgs, width: number, metrics: SubagentCallTextMetrics): boolean {
+	const body = normalizedBody(args.body);
+	const preview = normalizedInline(args.body);
+	if (!preview) return false;
+	const fullLines = metrics.renderText(body, width).map((line) => line.trimEnd());
 	const previewLines = metrics.renderText(preview, width).map((line) => line.trimEnd());
 	return fullLines.length !== 1 || previewLines.length !== 1 || fullLines[0] !== previewLines[0];
 }
 
-function expandedContent(args: SubagentCallArgs, style: SubagentCallStyle): string {
+function expandedContent(args: SubagentActionArgs, style: SubagentCallStyle): string {
 	const body = style.body ?? plainText;
-	return `${formatHeading(args, style)}\n\n${body(normalizedTask(args.task))}`;
+	return `${formatHeading(args, style)}\n\n${body(displayedBody(args))}`;
+}
+
+function formatCollapsedSubagentAction(
+	args: SubagentActionArgs,
+	width: number,
+	metrics: SubagentCallTextMetrics,
+	style: SubagentCallStyle,
+	expandHint: string,
+): string[] {
+	const maxWidth = availableWidth(width);
+	if (maxWidth === 0) return [];
+	const hint = bodyHasHiddenDetail(args, maxWidth, metrics) ? expandHint : "";
+	const heading = formatCollapsedHeading(args, style, maxWidth, metrics, hint);
+	const preview = (style.preview ?? plainText)(normalizedInline(args.body) || args.emptyBody || "");
+	const firstLine = (text: string): string =>
+		metrics.truncateToWidth(metrics.renderText(text, maxWidth)[0] ?? "", maxWidth, "");
+	return [firstLine(heading), "", firstLine(preview)];
+}
+
+function formatExpandedSubagentAction(
+	args: SubagentActionArgs,
+	width: number,
+	metrics: SubagentCallTextMetrics,
+	style: Pick<SubagentCallStyle, "title" | "name" | "agent" | "body">,
+): string[] {
+	const maxWidth = availableWidth(width);
+	if (maxWidth === 0) return [];
+	return metrics
+		.renderText(expandedContent(args, style), maxWidth)
+		.map((line) => metrics.truncateToWidth(line, maxWidth, ""));
 }
 
 export function formatCollapsedSubagentCall(
@@ -115,14 +165,13 @@ export function formatCollapsedSubagentCall(
 	style: SubagentCallStyle = {},
 	expandHint = "",
 ): string[] {
-	const maxWidth = availableWidth(width);
-	if (maxWidth === 0) return [];
-	const hint = taskHasHiddenDetail(args, maxWidth, metrics) ? expandHint : "";
-	const heading = formatCollapsedHeading(args, style, maxWidth, metrics, hint);
-	const preview = (style.preview ?? plainText)(normalizedInline(args.task));
-	const firstLine = (text: string): string =>
-		metrics.truncateToWidth(metrics.renderText(text, maxWidth)[0] ?? "", maxWidth, "");
-	return [firstLine(heading), "", firstLine(preview)];
+	return formatCollapsedSubagentAction(
+		{ action: "start", name: args.name, agent: args.agent, body: args.task },
+		width,
+		metrics,
+		style,
+		expandHint,
+	);
 }
 
 export function formatExpandedSubagentCall(
@@ -131,9 +180,52 @@ export function formatExpandedSubagentCall(
 	metrics: SubagentCallTextMetrics,
 	style: Pick<SubagentCallStyle, "title" | "name" | "agent" | "body"> = {},
 ): string[] {
-	const maxWidth = availableWidth(width);
-	if (maxWidth === 0) return [];
-	return metrics
-		.renderText(expandedContent(args, style), maxWidth)
-		.map((line) => metrics.truncateToWidth(line, maxWidth, ""));
+	return formatExpandedSubagentAction(
+		{ action: "start", name: args.name, agent: args.agent, body: args.task },
+		width,
+		metrics,
+		style,
+	);
+}
+
+export function formatCollapsedSubagentResumeCall(
+	args: SubagentResumeCallArgs,
+	width: number,
+	metrics: SubagentCallTextMetrics,
+	style: SubagentCallStyle = {},
+	expandHint = "",
+): string[] {
+	return formatCollapsedSubagentAction(
+		{
+			action: "resume",
+			name: args.name,
+			agent: args.agent,
+			body: args.message,
+			emptyBody: "No follow-up message.",
+		},
+		width,
+		metrics,
+		style,
+		expandHint,
+	);
+}
+
+export function formatExpandedSubagentResumeCall(
+	args: SubagentResumeCallArgs,
+	width: number,
+	metrics: SubagentCallTextMetrics,
+	style: Pick<SubagentCallStyle, "title" | "name" | "agent" | "body"> = {},
+): string[] {
+	return formatExpandedSubagentAction(
+		{
+			action: "resume",
+			name: args.name,
+			agent: args.agent,
+			body: args.message,
+			emptyBody: "No follow-up message.",
+		},
+		width,
+		metrics,
+		style,
+	);
 }
