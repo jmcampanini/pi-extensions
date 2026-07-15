@@ -8,6 +8,7 @@ import { stripVTControlCharacters } from "node:util";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { buildSubagentResultEnvelope } from "../result-content.ts";
 import {
 	estimateResultTokens,
 	formatCollapsedSubagentResult,
@@ -36,6 +37,7 @@ const details = (
 	agent: "code-reviewer",
 	contextTokens: 84_000,
 	resultTokens: 1_800,
+	expanded: { version: 1 },
 	presentation: resultPresentation(status, 134, preview),
 });
 
@@ -81,6 +83,7 @@ for (const width of [0, 1, 2, 8, 20, 40, 80]) {
 		id: "wide0001",
 		name: "界e\u0301 🙂\x1b[2J review",
 		agent: "偵察\x1b]52;c;Zm9v\x07",
+		expanded: { version: 1 },
 		presentation: resultPresentation("failed", 9, `漢字 e\u0301 🙂 ${longPreview}`),
 	};
 	const lines = formatCollapsedSubagentResult(hostile, width, "Ctrl+O to expand");
@@ -91,20 +94,18 @@ for (const width of [0, 1, 2, 8, 20, 40, 80]) {
 const current = details("completed");
 eq("current structured details parse", parseSubagentResultDetails(current)?.presentation.status, "completed");
 eq("current structured details preserve sizes", parseSubagentResultDetails(current), current);
-const { contextTokens: _legacyContext, resultTokens: _legacyResult, ...legacy } = current;
-eq("legacy persisted details still parse", parseSubagentResultDetails(legacy)?.presentation.status, "completed");
-eq("legacy persisted details render without sizes",
-	plain(formatCollapsedSubagentResult(legacy, 120, "Ctrl+O to expand")[0] ?? ""),
-	"subagent result · code-reviewer · API review · completed in 2m 14s (Ctrl+O to expand)");
 eq("invalid optional sizes are omitted", parseSubagentResultDetails({
 	...current,
 	contextTokens: -1,
 	resultTokens: Number.NaN,
 }), { ...current, contextTokens: undefined, resultTokens: undefined });
 eq("unknown presentation version uses normal renderer fallback", parseSubagentResultDetails({
-	id: "abc12345",
-	name: "API review",
-	presentation: { ...current.presentation, version: 2 },
+	...current,
+	presentation: { ...current.presentation, version: 3 },
+}), undefined);
+eq("missing expanded details use normal renderer fallback", parseSubagentResultDetails({
+	...current,
+	expanded: undefined,
 }), undefined);
 eq("malformed details use normal renderer fallback", parseSubagentResultDetails(null), undefined);
 
@@ -131,7 +132,7 @@ const theme = {
 	},
 	bold: (text: string) => text,
 } as unknown as Theme;
-const markdown = [
+const responseMarkdown = [
 	"# Complete report",
 	"",
 	"Child response with **Markdown** and safe Unicode 界.",
@@ -140,18 +141,36 @@ const markdown = [
 	"const complete = true;",
 	"```",
 	"",
-	"Context: 84k/200k tokens (42%) · cost this run $0.31",
-	"Session: /sessions/child.jsonl",
-	"Resume with subagent_resume({ id: \"abc12345\", message: \"...\" }).",
-	"Worktree: kept at /repo/worktree on branch pi/api-review.",
 	"TAIL_SENTINEL\x1b]52;c;Zm9v\x07",
 ].join("\n");
+const worktreeNote = "Worktree: kept at /repo/worktree on branch pi/api-review.";
+const envelope = buildSubagentResultEnvelope({
+	status: "completed",
+	name: current.name,
+	agent: current.agent ?? "worker",
+	id: current.id,
+	elapsed: "2m 14s",
+	contextTokens: current.contextTokens,
+	resultTokens: current.resultTokens,
+	costUsd: 0.31,
+	response: responseMarkdown,
+	action: "Resume",
+	actionMessage: "...",
+	sessionFile: "/sessions/child.jsonl",
+	worktreeNote,
+});
+const messageDetails: SubagentResultDetails = {
+	...current,
+	costUsd: 0.31,
+	sessionFile: "/sessions/child.jsonl",
+	expanded: { version: 1, response: envelope.response, worktreeNote },
+};
 const message = {
 	role: "custom" as const,
 	customType: "subagent_result",
-	content: markdown,
+	content: envelope.content,
 	display: true,
-	details: current,
+	details: messageDetails,
 	timestamp: 1,
 };
 const originalContent = message.content;
@@ -198,103 +217,94 @@ for (const status of ["completed", "failed", "stopped"] as const) {
 const expandedLines = expandedComponent?.render(60) ?? [];
 const expandedPlainLines = expandedLines.map(plain);
 const expandedText = expandedPlainLines.join("\n");
+const expandedWideText = expandedComponent?.render(120).map(plain).join("\n") ?? "";
 eq("expanded renderer uses native vertical padding", [expandedPlainLines[0], expandedPlainLines.at(-1)], ["", ""]);
 eq("expanded content receives native horizontal padding",
 	expandedPlainLines.filter(Boolean).every((line) => line.startsWith(" ")), true);
-eq("expanded rendering includes the full tail", expandedText.includes("TAIL_SENTINEL"), true);
-eq("expanded rendering includes context and cost", expandedText.includes("Context: 84k/200k tokens (42%) · cost this run $0.31"), true);
-eq("expanded rendering includes session and resume guidance", expandedText.includes("subagent_resume"), true);
-eq("expanded rendering includes worktree outcome", expandedText.includes("Worktree: kept"), true);
-for (const [status, marker] of [["failed", "FULL_FAILURE_GUIDANCE"], ["stopped", "FULL_STOPPED_GUIDANCE"]] as const) {
-	const statusMessage = {
-		...message,
-		content: `${status} result\n\n${marker}\nSession: /sessions/${status}.jsonl`,
-		details: details(status),
-	};
-	const statusExpanded = renderer?.(statusMessage, { expanded: true }, theme)?.render(60).map(plain).join("\n") ?? "";
-	eq(`expanded ${status} result keeps its complete guidance`, statusExpanded.includes(marker), true);
-}
-eq("expanded rendering strips terminal controls", expandedLines.join("").includes("\x1b]52"), false);
+eq("expanded result uses the native header",
+	expandedWideText.includes("subagent result · code-reviewer · API review · completed in 2m 14s · context 84k · result ~1.8k"), true);
+eq("expanded result renders the complete child response", expandedText.includes("TAIL_SENTINEL"), true);
+eq("expanded result does not render envelope labels", expandedText.includes("Status: completed"), false);
+eq("expanded result does not render response delimiters", expandedText.includes("<result>"), false);
+eq("expanded result shows compact cost metadata", expandedText.includes("cost this run $0.31"), true);
+eq("expanded result shows the session path", expandedText.includes("/sessions/child.jsonl"), true);
+eq("expanded result shows resume guidance", expandedText.includes("resume subagent_resume"), true);
+eq("expanded result shows the worktree outcome", expandedText.includes("Worktree: kept"), true);
+eq("expanded result strips terminal controls", expandedLines.join("").includes("\x1b]52"), false);
 eq("expanded rendering does not mutate model-facing content", message.content, originalContent);
 
-const structuredResponse = "# Complete report\n\nThe child found two authentication risks.\x1b]52;c;Zm9v\x07";
-const structuredPrefix = 'Sub-agent "API review" (id abc12345) completed (2m 14s).\n\n';
-const structuredContent =
-	structuredPrefix + structuredResponse +
-	'\n\nContext: 84k/200k tokens (42%) · cost this run $0.31\n' +
-	'For follow-up work: subagent_resume({ id: "abc12345", message: "..." }). Session: /sessions/child.jsonl\n\n' +
-	'Worktree: kept at /repo/worktree on branch pi/api-review.';
-const structuredDetails: SubagentResultDetails = {
-	...current,
-	costUsd: 0.31,
-	sessionFile: "/sessions/child.jsonl",
-	expanded: {
-		version: 1,
-		response: { start: structuredPrefix.length, end: structuredPrefix.length + structuredResponse.length },
-		worktreeNote: "Worktree: kept at /repo/worktree on branch pi/api-review.",
-	},
-};
-const structuredMessage = { ...message, content: structuredContent, details: structuredDetails };
-const structuredExpanded = renderer?.(structuredMessage, { expanded: true }, theme);
-const structuredLines = structuredExpanded?.render(120).map(plain) ?? [];
-const structuredText = structuredLines.join("\n");
-eq("structured expanded result uses the native header",
-	structuredText.includes("subagent result · code-reviewer · API review · completed in 2m 14s · context 84k · result ~1.8k"), true);
-eq("structured expanded result removes the old lead sentence", structuredText.includes('Sub-agent "API review"'), false);
-eq("structured expanded result renders only the child response from model-facing prose",
-	structuredText.includes("The child found two authentication risks."), true);
-eq("structured expanded result hides the old context-window prose", structuredText.includes("84k/200k"), false);
-eq("structured expanded result shows compact cost metadata", structuredText.includes("cost this run $0.31"), true);
-eq("structured expanded result shows the session path", structuredText.includes("/sessions/child.jsonl"), true);
-eq("structured expanded result shows resume guidance", structuredText.includes("resume subagent_resume"), true);
-eq("structured expanded result shows the worktree outcome", structuredText.includes("Worktree: kept"), true);
-eq("structured expanded result strips terminal controls", structuredLines.join("").includes("\x1b]52"), false);
-eq("structured expanded rendering leaves model-facing content byte-identical", structuredMessage.content, structuredContent);
-
-const structuredMarked = renderer?.(structuredMessage, { expanded: true }, markedTheme)?.render(500).join("") ?? "";
-eq("structured expanded result styles its title as a tool title",
+const structuredMarked = renderer?.(message, { expanded: true }, markedTheme)?.render(500).join("") ?? "";
+eq("expanded result styles its title as a tool title",
 	structuredMarked.includes("<toolTitle>subagent result</toolTitle>"), true);
-eq("structured expanded result styles session paths as accents",
+eq("expanded result styles session paths as accents",
 	structuredMarked.includes("<accent>/sessions/child.jsonl</accent>"), true);
-eq("structured expanded result styles footer labels as metadata",
+eq("expanded result styles footer labels as metadata",
 	structuredMarked.includes("<muted>cost this run $0.31</muted>"), true);
 
 const failedResponse = "The provider returned partial output.";
-const failedPrefix = 'Sub-agent "API review" (id abc12345) failed after 2m 14s (exit code 1).\n\nLast output:\n';
+const failedEnvelope = buildSubagentResultEnvelope({
+	status: "failed",
+	name: "API review",
+	agent: "code-reviewer",
+	id: "abc12345",
+	elapsed: "2m 14s",
+	contextTokens: 84_000,
+	resultTokens: 9,
+	costUsd: 0.04,
+	response: failedResponse,
+	failureReason: "exit code 1",
+	action: "Retry",
+	actionMessage: "<guidance>",
+	sessionFile: "/sessions/failed.jsonl",
+});
 const failedStructuredMessage = {
 	...message,
-	content: failedPrefix + failedResponse + "\n\nMODEL_FAILURE_FOOTER",
+	content: failedEnvelope.content,
 	details: {
 		...details("failed", failedResponse),
+		resultTokens: 9,
 		costUsd: 0.04,
 		sessionFile: "/sessions/failed.jsonl",
 		expanded: {
 			version: 1 as const,
 			failureReason: "exit code 1",
-			response: { start: failedPrefix.length, end: failedPrefix.length + failedResponse.length },
+			response: failedEnvelope.response,
 		},
 	},
 };
 const failedStructuredText = renderer?.(failedStructuredMessage, { expanded: true }, theme)?.render(100).map(plain).join("\n") ?? "";
-eq("structured failed result shows its failure reason", failedStructuredText.includes("failure · exit code 1"), true);
-eq("structured failed result labels partial output", failedStructuredText.includes("last output"), true);
-eq("structured failed result shows retry guidance", failedStructuredText.includes("retry subagent_resume"), true);
-eq("structured failed result does not leak old footer prose", failedStructuredText.includes("MODEL_FAILURE_FOOTER"), false);
+eq("expanded failed result shows its failure reason", failedStructuredText.includes("failure · exit code 1"), true);
+eq("expanded failed result labels partial output", failedStructuredText.includes("last output"), true);
+eq("expanded failed result shows retry guidance", failedStructuredText.includes("retry subagent_resume"), true);
+eq("expanded failed result renders the partial response", failedStructuredText.includes(failedResponse), true);
 
+const stoppedNotice = "Stopped by the user. Do not treat this as a subagent failure.";
+const stoppedEnvelope = buildSubagentResultEnvelope({
+	status: "stopped",
+	name: "API review",
+	agent: "code-reviewer",
+	id: "abc12345",
+	elapsed: "2m 14s",
+	contextTokens: 84_000,
+	costUsd: 0.02,
+	notice: stoppedNotice,
+	action: "Resume",
+	actionMessage: "...",
+	sessionFile: "/sessions/stopped.jsonl",
+});
 const stoppedStructuredMessage = {
 	...message,
-	content: "MODEL_STOPPED_CONTENT",
+	content: stoppedEnvelope.content,
 	details: {
 		...stoppedDetails,
 		costUsd: 0.02,
 		sessionFile: "/sessions/stopped.jsonl",
-		expanded: { version: 1 as const, notice: "No final result was delivered. Partial work may remain." },
+		expanded: { version: 1 as const, notice: stoppedNotice },
 	},
 };
 const stoppedStructuredText = renderer?.(stoppedStructuredMessage, { expanded: true }, theme)?.render(100).map(plain).join("\n") ?? "";
-eq("structured stopped result shows its notice", stoppedStructuredText.includes("No final result was delivered."), true);
-eq("structured stopped result shows resume guidance", stoppedStructuredText.includes("resume subagent_resume"), true);
-eq("structured stopped result does not leak old prose", stoppedStructuredText.includes("MODEL_STOPPED_CONTENT"), false);
+eq("expanded stopped result shows its notice", stoppedStructuredText.includes(stoppedNotice), true);
+eq("expanded stopped result shows resume guidance", stoppedStructuredText.includes("resume subagent_resume"), true);
 
 for (const width of [1, 2, 8, 20, 60]) {
 	const lines = expandedComponent?.render(width) ?? [];
@@ -316,7 +326,8 @@ eq("watcher emits failed presentation details", watcherSource.includes('resultPr
 eq("watcher emits stopped presentation details", watcherSource.includes('"stopped",\n'), true);
 eq("watcher estimates extracted result tokens", watcherSource.includes("estimateResultTokens(generatedSummary)"), true);
 eq("watcher emits result token details", watcherSource.includes("resultTokens,\n"), true);
-eq("watcher emits expanded result boundaries", watcherSource.includes("response: { start: prefix.length"), true);
+eq("watcher builds labeled model-facing envelopes", watcherSource.includes("buildSubagentResultEnvelope({"), true);
+eq("watcher passes envelope response boundaries to the TUI", watcherSource.includes("response: envelope.response"), true);
 eq("watcher keeps structured expanded details out of model-facing content",
 	watcherSource.includes("expanded,\n\t\t\t\tpresentation,"), true);
 eq("parent extension registers the result renderer", indexSource.includes("registerSubagentResultRenderer(pi)"), true);

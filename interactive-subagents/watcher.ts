@@ -35,6 +35,7 @@ import {
 } from "./activity.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
+import { buildSubagentResultEnvelope } from "./result-content.ts";
 import { computeStatus, STALL_AFTER_MS, type SubagentStatus } from "./status.ts";
 import { closePane, pollForExit, refreshLayout, type ExitResult } from "./tmux.ts";
 import { extractSummary } from "./session.ts";
@@ -57,12 +58,11 @@ import {
 	type SubagentExpandedResultPresentation,
 	type SubagentResultPresentation,
 } from "./result-message.ts";
-import { formatResultContextLine } from "./widget.ts";
 import { finishWorktree, type WorktreeInfo, type WorktreeOutcome } from "./worktree.ts";
 
 /**
- * The worktree sentence appended to a result message. The model never sees
- * `details`, so this prose must carry everything it needs to act: the path,
+ * The worktree field included in a result envelope. The model never sees
+ * `details`, so this text must carry everything it needs to act: the path,
  * the branch, what happened to them, and the next step (merge, inspect, or
  * clean up by hand). Branch phrasing is omitted when the worktree was on a
  * detached HEAD (`branch` is the literal "HEAD" — there is no branch to name).
@@ -356,16 +356,6 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 	const exitElapsedSeconds = record.elapsedSeconds;
 
 	const elapsed = humanElapsed(exitElapsedSeconds);
-	const childName = sanitizeDisplayText(child.name);
-
-	// The child's closing economics — "Context: 84k/200k tokens (42%) · cost
-	// this run $0.31" — inserted on its own line directly before the
-	// resume/retry hint in EVERY result that invites one (completed, failed,
-	// and stopped-by-user), because that is the exact moment the model
-	// decides whether a child is too full to keep resuming. When no snapshot
-	// ever arrived the line is omitted entirely, never guessed.
-	const contextLine = formatResultContextLine(obs.snapshot);
-	const contextBlock = contextLine === undefined ? "" : `${contextLine}\n`;
 
 	if (result.reason === "aborted") {
 		// Two ways to get aborted: the session is shutting down (stay
@@ -374,22 +364,28 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		// promised a result for this child and would otherwise wait for
 		// one that can never arrive.
 		if (child.stoppedByUser) {
+			const notice = "Stopped by the user. Do not treat this as a subagent failure.";
 			const stoppedWorktreeNote = child.worktree
-				? `Its worktree at ${child.worktree.dir} was kept (the work may be half-done).`
+				? `Worktree: kept at ${child.worktree.dir} because the work may be incomplete.`
 				: undefined;
+			const envelope = buildSubagentResultEnvelope({
+				status: "stopped",
+				name: child.name,
+				agent: child.agent ?? "worker",
+				id: child.id,
+				elapsed,
+				contextTokens: obs.snapshot?.context?.tokens ?? undefined,
+				costUsd: obs.snapshot?.costUsd,
+				notice,
+				action: "Resume",
+				actionMessage: "...",
+				sessionFile: child.sessionFile,
+				worktreeNote: stoppedWorktreeNote,
+			});
 			sendDelivery(record, generation, () => pi.sendMessage(
 				{
 					customType: "subagent_result",
-					content:
-						`Sub-agent "${childName}" (id ${child.id}) was stopped by the user after ${elapsed}. ` +
-						`Do not treat this as a failure of the sub-agent.` +
-						// A stopped child's work may be half-done, so its worktree is
-						// deliberately NOT cleaned up — resume still needs it.
-						(stoppedWorktreeNote ? `\n${stoppedWorktreeNote}` : "") +
-						// The economics line rides along here too: this message
-						// explicitly invites subagent_resume, which is exactly the
-						// decision the line informs.
-						`\n\n${contextBlock}Session: ${child.sessionFile}\nResume with subagent_resume({ id: "${child.id}", message: "..." }) if the work should continue.`,
+					content: envelope.content,
 					display: true,
 					details: {
 						id: child.id,
@@ -401,7 +397,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 						costUsd: obs.snapshot?.costUsd,
 						expanded: {
 							version: 1,
-							notice: "No final result was delivered. Partial work may remain.",
+							notice,
 							worktreeNote: stoppedWorktreeNote,
 						} satisfies SubagentExpandedResultPresentation,
 						presentation: resultPresentation(
@@ -460,57 +456,49 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		if (!ownsFinalizer(record, generation)) return;
 	}
 
-	let content: string;
-	let expanded: SubagentExpandedResultPresentation;
+	let response: string | undefined;
+	let failureReason: string | undefined;
 	let presentation: SubagentResultPresentation;
 	if (!failed) {
-		const response = generatedSummary ?? "(the subagent produced no final message)";
-		const prefix = `Sub-agent "${childName}" (id ${child.id}) completed (${elapsed}).\n\n`;
-		content =
-			prefix +
-			`${response}\n\n` +
-			contextBlock +
-			`For follow-up work: subagent_resume({ id: "${child.id}", message: "..." }). Session: ${child.sessionFile}`;
-		expanded = {
-			version: 1,
-			response: { start: prefix.length, end: prefix.length + response.length },
-		};
+		response = generatedSummary ?? "(the subagent produced no final message)";
 		presentation = resultPresentation("completed", exitElapsedSeconds, response);
 	} else {
-		const reasonText =
+		failureReason =
 			result.reason === "error"
 				? `provider/agent error: ${result.errorMessage}`
 				: result.reason === "pane-closed"
 					? result.errorMessage
 					: `exit code ${result.exitCode}`;
-		const prefix = `Sub-agent "${childName}" (id ${child.id}) failed after ${elapsed} (${reasonText}).\n\n`;
-		const outputLead = generatedSummary ? "Last output:\n" : "";
-		content =
-			prefix +
-			outputLead +
-			(generatedSummary ? `${generatedSummary}\n\n` : "") +
-			contextBlock +
-			`You can retry with subagent_resume({ id: "${child.id}", message: "<guidance>" }). Session: ${child.sessionFile}`;
-		expanded = {
-			version: 1,
-			failureReason: reasonText,
-			response: generatedSummary
-				? {
-					start: prefix.length + outputLead.length,
-					end: prefix.length + outputLead.length + generatedSummary.length,
-				}
-				: undefined,
-		};
-		presentation = resultPresentation("failed", exitElapsedSeconds, generatedSummary ?? reasonText);
+		response = generatedSummary ?? undefined;
+		presentation = resultPresentation("failed", exitElapsedSeconds, response ?? failureReason);
 	}
 
-	// The worktree's fate is part of the result — appended to the prose (the
-	// model only reads content) and mirrored in details for tooling.
-	if (child.worktree && worktreeOutcome) {
-		const note = worktreeNote(child.worktree, worktreeOutcome);
-		content += `\n\n${note}`;
-		expanded.worktreeNote = note;
-	}
+	const note = child.worktree && worktreeOutcome
+		? worktreeNote(child.worktree, worktreeOutcome)
+		: undefined;
+	const envelope = buildSubagentResultEnvelope({
+		status: failed ? "failed" : "completed",
+		name: child.name,
+		agent: child.agent ?? "worker",
+		id: child.id,
+		elapsed,
+		contextTokens: obs.snapshot?.context?.tokens ?? undefined,
+		resultTokens,
+		costUsd: obs.snapshot?.costUsd,
+		response,
+		failureReason,
+		action: failed ? "Retry" : "Resume",
+		actionMessage: failed ? "<guidance>" : "...",
+		sessionFile: child.sessionFile,
+		worktreeNote: note,
+	});
+	const content = envelope.content;
+	const expanded: SubagentExpandedResultPresentation = {
+		version: 1,
+		response: envelope.response,
+		failureReason,
+		worktreeNote: note,
+	};
 
 	sendDelivery(record, generation, () => pi.sendMessage(
 		{
@@ -529,8 +517,8 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 				worktreeDir: child.worktree?.dir,
 				worktreeBranch: child.worktree?.branch,
 				worktreeStatus: worktreeOutcome?.status,
-				// The raw numbers behind the Context line (undefined when no
-				// snapshot; tokens null right after a compaction).
+				// Raw context telemetry remains available to the TUI and tooling
+				// (undefined without a snapshot; null just after compaction).
 				contextTokens: obs.snapshot?.context?.tokens,
 				contextWindow: obs.snapshot?.context?.window,
 				resultTokens,

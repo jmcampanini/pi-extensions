@@ -5,7 +5,6 @@ import {
 	clampToolName,
 	displayColumns,
 	formatElapsed,
-	formatResultContextLine,
 	formatRunningWidgetLines,
 	formatTokens,
 	formatToolElapsed,
@@ -513,27 +512,6 @@ eq("tokens decimal k", formatTokens(9500), "9.5k");
 eq("tokens whole k", formatTokens(372000), "372k");
 eq("tokens decimal M", formatTokens(1200000), "1.2M");
 eq("tokens whole M", formatTokens(12000000), "12M");
-
-// the four result-line shapes (plus the cost floor)
-eq("result line: known context",
-	formatResultContextLine({ context: { tokens: 84000, window: 200000, percent: 42.4 }, costUsd: 0.31 }),
-	"Context: 84k/200k tokens (42%) · cost this run $0.31");
-eq("result line: post-compaction unknown",
-	formatResultContextLine({ context: { tokens: null, window: 200000, percent: null }, costUsd: 0.31 }),
-	"Context: unknown (just compacted) · cost this run $0.31");
-eq("result line: no snapshot omits the line", formatResultContextLine(undefined), undefined);
-// The fourth shape: a snapshot arrived but pi never reported a context share
-// (null context — e.g. the child died before finishing a turn). The cost is
-// still real and must be reported; the context honestly reads unknown.
-eq("result line: snapshot with null context reports cost with unknown context",
-	formatResultContextLine({ context: null, costUsd: 0.31 }),
-	"Context: unknown · cost this run $0.31");
-eq("result line: sub-cent cost floors, never $0.00",
-	formatResultContextLine({ context: { tokens: 500, window: 200000, percent: 0.25 }, costUsd: 0.003 }),
-	"Context: 500/200k tokens (0%) · cost this run < $0.01");
-eq("result line: truly zero cost stays $0.00",
-	formatResultContextLine({ context: null, costUsd: 0 }),
-	"Context: unknown · cost this run $0.00");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

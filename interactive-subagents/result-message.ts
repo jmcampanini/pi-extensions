@@ -6,7 +6,7 @@ import { formatCost, formatTokens } from "./widget.ts";
 export type SubagentResultStatus = "completed" | "failed" | "stopped";
 
 export interface SubagentResultPresentation {
-	version: 1;
+	version: 2;
 	status: SubagentResultStatus;
 	elapsedSeconds: number;
 	preview: string;
@@ -33,7 +33,7 @@ export interface SubagentResultDetails {
 	resultTokens?: number;
 	costUsd?: number;
 	sessionFile?: string;
-	expanded?: SubagentExpandedResultPresentation;
+	expanded: SubagentExpandedResultPresentation;
 	presentation: SubagentResultPresentation;
 }
 
@@ -105,7 +105,7 @@ export function resultPresentation(
 	const normalizedPreview = resultPreview(preview);
 	const codePoints = Array.from(normalizedPreview);
 	return {
-		version: 1,
+		version: 2,
 		status,
 		elapsedSeconds: Math.max(0, Math.floor(elapsedSeconds)),
 		preview: codePoints.length > MAX_STORED_PREVIEW_CODE_POINTS
@@ -158,7 +158,7 @@ export function parseSubagentResultDetails(value: unknown): SubagentResultDetail
 	if (value.agent !== undefined && typeof value.agent !== "string") return undefined;
 	if (!isRecord(value.presentation)) return undefined;
 	const presentation = value.presentation;
-	if (presentation.version !== 1) return undefined;
+	if (presentation.version !== 2) return undefined;
 	if (presentation.status !== "completed" && presentation.status !== "failed" && presentation.status !== "stopped") {
 		return undefined;
 	}
@@ -168,6 +168,8 @@ export function parseSubagentResultDetails(value: unknown): SubagentResultDetail
 		presentation.elapsedSeconds < 0 ||
 		typeof presentation.preview !== "string"
 	) return undefined;
+	const expanded = parseExpandedPresentation(value.expanded);
+	if (expanded === undefined) return undefined;
 	return {
 		id: value.id,
 		name: value.name,
@@ -178,9 +180,9 @@ export function parseSubagentResultDetails(value: unknown): SubagentResultDetail
 			? value.costUsd
 			: undefined,
 		sessionFile: typeof value.sessionFile === "string" ? value.sessionFile : undefined,
-		expanded: value.expanded === undefined ? undefined : parseExpandedPresentation(value.expanded),
+		expanded,
 		presentation: {
-			version: 1,
+			version: 2,
 			status: presentation.status,
 			elapsedSeconds: presentation.elapsedSeconds,
 			preview: presentation.preview,

@@ -126,38 +126,12 @@ export function formatTokens(count: number): string {
 	return `${Math.round(count / 1000000)}M`;
 }
 
-/** The slice of an activity snapshot the result line needs. Structural on
- * purpose: the real ActivitySnapshot (activity.ts) is assignable as-is, but
- * naming only these fields keeps widget.ts a pure display leaf. */
-export interface ResultContextSource {
-	context: { tokens: number | null; window: number; percent: number | null } | null;
-	costUsd: number;
-}
-
-/** Dollar prose for the result line and subagents_list. Sub-cent spend shows
- * as a floor rather than rounding to $0.00, so a cheap-but-real run never
- * looks free. */
+/** Dollar prose for result envelopes and subagents_list. Sub-cent spend
+ * shows as a floor rather than rounding to $0.00, so a cheap-but-real run
+ * never looks free. */
 export function formatCost(costUsd: number): string {
 	if (costUsd > 0 && costUsd < 0.005) return "< $0.01";
 	return `$${costUsd.toFixed(2)}`;
-}
-
-/** The one-line economics summary appended to a finished child's result
- * message — it exists so the model can decide whether a child is too full
- * to keep resuming, at the exact moment it decides. Returns undefined when
- * there is no snapshot: the line is omitted, never guessed. Null tokens
- * mean pi just compacted and has not yet seen the next assistant reply, so
- * the line says that instead of showing a stale number. */
-export function formatResultContextLine(snapshot: ResultContextSource | undefined): string | undefined {
-	if (snapshot === undefined) return undefined;
-	const cost = `cost this run ${formatCost(snapshot.costUsd)}`;
-	const context = snapshot.context;
-	if (context === null) return `Context: unknown · ${cost}`;
-	if (context.tokens === null || context.percent === null) {
-		return `Context: unknown (just compacted) · ${cost}`;
-	}
-	const share = `${formatTokens(context.tokens)}/${formatTokens(context.window)} tokens (${Math.round(context.percent)}%)`;
-	return `Context: ${share} · ${cost}`;
 }
 
 /**

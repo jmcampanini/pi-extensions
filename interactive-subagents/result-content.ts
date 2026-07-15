@@ -1,0 +1,62 @@
+import { sanitizeDisplayText } from "./display-text.ts";
+import { formatCost, formatTokens } from "./widget.ts";
+
+export type SubagentEnvelopeStatus = "completed" | "failed" | "stopped";
+
+export interface SubagentResultEnvelope {
+	status: SubagentEnvelopeStatus;
+	name: string;
+	agent: string;
+	id: string;
+	elapsed: string;
+	contextTokens?: number;
+	resultTokens?: number;
+	costUsd?: number;
+	response?: string;
+	failureReason?: string;
+	notice?: string;
+	action: "Resume" | "Retry";
+	actionMessage: "..." | "<guidance>";
+	sessionFile: string;
+	worktreeNote?: string;
+}
+
+export interface SubagentResultEnvelopeContent {
+	content: string;
+	response?: { start: number; end: number };
+}
+
+function inline(text: string): string {
+	return sanitizeDisplayText(text).replace(/\s+/g, " ").trim();
+}
+
+export function buildSubagentResultEnvelope(input: SubagentResultEnvelope): SubagentResultEnvelopeContent {
+	const lines = [
+		"Subagent result",
+		`Status: ${input.status}`,
+		`Name: ${inline(input.name)}`,
+		`Agent: ${inline(input.agent) || "worker"}`,
+		`ID: ${inline(input.id)}`,
+		`Elapsed: ${inline(input.elapsed)}`,
+	];
+	if (input.contextTokens !== undefined) lines.push(`Context: ${formatTokens(input.contextTokens)} tokens`);
+	if (input.resultTokens !== undefined) lines.push(`Result: ~${formatTokens(input.resultTokens)} tokens`);
+	if (input.costUsd !== undefined) lines.push(`Cost: ${formatCost(input.costUsd)}`);
+	if (input.failureReason) lines.push(`Failure: ${inline(input.failureReason)}`);
+	if (input.notice) lines.push(`Notice: ${inline(input.notice)}`);
+
+	let content = lines.join("\n");
+	let response: SubagentResultEnvelopeContent["response"];
+	if (input.response !== undefined) {
+		const safeResponse = sanitizeDisplayText(input.response);
+		content += "\n\n<result>\n";
+		response = { start: content.length, end: content.length + safeResponse.length };
+		content += `${safeResponse}\n</result>`;
+	}
+
+	content +=
+		`\n\n${input.action}: subagent_resume({ id: "${inline(input.id)}", message: "${input.actionMessage}" })` +
+		`\nSession: ${sanitizeDisplayText(input.sessionFile)}`;
+	if (input.worktreeNote) content += `\n${inline(input.worktreeNote)}`;
+	return { content, response };
+}
