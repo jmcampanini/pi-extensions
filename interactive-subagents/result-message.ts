@@ -1,5 +1,5 @@
 import { getMarkdownTheme, keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Markdown, Text, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { Box, Markdown, Text, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { sanitizeDisplayText } from "./display-text.ts";
 
 export type SubagentResultStatus = "completed" | "failed" | "stopped";
@@ -19,10 +19,9 @@ export interface SubagentResultDetails {
 }
 
 interface ResultStyle {
-	status: (status: SubagentResultStatus, text: string) => string;
-	text: (text: string) => string;
+	title: (text: string) => string;
 	name: (text: string) => string;
-	agent: (text: string) => string;
+	metadata: (text: string) => string;
 	preview: (text: string) => string;
 }
 
@@ -41,16 +40,15 @@ const METRICS: ResultMetrics = {
 const MAX_STORED_PREVIEW_CODE_POINTS = 2000;
 
 const STATUS_COPY = {
-	completed: { icon: "✓", verb: "completed", timing: "in", color: "success" },
-	failed: { icon: "✗", verb: "failed", timing: "after", color: "error" },
-	stopped: { icon: "■", verb: "was stopped", timing: "after", color: "warning" },
+	completed: { verb: "completed", timing: "in" },
+	failed: { verb: "failed", timing: "after" },
+	stopped: { verb: "stopped", timing: "after" },
 } as const;
 
 const PLAIN_STYLE: ResultStyle = {
-	status: (_status, text) => text,
-	text: (text) => text,
+	title: (text) => text,
 	name: (text) => text,
-	agent: (text) => text,
+	metadata: (text) => text,
 	preview: (text) => text,
 };
 
@@ -129,34 +127,49 @@ function formatHeader(
 	metrics: ResultMetrics,
 	style: ResultStyle,
 ): string {
-	const status = details.presentation.status;
-	const copy = STATUS_COPY[status];
+	const copy = STATUS_COPY[details.presentation.status];
 	const name = inline(details.name);
-	const agent = details.agent === undefined ? undefined : inline(details.agent);
+	const agent = inline(details.agent ?? "") || "worker";
 	const duration = humanElapsed(details.presentation.elapsedSeconds);
-	const icon = style.status(status, copy.icon);
-	const verb = style.status(status, copy.verb);
-	const variants = [
-		{ agent: true, duration: true, hint: true },
-		{ agent: true, duration: true, hint: false },
-		{ agent: false, duration: true, hint: false },
-		{ agent: false, duration: false, hint: false },
-	];
+	const titleText = style.title("subagent result");
+	const agentLead = style.metadata(" · ");
+	const agentValue = style.metadata(agent);
+	const agentTrail = style.metadata(" · ");
+	const agentText = agentLead + agentValue + agentTrail;
+	const prefix = titleText + agentText;
+	const statusText = style.metadata(` · ${copy.verb} ${copy.timing} ${duration}`);
+	const shortStatusText = style.metadata(` · ${copy.verb}`);
+	const hintText = hint ? style.metadata(" (") + hint + style.metadata(")") : "";
+	const minimumNameWidth = Math.min(4, metrics.visibleWidth(name));
 
-	for (const variant of variants) {
-		const agentText = variant.agent && agent !== undefined ? ` ${style.agent(`[${agent}]`)}` : "";
-		const durationText = variant.duration ? style.text(` ${copy.timing} ${duration}`) : "";
-		const hintText = variant.hint && hint ? style.text(" · ") + hint : "";
-		const prefix = `${icon}${style.text(' Sub-agent "')}`;
-		const suffix = `${style.text('"')}${agentText}${style.text(" ")}${verb}${durationText}${hintText}`;
+	for (const suffix of hintText
+		? [statusText + hintText, statusText, shortStatusText]
+		: [statusText, shortStatusText]) {
 		const nameWidth = width - metrics.visibleWidth(prefix) - metrics.visibleWidth(suffix);
-		const minimumNameWidth = Math.min(4, metrics.visibleWidth(name));
 		if (nameWidth < minimumNameWidth) continue;
 		const clippedName = metrics.truncateToWidth(style.name(name), nameWidth, "…");
 		return metrics.truncateToWidth(`${prefix}${clippedName}${suffix}`, width, "");
 	}
 
-	return metrics.truncateToWidth(`${icon}${style.text(" ")}${verb}`, width, "");
+	const fixedAgentWidth = metrics.visibleWidth(agentLead) + metrics.visibleWidth(agentTrail);
+	const agentWidth = width - metrics.visibleWidth(titleText) - minimumNameWidth - metrics.visibleWidth(shortStatusText);
+	if (agentWidth > fixedAgentWidth) {
+		const clippedAgentValue = metrics.truncateToWidth(agentValue, agentWidth - fixedAgentWidth, "…");
+		const clippedAgent = agentLead + clippedAgentValue + agentTrail;
+		const nameWidth = Math.max(
+			0,
+			width - metrics.visibleWidth(titleText) - metrics.visibleWidth(clippedAgent) - metrics.visibleWidth(shortStatusText),
+		);
+		return metrics.truncateToWidth(
+			`${titleText}${clippedAgent}${metrics.truncateToWidth(style.name(name), nameWidth, "…")}${shortStatusText}`,
+			width,
+			"",
+		);
+	}
+
+	const statusOnly = `${titleText}${style.metadata(` ${copy.verb}`)}`;
+	if (metrics.visibleWidth(statusOnly) <= width) return statusOnly;
+	return metrics.truncateToWidth(`${style.title("subagent")}${style.metadata(` ${copy.verb}`)}`, width, "");
 }
 
 export function formatCollapsedSubagentResult(
@@ -173,14 +186,14 @@ export function formatCollapsedSubagentResult(
 
 	const preview = resultPreview(details.presentation.preview);
 	if (!preview) return lines;
-	const previewWidth = maxWidth - 2;
-	const visualLines = metrics.renderText(preview, previewWidth).map((line) => line.trimEnd());
+	const visualLines = metrics.renderText(preview, maxWidth).map((line) => line.trimEnd());
 	const shown = visualLines.slice(0, 2);
 	if (visualLines.length > 2 && shown.length === 2) {
-		shown[1] = metrics.truncateToWidth(`${shown[1]}…`, previewWidth, "…");
+		shown[1] = metrics.truncateToWidth(`${shown[1]}…`, maxWidth, "…");
 	}
+	lines.push("");
 	for (const line of shown) {
-		lines.push(metrics.truncateToWidth(style.preview(`  ${line}`), maxWidth, ""));
+		lines.push(metrics.truncateToWidth(style.preview(line), maxWidth, ""));
 	}
 	return lines;
 }
@@ -212,33 +225,41 @@ function widthSafe(component: Component): Component {
 	};
 }
 
+function nativeMessageShell(component: Component, background: (text: string) => string): Component {
+	const box = new Box(1, 1, background);
+	box.addChild(component);
+	return widthSafe(box);
+}
+
 export function registerSubagentResultRenderer(pi: ExtensionAPI): void {
 	pi.registerMessageRenderer("subagent_result", (message, { expanded }, theme) => {
 		const details = parseSubagentResultDetails(message.details);
 		if (details === undefined) return undefined;
+		const background = details.presentation.status === "completed" ? "toolSuccessBg" : "toolErrorBg";
+		const shell = (component: Component): Component =>
+			nativeMessageShell(component, (text) => theme.bg(background, text));
 		if (expanded) {
-			return widthSafe(new Markdown(
+			return shell(new Markdown(
 				messageText(message.content),
 				0,
 				0,
 				getMarkdownTheme(),
-				{ color: (text) => theme.fg("customMessageText", text) },
+				{ color: (text) => theme.fg("toolOutput", text) },
 			));
 		}
 
 		const hint = keyHint("app.tools.expand", "to expand");
 		const style: ResultStyle = {
-			status: (status, text) => theme.fg(STATUS_COPY[status].color, text),
-			text: (text) => theme.fg("customMessageText", text),
-			name: (text) => theme.fg("customMessageText", theme.bold(text)),
-			agent: (text) => theme.fg("accent", text),
+			title: (text) => theme.fg("toolTitle", theme.bold(text)),
+			name: (text) => theme.fg("accent", text),
+			metadata: (text) => theme.fg("muted", text),
 			preview: (text) => theme.fg("dim", text),
 		};
-		return {
+		return shell({
 			invalidate(): void {},
 			render(width: number): string[] {
 				return formatCollapsedSubagentResult(details, width, hint, METRICS, style);
 			},
-		};
+		});
 	});
 }

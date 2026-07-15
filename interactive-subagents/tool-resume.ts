@@ -8,8 +8,8 @@
  * restored from its `.meta` sidecar; explicit params always win.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Type, type Static } from "@sinclair/typebox";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -19,6 +19,10 @@ import { config } from "./config.ts";
 import { artifactBase, buildChildEnv, buildLaunchCommand, clearExitSidecar, readLaunchMeta, slugify } from "./launch.ts";
 import { resolveUsableModel } from "./models.ts";
 import { appendSessionName, countEntries, readSessionCwd, readSessionName } from "./session.ts";
+import {
+	formatCollapsedSubagentResumeCall,
+	formatExpandedSubagentResumeCall,
+} from "./subagent-call.ts";
 import { renderSubagentLaunchResult } from "./subagent-result.ts";
 import { createPane, isTmuxAvailable, sendLongCommand, shellQuote, sleep } from "./tmux.ts";
 import { ledger, running } from "./state.ts";
@@ -32,12 +36,31 @@ const ResumeParams = Type.Object({
 		Type.String({ description: "Path to the child session .jsonl file — fallback when the id is no longer known (e.g. after a pi restart)" }),
 	),
 	message: Type.Optional(Type.String({ description: "Follow-up prompt or answer to send to the resumed subagent" })),
-	name: Type.Optional(Type.String({ description: "Display name for the resumed subagent (default: 'Resumed')" })),
+	name: Type.Optional(
+		Type.String({ description: "Display name override for the resumed subagent (defaults to the child's original name, then 'Resumed')" }),
+	),
 	autoExit: Type.Optional(Type.Boolean({ description: "true (default) = exit after finishing the follow-up; false = stay open for a human" })),
 	tools: Type.Optional(Type.String({ description: "Override the tool allowlist (default: the child's original tools, restored from its launch metadata)" })),
 	model: Type.Optional(Type.String({ description: "Override the model (default: the child's original model, restored from its launch metadata)" })),
 });
 type ResumeParamsType = Static<typeof ResumeParams>;
+
+const CALL_TEXT_METRICS = {
+	visibleWidth,
+	truncateToWidth,
+	renderText: (text: string, width: number) => new Text(text, 0, 0).render(width),
+};
+
+function resumeCallPresentation(params: ResumeParamsType): { name: string; agent?: string; message?: string } {
+	const ledgerEntry = params.id ? ledger.get(params.id) : undefined;
+	const sessionPath = params.sessionPath ?? ledgerEntry?.sessionFile;
+	const meta = sessionPath ? readLaunchMeta(sessionPath) : {};
+	return {
+		name: params.name ?? meta.name ?? ledgerEntry?.name ?? "Resumed",
+		agent: meta.agent,
+		message: params.message,
+	};
+}
 
 export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 	pi.registerTool({
@@ -49,6 +72,33 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			"ASYNC — returns immediately; the result steers back automatically. Do not poll. Up to 9 new or " +
 			"resumed sub-agents may run concurrently. This is a capacity ceiling, not a target.",
 		parameters: ResumeParams,
+		renderCall(args, theme, context) {
+			const presentation = resumeCallPresentation(args);
+			const style = {
+				title: (text: string) => theme.fg("toolTitle", theme.bold(text)),
+				name: (text: string) => theme.fg("accent", text),
+				agent: (text: string) => theme.fg("muted", text),
+				hint: (text: string) => theme.fg("dim", text),
+				preview: (text: string) => theme.fg("dim", text),
+				body: (text: string) => theme.fg("toolOutput", text),
+			};
+			const expandHint = keyHint("app.tools.expand", "to expand");
+			return {
+				invalidate(): void {},
+				render(width: number): string[] {
+					if (context.expanded) {
+						return formatExpandedSubagentResumeCall(presentation, width, CALL_TEXT_METRICS, style);
+					}
+					return formatCollapsedSubagentResumeCall(
+						presentation,
+						width,
+						CALL_TEXT_METRICS,
+						style,
+						expandHint,
+					);
+				},
+			};
+		},
 		renderResult(result, _options, theme, context) {
 			return renderSubagentLaunchResult(result, context.isError, (text) =>
 				new Text(theme.fg("error", text), 0, 0),
