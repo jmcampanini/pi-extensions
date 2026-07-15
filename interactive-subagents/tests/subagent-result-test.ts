@@ -53,11 +53,6 @@ const subagentSource = readFileSync(`${directory}/tool-subagent.ts`, "utf8");
 const resumeSource = readFileSync(`${directory}/tool-resume.ts`, "utf8");
 eq("subagent uses the shared result renderer", subagentSource.includes("renderSubagentLaunchResult(result, context.isError"), true);
 eq("subagent_resume uses the shared result renderer", resumeSource.includes("renderSubagentLaunchResult(result, context.isError"), true);
-for (const [tool, source] of [["subagent", subagentSource], ["subagent_resume", resumeSource]]) {
-	eq(`${tool} advertises the shared concurrency ceiling`, source.includes("Up to 9 new or"), true);
-	eq(`${tool} counts resumed agents toward concurrency`, source.includes("resumed sub-agents may run concurrently."), true);
-	eq(`${tool} says the ceiling is not a target`, source.includes("capacity ceiling, not a target."), true);
-}
 eq(
 	"subagent limits parallel encouragement to independent bounded tasks",
 	subagentSource.includes("are independent, bounded, and able to proceed concurrently."),

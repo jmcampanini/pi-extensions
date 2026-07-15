@@ -159,9 +159,8 @@ export default function (pi: ExtensionAPI) {
 	//                           error and write an `error` sidecar, so the
 	//                           parent reports a real failure instead of
 	//                           mistaking exit-code 0 + a stale message for
-	//                           success. (Known v1 tradeoff: pi might have
-	//                           auto-retried a transient error; the parent
-	//                           can always resume. See PLAN.md.)
+	//                           success. Pi might have auto-retried a transient
+	//                           error; the parent can always resume.
 	//   anything else         → clean completion: write a `done` sidecar.
 	if (autoExit) {
 		// pi types this event as AgentEndEvent: `messages` carries the whole

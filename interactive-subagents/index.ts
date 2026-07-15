@@ -6,7 +6,7 @@
  * take it over by typing). A background watcher polls for the child's exit
  * and steers the result back into the parent conversation, waking the model.
  *
- * How the pieces talk (see PLAN.md for the full design):
+ * How the pieces talk:
  *
  *   parent pane                      filesystem                child pane
  *   ───────────                      ──────────                ──────────

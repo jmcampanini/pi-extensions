@@ -123,8 +123,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			"steered into this conversation when it finishes. NEVER poll for results: " +
 			"do not sleep, do not read the child session file, do not check panes. " +
 			"Just continue with other work or end your turn — you will be woken with " +
-			"the result. Up to 9 new or resumed sub-agents may run concurrently. This is " +
-			"a capacity ceiling, not a target. Call this multiple times only when tasks " +
+			"the result. Call this multiple times only when tasks " +
 			"are independent, bounded, and able to proceed concurrently.",
 		promptGuidelines: [
 			"Default to subagent context 'fresh' for self-contained work; put all needed facts, constraints, and expected output in `task`. Use 'forked' only when the task materially depends on accumulated parent discussion, reads, or decisions that would be difficult or lossy to restate, and remember that the copied history goes to the child's selected model/provider. Use subagent_resume instead when a follow-up depends on the child's own prior context.",

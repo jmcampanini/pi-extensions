@@ -23,7 +23,7 @@ import type { ActivitySnapshot } from "./activity.ts";
 export type SubagentStatus = "starting" | "active" | "waiting" | "stalled";
 
 /** How long the watchdog waits before calling a silent child stalled.
- * Fixed by design: PLAN adds no config key for this. */
+ * Fixed by design: this is not configurable. */
 export const STALL_AFTER_MS = 60_000;
 
 // ── the inputs (one tick's observations, all parent-clock) ───────────────

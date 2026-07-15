@@ -7,7 +7,7 @@
  * halves of the contract live in this file so they can never drift apart —
  * the same colocation property protocol.ts gives the env-var/sidecar contract.
  *
- * Ground rules (see PLAN.md's v2 section):
+ * Ground rules:
  *
  *   - Every `*At` timestamp INSIDE the snapshot is CHILD-clock Date.now().
  *     The parent never compares one against its own clock: snapshots are
@@ -54,8 +54,7 @@ export interface ActivitySnapshot {
 	 * stamped with the run id it minted for THIS launch, so a stale file that
 	 * survived a failed clear is inert. */
 	runId: string;
-	/** The implant's process.pid. Informational in v2; the reserved seam for
-	 * v3's interrupt. */
+	/** The implant's process.pid. Informational. */
 	pid: number;
 	/** 1, 2, 3… per implant process; tie-breaker within one updatedAt ms. */
 	sequence: number;
