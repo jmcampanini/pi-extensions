@@ -217,7 +217,7 @@ Deliberate improvements over the reference implementation:
   hides detail.
   Expansion renders the complete task with `toolOutput` styling.
 - A `subagent_result` message renderer uses structured presentation details to
-  show a native-style `subagent start · <agent> · <name> · <status>` header, a blank
+  show a native-style `subagent result · <agent> · <name> · <status>` header, a blank
   line, and at most two response-preview lines by default.
 - Global tool expansion reveals the complete existing Markdown content; no
   model-facing or persisted message content is truncated or replaced.

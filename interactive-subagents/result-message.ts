@@ -131,7 +131,7 @@ function formatHeader(
 	const name = inline(details.name);
 	const agent = inline(details.agent ?? "") || "worker";
 	const duration = humanElapsed(details.presentation.elapsedSeconds);
-	const titleText = style.title("subagent start");
+	const titleText = style.title("subagent result");
 	const agentLead = style.metadata(" · ");
 	const agentValue = style.metadata(agent);
 	const agentTrail = style.metadata(" · ");
