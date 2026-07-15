@@ -47,28 +47,28 @@ eq("bounded persisted preview marks omitted text", oversizedPresentation.preview
 
 const completed = formatCollapsedSubagentResult(details("completed"), 120, "Ctrl+O to expand").map(plain);
 eq("completed uses native tool identity and metadata", completed[0],
-	"subagent API review · code-reviewer · completed in 2m 14s (Ctrl+O to expand)");
+	"subagent start · code-reviewer · API review · completed in 2m 14s (Ctrl+O to expand)");
 eq("completed separates its preview from the header", completed[1], "");
 eq("completed includes its preview without extra indentation", completed[2], "Found two authentication bypass risks in the token refresh path.");
 const failed = formatCollapsedSubagentResult(details("failed", "Provider authentication expired."), 120, "Ctrl+O to expand").map(plain);
 eq("failed is explicit without a status icon", failed[0],
-	"subagent API review · code-reviewer · failed after 2m 14s (Ctrl+O to expand)");
+	"subagent start · code-reviewer · API review · failed after 2m 14s (Ctrl+O to expand)");
 const stopped = formatCollapsedSubagentResult(details("stopped", "No final result was delivered."), 120, "Ctrl+O to expand").map(plain);
 eq("stopped is distinct from failure without a status icon", stopped[0],
-	"subagent API review · code-reviewer · stopped after 2m 14s (Ctrl+O to expand)");
-eq("status headers have no leading symbols", [completed[0], failed[0], stopped[0]].every((line) => line.startsWith("subagent ")), true);
+	"subagent start · code-reviewer · API review · stopped after 2m 14s (Ctrl+O to expand)");
+eq("status headers have no leading symbols", [completed[0], failed[0], stopped[0]].every((line) => line.startsWith("subagent start ")), true);
 
 const longPreview = Array.from({ length: 40 }, (_, index) => `finding-${index}`).join(" ");
 const bounded = formatCollapsedSubagentResult(details("completed", longPreview), 42, "Ctrl+O to expand");
 eq("collapsed output has one header, one spacer, and at most two preview lines", bounded.length, 4);
 eq("truncated preview advertises omitted content", plain(bounded[3]).endsWith("…"), true);
 const narrowHeader = plain(formatCollapsedSubagentResult(details("completed"), 40, "Ctrl+O to expand")[0] ?? "");
-eq("narrow headers preserve a clipped agent profile", narrowHeader.includes("· code"), true);
+eq("narrow headers preserve a clipped agent profile before the name", narrowHeader.includes("· cod"), true);
 eq("narrow headers preserve the result status", narrowHeader.endsWith("· completed"), true);
 const statusOnlyHeader = plain(formatCollapsedSubagentResult(details("failed"), 20, "Ctrl+O to expand")[0] ?? "");
 eq("very narrow headers prioritize exceptional status", statusOnlyHeader.includes("failed"), true);
 const blankAgentDetails = { ...details("completed"), agent: " \t " };
-eq("blank result agents fall back to worker", plain(formatCollapsedSubagentResult(blankAgentDetails, 120, "")[0] ?? "").includes("· worker ·"), true);
+eq("blank result agents fall back to worker before the name", plain(formatCollapsedSubagentResult(blankAgentDetails, 120, "")[0] ?? "").includes("subagent start · worker · API review"), true);
 
 for (const width of [0, 1, 2, 8, 20, 40, 80]) {
 	const hostile: SubagentResultDetails = {
@@ -144,7 +144,7 @@ eq("current details receive collapsed custom rendering", collapsedComponent !== 
 eq("current details receive expanded custom rendering", expandedComponent !== undefined, true);
 const collapsedShellLines = collapsedComponent?.render(120).map(plain) ?? [];
 eq("collapsed renderer uses native vertical padding", [collapsedShellLines[0], collapsedShellLines.at(-1)], ["", ""]);
-eq("collapsed header receives native horizontal padding", collapsedShellLines[1]?.startsWith(" subagent"), true);
+eq("collapsed header receives native horizontal padding", collapsedShellLines[1]?.startsWith(" subagent start"), true);
 eq("collapsed body keeps a native spacer", collapsedShellLines[2], "");
 eq("collapsed preview relies only on boxed horizontal padding", collapsedShellLines[3]?.startsWith(" Found two"), true);
 eq("completed shell uses the tool-success background", backgroundColors.includes("toolSuccessBg"), true);
@@ -171,9 +171,9 @@ const markedTheme = {
 for (const status of ["completed", "failed", "stopped"] as const) {
 	const styledMessage = { ...message, details: details(status) };
 	const styledOutput = renderer?.(styledMessage, { expanded: false }, markedTheme)?.render(500).join("") ?? "";
-	eq(`${status} uses tool-title styling`, styledOutput.includes("<toolTitle>subagent</toolTitle>"), true);
+	eq(`${status} uses tool-title styling`, styledOutput.includes("<toolTitle>subagent start</toolTitle>"), true);
 	eq(`${status} uses accent styling for the task name`, styledOutput.includes("<accent>API review</accent>"), true);
-	eq(`${status} uses muted agent metadata`, styledOutput.includes("<muted> · code-reviewer</muted>"), true);
+	eq(`${status} uses muted separator and agent metadata`, styledOutput.includes("<muted> · </muted><muted>code-reviewer</muted><muted> · </muted>"), true);
 	eq(`${status} uses muted status metadata`, styledOutput.includes(`<muted> · ${status === "stopped" ? "stopped after" : status === "failed" ? "failed after" : "completed in"} 2m 14s</muted>`), true);
 	eq(`${status} has no legacy status icon`, /[✓✗■]/u.test(styledOutput), false);
 }

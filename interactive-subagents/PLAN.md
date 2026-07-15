@@ -212,11 +212,12 @@ Deliberate improvements over the reference implementation:
 ### v2.2 - compact delivered results
 
 - The parent `subagent` call uses native tool typography: bold lowercase
-  `subagent`, an accent invocation name, muted unbracketed agent metadata, and
-  a configured expansion-key hint whenever its one-line preview hides detail.
+  `subagent start`, muted unbracketed agent metadata, an accent invocation
+  name, and a configured expansion-key hint whenever its one-line preview
+  hides detail.
   Expansion renders the complete task with `toolOutput` styling.
 - A `subagent_result` message renderer uses structured presentation details to
-  show a native-style `subagent <name> · <agent> · <status>` header, a blank
+  show a native-style `subagent start · <agent> · <name> · <status>` header, a blank
   line, and at most two response-preview lines by default.
 - Global tool expansion reveals the complete existing Markdown content; no
   model-facing or persisted message content is truncated or replaced.

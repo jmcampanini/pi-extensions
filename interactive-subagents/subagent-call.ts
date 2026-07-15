@@ -36,9 +36,8 @@ function formatHeading(args: SubagentCallArgs, style: SubagentCallStyle): string
 	const nameStyle = style.name ?? plainText;
 	const agentStyle = style.agent ?? plainText;
 	const name = normalizedInline(args.name);
-	let heading = title("subagent");
-	if (name) heading += ` ${nameStyle(name)}`;
-	heading += agentStyle(` · ${agentName(args.agent)}`);
+	let heading = title("subagent start") + agentStyle(` · ${agentName(args.agent)}`);
+	if (name) heading += agentStyle(" · ") + nameStyle(name);
 	return heading;
 }
 
@@ -54,12 +53,16 @@ function formatCollapsedHeading(
 	const agentStyle = style.agent ?? plainText;
 	const hintStyle = style.hint ?? plainText;
 	const name = normalizedInline(args.name);
-	const prefix = `${title("subagent")} `;
-	const agent = agentStyle(` · ${agentName(args.agent)}`);
+	const titleText = title("subagent start");
+	const agentLead = agentStyle(" · ");
+	const agentValue = agentStyle(agentName(args.agent));
+	const agentTrail = agentStyle(" · ");
+	const agentText = agentLead + agentValue + agentTrail;
+	const prefix = titleText + agentText;
 	const hintText = hint ? hintStyle(" (") + hint + hintStyle(")") : "";
 	const minimumNameWidth = Math.min(4, metrics.visibleWidth(name));
 
-	for (const suffix of hintText ? [agent + hintText, agent] : [agent]) {
+	for (const suffix of hintText ? [hintText, ""] : [""]) {
 		const nameWidth = width - metrics.visibleWidth(prefix) - metrics.visibleWidth(suffix);
 		if (nameWidth < minimumNameWidth) continue;
 		return metrics.truncateToWidth(
@@ -69,11 +72,18 @@ function formatCollapsedHeading(
 		);
 	}
 
-	const agentWidth = Math.max(0, width - metrics.visibleWidth(prefix) - minimumNameWidth);
-	const clippedAgent = metrics.truncateToWidth(agent, agentWidth, "…");
-	const nameWidth = Math.max(0, width - metrics.visibleWidth(prefix) - metrics.visibleWidth(clippedAgent));
-	const heading = `${prefix}${metrics.truncateToWidth(nameStyle(name), nameWidth, "…")}${clippedAgent}`;
-	return metrics.truncateToWidth(heading, width, "");
+	const fixedAgentWidth = metrics.visibleWidth(agentLead) + metrics.visibleWidth(agentTrail);
+	const agentWidth = Math.max(0, width - metrics.visibleWidth(titleText) - minimumNameWidth);
+	if (agentWidth > fixedAgentWidth) {
+		const clippedAgentValue = metrics.truncateToWidth(agentValue, agentWidth - fixedAgentWidth, "…");
+		const clippedAgent = agentLead + clippedAgentValue + agentTrail;
+		const nameWidth = Math.max(0, width - metrics.visibleWidth(titleText) - metrics.visibleWidth(clippedAgent));
+		const heading = `${titleText}${clippedAgent}${metrics.truncateToWidth(nameStyle(name), nameWidth, "…")}`;
+		return metrics.truncateToWidth(heading, width, "");
+	}
+
+	const nameFallback = name ? agentStyle(" · ") + nameStyle(name) : "";
+	return metrics.truncateToWidth(`${titleText}${nameFallback}`, width, "");
 }
 
 function availableWidth(width: number): number {

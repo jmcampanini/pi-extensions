@@ -120,12 +120,12 @@ const args = { name: "Auth flow", agent: "scout", task };
 const plainLines = (lines: string[]): string[] => lines.map((line) => stripVTControlCharacters(line).trimEnd());
 const comfortable = formatCollapsedSubagentCall(args, 100, metrics);
 eq("collapsed call has two content lines separated by a blank line", comfortable.length, 3);
-eq("comfortable heading", plainLines(comfortable)[0], "subagent Auth flow · scout");
+eq("comfortable heading", plainLines(comfortable)[0], "subagent start · scout · Auth flow");
 eq("comfortable spacer", plainLines(comfortable)[1], "");
 eq("comfortable task preview", plainLines(comfortable)[2], task);
 
 const narrow = formatCollapsedSubagentCall(args, 44, metrics);
-eq("narrow heading preserves identity", plainLines(narrow)[0], "subagent Auth flow · scout");
+eq("narrow heading preserves identity", plainLines(narrow)[0], "subagent start · scout · Auth flow");
 eq("narrow preview starts with the task", plainLines(narrow)[2].startsWith("Trace authentication"), true);
 eq("narrow preview has no ellipsis", plainLines(narrow)[2].includes("…"), false);
 eq("narrow lines fit terminal columns", narrow.every((line) => metrics.visibleWidth(line) <= 44), true);
@@ -143,7 +143,7 @@ const styled = formatCollapsedSubagentCall(
 );
 eq("ANSI styles are retained", styled.join("").includes("\x1b["), true);
 eq("ANSI and wide/combining lines obey terminal width", styled.every((line) => metrics.visibleWidth(line) <= 36), true);
-eq("wide/combining identity is preserved", plainLines(styled)[0], "subagent 界e\u0301 · 偵察");
+eq("wide/combining identity is preserved", plainLines(styled)[0], "subagent start · 偵察 · 界e\u0301");
 
 const hostileArgs = {
 	name: "Auth\x1b[2J flow\0",
@@ -152,28 +152,28 @@ const hostileArgs = {
 };
 const hostileCollapsed = formatCollapsedSubagentCall(hostileArgs, 100, metrics);
 eq("collapsed input terminal controls are removed", hostileCollapsed.join("").includes("\x1b]52"), false);
-eq("collapsed input keeps safe text", plainLines(hostileCollapsed), ["subagent Auth flow · scout", "", "Trace authentication."]);
+eq("collapsed input keeps safe text", plainLines(hostileCollapsed), ["subagent start · scout · Auth flow", "", "Trace authentication."]);
 const hostileExpanded = formatExpandedSubagentCall(hostileArgs, 100, metrics);
 eq("expanded input terminal controls are removed", hostileExpanded.join("").includes("\x1b]52"), false);
-eq("expanded input keeps safe text", plainLines(hostileExpanded).slice(0, 3), ["subagent Auth flow · scout", "", "Trace authentication."]);
+eq("expanded input keeps safe text", plainLines(hostileExpanded).slice(0, 3), ["subagent start · scout · Auth flow", "", "Trace authentication."]);
 
 eq(
 	"multiline task is normalized for preview",
 	plainLines(formatCollapsedSubagentCall({ name: "N", task: "Trace auth.\n\nReturn  file:\tline pointers." }, 100, metrics)),
-	["subagent N · worker", "", "Trace auth. Return file: line pointers."],
+	["subagent start · worker · N", "", "Trace auth. Return file: line pointers."],
 );
-eq("an omitted agent displays worker without brackets", plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, metrics))[0], "subagent Tests · worker");
-eq("an explicit blank agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: "", task: "Run" }, 100, metrics))[0], "subagent Tests · worker");
-eq("an explicit whitespace agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: " \t ", task: "Run" }, 100, metrics))[0], "subagent Tests · worker");
+eq("an omitted agent displays worker without brackets", plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, metrics))[0], "subagent start · worker · Tests");
+eq("an explicit blank agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: "", task: "Run" }, 100, metrics))[0], "subagent start · worker · Tests");
+eq("an explicit whitespace agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: " \t ", task: "Run" }, 100, metrics))[0], "subagent start · worker · Tests");
 eq(
 	"collapsed call advertises expansion when task detail is hidden",
 	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "first\nsecond" }, 100, metrics, {}, "Ctrl+O to expand"))[0],
-	"subagent Tests · worker (Ctrl+O to expand)",
+	"subagent start · worker · Tests (Ctrl+O to expand)",
 );
 eq(
 	"collapsed call omits the expansion hint when the full task is already visible",
 	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, metrics, {}, "Ctrl+O to expand"))[0],
-	"subagent Tests · worker",
+	"subagent start · worker · Tests",
 );
 const longIdentityHeading = plainLines(formatCollapsedSubagentCall(
 	{ name: "A very long invocation name that must yield space to metadata", agent: "code-reviewer", task: "first\nsecond" },
@@ -182,20 +182,27 @@ const longIdentityHeading = plainLines(formatCollapsedSubagentCall(
 	{},
 	"Ctrl+O to expand",
 ))[0];
-eq("long names clip before the agent profile", longIdentityHeading.includes("· code-reviewer"), true);
+eq("long names retain the agent profile before the clipped name", longIdentityHeading.includes("· code-reviewer ·"), true);
 eq("long names clip before the expansion hint", longIdentityHeading.endsWith("(Ctrl+O to expand)"), true);
 eq("long identity headings still fit", metrics.visibleWidth(longIdentityHeading) <= 80, true);
+const narrowLongAgentHeading = plainLines(formatCollapsedSubagentCall(
+	{ name: "Auth flow", agent: "code-reviewer", task: "Run" },
+	30,
+	metrics,
+))[0];
+eq("narrow headers preserve the separator after a clipped agent", narrowLongAgentHeading.includes("… · "), true);
+eq("narrow long-agent headings still fit", metrics.visibleWidth(narrowLongAgentHeading) <= 30, true);
 eq("collapsed width zero is empty", formatCollapsedSubagentCall(args, 0, metrics), []);
 eq("collapsed width one obeys the width contract", formatCollapsedSubagentCall(args, 1, metrics).every((line) => metrics.visibleWidth(line) <= 1), true);
 eq(
 	"collapsed extreme width retains all content",
 	plainLines(formatCollapsedSubagentCall(args, 1_000_000, metrics)),
-	["subagent Auth flow · scout", "", task],
+	["subagent start · scout · Auth flow", "", task],
 );
 
 const original = "first\tcolumn\rsecond\r\n界e\u0301";
 const expanded = formatExpandedSubagentCall({ name: "Auth flow", agent: "scout", task: original }, 120, metrics).map((line) => line.trimEnd());
-eq("expanded heading keeps identity", expanded.slice(0, 2), ["subagent Auth flow · scout", ""]);
+eq("expanded heading keeps identity", expanded.slice(0, 2), ["subagent start · scout · Auth flow", ""]);
 eq("expanded uses Text tab display and safe CR line breaks", expanded.slice(2), ["first   column", "second", "界e\u0301"]);
 eq("expanded width zero emits no lines", formatExpandedSubagentCall(args, 0, metrics), []);
 for (const width of [1, 2, 5]) {
@@ -252,9 +259,10 @@ if (callRenderer === undefined) {
 	const renderArgs = { name: "Auth flow", agent: "worker", task: "first\nsecond" } as Parameters<typeof callRenderer>[0];
 	const collapsedOutput = callRenderer(renderArgs, markedTheme, renderContext(false)).render(120).join("\n");
 	const collapsedPlain = stripVTControlCharacters(collapsedOutput);
-	eq("registered renderer styles the lowercase keyword as a bold tool title", collapsedOutput.includes("\x1b[31m\x1b[1msubagent"), true);
+	eq("registered renderer styles the action title as a bold tool title", collapsedOutput.includes("\x1b[31m\x1b[1msubagent start"), true);
 	eq("registered renderer styles the invocation name as the primary accent", collapsedOutput.includes("\x1b[32mAuth flow\x1b[0m"), true);
-	eq("registered renderer styles the unbracketed agent as muted metadata", collapsedOutput.includes("\x1b[33m · worker\x1b[0m"), true);
+	eq("registered renderer styles the leading separator as muted metadata", collapsedOutput.includes("\x1b[33m · \x1b[0m"), true);
+	eq("registered renderer styles the unbracketed agent as muted metadata", collapsedOutput.includes("\x1b[33mworker\x1b[0m"), true);
 	eq("registered renderer displays an expansion hint", collapsedPlain.includes("to expand"), true);
 	eq("registered renderer styles the task preview as dim", collapsedOutput.includes("\x1b[2mfirst second\x1b[0m"), true);
 	const toolSource = readFileSync(new URL("../tool-subagent.ts", import.meta.url), "utf8");

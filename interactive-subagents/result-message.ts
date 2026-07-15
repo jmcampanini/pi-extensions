@@ -131,38 +131,45 @@ function formatHeader(
 	const name = inline(details.name);
 	const agent = inline(details.agent ?? "") || "worker";
 	const duration = humanElapsed(details.presentation.elapsedSeconds);
-	const prefix = `${style.title("subagent")} `;
-	const agentText = style.metadata(` · ${agent}`);
+	const titleText = style.title("subagent start");
+	const agentLead = style.metadata(" · ");
+	const agentValue = style.metadata(agent);
+	const agentTrail = style.metadata(" · ");
+	const agentText = agentLead + agentValue + agentTrail;
+	const prefix = titleText + agentText;
 	const statusText = style.metadata(` · ${copy.verb} ${copy.timing} ${duration}`);
 	const shortStatusText = style.metadata(` · ${copy.verb}`);
 	const hintText = hint ? style.metadata(" (") + hint + style.metadata(")") : "";
 	const minimumNameWidth = Math.min(4, metrics.visibleWidth(name));
 
 	for (const suffix of hintText
-		? [agentText + statusText + hintText, agentText + statusText, agentText + shortStatusText]
-		: [agentText + statusText, agentText + shortStatusText]) {
+		? [statusText + hintText, statusText, shortStatusText]
+		: [statusText, shortStatusText]) {
 		const nameWidth = width - metrics.visibleWidth(prefix) - metrics.visibleWidth(suffix);
 		if (nameWidth < minimumNameWidth) continue;
 		const clippedName = metrics.truncateToWidth(style.name(name), nameWidth, "…");
 		return metrics.truncateToWidth(`${prefix}${clippedName}${suffix}`, width, "");
 	}
 
-	const agentWidth = width - metrics.visibleWidth(prefix) - minimumNameWidth - metrics.visibleWidth(shortStatusText);
-	if (agentWidth > 0) {
-		const clippedAgent = metrics.truncateToWidth(agentText, agentWidth, "…");
+	const fixedAgentWidth = metrics.visibleWidth(agentLead) + metrics.visibleWidth(agentTrail);
+	const agentWidth = width - metrics.visibleWidth(titleText) - minimumNameWidth - metrics.visibleWidth(shortStatusText);
+	if (agentWidth > fixedAgentWidth) {
+		const clippedAgentValue = metrics.truncateToWidth(agentValue, agentWidth - fixedAgentWidth, "…");
+		const clippedAgent = agentLead + clippedAgentValue + agentTrail;
 		const nameWidth = Math.max(
 			0,
-			width - metrics.visibleWidth(prefix) - metrics.visibleWidth(clippedAgent) - metrics.visibleWidth(shortStatusText),
+			width - metrics.visibleWidth(titleText) - metrics.visibleWidth(clippedAgent) - metrics.visibleWidth(shortStatusText),
 		);
 		return metrics.truncateToWidth(
-			`${prefix}${metrics.truncateToWidth(style.name(name), nameWidth, "…")}${clippedAgent}${shortStatusText}`,
+			`${titleText}${clippedAgent}${metrics.truncateToWidth(style.name(name), nameWidth, "…")}${shortStatusText}`,
 			width,
 			"",
 		);
 	}
 
-	const statusOnly = `${style.title("subagent")}${style.metadata(` ${copy.verb}`)}`;
-	return metrics.truncateToWidth(statusOnly, width, "");
+	const statusOnly = `${titleText}${style.metadata(` ${copy.verb}`)}`;
+	if (metrics.visibleWidth(statusOnly) <= width) return statusOnly;
+	return metrics.truncateToWidth(`${style.title("subagent")}${style.metadata(` ${copy.verb}`)}`, width, "");
 }
 
 export function formatCollapsedSubagentResult(
