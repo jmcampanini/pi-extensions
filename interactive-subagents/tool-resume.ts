@@ -39,7 +39,13 @@ const ResumeParams = Type.Object({
 	name: Type.Optional(
 		Type.String({ description: "Display name override for the resumed subagent (defaults to the child's original name, then 'Resumed')" }),
 	),
-	autoExit: Type.Optional(Type.Boolean({ description: "true (default) = exit after finishing the follow-up; false = stay open for a human" })),
+	autoExit: Type.Optional(
+		Type.Boolean({
+			description:
+				"Override auto-exit behavior. If omitted, the child's original value is restored from launch metadata, falling back to true. " +
+				"An effective true requires a message; false stays open for a human and permits a message-free handoff.",
+		}),
+	),
 	tools: Type.Optional(Type.String({ description: "Override the tool allowlist (default: the child's original tools, restored from its launch metadata)" })),
 	model: Type.Optional(Type.String({ description: "Override the model (default: the child's original model, restored from its launch metadata)" })),
 });
