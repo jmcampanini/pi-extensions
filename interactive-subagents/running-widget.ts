@@ -85,7 +85,9 @@ export function updateRunningWidget(): void {
 			: ("starting" as const);
 		const tool = snap?.inRun ? oldestActiveTool(snap.activeTools) : undefined;
 		return {
-			name: child.name,
+			// External children carry their tool's name in the row, so a human
+			// scanning the widget sees WHAT is running in that pane.
+			name: child.harness ? `${child.name} · ${child.harness}` : child.name,
 			agent: child.agent,
 			elapsedSeconds: Math.round((now - child.startTime) / 1000),
 			forked: child.context === "forked",
@@ -104,7 +106,7 @@ export function updateRunningWidget(): void {
 	// is gone, and the closing economics travel in the result message itself.
 	for (const child of delivering.values()) {
 		rows.push({
-			name: child.name,
+			name: child.harness ? `${child.name} · ${child.harness}` : child.name,
 			agent: child.agent,
 			elapsedSeconds: child.elapsedSeconds,
 			forked: child.forked,

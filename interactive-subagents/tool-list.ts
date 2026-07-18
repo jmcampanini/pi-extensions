@@ -96,23 +96,32 @@ function describeRunningChildren(nowMs: number): { lines: string[]; details: unk
 		}
 
 		// Cost only when a snapshot exists — without one there is no number to
-		// report, and $0.00 would be a lie.
-		const clauses = [contextClause];
-		if (snap !== undefined) clauses.push(`cost this run ${formatCost(snap.costUsd)}`);
+		// report, and $0.00 would be a lie. External children report NEITHER
+		// number: their snapshots carry no context or cost telemetry (both are
+		// intentionally deferred), so the clauses would only mislead.
+		const clauses: string[] = [];
+		if (child.harness === undefined) {
+			clauses.push(contextClause);
+			if (snap !== undefined) clauses.push(`cost this run ${formatCost(snap.costUsd)}`);
+		}
 		clauses.push(`elapsed ${humanElapsed(elapsedSeconds)}`);
 
 		const name = sanitizeDisplayText(child.name);
 		const agent = child.agent === undefined ? undefined : sanitizeDisplayText(child.agent);
-		const identity = agent ? `(id ${child.id}, agent ${agent})` : `(id ${child.id})`;
+		const identityParts = [`id ${child.id}`];
+		if (agent) identityParts.push(`agent ${agent}`);
+		if (child.harness) identityParts.push(`harness ${sanitizeDisplayText(child.harness)}`);
+		const identity = `(${identityParts.join(", ")})`;
 		lines.push(`• "${name}" ${identity}: ${statusClause} · ${clauses.join(" · ")}`);
 		details.push({
 			id: child.id,
 			name: child.name,
 			agent: child.agent ?? null,
+			harness: child.harness ?? null,
 			status,
-			contextTokens: snap?.context?.tokens ?? null,
-			contextWindow: snap?.context?.window ?? null,
-			costUsd: snap?.costUsd ?? null,
+			contextTokens: child.harness ? null : (snap?.context?.tokens ?? null),
+			contextWindow: child.harness ? null : (snap?.context?.window ?? null),
+			costUsd: child.harness ? null : (snap?.costUsd ?? null),
 			elapsedSeconds,
 		});
 	}
@@ -134,7 +143,10 @@ function describeDeliveringChildren(): { lines: string[]; details: unknown[] } {
 	for (const child of delivering.values()) {
 		const name = sanitizeDisplayText(child.name);
 		const agent = child.agent === undefined ? undefined : sanitizeDisplayText(child.agent);
-		const identity = agent ? `(id ${child.id}, agent ${agent})` : `(id ${child.id})`;
+		const identityParts = [`id ${child.id}`];
+		if (agent) identityParts.push(`agent ${agent}`);
+		if (child.harness) identityParts.push(`harness ${sanitizeDisplayText(child.harness)}`);
+		const identity = `(${identityParts.join(", ")})`;
 		lines.push(
 			`• "${name}" ${identity}: finished after ${humanElapsed(child.elapsedSeconds)} - its result message is queued and will arrive automatically (do not poll or respawn)`,
 		);
@@ -142,6 +154,7 @@ function describeDeliveringChildren(): { lines: string[]; details: unknown[] } {
 			id: child.id,
 			name: child.name,
 			agent: child.agent ?? null,
+			harness: child.harness ?? null,
 			status: "delivering",
 			contextTokens: null,
 			contextWindow: null,
@@ -187,13 +200,16 @@ export function registerSubagentsListTool(pi: ExtensionAPI): void {
 				// Worth surfacing to the model: a worktree agent runs isolated in
 				// its own directory, which changes where its edits land.
 				const worktree = agent.worktree ? " (worktree)" : "";
+				// So is a non-pi harness: the child is a different program with
+				// its own model names and tool vocabulary.
+				const harness = agent.harness !== "pi" ? ` (harness ${agent.harness})` : "";
 				// Problems keep their line breaks in the inventory; this terse
 				// view flattens them to keep one bullet per agent.
 				const problems = agent.problems.join("; ").replace(/\s*\n\s*/g, " ");
 				const warning = agent.problems.length > 0 ? ` [⚠ not spawnable: ${problems}]` : "";
 				const isDefault = agent.name === "worker" ? " (default)" : "";
 				const source = agent.source === "project" ? " (project)" : "";
-				return `• ${agent.name}${isDefault}${source}${interactive}${worktree}${warning} — ${agent.description ?? "(no description)"}`;
+				return `• ${agent.name}${isDefault}${source}${interactive}${worktree}${harness}${warning} — ${agent.description ?? "(no description)"}`;
 			});
 			const text = childrenSection ? `${lines.join("\n")}\n\n${childrenSection}` : lines.join("\n");
 			return {

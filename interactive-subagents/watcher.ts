@@ -35,6 +35,7 @@ import {
 } from "./activity.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
+import { readExternalResult } from "./harnesses.ts";
 import { buildSubagentResultEnvelope } from "./result-content.ts";
 import { computeStatus, STALL_AFTER_MS, type SubagentStatus } from "./status.ts";
 import { closePane, pollForExit, refreshLayout, type ExitResult } from "./tmux.ts";
@@ -122,16 +123,18 @@ function canSteer(child: RunningSubagent, signal: AbortSignal): boolean {
 
 /**
  * Why the watchdog fired, as prose. When the reads themselves were healthy
- * (no 60s-old problem window) the stall is rule 6 — pi is up but the
- * prompted run never began; otherwise the last problem kind decides. The
- * missing/foreign phrasing branches on whether a snapshot was EVER accepted:
- * "never appeared" would be a lie for a child whose reports demonstrably had
- * been arriving before the file went missing mid-run, and would steer the
- * model toward a bogus launch-failure diagnosis of nearly finished work.
+ * (no 60s-old problem window) the stall is rule 6 — the child's program is
+ * up but the prompted run never began; otherwise the last problem kind
+ * decides. `tool` names that program ("pi", "claude-code") so the prose fits
+ * every harness. The missing/foreign phrasing branches on whether a snapshot
+ * was EVER accepted: "never appeared" would be a lie for a child whose
+ * reports demonstrably had been arriving before the file went missing
+ * mid-run, and would steer the model toward a bogus launch-failure diagnosis
+ * of nearly finished work.
  */
-function stalledReason(obs: ActivityObservation, nowMs: number, launchElapsed: string): string {
+function stalledReason(obs: ActivityObservation, nowMs: number, launchElapsed: string, tool: string): string {
 	if (obs.problemSinceMs === undefined || nowMs - obs.problemSinceMs < STALL_AFTER_MS) {
-		return `pi started in its pane but has not begun the task after ${launchElapsed}`;
+		return `${tool} started in its pane but has not begun the task after ${launchElapsed}`;
 	}
 	if (obs.lastProblemKind === "invalid") {
 		return "its liveness report has been unreadable for over 60s";
@@ -142,7 +145,7 @@ function stalledReason(obs: ActivityObservation, nowMs: number, launchElapsed: s
 	if (obs.snapshot !== undefined) {
 		return "its liveness reports stopped over 60s ago (report file missing)";
 	}
-	return `no liveness report has appeared in ${launchElapsed} (pi may never have started in its pane, e.g. a provider/auth error at startup)`;
+	return `no liveness report has appeared in ${launchElapsed} (${tool} may never have started in its pane, e.g. a provider/auth error or a first-run setup dialog at startup)`;
 }
 
 /** The "may be stalled" warning. Explicitly NOT a failure: the child is
@@ -150,7 +153,7 @@ function stalledReason(obs: ActivityObservation, nowMs: number, launchElapsed: s
  * exits — the prose says so, because the prose is the protocol. */
 function sendStalledSteer(pi: ExtensionAPI, child: RunningSubagent, obs: ActivityObservation, nowMs: number): void {
 	const elapsedSeconds = Math.round((nowMs - child.startTime) / 1000);
-	const reason = stalledReason(obs, nowMs, humanElapsed(elapsedSeconds));
+	const reason = stalledReason(obs, nowMs, humanElapsed(elapsedSeconds), child.harness ?? "pi");
 	const childName = sanitizeDisplayText(child.name);
 	pi.sendMessage(
 		{
@@ -332,11 +335,15 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 		id: child.id,
 		name: child.name,
 		agent: child.agent,
+		harness: child.harness,
 		elapsedSeconds: Math.round((Date.now() - child.startTime) / 1000),
 		forked: child.context === "forked",
 		worktree: child.worktree !== undefined,
 		child,
 		exit: result,
+		// Captured NOW, not at delivery time: a resume issued while this
+		// record waits (allowed - the process has exited) clears the file.
+		externalSummary: child.harness ? readExternalResult(child.sessionFile) : undefined,
 	};
 	// Publish before any async cleanup or send. The listener may delete this
 	// record in the same microtask as sendMessage, so it is never reinserted.
@@ -356,6 +363,10 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 	const exitElapsedSeconds = record.elapsedSeconds;
 
 	const elapsed = humanElapsed(exitElapsedSeconds);
+	// External snapshots carry no cost telemetry (their costUsd is a schema
+	// filler, not a measurement) - report nothing rather than a misleading $0.
+	// Cost reporting for external tools is intentionally deferred.
+	const costUsd = child.harness ? undefined : obs.snapshot?.costUsd;
 
 	if (result.reason === "aborted") {
 		// Two ways to get aborted: the session is shutting down (stay
@@ -372,10 +383,11 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 				status: "stopped",
 				name: child.name,
 				agent: child.agent ?? "worker",
+				harness: child.harness,
 				id: child.id,
 				elapsed,
 				contextTokens: obs.snapshot?.context?.tokens ?? undefined,
-				costUsd: obs.snapshot?.costUsd,
+				costUsd,
 				notice,
 				action: "Resume",
 				actionMessage: "...",
@@ -391,10 +403,11 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 						id: child.id,
 						name: child.name,
 						agent: child.agent,
+						harness: child.harness,
 						reason: "stopped",
 						sessionFile: child.sessionFile,
 						contextTokens: obs.snapshot?.context?.tokens,
-						costUsd: obs.snapshot?.costUsd,
+						costUsd,
 						expanded: {
 							version: 1,
 							notice,
@@ -435,9 +448,15 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 	}
 
 	// Completion or failure: the summary is the child's last assistant
-	// message, read from its session file (only entries after a resume
-	// point, if any).
-	const summary = extractSummary(child.sessionFile, child.skipEntries);
+	// message. pi children: read from the session file (only entries after a
+	// resume point, if any). External children: the value captured onto the
+	// record at exit time (originally written verbatim to `<anchor>.result`
+	// by the turn-complete notifier) - never re-read from disk here, because
+	// a resume can clear the file while this record waits or retries. A null
+	// capture flows into the same "produced no final message" handling below.
+	const summary = child.harness
+		? (record.externalSummary ?? null)
+		: extractSummary(child.sessionFile, child.skipEntries);
 	const generatedSummary = summary === null ? null : sanitizeDisplayText(summary);
 	const resultTokens = generatedSummary === null ? undefined : estimateResultTokens(generatedSummary);
 	const failed = result.exitCode !== 0 || result.reason === "error" || result.reason === "pane-closed";
@@ -480,11 +499,12 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		status: failed ? "failed" : "completed",
 		name: child.name,
 		agent: child.agent ?? "worker",
+		harness: child.harness,
 		id: child.id,
 		elapsed,
 		contextTokens: obs.snapshot?.context?.tokens ?? undefined,
 		resultTokens,
-		costUsd: obs.snapshot?.costUsd,
+		costUsd,
 		response,
 		failureReason,
 		action: failed ? "Retry" : "Resume",
@@ -509,6 +529,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 				id: child.id,
 				name: child.name,
 				agent: child.agent,
+				harness: child.harness,
 				exitCode: result.exitCode,
 				reason: result.reason,
 				sessionFile: child.sessionFile,
@@ -522,7 +543,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 				contextTokens: obs.snapshot?.context?.tokens,
 				contextWindow: obs.snapshot?.context?.window,
 				resultTokens,
-				costUsd: obs.snapshot?.costUsd,
+				costUsd,
 				expanded,
 				presentation,
 			},

@@ -28,6 +28,7 @@ import { dirname, join, resolve } from "node:path";
 import { activityFilePath, clearActivityFile } from "./activity.ts";
 import { agentDefsDir, loadAgentDefinition, projectDefsDir } from "./agents.ts";
 import { config } from "./config.ts";
+import { clearExternalResult, requireHarnessProfile } from "./harnesses.ts";
 import {
 	artifactBase,
 	buildChildEnv,
@@ -186,20 +187,45 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			if (agentDef.problems.length > 0) {
 				throw new Error(`Agent "${agentName}" (${agentDef.filePath}): ${agentDef.problems.join("; ")}`);
 			}
+			// Which tool runs the child. Frontmatter validation already flagged
+			// unknown names as problems above, so this lookup can only fail on
+			// an internal inconsistency - and then it fails loud.
+			const harness = agentDef.harness ?? "pi";
+			const profile = harness === "pi" ? undefined : requireHarnessProfile(harness);
+
 			const context = params.context ?? agentDef.context ?? "fresh";
+			// The frontmatter combination is already a problem (checked above);
+			// this catches an explicit context param against an external agent.
+			if (profile && context === "forked") {
+				throw new Error(
+					`Agent "${agentName}" runs on harness "${harness}" - context "forked" is not supported for external tools (a pi conversation cannot be transplanted into a different tool).`,
+				);
+			}
 			// An explicit param is just a one-entry candidate list — same
 			// resolution path as the agent's `models:` list, so a bad override
 			// fails fast with the same clear error. No candidates at all means
-			// the child inherits pi's default model.
+			// the child inherits pi's default model. External model names are
+			// the tool's own: pi's registry never applies, the first candidate
+			// is passed verbatim.
 			const modelCandidates = params.model ? [params.model] : (agentDef.models ?? []);
-			const model =
-				modelCandidates.length > 0 ? resolveUsableModel(modelCandidates, ctx.modelRegistry) : undefined;
+			const model = profile
+				? modelCandidates[0]
+				: modelCandidates.length > 0
+					? resolveUsableModel(modelCandidates, ctx.modelRegistry)
+					: undefined;
 			// Thinking/effort level: param beats frontmatter. Passed to the
 			// child as pi's standalone `--thinking` flag so it works with or
 			// without a resolved model. Validated here so a typo fails the
-			// tool call instead of erroring later inside the child's pane.
+			// tool call instead of erroring later inside the child's pane. For
+			// external tools the profile's effort mapping IS the validity
+			// check: Claude Code only warns on a bad --effort and silently
+			// falls back, so relying on the tool to reject it would hide the
+			// mistake.
 			const thinking = params.thinking ?? agentDef.thinking;
-			if (thinking) assertValidThinkingLevel(thinking);
+			if (thinking) {
+				if (profile) profile.mapEffort(thinking);
+				else assertValidThinkingLevel(thinking);
+			}
 			const tools = params.tools ?? agentDef.tools;
 			const autoExit = params.autoExit ?? agentDef.autoExit ?? true;
 			// Worktree isolation: param beats frontmatter, default off. An
@@ -261,13 +287,14 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			try {
 				const childSessionFile = generateChildSessionFile(cwd);
 				mkdirSync(dirname(childSessionFile), { recursive: true });
-				// Fresh UUID paths make a leftover sidecar or activity file
-				// impossible today, but the poller and the liveness reader trust
-				// this path completely — keep it provably clean.
+				// Fresh UUID paths make a leftover sidecar, activity, or result
+				// file impossible today, but the poller and the liveness reader
+				// trust these paths completely — keep them provably clean.
 				clearExitSidecar(childSessionFile);
 				clearActivityFile(childSessionFile);
+				clearExternalResult(childSessionFile);
 
-				// Both contexts pre-seed the child's session file so pi's session picker
+				// pi children pre-seed the child's session file so pi's session picker
 				// shows a readable entry: the header's parentSession nests the child
 				// under THIS session in threaded view, and the seeded display name
 				// ("subagent › <agent> › <name>") replaces the raw @file task text.
@@ -275,13 +302,18 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 				// seed's entry count so the eventual summary can only come from turns
 				// the CHILD added — without this, a copied parent assistant message
 				// could be reported as the child's "result".
-				const sessionLabel = `subagent › ${agentName} › ${params.name}`;
+				// External children get NO session file at all: the path is only the
+				// anchor their sidecars sit next to, so it never appears in pi's
+				// session picker, and the result is read from `<anchor>.result`.
 				let skipEntries = 0;
-				if (context === "forked") {
-					seedForkSession({ parentSessionFile, childSessionFile, childCwd: cwd, name: sessionLabel });
-					skipEntries = countEntries(childSessionFile);
-				} else {
-					seedFreshSession({ parentSessionFile, childSessionFile, childCwd: cwd, name: sessionLabel });
+				if (!profile) {
+					const sessionLabel = `subagent › ${agentName} › ${params.name}`;
+					if (context === "forked") {
+						seedForkSession({ parentSessionFile, childSessionFile, childCwd: cwd, name: sessionLabel });
+						skipEntries = countEntries(childSessionFile);
+					} else {
+						seedFreshSession({ parentSessionFile, childSessionFile, childCwd: cwd, name: sessionLabel });
+					}
 				}
 
 				// The child session file now exists on disk, so from here until the
@@ -294,20 +326,23 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 				const scriptPath = join(base, "scripts", `${slug}-${id}.sh`);
 				let paneId: string | undefined;
 				try {
-					// The task the child receives — always delivered as an @file: multi-KB
+					// The task the child receives — always delivered as a file: multi-KB
 					// tasks never touch the shell command line, tasks starting with "-" or
 					// "@" can't be misparsed as CLI flags, and the exact text stays
 					// inspectable under artifacts/. Forked children already carry the
 					// conversation so they get the raw task; fresh children also get
-					// instructions about how their run ends.
+					// instructions about how their run ends — from the profile for
+					// external children, whose panes have no pi control tools.
 					const fullTask =
 						context === "forked"
 							? params.task
 							: `# Your task\n\n${params.task}\n\n---\n` +
-								(autoExit
-									? "Complete your task autonomously. When you finish your final reply, this session closes automatically. "
-									: "When your task is complete, write a final summary message and then call the subagent_done tool. If you are blocked, call caller_ping. ") +
-								"Your final assistant message is reported back to the caller as your result.";
+								(profile
+									? profile.completionInstruction(autoExit)
+									: (autoExit
+											? "Complete your task autonomously. When you finish your final reply, this session closes automatically. "
+											: "When your task is complete, write a final summary message and then call the subagent_done tool. If you are blocked, call caller_ping. ") +
+										"Your final assistant message is reported back to the caller as your result.");
 					const taskFile = join(base, "tasks", `${slug}-${id}.md`);
 					mkdirSync(dirname(taskFile), { recursive: true });
 					writeFileSync(taskFile, fullTask, "utf8");
@@ -322,34 +357,65 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 						writeFileSync(systemPromptFile, agentDef.body, "utf8");
 					}
 
-					// Assemble the launch command (see launch.ts for every piece).
-					const command = buildLaunchCommand({
-						cwd,
-						env: buildChildEnv({
-							PI_SUBAGENT_SESSION: childSessionFile,
-							PI_SUBAGENT_NAME: params.name,
-							// The liveness pair (see activity.ts): the run id stamps
-							// snapshot ownership, the path tells the recorder where to
-							// write.
-							PI_SUBAGENT_ID: id,
-							PI_SUBAGENT_ACTIVITY_FILE: activityFilePath(childSessionFile),
-							PI_SUBAGENT_AGENT: agentName,
-							PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
-						}),
-						sessionFile: childSessionFile,
-						model,
-						thinking,
-						systemPromptFile,
-						tools,
-						promptArg: shellQuote(`@${taskFile}`),
-					});
+					// Assemble the launch command: the external profile builds its
+					// tool's command line (lifecycle notifiers baked in); pi children
+					// go through launch.ts as before (see both for every piece).
+					const command = profile
+						? profile.buildLaunchCommand({
+								cwd,
+								anchor: childSessionFile,
+								runId: id,
+								autoExit,
+								model,
+								thinking,
+								tools,
+								systemPromptFile,
+								passThrough: agentDef.harnessPassThrough,
+								taskFile,
+							})
+						: buildLaunchCommand({
+								cwd,
+								env: buildChildEnv({
+									PI_SUBAGENT_SESSION: childSessionFile,
+									PI_SUBAGENT_NAME: params.name,
+									// The liveness pair (see activity.ts): the run id stamps
+									// snapshot ownership, the path tells the recorder where to
+									// write.
+									PI_SUBAGENT_ID: id,
+									PI_SUBAGENT_ACTIVITY_FILE: activityFilePath(childSessionFile),
+									PI_SUBAGENT_AGENT: agentName,
+									PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
+								}),
+								sessionFile: childSessionFile,
+								model,
+								thinking,
+								systemPromptFile,
+								tools,
+								passThrough: agentDef.harnessPassThrough,
+								promptArg: shellQuote(`@${taskFile}`),
+							});
 
 					// Launch-metadata sidecar: records the child's identity settings so
 					// subagent_resume can reapply them later (system prompt, tools,
-					// model, thinking, auto-exit, worktree). Without this, a resumed
-					// agent silently loses its system prompt and restrictions — they
-					// live on the command line, not in the conversation.
-					writeLaunchMeta(childSessionFile, { name: params.name, agent: agentName, tools, model, thinking, systemPromptFile, autoExit, context, worktree });
+					// model, thinking, auto-exit, worktree, harness). Without this, a
+					// resumed agent silently loses its system prompt and restrictions —
+					// they live on the command line, not in the conversation. The cwd is
+					// recorded only for external children, which have no session header
+					// to read it back from.
+					writeLaunchMeta(childSessionFile, {
+						name: params.name,
+						agent: agentName,
+						tools,
+						model,
+						thinking,
+						systemPromptFile,
+						autoExit,
+						context,
+						worktree,
+						harness: profile ? harness : undefined,
+						harnessPassThrough: agentDef.harnessPassThrough,
+						cwd: profile ? cwd : undefined,
+					});
 
 					// Create the pane, give its shell a moment, then run the launch
 					// script (written to artifacts for debuggability).
@@ -360,6 +426,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 					rmSync(childSessionFile, { force: true });
 					rmSync(`${childSessionFile}.meta`, { force: true });
 					clearActivityFile(childSessionFile);
+					clearExternalResult(childSessionFile);
 					if (paneId !== undefined) closePane(paneId);
 					throw error;
 				}
@@ -368,6 +435,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 					id,
 					name: params.name,
 					agent: agentName,
+					harness: profile ? harness : undefined,
 					paneId,
 					sessionFile: childSessionFile,
 					startTime: Date.now(),

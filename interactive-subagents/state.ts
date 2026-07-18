@@ -17,6 +17,8 @@ export interface RunningSubagent {
 	id: string;
 	name: string;
 	agent?: string;
+	/** Which external tool runs the child ("claude-code"); absent = pi. */
+	harness?: string;
 	paneId: string;
 	sessionFile: string;
 	startTime: number;
@@ -43,6 +45,8 @@ export interface DeliveringSubagent {
 	id: string;
 	name: string;
 	agent?: string;
+	/** Which external tool ran the child ("claude-code"); absent = pi. */
+	harness?: string;
 	elapsedSeconds: number;
 	forked: boolean;
 	worktree: boolean;
@@ -52,6 +56,12 @@ export interface DeliveringSubagent {
 export interface DeliveryRecord extends DeliveringSubagent {
 	readonly child: RunningSubagent;
 	readonly exit: ExitResult;
+	/** External child's final message, captured at exit time: the `.result`
+	 * file can be legitimately cleared by a later resume while this record is
+	 * still waiting to deliver (or retrying after a reload), so a delivery
+	 * must never re-read it from disk. null = the child wrote none. Absent
+	 * for pi children (their summary comes from the session file). */
+	readonly externalSummary?: string | null;
 	finalizerGeneration?: number;
 	worktreeCleanup?: Promise<WorktreeOutcome>;
 	/** True only after sendMessage returned successfully; queued sends survive reload. */

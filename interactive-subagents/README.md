@@ -62,7 +62,38 @@ A blocked child calls `caller_ping` and exits. Its question wakes the parent, wh
 
 Definition filenames are agent names; their Markdown bodies extend the child system prompt. `<cwd>/.pi/subagents/` shadows `$PI_CODING_AGENT_DIR/subagents/`, normally `~/.pi/agent/subagents/`. A repository can replace `worker`, so inspect `.pi/subagents/` in untrusted repositories.
 
-Optional frontmatter keys are `description`, `models`, `thinking`, `tools`, `context`, `auto-exit`, and `worktree`. Omitted model, thinking, and tools settings inherit Pi defaults; the other defaults are `fresh`, `true`, and `false`. A model list is tried in order until a usable exact match is found. Call values override frontmatter, which overrides built-in defaults.
+Optional frontmatter keys are `description`, `models`, `thinking`, `tools`, `context`, `auto-exit`, `worktree`, `harness`, and `harness-pass-through`. Omitted model, thinking, and tools settings inherit Pi defaults; the other defaults are `fresh`, `true`, `false`, and `pi`. A model list is tried in order until a usable exact match is found (external harnesses instead take the first entry verbatim; see External harnesses). Call values override frontmatter, which overrides built-in defaults.
+
+## External harnesses
+
+An agent definition can run its children as a different command-line coding tool instead of Pi. Two frontmatter keys control this:
+
+- `harness:` names the tool. Absent or `pi` keeps today's behavior. `claude-code` runs the child as Claude Code. Unknown values make the agent unspawnable, loudly.
+- `harness-pass-through:` is a raw string of extra command-line flags appended verbatim to the launch command. Tool-specific flag knowledge lives here, not in the extension. It is also honored for `pi` children, with the same append-verbatim semantics.
+
+For external agents the other keys are reinterpreted in the tool's own vocabulary: the first `models:` entry is passed verbatim as the tool's model name (no Pi registry lookup), `tools:` becomes the tool's allowed-tools list using its own tool names (`--allowedTools` for Claude Code), and `thinking:` maps to the tool's effort setting (`--effort`; Pi's `minimal` maps to `low`, `low` through `max` pass through, and `off` is rejected because Claude Code silently ignores out-of-range values). `context: forked` is not supported: a Pi conversation cannot be transplanted into a different tool.
+
+A Claude Code recipe:
+
+```markdown
+---
+description: Claude Code worker for bounded edit tasks.
+harness: claude-code
+models: claude-sonnet-5
+thinking: medium
+tools: Read,Edit,Write,Bash
+harness-pass-through: --permission-mode acceptEdits
+---
+You are a careful worker. Verify your changes before reporting.
+```
+
+Choose the `--permission-mode` value for whether a person is present (`acceptEdits` suits unattended edit work; see Claude Code's own documentation for the available modes). Nothing is installed into the external tool; each launch configures per-run lifecycle notifiers on the command line, which report liveness and the final message back through this extension's own sidecar files. The child's final reply arrives as the result; `subagent_resume` reopens the tool's own session by its recorded id. External children never appear in Pi's session picker, and the result message's session reference is a resume handle, not a readable transcript.
+
+Caveat: on the tool's first use in a directory it may show a one-time setup or trust dialog that intercepts the initial task; the child then idles and is reported as stalled. Open the pane, answer the dialog once, and retry (or pre-trust the directory by running the tool there manually once). Trust is inherited from ancestor directories, so worktrees and subdirectories of an already-trusted repository start cleanly.
+
+Observability caveat: Claude Code fires no lifecycle notifier when a human interrupts a turn in the pane, so an interrupted external child can keep reading as `active` (with its last tool shown) until its next completed turn. This is display-only; supervision and completion detection are unaffected.
+
+Intentionally not included in v1: tools beyond Claude Code (the profile registry accepts more later), per-run cost and context-size reporting, mid-run help requests (`caller_ping`), forked context, the in-pane identity banner, and pane-content-based liveness for tools without lifecycle notifiers.
 
 ## Parallel edit safety
 

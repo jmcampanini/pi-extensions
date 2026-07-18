@@ -7,6 +7,10 @@ export interface SubagentResultEnvelope {
 	status: SubagentEnvelopeStatus;
 	name: string;
 	agent: string;
+	/** The external tool that ran the child ("claude-code"); absent = pi.
+	 * Also switches the session line to resume-reference wording - an
+	 * external child's anchor path is not a readable session file. */
+	harness?: string;
 	id: string;
 	elapsed: string;
 	contextTokens?: number;
@@ -36,6 +40,7 @@ export function buildSubagentResultEnvelope(input: SubagentResultEnvelope): Suba
 		`Status: ${input.status}`,
 		`Name: ${inline(input.name)}`,
 		`Agent: ${inline(input.agent) || "worker"}`,
+		...(input.harness ? [`Harness: ${inline(input.harness)}`] : []),
 		`ID: ${inline(input.id)}`,
 		`Elapsed: ${inline(input.elapsed)}`,
 	];
@@ -54,9 +59,14 @@ export function buildSubagentResultEnvelope(input: SubagentResultEnvelope): Suba
 		content += `${safeResponse}\n</result>`;
 	}
 
+	// The session line: pi children name a readable .jsonl transcript; an
+	// external child's anchor is only a resume reference (its sidecars hold
+	// the state, the tool's own storage holds the transcript).
 	content +=
 		`\n\n${input.action}: subagent_resume({ id: "${inline(input.id)}", message: "${input.actionMessage}" })` +
-		`\nSession: ${sanitizeDisplayText(input.sessionFile)}`;
+		(input.harness
+			? `\nSession ref: ${sanitizeDisplayText(input.sessionFile)} (pass as sessionPath to subagent_resume if the id is no longer known; not a readable file)`
+			: `\nSession: ${sanitizeDisplayText(input.sessionFile)}`);
 	if (input.worktreeNote) content += `\n${inline(input.worktreeNote)}`;
 	return { content, response };
 }
