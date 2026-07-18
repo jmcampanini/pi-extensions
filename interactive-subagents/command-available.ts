@@ -19,6 +19,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { agentDefsDir, collectAgentInventory, formatAgentOverviewLines, projectDefsDir } from "./agents.ts";
+import { updateCatalogue } from "./catalogue.ts";
 import { getLatestCtx } from "./state.ts";
 
 const OVERVIEW_WIDGET_KEY = "interactive-subagents-overview";
@@ -54,8 +55,10 @@ export function registerSubagentAvailableCommand(pi: ExtensionAPI): void {
 				return;
 			}
 			// Snapshot the inventory now; the component re-renders at the
-			// real terminal width whenever the TUI needs it.
+			// real terminal width whenever the TUI needs it. A fresh inventory
+			// also updates the system-prompt catalogue snapshot (catalogue.ts).
 			const inventory = collectAgentInventory(ctx.modelRegistry, ctx.cwd);
+			updateCatalogue(inventory);
 			const dirs = { global: agentDefsDir(), project: projectDefsDir(ctx.cwd) };
 			ctx.ui.setWidget(
 				OVERVIEW_WIDGET_KEY,

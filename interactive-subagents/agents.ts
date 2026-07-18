@@ -21,6 +21,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { agentConfigDir } from "./config.ts";
+import { sanitizeDisplayText } from "./display-text.ts";
 import { harnessProfile, validHarnessValues } from "./harnesses.ts";
 import { assertValidThinkingLevel, resolveUsableModel, type ModelLookup } from "./models.ts";
 
@@ -44,7 +45,13 @@ export interface AgentDefinition {
 	source: "project" | "global";
 	/** The definition file itself. */
 	filePath: string;
+	/** Compact routing text for the parent model (bounded in the injected
+	 * catalogue; see formatAgentCatalogue). */
 	description?: string;
+	/** Optional expanded explanation for humans and explicit model discovery
+	 * (subagent_list, /subagent-available). Never injected into the catalogue;
+	 * those surfaces fall back to the full description when absent. */
+	details?: string;
 	/**
 	 * Ordered model candidates, each fully qualified as "provider/model"
 	 * (e.g. "openai-codex/gpt-5.5"). At spawn time the FIRST entry that is
@@ -140,6 +147,7 @@ function parseAgentMarkdown(
 		source,
 		filePath,
 		description: frontmatterValue(frontmatter, "description"),
+		details: frontmatterValue(frontmatter, "details"),
 		models: rawModels
 			? rawModels.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "")
 			: undefined,
@@ -201,6 +209,9 @@ export interface AgentInfo {
 	/** Which layer it came from — "project" (.pi/subagents) or "global". */
 	source: "project" | "global";
 	description?: string;
+	/** Expanded explanation for the detailed surfaces; absent = they fall
+	 * back to the full description. */
+	details?: string;
 	/** The definition file this agent came from. */
 	filePath: string;
 	/** The frontmatter model candidates, verbatim. Empty = no models listed
@@ -264,6 +275,7 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 			name: def.name,
 			source: def.source,
 			description: def.description,
+			details: def.details,
 			filePath: def.filePath,
 			requestedModels: def.models ?? [],
 			resolvedModel,
@@ -277,6 +289,57 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 			problems,
 		};
 	});
+}
+
+// ── the model-facing catalogue (injected into the system prompt) ─────────
+// A compact routing list - one line per agent - so the parent can match work
+// to an agent without a subagent_list round trip (catalogue.ts owns when it
+// is computed and injected). Descriptions are HARD-BOUNDED here: an agent
+// file cannot grow every parent request, no matter what its author writes.
+// The full text stays reachable through subagent_list and the overview.
+
+/** Per-agent cap on catalogue description text, in visible characters. */
+export const CATALOGUE_DESCRIPTION_MAX_CHARS = 200;
+
+/** One line, control characters stripped, hard-capped with an ellipsis.
+ * Operates on code points so the cut can never split a surrogate pair. The
+ * source description is never modified - only this rendering is bounded. */
+function boundedDescription(description: string | undefined): string {
+	if (description === undefined) return "(no description)";
+	const flat = sanitizeDisplayText(description).replace(/\s+/g, " ").trim();
+	if (flat === "") return "(no description)";
+	const chars = Array.from(flat);
+	if (chars.length <= CATALOGUE_DESCRIPTION_MAX_CHARS) return flat;
+	return `${chars.slice(0, CATALOGUE_DESCRIPTION_MAX_CHARS - 1).join("")}…`;
+}
+
+/**
+ * The injectable catalogue block, or undefined when there are no agents (an
+ * empty "Available sub-agents:" header would only invite doomed spawns).
+ * Markers appear only on agents that deviate from a plain spawnable default:
+ * routing facts only - everything else is subagent_list territory. A broken
+ * agent shows no description at all: advertising its purpose would invite
+ * calls that can only fail, while the name + pointer still explains where
+ * the details live.
+ */
+export function formatAgentCatalogue(inventory: AgentInfo[]): string | undefined {
+	if (inventory.length === 0) return undefined;
+	const lines = inventory.map((agent) => {
+		if (agent.problems.length > 0) {
+			return `- ${agent.name} (not spawnable - see subagent_list)`;
+		}
+		const markers: string[] = [];
+		if (agent.name === "worker") markers.push("default");
+		if (agent.harness !== "pi") markers.push(`harness ${agent.harness}`);
+		if (!agent.autoExit) markers.push("interactive");
+		const tag = markers.length > 0 ? `${agent.name} (${markers.join(", ")})` : agent.name;
+		return `- ${tag}: ${boundedDescription(agent.description)}`;
+	});
+	return (
+		"Available sub-agents (values for the `agent` parameter of subagent_spawn):\n" +
+		`${lines.join("\n")}\n\n` +
+		"Call subagent_list for expanded descriptions, configuration details, and currently running sub-agents."
+	);
 }
 
 // ── the human-facing overview (used by /subagent-available) ──────────────
@@ -406,7 +469,7 @@ export function formatAgentOverviewLines(
 			` global:  ${tildify(dirs.global)}`,
 			` project: ${tildify(dirs.project)}`,
 			...wrapText(
-				"Create <name>.md files there (frontmatter: description, models, thinking, tools, context, auto-exit, worktree, harness, harness-pass-through; body = system prompt).",
+				"Create <name>.md files there (frontmatter: description, details, models, thinking, tools, context, auto-exit, worktree, harness, harness-pass-through; body = system prompt).",
 				Math.max(1, width - 1),
 			).map((wrapped) => ` ${wrapped}`),
 		].map((line) => clampVisible(line, width));
@@ -479,10 +542,21 @@ export function formatAgentOverviewLines(
 			});
 		}
 
+		// Description and details render sanitized: clampVisible treats a raw
+		// ESC as ANSI it cannot measure, so an unsanitized frontmatter value
+		// could yield an overwide line - which the width contract makes fatal.
 		// Description: the headline only, wrapped in full (never truncated).
 		if (agent.description) {
-			for (const wrapped of wrapText(descriptionHeadline(agent.description), body)) {
+			for (const wrapped of wrapText(descriptionHeadline(sanitizeDisplayText(agent.description)), body)) {
 				lines.push(pad + wrapped);
+			}
+		}
+
+		// Details: the expanded human explanation, in full but visually
+		// tertiary so the cards still scan by headline.
+		if (agent.details) {
+			for (const wrapped of wrapText(sanitizeDisplayText(agent.details), body)) {
+				lines.push(pad + dim(wrapped));
 			}
 		}
 

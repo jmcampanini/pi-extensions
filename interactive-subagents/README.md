@@ -55,16 +55,20 @@ This uses the listed `worker` in the parent's working directory with explicit fr
 Parent operations use the singular `subagent` namespace: model tools follow `subagent_<operation>`, and slash commands follow `/subagent-<operation>`. Creation is `spawn` because it launches an existing agent definition as an independent child process and session; it does not create a definition.
 
 - **`subagent_spawn`** starts a child. `name` and `task` are required. Calls can choose an agent, context, model, thinking, tools, directory, worktree, and exit behavior. Call values override agent definitions. Explicit `worktree: true` cannot be combined with `cwd`.
-- **`subagent_list`** reports definitions, problems, live children, run economics, and results still being delivered. Use it for selection or diagnosis, not polling.
+- **`subagent_list`** reports definitions (each agent's `details`, or its full `description` when absent), problems, live children, run economics, and results still being delivered. Use it for selection or diagnosis, not polling.
 - **`subagent_resume`** handles help, retries, and follow-up while restoring launch identity. Use `id` in the same parent process, including after `/reload`; after restart use `sessionPath`. Autonomous resume requires a message. Message-free resume requires an effective `autoExit: false` for human control.
 
 A blocked child calls `caller_ping` and exits. Its question wakes the parent, which answers with `subagent_resume({ id, message })`.
+
+The parent needs no discovery round trip: its system prompt ends with a compact catalogue of the effective agents for the working directory, one line per agent with its `description` and routing markers (`default`, `interactive`, `harness <name>`, or `not spawnable`). Each injected description is flattened to one line and truncated to 200 characters with an ellipsis, so a definition cannot grow the parent's context; the source text stays intact for the detailed surfaces. The catalogue is a snapshot taken at session start (including `/reload`, `/new`, and `/resume`) and refreshed whenever `subagent_list` or `/subagent-available` computes a fresh inventory. A snapshot that lags a mid-session file edit blocks nothing, because `subagent_spawn` reads definitions from disk at call time.
 
 ## Agent definitions and trust
 
 Definition filenames are agent names; their Markdown bodies extend the child system prompt. `<cwd>/.pi/subagents/` shadows `$PI_CODING_AGENT_DIR/subagents/`, normally `~/.pi/agent/subagents/`. A repository can replace `worker`, so inspect `.pi/subagents/` in untrusted repositories.
 
-Optional frontmatter keys are `description`, `models`, `thinking`, `tools`, `context`, `auto-exit`, `worktree`, `harness`, and `harness-pass-through`. Omitted model, thinking, and tools settings inherit Pi defaults; the other defaults are `fresh`, `true`, `false`, and `pi`. A model list is tried in order until a usable exact match is found (external harnesses instead take the first entry verbatim; see External harnesses). Call values override frontmatter, which overrides built-in defaults.
+Optional frontmatter keys are `description`, `details`, `models`, `thinking`, `tools`, `context`, `auto-exit`, `worktree`, `harness`, and `harness-pass-through`. Omitted model, thinking, and tools settings inherit Pi defaults; the other defaults are `fresh`, `true`, `false`, and `pi`. A model list is tried in order until a usable exact match is found (external harnesses instead take the first entry verbatim; see External harnesses). Call values override frontmatter, which overrides built-in defaults.
+
+`description` is the compact routing text: one sentence for the parent's injected catalogue, where it renders bounded to 200 characters. `details` is an optional expanded explanation for humans and explicit discovery, shown untruncated by `subagent_list` and beneath the description headline in `/subagent-available`. When it is absent, `subagent_list` shows the full `description` instead and the overview keeps its headline-only card, so existing description-only definitions keep working unchanged.
 
 ## External harnesses
 

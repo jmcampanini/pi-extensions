@@ -1,11 +1,14 @@
 // Unit tests for agents.ts — definition parsing, project-shadows-global
 // loading, and the inventory (including how model problems are reported).
 import {
+	CATALOGUE_DESCRIPTION_MAX_CHARS,
 	collectAgentInventory,
 	descriptionHeadline,
+	formatAgentCatalogue,
 	formatAgentOverviewLines,
 	listAgentDefinitions,
 	loadAgentDefinition,
+	type AgentInfo,
 } from "../agents.ts";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -281,6 +284,115 @@ const extFlat = extLines.join("\n");
 ok("overview meta row names the harness", extFlat.includes("claude-code"));
 ok("overview shows the pass-through", extFlat.includes("pass-through: --permission-mode acceptEdits"));
 ok("external overview still fits the width", extLines.every((l) => l.length <= WIDTH));
+
+// ── description vs details ───────────────────────────────────────────────
+// Placed after the count-sensitive overview tests, like the sections above.
+
+writeFileSync(
+	join(globalDefs, "detailed.md"),
+	"---\ndescription: Compact routing line.\ndetails: A much longer explanation for humans and explicit discovery.\n---\nD.\n",
+);
+const detailed = loadAgentDefinition("detailed", cwd)!;
+eq("details parses", detailed.details, "A much longer explanation for humans and explicit discovery.");
+eq("details absent = undefined", scout.details, undefined);
+const detailedInfo = collectAgentInventory(registry, cwd).find((a) => a.name === "detailed")!;
+eq("details carried into the inventory", detailedInfo.details, "A much longer explanation for humans and explicit discovery.");
+
+// Overview: the details render under the description headline, in full.
+const detailLines = formatAgentOverviewLines([detailedInfo], WIDTH, dirs);
+const detailFlat = detailLines.join("\n");
+ok("overview keeps the description headline", detailFlat.includes("Compact routing line."));
+ok("overview shows the details", detailFlat.includes("A much longer explanation"));
+ok("details overview still fits the width", detailLines.every((l) => l.length <= WIDTH));
+
+// ── the model-facing catalogue ───────────────────────────────────────────
+// Pure over AgentInfo[], so these build inventories directly - no files, no
+// interference with the counts above.
+
+function info(overrides: Partial<AgentInfo> & { name: string }): AgentInfo {
+	return {
+		source: "global",
+		filePath: `/g/subagents/${overrides.name}.md`,
+		requestedModels: [],
+		context: "fresh",
+		autoExit: true,
+		worktree: false,
+		harness: "pi",
+		problems: [],
+		...overrides,
+	};
+}
+
+eq("empty inventory = no catalogue", formatAgentCatalogue([]), undefined);
+
+const catalogue = formatAgentCatalogue([
+	info({ name: "broken", description: "Secretly fine.", problems: ["invalid context"] }),
+	info({ name: "cc-worker", description: "Bounded edit tasks.", harness: "claude-code" }),
+	info({ name: "pair", description: "Live pairing session.", autoExit: false }),
+	info({ name: "scout", description: "Fast recon.", details: "Only for humans." }),
+	info({ name: "undescribed" }),
+	info({ name: "worker", description: "General-purpose implementation." }),
+])!;
+ok("catalogue names the agent parameter", catalogue.includes("`agent` parameter of subagent_spawn"));
+ok("plain agent renders name: description", catalogue.includes("- scout: Fast recon."));
+ok("worker is marked default", catalogue.includes("- worker (default): General-purpose implementation."));
+ok("external harness is marked", catalogue.includes("- cc-worker (harness claude-code): Bounded edit tasks."));
+ok("interactive agent is marked", catalogue.includes("- pair (interactive): Live pairing session."));
+ok("broken agent points at subagent_list", catalogue.includes("- broken (not spawnable - see subagent_list)"));
+ok("broken agent's description is suppressed", !catalogue.includes("Secretly fine."));
+ok("missing description reads as such", catalogue.includes("- undescribed: (no description)"));
+ok("details never enter the catalogue", !catalogue.includes("Only for humans."));
+ok("pointer line names subagent_list", catalogue.includes("Call subagent_list for expanded descriptions"));
+
+// Markers combine into one paren group.
+const combined = formatAgentCatalogue([info({ name: "worker", description: "W.", autoExit: false })])!;
+ok("combined markers share one group", combined.includes("- worker (default, interactive): W."));
+
+// The hard bound: overlong descriptions are cut to the cap with an ellipsis;
+// short ones pass through untouched.
+const long = "x".repeat(CATALOGUE_DESCRIPTION_MAX_CHARS + 100);
+const bounded = formatAgentCatalogue([info({ name: "chatty", description: long })])!;
+const chattyLine = bounded.split("\n").find((l) => l.startsWith("- chatty"))!;
+eq("overlong description is capped", chattyLine.length, "- chatty: ".length + CATALOGUE_DESCRIPTION_MAX_CHARS);
+ok("truncation ends in an ellipsis", chattyLine.endsWith("…"));
+const exact = "y".repeat(CATALOGUE_DESCRIPTION_MAX_CHARS);
+ok(
+	"description at the cap is untouched",
+	formatAgentCatalogue([info({ name: "exact", description: exact })])!.includes(`- exact: ${exact}`),
+);
+
+// Hostile whitespace: newlines and tabs flatten to one clean line (the
+// frontmatter parser is single-line, but the bound must hold for ANY input).
+const hostileCatalogue = formatAgentCatalogue([
+	info({ name: "sneaky", description: "line one\nline\ttwo end" }),
+])!;
+ok("hostile description flattens to one line", hostileCatalogue.includes("- sneaky: line one line two end"));
+
+// Control characters: ANSI sequences, bells, and bare ESC bytes are
+// STRIPPED, not just flattened - the whitespace collapse alone would let
+// them ride into the parent's system prompt.
+const controlCatalogue = formatAgentCatalogue([
+	info({ name: "sneakier", description: "x\u0007y \u001b[31mz \u001bw" }),
+])!;
+ok("ANSI, bell, and bare ESC are stripped", controlCatalogue.includes("- sneakier: xy z w"));
+ok("no escape byte survives into the catalogue", !controlCatalogue.includes("\u001b") && !controlCatalogue.includes("\u0007"));
+
+// The overview must survive the same input: clampVisible cannot measure a
+// raw ESC, so unsanitized description/details could render an overwide
+// line - fatal under the width contract.
+const hostileOverview = formatAgentOverviewLines(
+	[
+		info({
+			name: "sneaky",
+			description: `bad\u001b${"A".repeat(120)}`,
+			details: `worse\u001b${"B".repeat(120)}`,
+		}),
+	],
+	50,
+	dirs,
+);
+ok("hostile overview text fits the width", hostileOverview.every((l) => l.length <= 50));
+ok("no escape byte survives into the overview", !hostileOverview.join("\n").includes("\u001b"));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
