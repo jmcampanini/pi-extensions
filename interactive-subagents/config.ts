@@ -104,6 +104,11 @@ function requirePreviewLines(value: unknown, source: string): number {
 	throw new Error(`${source}: invalid preview line count ${JSON.stringify(value)}; use an integer from 0 through 20`);
 }
 
+function coerceNumericEnvValue(value: string): number | string {
+	const converted = Number(value);
+	return Number.isNaN(converted) ? value : converted;
+}
+
 // Shared by both worktree commands: any non-empty string is a valid shell
 // command (we can't validate shell syntax here — bash reports that at run
 // time), but an empty/blank value would silently do nothing, so reject it.
@@ -188,26 +193,20 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 		// Env values arrive as strings; convert before validating. A
 		// non-numeric string becomes NaN, so we hand the validator the
 		// original text and let it reject with a readable message.
-		const raw = env.PI_SUBAGENT_SHELL_READY_DELAY_MS;
-		const converted = Number(raw);
 		result.shellReadyDelayMs = requireDelayMs(
-			Number.isNaN(converted) ? raw : converted,
+			coerceNumericEnvValue(env.PI_SUBAGENT_SHELL_READY_DELAY_MS),
 			"PI_SUBAGENT_SHELL_READY_DELAY_MS",
 		);
 	}
 	if (env.PI_SUBAGENT_CALL_PREVIEW_LINES) {
-		const raw = env.PI_SUBAGENT_CALL_PREVIEW_LINES;
-		const converted = Number(raw);
 		result.callPreviewLines = requirePreviewLines(
-			Number.isNaN(converted) ? raw : converted,
+			coerceNumericEnvValue(env.PI_SUBAGENT_CALL_PREVIEW_LINES),
 			"PI_SUBAGENT_CALL_PREVIEW_LINES",
 		);
 	}
 	if (env.PI_SUBAGENT_RESULT_PREVIEW_LINES) {
-		const raw = env.PI_SUBAGENT_RESULT_PREVIEW_LINES;
-		const converted = Number(raw);
 		result.resultPreviewLines = requirePreviewLines(
-			Number.isNaN(converted) ? raw : converted,
+			coerceNumericEnvValue(env.PI_SUBAGENT_RESULT_PREVIEW_LINES),
 			"PI_SUBAGENT_RESULT_PREVIEW_LINES",
 		);
 	}

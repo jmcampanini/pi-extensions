@@ -35,7 +35,22 @@ interface SubagentCallTextMetrics {
 	renderText: (text: string, width: number) => string[];
 }
 
+const EMPTY_RESUME_MESSAGE = "No follow-up message.";
 const plainText = (text: string): string => text;
+
+function startActionArgs(args: SubagentCallArgs): SubagentActionArgs {
+	return { action: "start", name: args.name, agent: args.agent, body: args.task };
+}
+
+function resumeActionArgs(args: SubagentResumeCallArgs): SubagentActionArgs {
+	return {
+		action: "resume",
+		name: args.name,
+		agent: args.agent,
+		body: args.message,
+		emptyBody: EMPTY_RESUME_MESSAGE,
+	};
+}
 
 function normalizedInline(value: string | undefined): string {
 	return sanitizeDisplayText(value ?? "").replace(/\s+/g, " ").trim();
@@ -182,14 +197,7 @@ export function formatCollapsedSubagentCall(
 	style: SubagentCallStyle = {},
 	expandHint = "",
 ): string[] {
-	return formatCollapsedSubagentAction(
-		{ action: "start", name: args.name, agent: args.agent, body: args.task },
-		width,
-		previewLineLimit,
-		metrics,
-		style,
-		expandHint,
-	);
+	return formatCollapsedSubagentAction(startActionArgs(args), width, previewLineLimit, metrics, style, expandHint);
 }
 
 export function formatExpandedSubagentCall(
@@ -198,12 +206,7 @@ export function formatExpandedSubagentCall(
 	metrics: SubagentCallTextMetrics,
 	style: Pick<SubagentCallStyle, "title" | "name" | "agent" | "body"> = {},
 ): string[] {
-	return formatExpandedSubagentAction(
-		{ action: "start", name: args.name, agent: args.agent, body: args.task },
-		width,
-		metrics,
-		style,
-	);
+	return formatExpandedSubagentAction(startActionArgs(args), width, metrics, style);
 }
 
 export function formatCollapsedSubagentResumeCall(
@@ -214,20 +217,7 @@ export function formatCollapsedSubagentResumeCall(
 	style: SubagentCallStyle = {},
 	expandHint = "",
 ): string[] {
-	return formatCollapsedSubagentAction(
-		{
-			action: "resume",
-			name: args.name,
-			agent: args.agent,
-			body: args.message,
-			emptyBody: "No follow-up message.",
-		},
-		width,
-		previewLineLimit,
-		metrics,
-		style,
-		expandHint,
-	);
+	return formatCollapsedSubagentAction(resumeActionArgs(args), width, previewLineLimit, metrics, style, expandHint);
 }
 
 export function formatExpandedSubagentResumeCall(
@@ -236,16 +226,5 @@ export function formatExpandedSubagentResumeCall(
 	metrics: SubagentCallTextMetrics,
 	style: Pick<SubagentCallStyle, "title" | "name" | "agent" | "body"> = {},
 ): string[] {
-	return formatExpandedSubagentAction(
-		{
-			action: "resume",
-			name: args.name,
-			agent: args.agent,
-			body: args.message,
-			emptyBody: "No follow-up message.",
-		},
-		width,
-		metrics,
-		style,
-	);
+	return formatExpandedSubagentAction(resumeActionArgs(args), width, metrics, style);
 }
