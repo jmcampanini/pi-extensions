@@ -83,6 +83,8 @@ The live display and `subagents_list` show `starting`, `active`, `waiting`, or `
 
 Completion, failure, user stop, and help are explicit. Results include resume guidance and available context use and run cost.
 
+Results reach the parent through Pi's steering queue. Under Pi's default `steeringMode` setting, `"one-at-a-time"`, queued results deliver one per turn boundary, so several children finishing while the parent is working arrive spread across its following turns, each answered separately. Set `steeringMode` to `"all"` in Pi's settings to receive every queued result at the next boundary at once.
+
 A successful `/reload` preserves running children, pending cleanup and delivery, and short ids within the same parent Pi process. If the replacement extension fails to load, preserved children are stopped after a 30-second handoff timeout. Quit, `/new`, `/resume`, `/fork`, crashes, and process restarts do not reconstruct live supervision, though session files and retained worktrees survive where possible. If sending a result throws, a later successful `/reload` can retry it. If Escape interrupts a streaming parent before an accepted queued result lands, Pi can drop it; a permanently `delivering` row is the signal. The extension does not resend accepted results because that could duplicate one that landed.
 
 ## Configuration
