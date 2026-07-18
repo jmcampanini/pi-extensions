@@ -1,5 +1,5 @@
 /**
- * tool-subagent.ts — the `subagent` tool: spawn a child pi session.
+ * tool-spawn.ts — the `subagent_spawn` tool: spawn a child pi session.
  *
  * pi API in play: `pi.registerTool(...)` exposes a tool to the MODEL. The
  * `description`, `promptGuidelines`, and every `parameters` field description
@@ -45,7 +45,7 @@ import { closePane, createPane, isTmuxAvailable, sendLongCommand, shellQuote, sl
 import { trackChild } from "./watcher.ts";
 import { createWorktree, removeWorktree, type WorktreeInfo } from "./worktree.ts";
 
-const SubagentParams = Type.Object({
+const SubagentSpawnParams = Type.Object({
 	name: Type.String({
 		description:
 			"Short display name describing the TASK, e.g. 'Auth flow' — shown in the widget next to the agent type, so do not repeat the agent type in it.",
@@ -58,7 +58,7 @@ const SubagentParams = Type.Object({
 	agent: Type.Optional(
 		Type.String({
 			description:
-				"Agent definition to load defaults from (a <name>.md file in <cwd>/.pi/subagents/ or the global subagents dir; project shadows global — see subagents_list). Default: 'worker'",
+				"Agent definition to load defaults from (a <name>.md file in <cwd>/.pi/subagents/ or the global subagents dir; project shadows global — see subagent_list). Default: 'worker'",
 		}),
 	),
 	context: Type.Optional(
@@ -105,7 +105,7 @@ const SubagentParams = Type.Object({
 		}),
 	),
 });
-type SubagentParamsType = Static<typeof SubagentParams>;
+type SubagentSpawnParamsType = Static<typeof SubagentSpawnParams>;
 
 const CALL_TEXT_METRICS = {
 	visibleWidth,
@@ -113,10 +113,10 @@ const CALL_TEXT_METRICS = {
 	renderText: (text: string, width: number) => new Text(text, 0, 0).render(width),
 };
 
-export function registerSubagentTool(pi: ExtensionAPI): void {
+export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 	pi.registerTool({
-		name: "subagent",
-		label: "Subagent",
+		name: "subagent_spawn",
+		label: "Spawn Subagent",
 		description:
 			"Spawn a sub-agent in a tmux pane to work on a task. ASYNC — this returns " +
 			"immediately with status 'started'; the sub-agent's result is automatically " +
@@ -126,10 +126,10 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			"the result. Call this multiple times only when tasks " +
 			"are independent, bounded, and able to proceed concurrently.",
 		promptGuidelines: [
-			"Default to subagent context 'fresh' for self-contained work; put all needed facts, constraints, and expected output in `task`. Use 'forked' only when the task materially depends on accumulated parent discussion, reads, or decisions that would be difficult or lossy to restate, and remember that the copied history goes to the child's selected model/provider. Use subagent_resume instead when a follow-up depends on the child's own prior context.",
-			"Use subagent only for concrete, bounded tasks that can proceed independently. Keep trivial tasks, tightly coupled or sequential work, and critical-path blockers in the parent. Never give parallel sub-agents overlapping write scopes in the same checkout; use disjoint scopes or worktree isolation.",
+			"Use subagent_spawn with context 'fresh' by default for self-contained work; put all needed facts, constraints, and expected output in `task`. Use 'forked' only when the task materially depends on accumulated parent discussion, reads, or decisions that would be difficult or lossy to restate, and remember that the copied history goes to the child's selected model/provider. Use subagent_resume instead when a follow-up depends on the child's own prior context.",
+			"Use subagent_spawn only for concrete, bounded tasks that can proceed independently. Keep trivial tasks, tightly coupled or sequential work, and critical-path blockers in the parent. Never give parallel sub-agents overlapping write scopes in the same checkout; use disjoint scopes or worktree isolation.",
 		],
-		parameters: SubagentParams,
+		parameters: SubagentSpawnParams,
 		renderCall(args, theme, context) {
 			const style = {
 				title: (text: string) => theme.fg("toolTitle", theme.bold(text)),
@@ -162,7 +162,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 				new Text(theme.fg("error", text), 0, 0),
 			);
 		},
-		async execute(_toolCallId, params: SubagentParamsType, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params: SubagentSpawnParamsType, _signal, _onUpdate, ctx) {
 			// Guards: we need tmux and a persistent parent session.
 			if (!isTmuxAvailable()) {
 				throw new Error(
@@ -184,7 +184,7 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 			if (!agentDef) {
 				throw new Error(
 					params.agent
-						? `Unknown agent "${agentName}" — no ${agentName}.md in ${projectDefsDir(ctx.cwd)} or ${agentDefsDir()}. Use subagents_list to see available agents.`
+						? `Unknown agent "${agentName}" — no ${agentName}.md in ${projectDefsDir(ctx.cwd)} or ${agentDefsDir()}. Use subagent_list to see available agents.`
 						: `No agent given, so this spawn defaults to "worker" — but ${join(agentDefsDir(), "worker.md")} does not exist. Create it (it defines the default sub-agent), or pass an agent explicitly.`,
 				);
 			}

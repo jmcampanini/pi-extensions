@@ -13,7 +13,7 @@ interface SubagentResumeCallArgs {
 }
 
 interface SubagentActionArgs {
-	action: "start" | "resume";
+	action: "spawn" | "resume";
 	name?: string;
 	agent?: string;
 	body?: string;
@@ -38,8 +38,8 @@ interface SubagentCallTextMetrics {
 const EMPTY_RESUME_MESSAGE = "No follow-up message.";
 const plainText = (text: string): string => text;
 
-function startActionArgs(args: SubagentCallArgs): SubagentActionArgs {
-	return { action: "start", name: args.name, agent: args.agent, body: args.task };
+function spawnActionArgs(args: SubagentCallArgs): SubagentActionArgs {
+	return { action: "spawn", name: args.name, agent: args.agent, body: args.task };
 }
 
 function resumeActionArgs(args: SubagentResumeCallArgs): SubagentActionArgs {
@@ -197,7 +197,7 @@ export function formatCollapsedSubagentCall(
 	style: SubagentCallStyle = {},
 	expandHint = "",
 ): string[] {
-	return formatCollapsedSubagentAction(startActionArgs(args), width, previewLineLimit, metrics, style, expandHint);
+	return formatCollapsedSubagentAction(spawnActionArgs(args), width, previewLineLimit, metrics, style, expandHint);
 }
 
 export function formatExpandedSubagentCall(
@@ -206,7 +206,7 @@ export function formatExpandedSubagentCall(
 	metrics: SubagentCallTextMetrics,
 	style: Pick<SubagentCallStyle, "title" | "name" | "agent" | "body"> = {},
 ): string[] {
-	return formatExpandedSubagentAction(startActionArgs(args), width, metrics, style);
+	return formatExpandedSubagentAction(spawnActionArgs(args), width, metrics, style);
 }
 
 export function formatCollapsedSubagentResumeCall(

@@ -1,5 +1,5 @@
 /**
- * command-running.ts — /subagents-running: pick a running child and act.
+ * command-running.ts — /subagent-running: pick a running child and act.
  *
  * Opens a focused picker over the running children. Up/down (or j/k) to
  * choose, Enter jumps to the pane (switching tmux windows if needed),
@@ -20,8 +20,8 @@ import { formatElapsed } from "./widget.ts";
 import { running, type RunningSubagent } from "./state.ts";
 import { focusPane } from "./tmux.ts";
 
-export function registerSubagentsRunningCommand(pi: ExtensionAPI): void {
-	pi.registerCommand("subagents-running", {
+export function registerSubagentRunningCommand(pi: ExtensionAPI): void {
+	pi.registerCommand("subagent-running", {
 		description: "Pick a running sub-agent and jump to its pane (z = jump + zoom)",
 		handler: async (_args, ctx) => {
 			if (running.size === 0) {

@@ -157,7 +157,7 @@ function sendStalledSteer(pi: ExtensionAPI, child: RunningSubagent, obs: Activit
 			customType: "subagent_stalled",
 			content:
 				`Sub-agent "${childName}" (id ${child.id}) may be stalled: ${reason}.\n\n` +
-				`Options, in order: wait (it may still come up); check its pane via /subagents-running; or stop it there and retry with subagent_resume({ id: "${child.id}", message: "<guidance>" }).\n` +
+				`Options, in order: wait (it may still come up); check its pane via /subagent-running; or stop it there and retry with subagent_resume({ id: "${child.id}", message: "<guidance>" }).\n` +
 				`This is a warning, not a failure: you will still get a result or failure message when it exits.\n` +
 				`Session: ${child.sessionFile}`,
 			display: true,
@@ -278,7 +278,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 				});
 
 				// Edge detection. lastStatus is watcher-PRIVATE memory — the
-				// widget and subagents_list recompute status from the same
+				// widget and subagent_list recompute status from the same
 				// observation fields, so they can never disagree with us.
 				const previous = child.lastStatus ?? "starting";
 				child.lastStatus = status;

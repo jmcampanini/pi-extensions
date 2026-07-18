@@ -1,6 +1,6 @@
 // Unit tests for registerActivityRecorder — the child-side event wiring that
 // produces every liveness snapshot. The recorder is the SOLE producer feeding
-// the status machine, the widget, subagents_list, and the result economics,
+// the status machine, the widget, subagent_list, and the result economics,
 // so its handler bodies need a committed regression gate, not just one-time
 // e2e verification. It takes pi's ExtensionAPI as `import type` only, so a
 // stub object with a handler registry and a manual emit() drives it under

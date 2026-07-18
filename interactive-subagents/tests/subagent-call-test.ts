@@ -5,7 +5,7 @@ import { stripVTControlCharacters } from "node:util";
 import { ledger } from "../state.ts";
 import * as subagentCall from "../subagent-call.ts";
 import { registerSubagentResumeTool } from "../tool-resume.ts";
-import { registerSubagentTool } from "../tool-subagent.ts";
+import { registerSubagentSpawnTool } from "../tool-spawn.ts";
 
 let pass = 0, fail = 0;
 function eq(label: string, got: unknown, want: unknown): void {
@@ -133,13 +133,13 @@ const args = { name: "Auth flow", agent: "scout", task };
 const plainLines = (lines: string[]): string[] => lines.map((line) => stripVTControlCharacters(line).trimEnd());
 const comfortable = formatCollapsedSubagentCall(args, 100, 3, metrics);
 eq("collapsed call has two content lines separated by a blank line", comfortable.length, 3);
-eq("comfortable heading", plainLines(comfortable)[0], "subagent start · scout · Auth flow");
+eq("comfortable heading", plainLines(comfortable)[0], "subagent spawn · scout · Auth flow");
 eq("comfortable spacer", plainLines(comfortable)[1], "");
 eq("comfortable task preview", plainLines(comfortable)[2], task);
 
 const resumeArgs = { name: "Auth flow", agent: "scout", message: "Apply the fix and rerun the tests." };
 const comfortableResume = formatCollapsedSubagentResumeCall(resumeArgs, 100, 3, metrics);
-eq("resume call matches the start identity grammar", plainLines(comfortableResume)[0], "subagent resume · scout · Auth flow");
+eq("resume call matches the spawn identity grammar", plainLines(comfortableResume)[0], "subagent resume · scout · Auth flow");
 eq("resume call separates its follow-up with a blank line", plainLines(comfortableResume)[1], "");
 eq("resume call previews its follow-up", plainLines(comfortableResume)[2], resumeArgs.message);
 eq(
@@ -188,7 +188,7 @@ for (const width of [0, 1, 2, 8, 20, 36]) {
 }
 
 const narrow = formatCollapsedSubagentCall(args, 44, 3, metrics);
-eq("narrow heading preserves identity", plainLines(narrow)[0], "subagent start · scout · Auth flow");
+eq("narrow heading preserves identity", plainLines(narrow)[0], "subagent spawn · scout · Auth flow");
 eq("narrow preview starts with the task", plainLines(narrow)[2].startsWith("Trace authentication"), true);
 eq("narrow preview has no ellipsis", plainLines(narrow)[2].includes("…"), false);
 eq("narrow lines fit terminal columns", narrow.every((line) => metrics.visibleWidth(line) <= 44), true);
@@ -248,7 +248,7 @@ const styled = formatCollapsedSubagentCall(
 );
 eq("ANSI styles are retained", styled.join("").includes("\x1b["), true);
 eq("ANSI and wide/combining lines obey terminal width", styled.every((line) => metrics.visibleWidth(line) <= 36), true);
-eq("wide/combining identity is preserved", plainLines(styled)[0], "subagent start · 偵察 · 界e\u0301");
+eq("wide/combining identity is preserved", plainLines(styled)[0], "subagent spawn · 偵察 · 界e\u0301");
 
 const hostileArgs = {
 	name: "Auth\x1b[2J flow\0",
@@ -257,10 +257,10 @@ const hostileArgs = {
 };
 const hostileCollapsed = formatCollapsedSubagentCall(hostileArgs, 100, 3, metrics);
 eq("collapsed input terminal controls are removed", hostileCollapsed.join("").includes("\x1b]52"), false);
-eq("collapsed input keeps safe text", plainLines(hostileCollapsed), ["subagent start · scout · Auth flow", "", "Trace authentication."]);
+eq("collapsed input keeps safe text", plainLines(hostileCollapsed), ["subagent spawn · scout · Auth flow", "", "Trace authentication."]);
 const hostileExpanded = formatExpandedSubagentCall(hostileArgs, 100, metrics);
 eq("expanded input terminal controls are removed", hostileExpanded.join("").includes("\x1b]52"), false);
-eq("expanded input keeps safe text", plainLines(hostileExpanded).slice(0, 3), ["subagent start · scout · Auth flow", "", "Trace authentication."]);
+eq("expanded input keeps safe text", plainLines(hostileExpanded).slice(0, 3), ["subagent spawn · scout · Auth flow", "", "Trace authentication."]);
 const hostileResume = formatCollapsedSubagentResumeCall(
 	{ name: hostileArgs.name, agent: hostileArgs.agent, message: hostileArgs.task },
 	100,
@@ -273,20 +273,20 @@ eq("resume input keeps safe text", plainLines(hostileResume), ["subagent resume 
 eq(
 	"multiline task is normalized for preview",
 	plainLines(formatCollapsedSubagentCall({ name: "N", task: "Trace auth.\n\nReturn  file:\tline pointers." }, 100, 3, metrics)),
-	["subagent start · worker · N", "", "Trace auth. Return file: line pointers."],
+	["subagent spawn · worker · N", "", "Trace auth. Return file: line pointers."],
 );
-eq("an omitted agent displays worker without brackets", plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, 3, metrics))[0], "subagent start · worker · Tests");
-eq("an explicit blank agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: "", task: "Run" }, 100, 3, metrics))[0], "subagent start · worker · Tests");
-eq("an explicit whitespace agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: " \t ", task: "Run" }, 100, 3, metrics))[0], "subagent start · worker · Tests");
+eq("an omitted agent displays worker without brackets", plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, 3, metrics))[0], "subagent spawn · worker · Tests");
+eq("an explicit blank agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: "", task: "Run" }, 100, 3, metrics))[0], "subagent spawn · worker · Tests");
+eq("an explicit whitespace agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: " \t ", task: "Run" }, 100, 3, metrics))[0], "subagent spawn · worker · Tests");
 eq(
 	"collapsed call advertises expansion when task detail is hidden",
 	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "first\nsecond" }, 100, 3, metrics, {}, "Ctrl+O to expand"))[0],
-	"subagent start · worker · Tests (Ctrl+O to expand)",
+	"subagent spawn · worker · Tests (Ctrl+O to expand)",
 );
 eq(
 	"collapsed call omits the expansion hint when the full task is already visible",
 	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, 3, metrics, {}, "Ctrl+O to expand"))[0],
-	"subagent start · worker · Tests",
+	"subagent spawn · worker · Tests",
 );
 const longIdentityHeading = plainLines(formatCollapsedSubagentCall(
 	{ name: "A very long invocation name that must yield space to metadata", agent: "code-reviewer", task: "first\nsecond" },
@@ -312,12 +312,12 @@ eq("collapsed width one obeys the width contract", formatCollapsedSubagentCall(a
 eq(
 	"collapsed extreme width retains all content",
 	plainLines(formatCollapsedSubagentCall(args, 1_000_000, 3, metrics)),
-	["subagent start · scout · Auth flow", "", task],
+	["subagent spawn · scout · Auth flow", "", task],
 );
 
 const original = "first\tcolumn\rsecond\r\n界e\u0301";
 const expanded = formatExpandedSubagentCall({ name: "Auth flow", agent: "scout", task: original }, 120, metrics).map((line) => line.trimEnd());
-eq("expanded heading keeps identity", expanded.slice(0, 2), ["subagent start · scout · Auth flow", ""]);
+eq("expanded heading keeps identity", expanded.slice(0, 2), ["subagent spawn · scout · Auth flow", ""]);
 eq("expanded uses Text tab display and safe CR line breaks", expanded.slice(2), ["first   column", "second", "界e\u0301"]);
 eq("expanded width zero emits no lines", formatExpandedSubagentCall(args, 0, metrics), []);
 for (const width of [1, 2, 5]) {
@@ -336,15 +336,16 @@ eq(
 );
 
 initTheme(undefined, false);
-let registeredTool: ToolDefinition | undefined;
-registerSubagentTool({
+let registeredSpawnTool: ToolDefinition | undefined;
+registerSubagentSpawnTool({
 	registerTool(tool: ToolDefinition): void {
-		registeredTool = tool;
+		registeredSpawnTool = tool;
 	},
 } as unknown as ExtensionAPI);
-const callRenderer = registeredTool?.renderCall;
+eq("registered spawn tool uses the canonical name", registeredSpawnTool?.name, "subagent_spawn");
+const callRenderer = registeredSpawnTool?.renderCall;
 if (callRenderer === undefined) {
-	eq("registered subagent tool has a call renderer", false, true);
+	eq("registered subagent_spawn tool has a call renderer", false, true);
 } else {
 	const colorCode: Record<string, number> = {
 		toolTitle: 31,
@@ -374,13 +375,13 @@ if (callRenderer === undefined) {
 	const renderArgs = { name: "Auth flow", agent: "worker", task: "first\nsecond" } as Parameters<typeof callRenderer>[0];
 	const collapsedOutput = callRenderer(renderArgs, markedTheme, renderContext(false)).render(120).join("\n");
 	const collapsedPlain = stripVTControlCharacters(collapsedOutput);
-	eq("registered renderer styles the action title as a bold tool title", collapsedOutput.includes("\x1b[31m\x1b[1msubagent start"), true);
+	eq("registered renderer styles the action title as a bold tool title", collapsedOutput.includes("\x1b[31m\x1b[1msubagent spawn"), true);
 	eq("registered renderer styles the invocation name as the primary accent", collapsedOutput.includes("\x1b[32mAuth flow\x1b[0m"), true);
 	eq("registered renderer styles the leading separator as muted metadata", collapsedOutput.includes("\x1b[33m · \x1b[0m"), true);
 	eq("registered renderer styles the unbracketed agent as muted metadata", collapsedOutput.includes("\x1b[33mworker\x1b[0m"), true);
 	eq("registered renderer displays an expansion hint", collapsedPlain.includes("to expand"), true);
 	eq("registered renderer styles the task preview as dim", collapsedOutput.includes("\x1b[2mfirst second\x1b[0m"), true);
-	const toolSource = readFileSync(new URL("../tool-subagent.ts", import.meta.url), "utf8");
+	const toolSource = readFileSync(new URL("../tool-spawn.ts", import.meta.url), "utf8");
 	eq("registered renderer resolves the configured expansion binding", toolSource.includes('keyHint("app.tools.expand", "to expand")'), true);
 	const expandedOutput = callRenderer(renderArgs, markedTheme, renderContext(true)).render(120).join("\n");
 	eq("registered renderer styles the expanded task body as tool output", expandedOutput.includes("\x1b[36mfirst"), true);
@@ -401,6 +402,7 @@ eq(
 	"Override auto-exit behavior. If omitted, the child's original value is restored from launch metadata, falling back to true. " +
 		"An effective true requires a message; false stays open for a human and permits a message-free handoff.",
 );
+eq("registered resume tool uses the canonical name", registeredResumeTool?.name, "subagent_resume");
 const resumeCallRenderer = registeredResumeTool?.renderCall;
 if (resumeCallRenderer === undefined) {
 	eq("registered subagent_resume tool has a call renderer", false, true);
