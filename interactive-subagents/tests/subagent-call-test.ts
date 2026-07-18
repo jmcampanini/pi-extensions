@@ -392,6 +392,15 @@ registerSubagentResumeTool({
 		registeredResumeTool = tool;
 	},
 } as unknown as ExtensionAPI);
+const resumeParameters = registeredResumeTool?.parameters as {
+	properties?: { autoExit?: { description?: string } };
+} | undefined;
+eq(
+	"resume autoExit schema documents restored launch identity and fallback",
+	resumeParameters?.properties?.autoExit?.description,
+	"Override auto-exit behavior. If omitted, the child's original value is restored from launch metadata, falling back to true. " +
+		"An effective true requires a message; false stays open for a human and permits a message-free handoff.",
+);
 const resumeCallRenderer = registeredResumeTool?.renderCall;
 if (resumeCallRenderer === undefined) {
 	eq("registered subagent_resume tool has a call renderer", false, true);
