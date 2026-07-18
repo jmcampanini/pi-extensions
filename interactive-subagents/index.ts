@@ -22,6 +22,7 @@
  *   config.ts            layered settings (defaults < subagents.json < env), fail-fast
  *   models.ts            picking a usable model from an agent's candidates
  *   agents.ts            agent definition files + the inventory built from them
+ *   catalogue.ts         the bounded agent catalogue in the parent's system prompt
  *   session.ts           reading/seeding pi session .jsonl files (fork, summaries)
  *   tmux.ts              panes: create/type/read/close + the exit poller
  *   launch.ts            building a child's launch command + the .meta sidecar
@@ -40,6 +41,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerCatalogue } from "./catalogue.ts";
 import { resetOverview, registerSubagentAvailableCommand } from "./command-available.ts";
 import { registerSubagentRunningCommand } from "./command-running.ts";
 import { registerDeliveryListener } from "./delivery.ts";
@@ -101,4 +103,5 @@ export default function (pi: ExtensionAPI) {
 	registerSubagentRunningCommand(pi);
 	registerSubagentListTool(pi);
 	registerSubagentResumeTool(pi);
+	registerCatalogue(pi);
 }

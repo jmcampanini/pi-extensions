@@ -6,7 +6,10 @@
  * agents wait for a human), plus a warning when a spawn would fail. The
  * full details — tools, model, file paths — live in the human-facing
  * /subagent-available command instead; both are views over the same
- * inventory (agents.ts).
+ * inventory (agents.ts). This is the EXPANDED counterpart of the bounded
+ * catalogue in the system prompt: each bullet shows the agent's `details`
+ * text, falling back to the full (untruncated) description, and running the
+ * tool also refreshes the catalogue snapshot (catalogue.ts).
  *
  * v2 appends a running-children section: one bullet per live child with its
  * status, context tokens, and cost — the numbers the model needs to decide
@@ -21,6 +24,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { oldestActiveTool, toolElapsedSeconds, type ActivityObservation } from "./activity.ts";
 import { agentDefsDir, collectAgentInventory, projectDefsDir } from "./agents.ts";
+import { updateCatalogue } from "./catalogue.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { delivering, running } from "./state.ts";
 import { computeStatus, STALL_AFTER_MS, type SubagentStatus } from "./status.ts";
@@ -175,6 +179,9 @@ export function registerSubagentListTool(pi: ExtensionAPI): void {
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			const inventory = collectAgentInventory(ctx.modelRegistry, ctx.cwd);
+			// A fresh inventory in hand is the moment to update the system-prompt
+			// catalogue snapshot - the two surfaces stay in step for free.
+			updateCatalogue(inventory);
 			const runningChildren = describeRunningChildren(Date.now());
 			const deliveringChildren = describeDeliveringChildren();
 			const sections: string[] = [];
@@ -209,7 +216,7 @@ export function registerSubagentListTool(pi: ExtensionAPI): void {
 				const warning = agent.problems.length > 0 ? ` [⚠ not spawnable: ${problems}]` : "";
 				const isDefault = agent.name === "worker" ? " (default)" : "";
 				const source = agent.source === "project" ? " (project)" : "";
-				return `• ${agent.name}${isDefault}${source}${interactive}${worktree}${harness}${warning} — ${agent.description ?? "(no description)"}`;
+				return `• ${agent.name}${isDefault}${source}${interactive}${worktree}${harness}${warning} — ${agent.details ?? agent.description ?? "(no description)"}`;
 			});
 			const text = childrenSection ? `${lines.join("\n")}\n\n${childrenSection}` : lines.join("\n");
 			return {
