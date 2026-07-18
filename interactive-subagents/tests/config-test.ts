@@ -23,6 +23,10 @@ function dirWith(content: string | null): string {
 }
 
 // the worktree defaults repeat in several whole-object assertions below
+const previewDefaults = {
+	callPreviewLines: 3,
+	resultPreviewLines: 5,
+};
 const worktreeDefaults = {
 	worktreeCreateCommand: DEFAULT_WORKTREE_CREATE_COMMAND,
 	worktreeCleanupCommand: DEFAULT_WORKTREE_CLEANUP_COMMAND,
@@ -31,19 +35,33 @@ const worktreeDefaults = {
 
 // defaults when no file and no env
 eq("defaults", loadConfig({ PI_CODING_AGENT_DIR: dirWith(null) }),
-	{ layout: "window", mainWidth: "60%", shellReadyDelayMs: 500, ...worktreeDefaults });
+	{ layout: "window", mainWidth: "60%", shellReadyDelayMs: 500, ...previewDefaults, ...worktreeDefaults });
 
 // full file applies
-eq("file applies", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window","mainWidth":"120","shellReadyDelayMs":250}') }),
-	{ layout: "window", mainWidth: "120", shellReadyDelayMs: 250, ...worktreeDefaults });
+eq("file applies", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window","mainWidth":"120","shellReadyDelayMs":250,"callPreviewLines":4,"resultPreviewLines":8}') }),
+	{ layout: "window", mainWidth: "120", shellReadyDelayMs: 250, callPreviewLines: 4, resultPreviewLines: 8, ...worktreeDefaults });
 
 // partial file merges with defaults
 eq("partial file", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"off"}') }),
-	{ layout: "off", mainWidth: "60%", shellReadyDelayMs: 500, ...worktreeDefaults });
+	{ layout: "off", mainWidth: "60%", shellReadyDelayMs: 500, ...previewDefaults, ...worktreeDefaults });
 
 // env beats file
 eq("env beats file", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window"}'), PI_SUBAGENT_LAYOUT: "main" }).layout, "main");
 eq("env delay parses", loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_SHELL_READY_DELAY_MS: "2500" }).shellReadyDelayMs, 2500);
+eq("file accepts header-only call previews",
+	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":0}') }).callPreviewLines, 0);
+eq("file accepts the maximum result preview",
+	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":20}') }).resultPreviewLines, 20);
+eq("call preview env beats file",
+	loadConfig({
+		PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":2}'),
+		PI_SUBAGENT_CALL_PREVIEW_LINES: "7",
+	}).callPreviewLines, 7);
+eq("result preview env beats file",
+	loadConfig({
+		PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":2}'),
+		PI_SUBAGENT_RESULT_PREVIEW_LINES: "9",
+	}).resultPreviewLines, 9);
 
 // failures — each names the offender
 throws("unknown key", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layot":"main"}') }), "unknown key(s) layot");
@@ -58,6 +76,24 @@ throws("negative delay", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"shel
 throws("string delay in file", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"shellReadyDelayMs":"500"}') }), '"500"');
 throws("junk delay in env", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_SHELL_READY_DELAY_MS: "fast" }), '"fast"');
 throws("uppercase layout in env is rejected", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_LAYOUT: "MAIN" }), "PI_SUBAGENT_LAYOUT");
+throws("negative call preview lines are rejected",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":-1}') }),
+	"integer from 0 through 20");
+throws("result preview lines above the maximum are rejected",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":21}') }),
+	"integer from 0 through 20");
+throws("fractional preview lines are rejected",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":1.5}') }),
+	"integer from 0 through 20");
+throws("string preview lines in file are rejected",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":"5"}') }),
+	'"5"');
+throws("invalid call preview env names the variable",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_CALL_PREVIEW_LINES: "many" }),
+	"PI_SUBAGENT_CALL_PREVIEW_LINES");
+throws("invalid result preview env names the variable",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_RESULT_PREVIEW_LINES: "21" }),
+	"PI_SUBAGENT_RESULT_PREVIEW_LINES");
 
 // ── worktree keys ──────────────────────────────────────────────────────────
 

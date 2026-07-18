@@ -192,8 +192,8 @@ export function listAgentDefinitions(cwd: string): AgentDefinition[] {
 // ── the agent inventory: one loader, many presenters ─────────────────────
 // Everything a consumer could want to know about each agent, loaded once:
 // identity, source file, what would actually run on THIS machine, and any
-// problems that would break a spawn. The model-facing subagents_list tool
-// and the human-facing /subagents-available command are both views over this —
+// problems that would break a spawn. The model-facing subagent_list tool
+// and the human-facing /subagent-available command are both views over this —
 // they differ only in how much of it they show.
 
 export interface AgentInfo {
@@ -224,7 +224,7 @@ export interface AgentInfo {
 
 /** A thrown Error's message, trimmed. Line breaks are KEPT — each view
  * decides for itself: the overview widget indents them, the terse
- * subagents_list tool flattens them. */
+ * subagent_list tool flattens them. */
 function problemText(error: unknown): string {
 	const message = error instanceof Error ? error.message : String(error);
 	return message.trim();
@@ -279,7 +279,7 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 	});
 }
 
-// ── the human-facing overview (used by /subagents-available) ─────────────
+// ── the human-facing overview (used by /subagent-available) ──────────────
 // One card per agent under a top rule: a bracketed name tag, the model that
 // would run, dim dot leaders out to a right-anchored source column, then the
 // description HEADLINE and only the non-default parts of the config. File
@@ -368,7 +368,7 @@ function clampVisible(line: string, width: number): string {
  * " — " or first sentence end, whichever comes first. Definitions follow a
  * "headline — spawn-time guidance" shape, and the guidance is for the model
  * choosing an agent; the human overview only needs the headline (the
- * subagents_list tool keeps the full text). The headline is never truncated,
+ * subagent_list tool keeps the full text). The headline is never truncated,
  * only wrapped.
  */
 export function descriptionHeadline(description: string): string {
@@ -383,7 +383,7 @@ export function descriptionHeadline(description: string): string {
 	return description.slice(0, Math.min(...boundaries)).trim();
 }
 
-/** The human-facing rendering of the inventory (used by /subagents-available). */
+/** The human-facing rendering of the inventory (used by /subagent-available). */
 export function formatAgentOverviewLines(
 	inventory: AgentInfo[],
 	width: number,
@@ -523,7 +523,7 @@ export function formatAgentOverviewLines(
 	}
 
 	lines.push("");
-	for (const wrapped of wrapText("run /subagents-available again or send a message to dismiss", Math.max(1, width - 1))) {
+	for (const wrapped of wrapText("run /subagent-available again or send a message to dismiss", Math.max(1, width - 1))) {
 		lines.push(dim(` ${wrapped}`));
 	}
 	return lines.map((line) => clampVisible(line, width));

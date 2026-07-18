@@ -1,5 +1,5 @@
 /**
- * command-available.ts — /subagents-available: the HUMAN's view of the agents.
+ * command-available.ts — /subagent-available: the HUMAN's view of the agents.
  *
  * Shows the inventory (description headline, resolved model, non-default
  * config, problems) as one card per agent in a widget above the editor. It
@@ -40,8 +40,8 @@ export function resetOverview(): void {
 	overviewShownAt = null;
 }
 
-export function registerSubagentsAvailableCommand(pi: ExtensionAPI): void {
-	pi.registerCommand("subagents-available", {
+export function registerSubagentAvailableCommand(pi: ExtensionAPI): void {
+	pi.registerCommand("subagent-available", {
 		description: "List the available sub-agent definitions and their details",
 		handler: async (_args, ctx) => {
 			// Toggle: running the command while the overview is up hides it.

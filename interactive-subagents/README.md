@@ -27,10 +27,10 @@ EOF
 tmux new -A -s pi 'pi'
 ```
 
-Use `/subagents-available` to confirm that `worker` is available and comes from the expected source. A project-local definition can shadow the global file. Then ask the parent to make this minimal call:
+Use `/subagent-available` to confirm that `worker` is available and comes from the expected source. A project-local definition can shadow the global file. Then ask the parent to make this minimal call:
 
 ```js
-subagent({
+subagent_spawn({
   name: "test map",
   task: "Inspect this repository's test setup and report the commands to run. Do not edit files.",
   context: "fresh",
@@ -52,8 +52,10 @@ This uses the listed `worker` in the parent's working directory with explicit fr
 
 ## Model-facing tools
 
-- **`subagent`** starts a child. `name` and `task` are required. Calls can choose an agent, context, model, thinking, tools, directory, worktree, and exit behavior. Call values override agent definitions. Explicit `worktree: true` cannot be combined with `cwd`.
-- **`subagents_list`** reports definitions, problems, live children, run economics, and results still being delivered. Use it for selection or diagnosis, not polling.
+Parent operations use the singular `subagent` namespace: model tools follow `subagent_<operation>`, and slash commands follow `/subagent-<operation>`. Creation is `spawn` because it launches an existing agent definition as an independent child process and session; it does not create a definition.
+
+- **`subagent_spawn`** starts a child. `name` and `task` are required. Calls can choose an agent, context, model, thinking, tools, directory, worktree, and exit behavior. Call values override agent definitions. Explicit `worktree: true` cannot be combined with `cwd`.
+- **`subagent_list`** reports definitions, problems, live children, run economics, and results still being delivered. Use it for selection or diagnosis, not polling.
 - **`subagent_resume`** handles help, retries, and follow-up while restoring launch identity. Use `id` in the same parent process, including after `/reload`; after restart use `sessionPath`. Autonomous resume requires a message. Message-free resume requires an effective `autoExit: false` for human control.
 
 A blocked child calls `caller_ping` and exits. Its question wakes the parent, which answers with `subagent_resume({ id, message })`.
@@ -105,10 +107,10 @@ Cleanup favors leftovers over lost work. `auto` removes only a successful, prova
 
 ## Observe, control, and receive results
 
-The live display and `subagents_list` show `starting`, `active`, `waiting`, or `stalled`. Stalled means liveness reports stayed missing, unreadable, or stale for 60 seconds, or a prompted run never started. It is a warning, not completion; supervision continues. A valid `active` report does not age out because a long tool may emit no events. `delivering` means the child exited and its result awaits a parent turn boundary.
+The live display and `subagent_list` show `starting`, `active`, `waiting`, or `stalled`. Stalled means liveness reports stayed missing, unreadable, or stale for 60 seconds, or a prompted run never started. It is a warning, not completion; supervision continues. A valid `active` report does not age out because a long tool may emit no events. `delivering` means the child exited and its result awaits a parent turn boundary.
 
-- `/subagents-available` toggles the zero-token definition overview.
-- `/subagents-running` uses arrows or `j`/`k` to select, Enter to visit, `z` to visit and zoom, `x` to stop, and Escape or Ctrl+C to cancel.
+- `/subagent-available` toggles the zero-token definition overview.
+- `/subagent-running` uses arrows or `j`/`k` to select, Enter to visit, `z` to visit and zoom, `x` to stop, and Escape or Ctrl+C to cancel.
 - Type directly in a child pane to take over. Escape during an automatic turn keeps the pane open; automatic exit remains armed for the next completed turn.
 - Expand compact tasks and results with Pi's configured tool-expansion key, Ctrl+O by default.
 
@@ -127,8 +129,21 @@ Settings resolve from built-in defaults, then `$PI_CODING_AGENT_DIR/subagents.js
 | `layout` | `window` (`main` and `off` are also valid) |
 | `mainWidth` | `60%` |
 | `shellReadyDelayMs` | `500` |
+| `callPreviewLines` | `3` (start and resume calls, `0` through `20`) |
+| `resultPreviewLines` | `5` (completed, failed, and stopped results, `0` through `20`) |
 | `worktreeCreateCommand` | Built-in Git creation under `.pi/worktrees/` |
 | `worktreeCleanupCommand` | Built-in Git removal and branch deletion when applicable |
 | `worktreeCleanupMode` | `auto` (`never` always keeps worktrees) |
+
+Preview limits count visual lines after sanitized, whitespace-flattened text wraps to the current terminal width. A value of `0` keeps only the collapsed header. Results add an ellipsis when the line limit hides more preview text; start and resume calls rely on the configured expansion-key hint instead. Persisted result previews keep at most 2,000 source code points plus an ellipsis, so that storage ceiling can be reached before a high visual-line limit on a very wide terminal. Expansion preserves the complete existing content, including Markdown rendering for results.
+
+The matching environment overrides are `PI_SUBAGENT_CALL_PREVIEW_LINES` and `PI_SUBAGENT_RESULT_PREVIEW_LINES`:
+
+```json
+{
+  "callPreviewLines": 3,
+  "resultPreviewLines": 5
+}
+```
 
 This README owns design intent, operating decisions, and stable user-facing contracts. Source files and tests own exact mechanics and rendering, Git owns shipped history, and issues own future work.

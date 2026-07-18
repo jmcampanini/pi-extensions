@@ -18,7 +18,7 @@ writeFileSync(parentA, [
 	entry({ type: "message", id: "1", message: { role: "user", content: [{ type: "text", text: "hi" }] } }),
 	entry({ type: "message", id: "2", message: { role: "assistant", content: [{ type: "text", text: "spawning..." }] } }),
 	entry({ type: "custom_message", id: "3", customType: "subagent_result", content: "child A done" }),
-	entry({ type: "message", id: "4", message: { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "subagent" }] } }),
+	entry({ type: "message", id: "4", message: { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "subagent_spawn" }] } }),
 ].join("\n") + "\n");
 const childA = "/tmp/fork-test-child-a.jsonl";
 seedForkSession({ parentSessionFile: parentA, childSessionFile: childA, childCwd: "/tmp" });
@@ -34,7 +34,7 @@ writeFileSync(parentB, [
 	entry({ type: "message", id: "1", message: { role: "user", content: [{ type: "text", text: "first" }] } }),
 	entry({ type: "message", id: "2", message: { role: "assistant", content: [{ type: "text", text: "reply" }] } }),
 	entry({ type: "message", id: "3", message: { role: "user", content: [{ type: "text", text: "spawn a fork" }] } }),
-	entry({ type: "message", id: "4", message: { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "subagent" }] } }),
+	entry({ type: "message", id: "4", message: { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "subagent_spawn" }] } }),
 ].join("\n") + "\n");
 const childB = "/tmp/fork-test-child-b.jsonl";
 seedForkSession({ parentSessionFile: parentB, childSessionFile: childB, childCwd: "/tmp" });
