@@ -29,6 +29,10 @@ export interface SubagentsConfig {
 	mainWidth: string;
 	/** Pause between opening a pane and typing the launch command. */
 	shellReadyDelayMs: number;
+	/** Wrapped task or follow-up lines shown while a call is collapsed. */
+	callPreviewLines: number;
+	/** Wrapped response lines shown while a delivered result is collapsed. */
+	resultPreviewLines: number;
 	/** Shell command (run via bash -c) that creates a worktree and prints its directory. */
 	worktreeCreateCommand: string;
 	/** Shell command (run via bash -c) that removes a finished subagent's worktree. */
@@ -56,6 +60,8 @@ const DEFAULTS: SubagentsConfig = {
 	layout: "window",
 	mainWidth: "60%",
 	shellReadyDelayMs: 500,
+	callPreviewLines: 3,
+	resultPreviewLines: 5,
 	worktreeCreateCommand: DEFAULT_WORKTREE_CREATE_COMMAND,
 	worktreeCleanupCommand: DEFAULT_WORKTREE_CLEANUP_COMMAND,
 	worktreeCleanupMode: "auto",
@@ -91,6 +97,11 @@ function requireMainWidth(value: unknown, source: string): string {
 function requireDelayMs(value: unknown, source: string): number {
 	if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
 	throw new Error(`${source}: invalid shellReadyDelayMs ${JSON.stringify(value)} — use a non-negative integer`);
+}
+
+function requirePreviewLines(value: unknown, source: string): number {
+	if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 20) return value;
+	throw new Error(`${source}: invalid preview line count ${JSON.stringify(value)}; use an integer from 0 through 20`);
 }
 
 // Shared by both worktree commands: any non-empty string is a valid shell
@@ -138,6 +149,12 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 		if (file.shellReadyDelayMs !== undefined) {
 			result.shellReadyDelayMs = requireDelayMs(file.shellReadyDelayMs, `${filePath}: shellReadyDelayMs`);
 		}
+		if (file.callPreviewLines !== undefined) {
+			result.callPreviewLines = requirePreviewLines(file.callPreviewLines, `${filePath}: callPreviewLines`);
+		}
+		if (file.resultPreviewLines !== undefined) {
+			result.resultPreviewLines = requirePreviewLines(file.resultPreviewLines, `${filePath}: resultPreviewLines`);
+		}
 		if (file.worktreeCreateCommand !== undefined) {
 			result.worktreeCreateCommand = requireCommandString(
 				file.worktreeCreateCommand,
@@ -176,6 +193,22 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 		result.shellReadyDelayMs = requireDelayMs(
 			Number.isNaN(converted) ? raw : converted,
 			"PI_SUBAGENT_SHELL_READY_DELAY_MS",
+		);
+	}
+	if (env.PI_SUBAGENT_CALL_PREVIEW_LINES) {
+		const raw = env.PI_SUBAGENT_CALL_PREVIEW_LINES;
+		const converted = Number(raw);
+		result.callPreviewLines = requirePreviewLines(
+			Number.isNaN(converted) ? raw : converted,
+			"PI_SUBAGENT_CALL_PREVIEW_LINES",
+		);
+	}
+	if (env.PI_SUBAGENT_RESULT_PREVIEW_LINES) {
+		const raw = env.PI_SUBAGENT_RESULT_PREVIEW_LINES;
+		const converted = Number(raw);
+		result.resultPreviewLines = requirePreviewLines(
+			Number.isNaN(converted) ? raw : converted,
+			"PI_SUBAGENT_RESULT_PREVIEW_LINES",
 		);
 	}
 	if (env.PI_SUBAGENT_WORKTREE_CREATE_COMMAND) {

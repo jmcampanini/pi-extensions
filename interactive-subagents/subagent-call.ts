@@ -114,13 +114,21 @@ function displayedBody(args: SubagentActionArgs): string {
 	return normalizedInline(body) ? body : (args.emptyBody ?? body);
 }
 
-function bodyHasHiddenDetail(args: SubagentActionArgs, width: number, metrics: SubagentCallTextMetrics): boolean {
+function bodyHasHiddenDetail(
+	args: SubagentActionArgs,
+	width: number,
+	previewLineLimit: number,
+	metrics: SubagentCallTextMetrics,
+): boolean {
 	const body = normalizedBody(args.body);
 	const preview = normalizedInline(args.body);
 	if (!preview) return false;
 	const fullLines = metrics.renderText(body, width).map((line) => line.trimEnd());
-	const previewLines = metrics.renderText(preview, width).map((line) => line.trimEnd());
-	return fullLines.length !== 1 || previewLines.length !== 1 || fullLines[0] !== previewLines[0];
+	const previewLines = metrics
+		.renderText(preview, width)
+		.slice(0, previewLineLimit)
+		.map((line) => line.trimEnd());
+	return fullLines.length !== previewLines.length || fullLines.some((line, index) => line !== previewLines[index]);
 }
 
 function expandedContent(args: SubagentActionArgs, style: SubagentCallStyle): string {
@@ -131,18 +139,26 @@ function expandedContent(args: SubagentActionArgs, style: SubagentCallStyle): st
 function formatCollapsedSubagentAction(
 	args: SubagentActionArgs,
 	width: number,
+	previewLineLimit: number,
 	metrics: SubagentCallTextMetrics,
 	style: SubagentCallStyle,
 	expandHint: string,
 ): string[] {
 	const maxWidth = availableWidth(width);
 	if (maxWidth === 0) return [];
-	const hint = bodyHasHiddenDetail(args, maxWidth, metrics) ? expandHint : "";
-	const heading = formatCollapsedHeading(args, style, maxWidth, metrics, hint);
+	const hint = bodyHasHiddenDetail(args, maxWidth, previewLineLimit, metrics) ? expandHint : "";
+	const heading = metrics.truncateToWidth(
+		metrics.renderText(formatCollapsedHeading(args, style, maxWidth, metrics, hint), maxWidth)[0] ?? "",
+		maxWidth,
+		"",
+	);
+	if (previewLineLimit === 0) return [heading];
 	const preview = (style.preview ?? plainText)(normalizedInline(args.body) || args.emptyBody || "");
-	const firstLine = (text: string): string =>
-		metrics.truncateToWidth(metrics.renderText(text, maxWidth)[0] ?? "", maxWidth, "");
-	return [firstLine(heading), "", firstLine(preview)];
+	const previewLines = metrics
+		.renderText(preview, maxWidth)
+		.slice(0, previewLineLimit)
+		.map((line) => metrics.truncateToWidth(line, maxWidth, ""));
+	return previewLines.length > 0 ? [heading, "", ...previewLines] : [heading];
 }
 
 function formatExpandedSubagentAction(
@@ -161,6 +177,7 @@ function formatExpandedSubagentAction(
 export function formatCollapsedSubagentCall(
 	args: SubagentCallArgs,
 	width: number,
+	previewLineLimit: number,
 	metrics: SubagentCallTextMetrics,
 	style: SubagentCallStyle = {},
 	expandHint = "",
@@ -168,6 +185,7 @@ export function formatCollapsedSubagentCall(
 	return formatCollapsedSubagentAction(
 		{ action: "start", name: args.name, agent: args.agent, body: args.task },
 		width,
+		previewLineLimit,
 		metrics,
 		style,
 		expandHint,
@@ -191,6 +209,7 @@ export function formatExpandedSubagentCall(
 export function formatCollapsedSubagentResumeCall(
 	args: SubagentResumeCallArgs,
 	width: number,
+	previewLineLimit: number,
 	metrics: SubagentCallTextMetrics,
 	style: SubagentCallStyle = {},
 	expandHint = "",
@@ -204,6 +223,7 @@ export function formatCollapsedSubagentResumeCall(
 			emptyBody: "No follow-up message.",
 		},
 		width,
+		previewLineLimit,
 		metrics,
 		style,
 		expandHint,

@@ -1,5 +1,6 @@
-import { estimateTokens, getMarkdownTheme, keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { estimateTokens, getMarkdownTheme, keyText, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Markdown, Text, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { formatCost, formatTokens } from "./widget.ts";
 
@@ -41,6 +42,7 @@ interface ResultStyle {
 	title: (text: string) => string;
 	name: (text: string) => string;
 	metadata: (text: string) => string;
+	hint: (text: string) => string;
 	preview: (text: string) => string;
 }
 
@@ -59,15 +61,16 @@ const METRICS: ResultMetrics = {
 const MAX_STORED_PREVIEW_CODE_POINTS = 2000;
 
 const STATUS_COPY = {
-	completed: { verb: "completed", timing: "in" },
-	failed: { verb: "failed", timing: "after" },
-	stopped: { verb: "stopped", timing: "after" },
+	completed: "done",
+	failed: "failed",
+	stopped: "stopped",
 } as const;
 
 const PLAIN_STYLE: ResultStyle = {
 	title: (text) => text,
 	name: (text) => text,
 	metadata: (text) => text,
+	hint: (text) => text,
 	preview: (text) => text,
 };
 
@@ -202,23 +205,23 @@ function formatHeader(
 	metrics: ResultMetrics,
 	style: ResultStyle,
 ): string {
-	const copy = STATUS_COPY[details.presentation.status];
+	const status = STATUS_COPY[details.presentation.status];
 	const name = inline(details.name);
 	const agent = inline(details.agent ?? "") || "worker";
-	const duration = humanElapsed(details.presentation.elapsedSeconds);
+	const duration = humanElapsed(details.presentation.elapsedSeconds).replace(/\s+/g, "");
 	const titleText = style.title("subagent result");
 	const agentLead = style.metadata(" · ");
 	const agentValue = style.metadata(agent);
 	const agentTrail = style.metadata(" · ");
 	const agentText = agentLead + agentValue + agentTrail;
 	const prefix = titleText + agentText;
-	const statusText = style.metadata(` · ${copy.verb} ${copy.timing} ${duration}`);
-	const shortStatusText = style.metadata(` · ${copy.verb}`);
+	const statusText = style.metadata(` · ${status} ${duration}`);
+	const shortStatusText = style.metadata(` · ${status}`);
 	const sizeParts: string[] = [];
-	if (details.contextTokens !== undefined) sizeParts.push(`context ${formatTokens(details.contextTokens)}`);
-	if (details.resultTokens !== undefined) sizeParts.push(`result ~${formatTokens(details.resultTokens)}`);
+	if (details.contextTokens !== undefined) sizeParts.push(`${formatTokens(details.contextTokens)} ctx`);
+	if (details.resultTokens !== undefined) sizeParts.push(`~${formatTokens(details.resultTokens)} result`);
 	const sizeText = sizeParts.length > 0 ? style.metadata(` · ${sizeParts.join(" · ")}`) : "";
-	const hintText = hint ? style.metadata(" (") + hint + style.metadata(")") : "";
+	const hintText = hint ? style.metadata(" (") + style.hint(hint) + style.metadata(")") : "";
 	const minimumNameWidth = Math.min(4, metrics.visibleWidth(name));
 
 	function withFullAgent(suffixes: string[]): string | undefined {
@@ -266,14 +269,15 @@ function formatHeader(
 	const clipped = withClippedAgent(shortStatusText);
 	if (clipped !== undefined) return clipped;
 
-	const statusOnly = `${titleText}${style.metadata(` ${copy.verb}`)}`;
+	const statusOnly = `${titleText}${style.metadata(` ${status}`)}`;
 	if (metrics.visibleWidth(statusOnly) <= width) return statusOnly;
-	return metrics.truncateToWidth(`${style.title("subagent")}${style.metadata(` ${copy.verb}`)}`, width, "");
+	return metrics.truncateToWidth(`${style.title("subagent")}${style.metadata(` ${status}`)}`, width, "");
 }
 
 export function formatCollapsedSubagentResult(
 	details: SubagentResultDetails,
 	width: number,
+	previewLineLimit: number,
 	hint: string,
 	metrics: ResultMetrics = METRICS,
 	style: ResultStyle = PLAIN_STYLE,
@@ -281,14 +285,15 @@ export function formatCollapsedSubagentResult(
 	const maxWidth = availableWidth(width);
 	if (maxWidth === 0) return [];
 	const lines = [formatHeader(details, maxWidth, hint, metrics, style)];
-	if (maxWidth <= 2) return lines;
+	if (maxWidth <= 2 || previewLineLimit === 0) return lines;
 
 	const preview = resultPreview(details.presentation.preview);
 	if (!preview) return lines;
 	const visualLines = metrics.renderText(preview, maxWidth).map((line) => line.trimEnd());
-	const shown = visualLines.slice(0, 2);
-	if (visualLines.length > 2 && shown.length === 2) {
-		shown[1] = metrics.truncateToWidth(`${shown[1]}…`, maxWidth, "…");
+	const shown = visualLines.slice(0, previewLineLimit);
+	if (visualLines.length > previewLineLimit && shown.length > 0) {
+		const last = shown.length - 1;
+		shown[last] = metrics.truncateToWidth(`${shown[last]}…`, maxWidth, "…");
 	}
 	lines.push("");
 	for (const line of shown) {
@@ -400,6 +405,7 @@ export function registerSubagentResultRenderer(pi: ExtensionAPI): void {
 			title: (text) => theme.fg("toolTitle", theme.bold(text)),
 			name: (text) => theme.fg("accent", text),
 			metadata: (text) => theme.fg("muted", text),
+			hint: (text) => theme.fg("dim", text),
 			preview: (text) => theme.fg("dim", text),
 		};
 		if (expanded) {
@@ -422,11 +428,18 @@ export function registerSubagentResultRenderer(pi: ExtensionAPI): void {
 			));
 		}
 
-		const hint = keyHint("app.tools.expand", "to expand");
+		const hint = keyText("app.tools.expand");
 		return shell({
 			invalidate(): void {},
 			render(width: number): string[] {
-				return formatCollapsedSubagentResult(details, width, hint, METRICS, style);
+				return formatCollapsedSubagentResult(
+					details,
+					width,
+					config.resultPreviewLines,
+					hint,
+					METRICS,
+					style,
+				);
 			},
 		});
 	});
