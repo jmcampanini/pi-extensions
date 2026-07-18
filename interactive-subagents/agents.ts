@@ -338,7 +338,7 @@ export function formatAgentCatalogue(inventory: AgentInfo[]): string | undefined
 	return (
 		"Available sub-agents (values for the `agent` parameter of subagent_spawn):\n" +
 		`${lines.join("\n")}\n\n` +
-		"Call subagent_list for expanded descriptions, configuration details, and currently running sub-agents."
+		"Descriptions above are abbreviated. Call subagent_list for expanded descriptions and configuration details."
 	);
 }
 

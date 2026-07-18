@@ -342,7 +342,12 @@ ok("broken agent points at subagent_list", catalogue.includes("- broken (not spa
 ok("broken agent's description is suppressed", !catalogue.includes("Secretly fine."));
 ok("missing description reads as such", catalogue.includes("- undescribed: (no description)"));
 ok("details never enter the catalogue", !catalogue.includes("Only for humans."));
-ok("pointer line names subagent_list", catalogue.includes("Call subagent_list for expanded descriptions"));
+ok(
+	"catalogue explains how to expand abbreviated descriptions",
+	catalogue.includes(
+		"Descriptions above are abbreviated. Call subagent_list for expanded descriptions and configuration details.",
+	),
+);
 
 // Markers combine into one paren group.
 const combined = formatAgentCatalogue([info({ name: "worker", description: "W.", autoExit: false })])!;
