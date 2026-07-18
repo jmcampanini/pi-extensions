@@ -91,6 +91,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 					return formatCollapsedSubagentResumeCall(
 						presentation,
 						width,
+						config.callPreviewLines,
 						CALL_TEXT_METRICS,
 						style,
 						expandHint,

@@ -96,8 +96,21 @@ Settings resolve from built-in defaults, then `$PI_CODING_AGENT_DIR/subagents.js
 | `layout` | `window` (`main` and `off` are also valid) |
 | `mainWidth` | `60%` |
 | `shellReadyDelayMs` | `500` |
+| `callPreviewLines` | `3` (start and resume calls, `0` through `20`) |
+| `resultPreviewLines` | `5` (completed, failed, and stopped results, `0` through `20`) |
 | `worktreeCreateCommand` | Built-in Git creation under `.pi/worktrees/` |
 | `worktreeCleanupCommand` | Built-in Git removal and branch deletion when applicable |
 | `worktreeCleanupMode` | `auto` (`never` always keeps worktrees) |
+
+Preview limits count visual lines after sanitized, whitespace-flattened text wraps to the current terminal width. A value of `0` keeps only the collapsed header. Results add an ellipsis when the line limit hides more preview text; start and resume calls rely on the configured expansion-key hint instead. Persisted result previews keep at most 2,000 source code points plus an ellipsis, so that storage ceiling can be reached before a high visual-line limit on a very wide terminal. Expansion preserves the complete existing content, including Markdown rendering for results.
+
+The matching environment overrides are `PI_SUBAGENT_CALL_PREVIEW_LINES` and `PI_SUBAGENT_RESULT_PREVIEW_LINES`:
+
+```json
+{
+  "callPreviewLines": 3,
+  "resultPreviewLines": 5
+}
+```
 
 This README owns design intent, operating decisions, and stable user-facing contracts. Source files and tests own exact mechanics and rendering, Git owns shipped history, and issues own future work.

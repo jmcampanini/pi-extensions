@@ -146,7 +146,14 @@ export function registerSubagentTool(pi: ExtensionAPI): void {
 					if (context.expanded) {
 						return formatExpandedSubagentCall(args, width, CALL_TEXT_METRICS, style);
 					}
-					return formatCollapsedSubagentCall(args, width, CALL_TEXT_METRICS, style, expandHint);
+					return formatCollapsedSubagentCall(
+						args,
+						width,
+						config.callPreviewLines,
+						CALL_TEXT_METRICS,
+						style,
+						expandHint,
+					);
 				},
 			};
 		},

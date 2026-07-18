@@ -131,14 +131,14 @@ eq("module exports only production formatters", Object.keys(subagentCall).sort()
 const task = "Trace authentication from the HTTP entry point.";
 const args = { name: "Auth flow", agent: "scout", task };
 const plainLines = (lines: string[]): string[] => lines.map((line) => stripVTControlCharacters(line).trimEnd());
-const comfortable = formatCollapsedSubagentCall(args, 100, metrics);
+const comfortable = formatCollapsedSubagentCall(args, 100, 3, metrics);
 eq("collapsed call has two content lines separated by a blank line", comfortable.length, 3);
 eq("comfortable heading", plainLines(comfortable)[0], "subagent start · scout · Auth flow");
 eq("comfortable spacer", plainLines(comfortable)[1], "");
 eq("comfortable task preview", plainLines(comfortable)[2], task);
 
 const resumeArgs = { name: "Auth flow", agent: "scout", message: "Apply the fix and rerun the tests." };
-const comfortableResume = formatCollapsedSubagentResumeCall(resumeArgs, 100, metrics);
+const comfortableResume = formatCollapsedSubagentResumeCall(resumeArgs, 100, 3, metrics);
 eq("resume call matches the start identity grammar", plainLines(comfortableResume)[0], "subagent resume · scout · Auth flow");
 eq("resume call separates its follow-up with a blank line", plainLines(comfortableResume)[1], "");
 eq("resume call previews its follow-up", plainLines(comfortableResume)[2], resumeArgs.message);
@@ -147,6 +147,7 @@ eq(
 	plainLines(formatCollapsedSubagentResumeCall(
 		{ ...resumeArgs, message: "Apply the fix.\nRerun the tests." },
 		100,
+		3,
 		metrics,
 		{},
 		"Ctrl+O to expand",
@@ -158,6 +159,7 @@ eq(
 	plainLines(formatCollapsedSubagentResumeCall(
 		{ name: "Auth flow", agent: "scout" },
 		100,
+		3,
 		metrics,
 		{},
 		"Ctrl+O to expand",
@@ -177,6 +179,7 @@ for (const width of [0, 1, 2, 8, 20, 36]) {
 	const lines = formatCollapsedSubagentResumeCall(
 		{ name: "界e\u0301 🙂 review", agent: "偵察", message: "漢字 e\u0301 🙂 continue the investigation" },
 		width,
+		3,
 		metrics,
 		{},
 		"Ctrl+O to expand",
@@ -184,15 +187,57 @@ for (const width of [0, 1, 2, 8, 20, 36]) {
 	eq(`resume width ${width} never exceeds terminal columns`, lines.every((line) => metrics.visibleWidth(line) <= width), true);
 }
 
-const narrow = formatCollapsedSubagentCall(args, 44, metrics);
+const narrow = formatCollapsedSubagentCall(args, 44, 3, metrics);
 eq("narrow heading preserves identity", plainLines(narrow)[0], "subagent start · scout · Auth flow");
 eq("narrow preview starts with the task", plainLines(narrow)[2].startsWith("Trace authentication"), true);
 eq("narrow preview has no ellipsis", plainLines(narrow)[2].includes("…"), false);
 eq("narrow lines fit terminal columns", narrow.every((line) => metrics.visibleWidth(line) <= 44), true);
 
+const longTask = Array.from({ length: 80 }, (_, index) => `step-${index}`).join(" ");
+const threeLinePreview = formatCollapsedSubagentCall(
+	{ name: "Long task", task: longTask },
+	60,
+	3,
+	metrics,
+	{},
+	"Ctrl+O to expand",
+);
+eq("configured call previews include one header, one spacer, and three visual lines", threeLinePreview.length, 5);
+eq("configured call previews advertise detail hidden by the line limit",
+	plainLines(threeLinePreview)[0].includes("Ctrl+O to expand"), true);
+eq("call previews do not add result-style ellipses", plainLines(threeLinePreview).slice(2).some((line) => line.includes("…")), false);
+const headerOnlyCall = formatCollapsedSubagentCall(
+	{ name: "Long task", task: longTask },
+	100,
+	0,
+	metrics,
+	{},
+	"Ctrl+O to expand",
+);
+eq("zero call preview lines render only the heading", headerOnlyCall.length, 1);
+eq("header-only calls retain the expansion hint", plainLines(headerOnlyCall)[0].includes("Ctrl+O to expand"), true);
+const headerOnlyEmptyResume = formatCollapsedSubagentResumeCall(
+	{ name: "No follow-up" },
+	100,
+	0,
+	metrics,
+	{},
+	"Ctrl+O to expand",
+);
+eq("zero-line empty resumes have no spacer or misleading expansion hint",
+	plainLines(headerOnlyEmptyResume), ["subagent resume · worker · No follow-up"]);
+const twentyLinePreview = formatCollapsedSubagentCall(
+	{ name: "Maximum", task: longTask },
+	10,
+	20,
+	metrics,
+);
+eq("maximum call preview line limit is honored", twentyLinePreview.length, 22);
+
 const styled = formatCollapsedSubagentCall(
 	{ name: "界e\u0301", agent: "偵察", task: "漢字 and cafe\u0301 continue" },
 	36,
+	3,
 	metrics,
 	{
 		title: (text) => `\x1b[1;34m${text}\x1b[0m`,
@@ -210,7 +255,7 @@ const hostileArgs = {
 	agent: "scout\x1b]52;c;Zm9v\x07",
 	task: "Trace \x1b]52;c;YmFy\x1b\\authentication.\b",
 };
-const hostileCollapsed = formatCollapsedSubagentCall(hostileArgs, 100, metrics);
+const hostileCollapsed = formatCollapsedSubagentCall(hostileArgs, 100, 3, metrics);
 eq("collapsed input terminal controls are removed", hostileCollapsed.join("").includes("\x1b]52"), false);
 eq("collapsed input keeps safe text", plainLines(hostileCollapsed), ["subagent start · scout · Auth flow", "", "Trace authentication."]);
 const hostileExpanded = formatExpandedSubagentCall(hostileArgs, 100, metrics);
@@ -219,6 +264,7 @@ eq("expanded input keeps safe text", plainLines(hostileExpanded).slice(0, 3), ["
 const hostileResume = formatCollapsedSubagentResumeCall(
 	{ name: hostileArgs.name, agent: hostileArgs.agent, message: hostileArgs.task },
 	100,
+	3,
 	metrics,
 );
 eq("resume input terminal controls are removed", hostileResume.join("").includes("\x1b]52"), false);
@@ -226,25 +272,26 @@ eq("resume input keeps safe text", plainLines(hostileResume), ["subagent resume 
 
 eq(
 	"multiline task is normalized for preview",
-	plainLines(formatCollapsedSubagentCall({ name: "N", task: "Trace auth.\n\nReturn  file:\tline pointers." }, 100, metrics)),
+	plainLines(formatCollapsedSubagentCall({ name: "N", task: "Trace auth.\n\nReturn  file:\tline pointers." }, 100, 3, metrics)),
 	["subagent start · worker · N", "", "Trace auth. Return file: line pointers."],
 );
-eq("an omitted agent displays worker without brackets", plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, metrics))[0], "subagent start · worker · Tests");
-eq("an explicit blank agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: "", task: "Run" }, 100, metrics))[0], "subagent start · worker · Tests");
-eq("an explicit whitespace agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: " \t ", task: "Run" }, 100, metrics))[0], "subagent start · worker · Tests");
+eq("an omitted agent displays worker without brackets", plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, 3, metrics))[0], "subagent start · worker · Tests");
+eq("an explicit blank agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: "", task: "Run" }, 100, 3, metrics))[0], "subagent start · worker · Tests");
+eq("an explicit whitespace agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: " \t ", task: "Run" }, 100, 3, metrics))[0], "subagent start · worker · Tests");
 eq(
 	"collapsed call advertises expansion when task detail is hidden",
-	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "first\nsecond" }, 100, metrics, {}, "Ctrl+O to expand"))[0],
+	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "first\nsecond" }, 100, 3, metrics, {}, "Ctrl+O to expand"))[0],
 	"subagent start · worker · Tests (Ctrl+O to expand)",
 );
 eq(
 	"collapsed call omits the expansion hint when the full task is already visible",
-	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, metrics, {}, "Ctrl+O to expand"))[0],
+	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, 3, metrics, {}, "Ctrl+O to expand"))[0],
 	"subagent start · worker · Tests",
 );
 const longIdentityHeading = plainLines(formatCollapsedSubagentCall(
 	{ name: "A very long invocation name that must yield space to metadata", agent: "code-reviewer", task: "first\nsecond" },
 	80,
+	3,
 	metrics,
 	{},
 	"Ctrl+O to expand",
@@ -255,15 +302,16 @@ eq("long identity headings still fit", metrics.visibleWidth(longIdentityHeading)
 const narrowLongAgentHeading = plainLines(formatCollapsedSubagentCall(
 	{ name: "Auth flow", agent: "code-reviewer", task: "Run" },
 	30,
+	3,
 	metrics,
 ))[0];
 eq("narrow headers preserve the separator after a clipped agent", narrowLongAgentHeading.includes("… · "), true);
 eq("narrow long-agent headings still fit", metrics.visibleWidth(narrowLongAgentHeading) <= 30, true);
-eq("collapsed width zero is empty", formatCollapsedSubagentCall(args, 0, metrics), []);
-eq("collapsed width one obeys the width contract", formatCollapsedSubagentCall(args, 1, metrics).every((line) => metrics.visibleWidth(line) <= 1), true);
+eq("collapsed width zero is empty", formatCollapsedSubagentCall(args, 0, 3, metrics), []);
+eq("collapsed width one obeys the width contract", formatCollapsedSubagentCall(args, 1, 3, metrics).every((line) => metrics.visibleWidth(line) <= 1), true);
 eq(
 	"collapsed extreme width retains all content",
-	plainLines(formatCollapsedSubagentCall(args, 1_000_000, metrics)),
+	plainLines(formatCollapsedSubagentCall(args, 1_000_000, 3, metrics)),
 	["subagent start · scout · Auth flow", "", task],
 );
 
