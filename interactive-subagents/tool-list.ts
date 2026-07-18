@@ -1,11 +1,11 @@
 /**
- * tool-list.ts — the `subagents_list` tool: the MODEL's view of the agents.
+ * tool-list.ts — the `subagent_list` tool: the MODEL's view of the agents.
  *
  * Terse on purpose: the model only needs enough to CHOOSE an agent (name +
  * description), plus whether the result comes back on its own (interactive
  * agents wait for a human), plus a warning when a spawn would fail. The
  * full details — tools, model, file paths — live in the human-facing
- * /subagents-available command instead; both are views over the same
+ * /subagent-available command instead; both are views over the same
  * inventory (agents.ts).
  *
  * v2 appends a running-children section: one bullet per live child with its
@@ -152,12 +152,12 @@ function describeDeliveringChildren(): { lines: string[]; details: unknown[] } {
 	return { lines, details };
 }
 
-export function registerSubagentsListTool(pi: ExtensionAPI): void {
+export function registerSubagentListTool(pi: ExtensionAPI): void {
 	pi.registerTool({
-		name: "subagents_list",
-		label: "List Subagent Definitions",
+		name: "subagent_list",
+		label: "List Subagents",
 		description:
-			"List the available agent definitions (<name>.md files from the project's .pi/subagents/ or the global subagents dir; project shadows global) usable as the `agent` parameter of the subagent tool. " +
+			"List the available agent definitions (<name>.md files from the project's .pi/subagents/ or the global subagents dir; project shadows global) usable as the `agent` parameter of subagent_spawn. " +
 			"Also reports currently running sub-agents with their live status, context usage, and cost, plus just-finished sub-agents whose result message is still on its way.",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
@@ -176,7 +176,7 @@ export function registerSubagentsListTool(pi: ExtensionAPI): void {
 			if (inventory.length === 0) {
 				const noAgents =
 					`No agent definitions found in ${agentDefsDir()} or ${projectDefsDir(ctx.cwd)}. ` +
-					"The subagent tool defaults to the 'worker' agent, so create worker.md in one of those directories before spawning.";
+					"subagent_spawn defaults to the 'worker' agent, so create worker.md in one of those directories before spawning.";
 				return {
 					content: [{ type: "text", text: childrenSection ? `${noAgents}\n\n${childrenSection}` : noAgents }],
 					details: { count: 0, running: runningChildren.details, delivering: deliveringChildren.details },

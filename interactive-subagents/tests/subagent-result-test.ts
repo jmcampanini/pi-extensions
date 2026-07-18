@@ -12,7 +12,7 @@ function eq(label: string, got: unknown, want: unknown): void {
 const started = {
 	content: [{ type: "text", text: "Sub-agent started. Its result will arrive automatically - do not poll." }],
 };
-for (const tool of ["subagent", "subagent_resume"]) {
+for (const tool of ["subagent_spawn", "subagent_resume"]) {
 	let renderedError = false;
 	const component = renderSubagentLaunchResult(started, false, () => {
 		renderedError = true;
@@ -23,7 +23,7 @@ for (const tool of ["subagent", "subagent_resume"]) {
 }
 
 const errorText = "Launch failed clearly.\nFix tmux and retry.";
-for (const tool of ["subagent", "subagent_resume"]) {
+for (const tool of ["subagent_spawn", "subagent_resume"]) {
 	let styledError = "";
 	const error = renderSubagentLaunchResult(
 		{ content: [{ type: "text", text: errorText }] },
@@ -49,28 +49,28 @@ renderSubagentLaunchResult(
 eq("error terminal controls are removed before rendering", sanitizedError, "Failed clearly.");
 
 const directory = fileURLToPath(new URL("..", import.meta.url));
-const subagentSource = readFileSync(`${directory}/tool-subagent.ts`, "utf8");
+const spawnSource = readFileSync(`${directory}/tool-spawn.ts`, "utf8");
 const resumeSource = readFileSync(`${directory}/tool-resume.ts`, "utf8");
-eq("subagent uses the shared result renderer", subagentSource.includes("renderSubagentLaunchResult(result, context.isError"), true);
+eq("subagent_spawn uses the shared result renderer", spawnSource.includes("renderSubagentLaunchResult(result, context.isError"), true);
 eq("subagent_resume uses the shared result renderer", resumeSource.includes("renderSubagentLaunchResult(result, context.isError"), true);
 eq(
-	"subagent limits parallel encouragement to independent bounded tasks",
-	subagentSource.includes("are independent, bounded, and able to proceed concurrently."),
+	"subagent_spawn limits parallel encouragement to independent bounded tasks",
+	spawnSource.includes("are independent, bounded, and able to proceed concurrently."),
 	true,
 );
 eq(
-	"subagent guidance keeps unsuitable tasks in the parent",
-	subagentSource.includes("Keep trivial tasks, tightly coupled or sequential work, and critical-path blockers in the parent."),
+	"subagent_spawn guidance keeps unsuitable tasks in the parent",
+	spawnSource.includes("Keep trivial tasks, tightly coupled or sequential work, and critical-path blockers in the parent."),
 	true,
 );
 eq(
-	"subagent guidance prohibits overlapping parallel write scopes",
-	subagentSource.includes("Never give parallel sub-agents overlapping write scopes in the same checkout"),
+	"subagent_spawn guidance prohibits overlapping parallel write scopes",
+	spawnSource.includes("Never give parallel sub-agents overlapping write scopes in the same checkout"),
 	true,
 );
 eq(
-	"subagent model-facing launch instruction remains in execute",
-	subagentSource.includes('"Its result will arrive automatically \u2014 do not poll; continue with other work or end your turn."'),
+	"subagent_spawn model-facing launch instruction remains in execute",
+	spawnSource.includes('"Its result will arrive automatically \u2014 do not poll; continue with other work or end your turn."'),
 	true,
 );
 eq(

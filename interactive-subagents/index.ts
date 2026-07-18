@@ -1,7 +1,7 @@
 /**
  * interactive-subagents — spawn sub-agents as real pi sessions in tmux panes.
  *
- * The parent model calls the `subagent` tool, which RETURNS IMMEDIATELY.
+ * The parent model calls the `subagent_spawn` tool, which RETURNS IMMEDIATELY.
  * The child runs as a full `pi` process in its own tmux pane (watch it, or
  * take it over by typing). A background watcher polls for the child's exit
  * and steers the result back into the parent conversation, waking the model.
@@ -10,7 +10,7 @@
  *
  *   parent pane                      filesystem                child pane
  *   ───────────                      ──────────                ──────────
- *   subagent tool ──── writes ────▶  task file, launch script
+ *   subagent_spawn ─── writes ────▶  task file, launch script
  *                 ──── tmux ─────────────────────────────────▶ pi --session … -e implant.ts
  *   watcher (1s)  ◀─── reads ─────  <session>.jsonl.exit  ◀──  implant (done/ping/error)
  *                 ◀─── reads ─────  <session>.jsonl       ◀──  pi (the transcript)
@@ -32,7 +32,7 @@
  *   result-message.ts    compact/expanded renderer for delivered results
  *   delivery.ts          message_end listener that clears "delivering" widget rows
  *   implant.ts           loaded INSIDE each child: done/ping tools, auto-exit
- *   tool-*.ts            one file per model-facing tool (subagent, resume, list)
+ *   tool-*.ts            one file per model-facing tool (spawn, resume, list)
  *   command-*.ts         one file per human command (available, running)
  *
  * This file only WIRES those pieces into pi: lifecycle events plus one
@@ -40,15 +40,15 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resetOverview, registerSubagentsAvailableCommand } from "./command-available.ts";
-import { registerSubagentsRunningCommand } from "./command-running.ts";
+import { resetOverview, registerSubagentAvailableCommand } from "./command-available.ts";
+import { registerSubagentRunningCommand } from "./command-running.ts";
 import { registerDeliveryListener } from "./delivery.ts";
 import { registerSubagentResultRenderer } from "./result-message.ts";
 import { stopWidgetTimer } from "./running-widget.ts";
 import { completeReloadHandoff, prepareForReload, resetForShutdown, setLatestCtx } from "./state.ts";
-import { registerSubagentsListTool } from "./tool-list.ts";
+import { registerSubagentListTool } from "./tool-list.ts";
 import { registerSubagentResumeTool } from "./tool-resume.ts";
-import { registerSubagentTool } from "./tool-subagent.ts";
+import { registerSubagentSpawnTool } from "./tool-spawn.ts";
 import { closePane } from "./tmux.ts";
 import { adoptRunningChildren } from "./watcher.ts";
 
@@ -96,9 +96,9 @@ export default function (pi: ExtensionAPI) {
 	registerDeliveryListener(pi);
 	registerSubagentResultRenderer(pi);
 
-	registerSubagentTool(pi);
-	registerSubagentsAvailableCommand(pi);
-	registerSubagentsRunningCommand(pi);
-	registerSubagentsListTool(pi);
+	registerSubagentSpawnTool(pi);
+	registerSubagentAvailableCommand(pi);
+	registerSubagentRunningCommand(pi);
+	registerSubagentListTool(pi);
 	registerSubagentResumeTool(pi);
 }

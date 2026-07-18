@@ -1,7 +1,7 @@
 /**
  * launch.ts — the ONE way a child pi process gets launched.
  *
- * Both the `subagent` tool (first launch) and `subagent_resume` (relaunch of
+ * Both `subagent_spawn` (first launch) and `subagent_resume` (relaunch of
  * an existing session) go through the helpers in this file, so there is a
  * single place that decides what a child's command line looks like: the env
  * prefix, the pi flags, the control-tool union, and the exit sentinel. If

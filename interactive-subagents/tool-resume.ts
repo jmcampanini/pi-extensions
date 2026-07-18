@@ -228,11 +228,11 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			if (sessionCwd && !existsSync(sessionCwd)) {
 				if (meta.worktree) {
 					throw new Error(
-						`Cannot resume: this sub-agent ran in a git worktree at ${meta.worktree.dir} that no longer exists (usually auto-cleanup after it finished with no changes). Spawn a new subagent instead.`,
+						`Cannot resume: this sub-agent ran in a git worktree at ${meta.worktree.dir} that no longer exists (usually auto-cleanup after it finished with no changes). Use subagent_spawn to launch a new child instead.`,
 					);
 				}
 				throw new Error(
-					`Cannot resume: the sub-agent's working directory no longer exists: ${sessionCwd}. Spawn a new subagent instead.`,
+					`Cannot resume: the sub-agent's working directory no longer exists: ${sessionCwd}. Use subagent_spawn to launch a new child instead.`,
 				);
 			}
 

@@ -532,7 +532,7 @@ export function observeActivity(obs: ActivityObservation, read: ActivityRead, no
 // ── picking the tool to display ──────────────────────────────────────────
 
 /**
- * The tool both display surfaces (the widget segment and subagents_list)
+ * The tool both display surfaces (the widget segment and subagent_list)
  * show: the entry with the smallest startedAt — the longest-running one,
  * which is stable under parallel fan-out where newer tools come and go
  * around it. One shared helper so the two surfaces can never disagree.

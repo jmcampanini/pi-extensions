@@ -161,7 +161,7 @@ ok(
 );
 ok("frontmatter problems render as ⚠ blocks", lines.some((l) => l.trim().startsWith("⚠ invalid context")));
 ok("every line fits the width", lines.every((l) => l.length <= WIDTH));
-ok("dismiss hint present", flat.includes("/subagents-available again"));
+ok("dismiss hint present", flat.includes("/subagent-available again"));
 
 // Narrow terminals: everything (incl. the model slot and dismiss hint) must
 // still give way instead of overflowing.
