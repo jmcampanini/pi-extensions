@@ -89,6 +89,21 @@ ok("prompt arg before sentinel", full.includes("'@/task.md' ; echo"));
 ok("ends with the sentinel suffix", full.endsWith(SENTINEL_ECHO_SUFFIX));
 ok("typed command does NOT match the poller regex (quote-split)", !SENTINEL_REGEX.test(full));
 
+// harness-pass-through applies to pi children too: appended VERBATIM (no
+// quoting) between the named flags and the prompt argument.
+const withPassThrough = buildLaunchCommand({
+	cwd: null,
+	env: "E='1'",
+	sessionFile: "/s.jsonl",
+	tools: "read",
+	passThrough: "--no-color --foo 'bar baz'",
+	promptArg: "'@/task.md'",
+});
+ok(
+	"pass-through sits verbatim before the prompt arg",
+	withPassThrough.includes("--tools 'read,subagent_done,caller_ping' --no-color --foo 'bar baz' '@/task.md'"),
+);
+
 const minimal = buildLaunchCommand({
 	cwd: null,
 	env: "E='1'",
@@ -111,6 +126,20 @@ eq("meta round-trips", readLaunchMeta(sessionFile), meta);
 eq("missing meta = {}", readLaunchMeta(join(dir, "nope.jsonl")), {});
 writeFileSync(`${sessionFile}.meta`, "{corrupt", "utf8");
 eq("corrupt meta = {}", readLaunchMeta(sessionFile), {});
+
+// External children extend the meta with harness identity and the cwd (they
+// have no session header to read the directory back from on resume).
+const externalMeta: LaunchMeta = {
+	name: "Ext",
+	agent: "ext",
+	model: "claude-haiku-4-5",
+	autoExit: true,
+	harness: "claude-code",
+	harnessPassThrough: "--permission-mode acceptEdits",
+	cwd: "/work/dir",
+};
+writeLaunchMeta(sessionFile, externalMeta);
+eq("external meta round-trips", readLaunchMeta(sessionFile), externalMeta);
 
 // ── slugify ──────────────────────────────────────────────────────────────
 

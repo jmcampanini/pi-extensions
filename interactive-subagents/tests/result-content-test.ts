@@ -95,5 +95,28 @@ eq("stopped envelope explains user intent",
 eq("unknown economics are omitted",
 	stopped.content.includes("Context:") || stopped.content.includes("Result:") || stopped.content.includes("Cost:"), false);
 
+// External children name their harness and swap the session line for a
+// resume reference - their anchor path is not a readable session file.
+const external = buildSubagentResultEnvelope({
+	status: "completed",
+	name: "branch check",
+	agent: "ext",
+	harness: "claude-code",
+	id: "abcd1234",
+	elapsed: "31s",
+	response: "The default branch is main.",
+	action: "Resume",
+	actionMessage: "...",
+	sessionFile: "/sessions/anchor.jsonl",
+});
+eq("external envelope names the harness", external.content.includes("Harness: claude-code"), true);
+eq("external envelope keeps the agent line", external.content.includes("Agent: ext"), true);
+eq("external session line reads as a resume reference",
+	external.content.includes(
+		"Session ref: /sessions/anchor.jsonl (pass as sessionPath to subagent_resume if the id is no longer known; not a readable file)",
+	), true);
+eq("external envelope drops the plain session line", external.content.includes("\nSession: "), false);
+eq("pi envelopes carry no harness line", completed.content.includes("Harness:"), false);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

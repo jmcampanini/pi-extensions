@@ -108,6 +108,10 @@ export interface LaunchCommandOptions {
 	systemPromptFile?: string;
 	/** Comma-separated tool allowlist; the control tools are unioned in. */
 	tools?: string;
+	/** Extra flags appended VERBATIM before the prompt argument (frontmatter
+	 * `harness-pass-through` - allowed for pi children too, for uniform
+	 * semantics across harnesses). */
+	passThrough?: string;
 	/** Shell-quoted `@file` prompt argument, or "" for none (resume without a message). */
 	promptArg: string;
 }
@@ -128,6 +132,7 @@ export function buildLaunchCommand(options: LaunchCommandOptions): string {
 			options.thinking ? `--thinking ${shellQuote(options.thinking)}` : "",
 			options.systemPromptFile ? `--append-system-prompt ${shellQuote(options.systemPromptFile)}` : "",
 			options.tools ? `--tools ${shellQuote(withControlTools(options.tools))}` : "",
+			options.passThrough ?? "",
 			options.promptArg,
 		]
 			.filter((part) => part !== "")
@@ -154,6 +159,14 @@ export interface LaunchMeta {
 	/** Set when the child ran in a git worktree — lets a resume keep the same
 	 * cleanup behavior, and lets it explain a worktree that was removed. */
 	worktree?: WorktreeInfo;
+	/** Which tool ran the child ("claude-code"); absent = pi. On resume this
+	 * is what routes the relaunch through the external profile. */
+	harness?: string;
+	/** Extra flags appended verbatim on every (re)launch. */
+	harnessPassThrough?: string;
+	/** The child's working directory. Recorded only for external children,
+	 * which have no session header to read it back from on resume. */
+	cwd?: string;
 }
 
 export function writeLaunchMeta(sessionFile: string, meta: LaunchMeta): void {

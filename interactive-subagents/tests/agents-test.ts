@@ -223,5 +223,64 @@ eq("inventory: absent defaults to false", withWorktree.find((a) => a.name === "w
 const worktreeLines = formatAgentOverviewLines(withWorktree, WIDTH, dirs);
 eq("overview tags exactly the one worktree agent", worktreeLines.filter((l) => l.trim() === "worktree").length, 1);
 
+// ── external harnesses (harness / harness-pass-through frontmatter) ──────
+// Placed last: these agent files would change earlier inventory counts.
+
+writeFileSync(
+	join(globalDefs, "ext.md"),
+	"---\ndescription: Claude Code worker.\nharness: claude-code\nmodels: claude-haiku-4-5, claude-sonnet-5\nthinking: minimal\ntools: Read,Bash\nharness-pass-through: --permission-mode acceptEdits\n---\nBe careful.\n",
+);
+const ext = loadAgentDefinition("ext", cwd)!;
+eq("harness parses", ext.harness, "claude-code");
+eq("pass-through kept verbatim", ext.harnessPassThrough, "--permission-mode acceptEdits");
+eq("valid external frontmatter has no problems", ext.problems, []);
+eq("explicit harness pi parses", (() => {
+	writeFileSync(join(globalDefs, "explicitpi.md"), "---\nharness: pi\n---\nP.\n");
+	return loadAgentDefinition("explicitpi", cwd)!.harness;
+})(), "pi");
+eq("harness absent = undefined on the definition", scout.harness, undefined);
+
+// Unknown harness names are problems, not silent pi children - spawning the
+// wrong tool is exactly the hazard the key exists to prevent.
+writeFileSync(join(globalDefs, "badharness.md"), "---\nharness: codex\n---\nB.\n");
+const badharness = loadAgentDefinition("badharness", cwd)!;
+eq("unknown harness does not set harness", badharness.harness, undefined);
+ok("unknown harness problem lists the valid values", badharness.problems[0].includes('invalid harness "codex"') && badharness.problems[0].includes("pi, claude-code"));
+
+// Forked context cannot ride into a different tool.
+writeFileSync(join(globalDefs, "extforked.md"), "---\nharness: claude-code\ncontext: forked\n---\nF.\n");
+const extforked = loadAgentDefinition("extforked", cwd)!;
+eq("forked + external harness is one problem", extforked.problems.length, 1);
+ok("forked + external problem explains why", extforked.problems[0].includes('context "forked" is not supported with harness "claude-code"'));
+
+// Project shadows global for the new keys like every other key.
+writeFileSync(join(globalDefs, "shadowed-harness.md"), "---\nharness: claude-code\n---\nG.\n");
+writeFileSync(join(projectDefs, "shadowed-harness.md"), "---\ndescription: plain pi\n---\nP.\n");
+eq("project shadows global harness", loadAgentDefinition("shadowed-harness", cwd)!.harness, undefined);
+
+// Inventory: external agents skip pi's registry entirely - the FIRST models
+// entry is what runs, verbatim, and thinking validates through the profile's
+// effort mapping instead of pi's levels.
+const extInventory = collectAgentInventory(registry, cwd);
+const extInfo = extInventory.find((a) => a.name === "ext")!;
+eq("external model is the first entry verbatim", extInfo.resolvedModel, "claude-haiku-4-5");
+eq("external harness carried into the inventory", extInfo.harness, "claude-code");
+eq("external pass-through carried into the inventory", extInfo.harnessPassThrough, "--permission-mode acceptEdits");
+eq("external agent with mappable thinking has no problems", extInfo.problems, []);
+eq("pi agents default to harness pi in the inventory", extInventory.find((a) => a.name === "worker")!.harness, "pi");
+
+writeFileSync(join(globalDefs, "extoff.md"), "---\nharness: claude-code\nthinking: off\n---\nO.\n");
+const extoff = collectAgentInventory(registry, cwd).find((a) => a.name === "extoff")!;
+eq("unmappable external thinking is a problem", extoff.problems.length, 1);
+ok("unmappable thinking problem comes from the profile", extoff.problems[0].includes("no claude-code effort mapping"));
+
+// Overview: the harness renders as a loud meta-row deviation (like forked),
+// and the pass-through renders muted.
+const extLines = formatAgentOverviewLines([extInfo], WIDTH, dirs);
+const extFlat = extLines.join("\n");
+ok("overview meta row names the harness", extFlat.includes("claude-code"));
+ok("overview shows the pass-through", extFlat.includes("pass-through: --permission-mode acceptEdits"));
+ok("external overview still fits the width", extLines.every((l) => l.length <= WIDTH));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

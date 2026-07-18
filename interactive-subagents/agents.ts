@@ -21,6 +21,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { agentConfigDir } from "./config.ts";
+import { harnessProfile, validHarnessValues } from "./harnesses.ts";
 import { assertValidThinkingLevel, resolveUsableModel, type ModelLookup } from "./models.ts";
 
 // ── where definitions live ───────────────────────────────────────────────
@@ -63,6 +64,14 @@ export interface AgentDefinition {
 	autoExit?: boolean;
 	/** true = spawn this agent in a fresh git worktree by default. */
 	worktree?: boolean;
+	/** Which tool runs the child. Absent or "pi" = a pi child (all existing
+	 * behavior); an external name ("claude-code") = that tool's profile in
+	 * harnesses.ts drives the launch. Only set when the value is valid. */
+	harness?: string;
+	/** Extra command-line flags appended VERBATIM to the launch command -
+	 * where tool-specific flag knowledge lives, kept out of the core. Applies
+	 * to pi children too, for uniform semantics. */
+	harnessPassThrough?: string;
 	/**
 	 * Problems found in the frontmatter itself (e.g. an unknown `context:` or
 	 * `worktree:` value). Kept on the definition (not just the inventory) so
@@ -98,6 +107,7 @@ function parseAgentMarkdown(
 	const rawAutoExit = frontmatterValue(frontmatter, "auto-exit");
 	const rawWorktree = frontmatterValue(frontmatter, "worktree");
 	const rawModels = frontmatterValue(frontmatter, "models");
+	const rawHarness = frontmatterValue(frontmatter, "harness");
 
 	const problems: string[] = [];
 	// Unknown values are problems, not silent defaults — a typo in `context:`
@@ -109,6 +119,20 @@ function parseAgentMarkdown(
 	// isolation would be exactly the parallel-edit hazard the flag prevents.
 	if (rawWorktree !== undefined && rawWorktree !== "true" && rawWorktree !== "false") {
 		problems.push(`invalid worktree "${rawWorktree}" — use "true" or "false"`);
+	}
+	// Harness names come from the profile registry; a typo silently spawning
+	// a pi child instead of the intended external tool would be the exact
+	// wrong-tool hazard the key exists to prevent.
+	const harnessValid = rawHarness === undefined || rawHarness === "pi" || harnessProfile(rawHarness) !== undefined;
+	if (!harnessValid) {
+		problems.push(`invalid harness "${rawHarness}" - valid values: ${validHarnessValues().join(", ")}`);
+	}
+	// A forked context copies a pi conversation into the child; an external
+	// tool cannot open one, so the combination can never work.
+	if (harnessValid && rawHarness !== undefined && rawHarness !== "pi" && rawContext === "forked") {
+		problems.push(
+			`context "forked" is not supported with harness "${rawHarness}" - a pi conversation cannot be transplanted into a different tool`,
+		);
 	}
 
 	return {
@@ -124,6 +148,8 @@ function parseAgentMarkdown(
 		context: rawContext === "forked" || rawContext === "fresh" ? rawContext : undefined,
 		autoExit: rawAutoExit === "true" ? true : rawAutoExit === "false" ? false : undefined,
 		worktree: rawWorktree === "true" ? true : rawWorktree === "false" ? false : undefined,
+		harness: harnessValid ? rawHarness : undefined,
+		harnessPassThrough: frontmatterValue(frontmatter, "harness-pass-through"),
 		problems,
 		body,
 	};
@@ -188,6 +214,10 @@ export interface AgentInfo {
 	autoExit: boolean;
 	/** true = this agent runs in a fresh git worktree by default. */
 	worktree: boolean;
+	/** Which tool runs the child; "pi" unless the frontmatter says otherwise. */
+	harness: string;
+	/** Extra command-line flags appended verbatim to the launch command. */
+	harnessPassThrough?: string;
 	/** Anything that would break or degrade spawning this agent. Empty = valid. */
 	problems: string[];
 }
@@ -204,17 +234,27 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 	return listAgentDefinitions(cwd).map((def) => {
 		const problems: string[] = [...def.problems];
 		let resolvedModel: string | undefined;
+		const harness = def.harness ?? "pi";
+		// External model names are the tool's own: pi's registry never applies,
+		// the FIRST entry is what runs, verbatim. Same for thinking: the
+		// profile's effort mapping is the validity check, not pi's levels.
+		const profile = harness === "pi" ? undefined : harnessProfile(harness);
 
 		if (def.models && def.models.length > 0) {
-			try {
-				resolvedModel = resolveUsableModel(def.models, registry);
-			} catch (error) {
-				problems.push(problemText(error));
+			if (profile) {
+				resolvedModel = def.models[0];
+			} else {
+				try {
+					resolvedModel = resolveUsableModel(def.models, registry);
+				} catch (error) {
+					problems.push(problemText(error));
+				}
 			}
 		}
 		if (def.thinking) {
 			try {
-				assertValidThinkingLevel(def.thinking);
+				if (profile) profile.mapEffort(def.thinking);
+				else assertValidThinkingLevel(def.thinking);
 			} catch (error) {
 				problems.push(problemText(error));
 			}
@@ -232,6 +272,8 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 			context: def.context ?? "fresh",
 			autoExit: def.autoExit ?? true,
 			worktree: def.worktree ?? false,
+			harness,
+			harnessPassThrough: def.harnessPassThrough,
 			problems,
 		};
 	});
@@ -364,7 +406,7 @@ export function formatAgentOverviewLines(
 			` global:  ${tildify(dirs.global)}`,
 			` project: ${tildify(dirs.project)}`,
 			...wrapText(
-				"Create <name>.md files there (frontmatter: description, models, thinking, tools, context, auto-exit, worktree; body = system prompt).",
+				"Create <name>.md files there (frontmatter: description, models, thinking, tools, context, auto-exit, worktree, harness, harness-pass-through; body = system prompt).",
 				Math.max(1, width - 1),
 			).map((wrapped) => ` ${wrapped}`),
 		].map((line) => clampVisible(line, width));
@@ -447,8 +489,12 @@ export function formatAgentOverviewLines(
 		// Meta row: only what deviates from a plain default agent — a fully
 		// default one gets no row at all. Run-behavior deviations render loud.
 		const parts: { text: string; paint: (text: string) => string }[] = [];
+		// A non-pi harness changes what program runs the child entirely - the
+		// loudest deviation there is, so it leads the row.
+		if (agent.harness !== "pi") parts.push({ text: agent.harness, paint: warning });
 		if (agent.thinking) parts.push({ text: `thinking ${agent.thinking}`, paint: muted });
 		if (agent.tools) parts.push({ text: `tools: ${agent.tools}`, paint: muted });
+		if (agent.harnessPassThrough) parts.push({ text: `pass-through: ${agent.harnessPassThrough}`, paint: muted });
 		if (agent.context === "forked") parts.push({ text: "forked", paint: warning });
 		if (!agent.autoExit) parts.push({ text: "interactive", paint: warning });
 		// Worktree isolation changes where the child runs — a run-behavior
