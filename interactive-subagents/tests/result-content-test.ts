@@ -6,6 +6,13 @@ function eq(label: string, got: unknown, want: unknown): void {
 	if (g === w) { pass++; console.log(`  ok  ${label}`); }
 	else { fail++; console.log(`  FAIL ${label}:\n    got  ${g}\n    want ${w}`); }
 }
+function throws(label: string, fn: () => unknown, contains: string): void {
+	try { fn(); fail++; console.log(`  FAIL ${label}: expected throw`); }
+	catch (error) {
+		if (String(error).includes(contains)) { pass++; console.log(`  ok  ${label}`); }
+		else { fail++; console.log(`  FAIL ${label}: ${String(error)}`); }
+	}
+}
 
 const response = "The command completed successfully.\n\nNo further action was needed.\x1b]52;c;Zm9v\x07";
 const completed = buildSubagentResultEnvelope({
@@ -81,7 +88,7 @@ eq("failed envelope uses retry guidance",
 const stopped = buildSubagentResultEnvelope({
 	status: "stopped",
 	name: "manual task",
-	agent: "",
+	agent: "worker",
 	id: "12345678",
 	elapsed: "9s",
 	notice: "Stopped by the user. Do not treat this as a subagent failure.",
@@ -89,7 +96,17 @@ const stopped = buildSubagentResultEnvelope({
 	actionMessage: "...",
 	sessionFile: "/sessions/stopped.jsonl",
 });
-eq("blank agents fall back to worker", stopped.content.includes("Agent: worker"), true);
+eq("stopped envelope preserves the validated agent", stopped.content.includes("Agent: worker"), true);
+throws("result envelopes reject whitespace in agent identifiers", () => buildSubagentResultEnvelope({
+	status: "stopped",
+	name: "invalid agent",
+	agent: "code reviewer",
+	id: "badagent",
+	elapsed: "1s",
+	action: "Resume",
+	actionMessage: "...",
+	sessionFile: "/sessions/invalid.jsonl",
+}), "whitespace");
 eq("stopped envelope explains user intent",
 	stopped.content.includes("Notice: Stopped by the user. Do not treat this as a subagent failure."), true);
 eq("unknown economics are omitted",

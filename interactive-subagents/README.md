@@ -64,7 +64,7 @@ The parent needs no discovery round trip: its system prompt ends with a compact 
 
 ## Agent definitions and trust
 
-Definition filenames are agent names; their Markdown bodies extend the child system prompt. `<cwd>/.pi/subagents/` shadows `$PI_CODING_AGENT_DIR/subagents/`, normally `~/.pi/agent/subagents/`. A repository can replace `worker`, so inspect `.pi/subagents/` in untrusted repositories.
+Definition filename stems are agent identifiers; their Markdown bodies extend the child system prompt. Identifiers are non-empty, contain no whitespace, and occupy at most 20 terminal display columns. Task display names remain free-form and may contain spaces. Only definition files with valid identifiers are discovered, and explicit invalid `agent` values are rejected. `<cwd>/.pi/subagents/` shadows `$PI_CODING_AGENT_DIR/subagents/`, normally `~/.pi/agent/subagents/`. A repository can replace `worker`, so inspect `.pi/subagents/` in untrusted repositories.
 
 Optional frontmatter keys are `description`, `details`, `models`, `thinking`, `tools`, `context`, `auto-exit`, `worktree`, `harness`, and `harness-pass-through`. Omitted model, thinking, and tools settings inherit Pi defaults; the other defaults are `fresh`, `true`, `false`, and `pi`. A model list is tried in order until a usable exact match is found (external harnesses instead take the first entry verbatim; see External harnesses). Call values override frontmatter, which overrides built-in defaults.
 
@@ -122,7 +122,8 @@ Cleanup favors leftovers over lost work. `auto` removes only a successful, prova
 The live display and `subagent_list` show `starting`, `active`, `waiting`, or `stalled`. Stalled means liveness reports stayed missing, unreadable, or stale for 60 seconds, or a prompted run never started. It is a warning, not completion; supervision continues. A valid `active` report does not age out because a long tool may emit no events. `delivering` means the child exited and its result awaits a parent turn boundary. `queued` means the launch is waiting for a concurrency slot and has not started.
 
 - `/subagent-available` toggles the zero-token definition overview.
-- `/subagent-running` uses arrows or `j`/`k` to select, Enter to visit, `z` to visit and zoom, `x` to stop, and Escape or Ctrl+C to cancel.
+- The compact widget shows at most `widgetMaxRows` detailed rows ordered by attention: delivering, stalled, waiting, starting, active, then queued, with launch order inside each group. When rows are hidden, a final summary reports `+N more` and nonzero hidden stalled, waiting, and queued counts in that order. Marker columns appear only when used by a visible row, in `f`, `i`, `w`, `x` order: forked context, interactive (`autoExit: false`), worktree, and external harness. Unbracketed agent identifiers render darker than marker letters; `x` replaces the compact widget's full harness suffix while detailed surfaces still name the exact harness.
+- `/subagent-running` is the bounded-height, live, scrollable show-all/control view for every compact-widget state. It uses the same ordering and marker letters, refreshes while open, and keeps selection on the same child as rows move. Use arrows or `j`/`k` to select. Running rows support Enter to visit, `z` to visit and zoom, and `x` to stop; queued rows support `x` to cancel. Starting and delivering rows remain visible but have no pane action. Escape or Ctrl+C closes the view.
 - Type directly in a child pane to take over. Escape during an automatic turn keeps the pane open; automatic exit remains armed for the next completed turn.
 - Expand compact tasks and results with Pi's configured tool-expansion key, Ctrl+O by default.
 
@@ -144,19 +145,23 @@ Settings resolve from built-in defaults, then `$PI_CODING_AGENT_DIR/subagents.js
 | `maxConcurrentSubagents` | `9` (`1` through `9`; further launches queue) |
 | `callPreviewLines` | `3` (start and resume calls, `0` through `20`) |
 | `resultPreviewLines` | `5` (completed, failed, and stopped results, `0` through `20`) |
+| `widgetMaxRows` | `5` (positive integer; compact-widget detailed-row cap) |
 | `worktreeCreateCommand` | Built-in Git creation under `.pi/worktrees/` |
 | `worktreeCleanupCommand` | Built-in Git removal and branch deletion when applicable |
 | `worktreeCleanupMode` | `auto` (`never` always keeps worktrees) |
 
 Preview limits count visual lines after sanitized, whitespace-flattened text wraps to the current terminal width. A value of `0` keeps only the collapsed header. Results add an ellipsis when the line limit hides more preview text; start and resume calls rely on the configured expansion-key hint instead. Persisted result previews keep at most 2,000 source code points plus an ellipsis, so that storage ceiling can be reached before a high visual-line limit on a very wide terminal. Expansion preserves the complete existing content, including Markdown rendering for results.
 
-Every key has a matching environment override named `PI_SUBAGENT_` plus the key in SCREAMING_SNAKE (for example `PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS`, `PI_SUBAGENT_CALL_PREVIEW_LINES`, `PI_SUBAGENT_RESULT_PREVIEW_LINES`):
+Every key has a matching environment override named `PI_SUBAGENT_` plus the key in SCREAMING_SNAKE (for example `PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS` and `PI_SUBAGENT_WIDGET_MAX_ROWS`):
 
 ```json
 {
   "callPreviewLines": 3,
-  "resultPreviewLines": 5
+  "resultPreviewLines": 5,
+  "widgetMaxRows": 5
 }
 ```
+
+For a denser widget, put `{"widgetMaxRows": 3}` in `subagents.json` or launch Pi with `PI_SUBAGENT_WIDGET_MAX_ROWS=3`; the environment wins over the file. Use `/subagent-running` whenever the summary reports hidden rows.
 
 This README owns design intent, operating decisions, and stable user-facing contracts. Source files and tests own exact mechanics and rendering, Git owns shipped history, and issues own future work.

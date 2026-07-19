@@ -57,7 +57,7 @@ function normalizedInline(value: string | undefined): string {
 }
 
 function agentName(value: string | undefined): string {
-	return normalizedInline(value) || "worker";
+	return value === undefined ? "worker" : normalizedInline(value);
 }
 
 function formatHeading(args: SubagentActionArgs, style: SubagentCallStyle): string {

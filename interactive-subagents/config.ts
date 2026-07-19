@@ -35,6 +35,8 @@ export interface SubagentsConfig {
 	callPreviewLines: number;
 	/** Wrapped response lines shown while a delivered result is collapsed. */
 	resultPreviewLines: number;
+	/** Maximum detailed child rows in the compact widget. */
+	widgetMaxRows: number;
 	/** Shell command (run via bash -c) that creates a worktree and prints its directory. */
 	worktreeCreateCommand: string;
 	/** Shell command (run via bash -c) that removes a finished subagent's worktree. */
@@ -65,6 +67,7 @@ const DEFAULTS: SubagentsConfig = {
 	maxConcurrentSubagents: 9,
 	callPreviewLines: 3,
 	resultPreviewLines: 5,
+	widgetMaxRows: 5,
 	worktreeCreateCommand: DEFAULT_WORKTREE_CREATE_COMMAND,
 	worktreeCleanupCommand: DEFAULT_WORKTREE_CLEANUP_COMMAND,
 	worktreeCleanupMode: "auto",
@@ -114,6 +117,11 @@ function requireMaxConcurrent(value: unknown, source: string): number {
 function requirePreviewLines(value: unknown, source: string): number {
 	if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 20) return value;
 	throw new Error(`${source}: invalid preview line count ${JSON.stringify(value)}; use an integer from 0 through 20`);
+}
+
+function requirePositiveInteger(value: unknown, source: string): number {
+	if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+	throw new Error(`${source}: invalid value ${JSON.stringify(value)} — use a positive integer`);
 }
 
 function coerceNumericEnvValue(value: string): number | string {
@@ -178,6 +186,9 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 		if (file.resultPreviewLines !== undefined) {
 			result.resultPreviewLines = requirePreviewLines(file.resultPreviewLines, `${filePath}: resultPreviewLines`);
 		}
+		if (file.widgetMaxRows !== undefined) {
+			result.widgetMaxRows = requirePositiveInteger(file.widgetMaxRows, `${filePath}: widgetMaxRows`);
+		}
 		if (file.worktreeCreateCommand !== undefined) {
 			result.worktreeCreateCommand = requireCommandString(
 				file.worktreeCreateCommand,
@@ -232,6 +243,12 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 		result.resultPreviewLines = requirePreviewLines(
 			coerceNumericEnvValue(env.PI_SUBAGENT_RESULT_PREVIEW_LINES),
 			"PI_SUBAGENT_RESULT_PREVIEW_LINES",
+		);
+	}
+	if (env.PI_SUBAGENT_WIDGET_MAX_ROWS) {
+		result.widgetMaxRows = requirePositiveInteger(
+			coerceNumericEnvValue(env.PI_SUBAGENT_WIDGET_MAX_ROWS),
+			"PI_SUBAGENT_WIDGET_MAX_ROWS",
 		);
 	}
 	if (env.PI_SUBAGENT_WORKTREE_CREATE_COMMAND) {

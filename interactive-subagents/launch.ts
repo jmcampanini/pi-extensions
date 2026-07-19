@@ -20,6 +20,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { assertValidAgentIdentifier } from "./agent-identifier.ts";
 import { agentConfigDir } from "./config.ts";
 import { SENTINEL_ECHO_SUFFIX, type ChildEnvVars } from "./protocol.ts";
 import { shellQuote } from "./tmux.ts";
@@ -69,6 +70,7 @@ export function generateChildSessionFile(childCwd: string): string {
  * All child env vars flow through here — v2 adds its liveness vars here too.
  */
 export function buildChildEnv(vars: ChildEnvVars): string {
+	if (vars.PI_SUBAGENT_AGENT !== undefined) assertValidAgentIdentifier(vars.PI_SUBAGENT_AGENT);
 	const parts: string[] = [];
 	// Propagate a custom config root so the child resolves the same models,
 	// providers, and extensions as the parent.
@@ -170,16 +172,22 @@ export interface LaunchMeta {
 }
 
 export function writeLaunchMeta(sessionFile: string, meta: LaunchMeta): void {
+	if (meta.agent !== undefined) assertValidAgentIdentifier(meta.agent, "Launch metadata agent identifier");
 	writeFileSync(`${sessionFile}.meta`, JSON.stringify(meta), "utf8");
 }
 
-/** Read a session's `.meta`. Missing or corrupt = `{}` (resume with plain defaults). */
+/** Read a session's `.meta`. Missing or malformed JSON = `{}`; invalid identifiers fail loud. */
 export function readLaunchMeta(sessionFile: string): LaunchMeta {
+	let raw: unknown;
 	try {
-		return JSON.parse(readFileSync(`${sessionFile}.meta`, "utf8")) as LaunchMeta;
+		raw = JSON.parse(readFileSync(`${sessionFile}.meta`, "utf8"));
 	} catch {
 		return {};
 	}
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+	const meta = raw as LaunchMeta;
+	if (meta.agent !== undefined) assertValidAgentIdentifier(meta.agent, "Launch metadata agent identifier");
+	return meta;
 }
 
 /**

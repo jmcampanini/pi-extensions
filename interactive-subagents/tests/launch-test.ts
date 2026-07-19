@@ -11,7 +11,7 @@ import {
 	writeLaunchMeta,
 } from "../launch.ts";
 import { SENTINEL_ECHO_SUFFIX, SENTINEL_REGEX } from "../protocol.ts";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,6 +24,13 @@ function eq(label: string, got: unknown, want: unknown) {
 function ok(label: string, cond: boolean) {
 	if (cond) { pass++; console.log(`  ok  ${label}`); }
 	else { fail++; console.log(`  FAIL ${label}`); }
+}
+function throws(label: string, fn: () => unknown, contains: string) {
+	try { fn(); fail++; console.log(`  FAIL ${label}: expected throw`); }
+	catch (error) {
+		if (String(error).includes(contains)) { pass++; console.log(`  ok  ${label}`); }
+		else { fail++; console.log(`  FAIL ${label}: ${String(error)}`); }
+	}
 }
 
 // PI_CODING_AGENT_DIR must not leak into the env-prefix assertions below.
@@ -65,6 +72,13 @@ ok(
 	}).startsWith("PI_CODING_AGENT_DIR='/custom/root' "),
 );
 delete process.env.PI_CODING_AGENT_DIR;
+throws("child env rejects an invalid agent identifier", () => buildChildEnv({
+	PI_SUBAGENT_SESSION: "/s",
+	PI_SUBAGENT_NAME: "n",
+	PI_SUBAGENT_ID: "a55ba067",
+	PI_SUBAGENT_ACTIVITY_FILE: "/s.activity",
+	PI_SUBAGENT_AGENT: "code reviewer",
+}), "whitespace");
 
 // ── buildLaunchCommand ───────────────────────────────────────────────────
 
@@ -126,6 +140,14 @@ eq("meta round-trips", readLaunchMeta(sessionFile), meta);
 eq("missing meta = {}", readLaunchMeta(join(dir, "nope.jsonl")), {});
 writeFileSync(`${sessionFile}.meta`, "{corrupt", "utf8");
 eq("corrupt meta = {}", readLaunchMeta(sessionFile), {});
+const invalidSession = join(dir, "invalid.jsonl");
+throws("invalid metadata is rejected before writing", () => writeLaunchMeta(invalidSession, {
+	name: "Invalid",
+	agent: "code reviewer",
+}), "whitespace");
+eq("invalid metadata write creates no sidecar", existsSync(`${invalidSession}.meta`), false);
+writeFileSync(`${invalidSession}.meta`, JSON.stringify({ name: "Invalid", agent: "code reviewer" }), "utf8");
+throws("tampered metadata agent is rejected on read", () => readLaunchMeta(invalidSession), "whitespace");
 
 // External children extend the meta with harness identity and the cwd (they
 // have no session header to read the directory back from on resume).

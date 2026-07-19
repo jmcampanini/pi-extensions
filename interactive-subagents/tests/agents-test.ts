@@ -24,6 +24,13 @@ function ok(label: string, cond: boolean) {
 	if (cond) { pass++; console.log(`  ok  ${label}`); }
 	else { fail++; console.log(`  FAIL ${label}`); }
 }
+function throws(label: string, fn: () => unknown, contains: string) {
+	try { fn(); fail++; console.log(`  FAIL ${label}: expected throw`); }
+	catch (error) {
+		if (String(error).includes(contains)) { pass++; console.log(`  ok  ${label}`); }
+		else { fail++; console.log(`  FAIL ${label}: ${String(error)}`); }
+	}
+}
 
 // A throwaway global config root and a throwaway project cwd.
 const globalRoot = mkdtempSync(join(tmpdir(), "subagents-global-"));
@@ -66,6 +73,10 @@ eq("no fences = all body", bare.body, "Just a prompt, no frontmatter.");
 eq("no fences = no description", bare.description, undefined);
 
 eq("unknown agent = null", loadAgentDefinition("ghost", cwd), null);
+throws("explicit whitespace identifier is rejected", () => loadAgentDefinition("code reviewer", cwd), "whitespace");
+throws("explicit overlong identifier is rejected", () => loadAgentDefinition("abcdefghijklmnopqrstu", cwd), "20 display columns");
+writeFileSync(join(globalDefs, "not an agent.md"), "Ignored.\n");
+writeFileSync(join(globalDefs, "abcdefghijklmnopqrstu.md"), "Ignored.\n");
 
 // ── shadowing ────────────────────────────────────────────────────────────
 
@@ -77,7 +88,7 @@ eq("shadowed source is project", worker.source, "project");
 ok("filePath points into .pi/subagents", worker.filePath.startsWith(projectDefs));
 
 const names = listAgentDefinitions(cwd).map((def) => def.name);
-eq("list is the sorted union (no duplicate worker)", names, ["badcontext", "bare", "crlf", "scout", "worker"]);
+eq("list is the sorted valid union (no duplicate worker)", names, ["badcontext", "bare", "crlf", "scout", "worker"]);
 
 // ── inventory ────────────────────────────────────────────────────────────
 

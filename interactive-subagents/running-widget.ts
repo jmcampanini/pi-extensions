@@ -1,29 +1,39 @@
 /**
- * running-widget.ts — the live "what's running" widget above the editor.
+ * running-widget.ts — lifecycle projection plus the compact widget controller.
  *
- * widget.ts is the PURE renderer (rows in, styled lines out — unit-tested
- * under plain node); this file is its stateful controller: it owns the
- * 1-second refresh timer, feeds the renderer from the running and delivering
- * maps, and pushes the result into pi's UI.
- *
- * pi API in play: `ctx.ui.setWidget(key, content, options)` shows persistent
- * lines anchored to the TUI (here: above the editor). Passing a COMPONENT
- * FACTORY instead of plain lines lets the widget render at the real terminal
- * width — that is what right-anchors the elapsed clock. Passing `undefined`
- * removes the widget.
+ * widget.ts is the pure renderer. This file snapshots every lifecycle
+ * registry, orders rows by attention priority then launch time, caps the
+ * compact rows, and owns the 1-second UI refresh timer. /subagent-running
+ * consumes the uncapped projection.
  */
 
 import { oldestActiveTool, toolElapsedSeconds } from "./activity.ts";
 import { pendingLaunchCount, pendingLaunches, queuedCount, queuedEntries, specDisplay } from "./capacity.ts";
+import { config } from "./config.ts";
 import { computeStatus } from "./status.ts";
 import { formatRunningWidgetLines, type WidgetRow } from "./widget.ts";
 import { delivering, getLatestCtx, running } from "./state.ts";
 
-const WIDGET_KEY = "interactive-subagents";
+export type WidgetLifecycle = "running" | "delivering" | "pending" | "queued";
 
-// The refresh timer is parked on globalThis (see state.ts for why): a
-// /reload must stop the PREVIOUS import's timer, or two of them would fight
-// over the widget forever. The two accessors are the only slot access.
+export interface LifecycleWidgetRow extends WidgetRow {
+	id: string;
+	lifecycle: WidgetLifecycle;
+	startedAt: number;
+	/** Exact non-pi harness name for detailed surfaces. */
+	harness?: string;
+}
+
+export interface CompactWidgetSnapshot {
+	rows: LifecycleWidgetRow[];
+	hiddenRows: number;
+	hiddenStalledRows: number;
+	hiddenWaitingRows: number;
+	hiddenQueuedRows: number;
+	totalRows: number;
+}
+
+const WIDGET_KEY = "interactive-subagents";
 const TIMER_KEY = Symbol.for("interactive-subagents/widget-timer");
 const slots = globalThis as Record<symbol, unknown>;
 
@@ -35,45 +45,16 @@ function rememberTimer(timer: ReturnType<typeof setInterval> | null): void {
 	slots[TIMER_KEY] = timer;
 }
 
-// On import (fresh load or /reload): stop whatever timer a previous import
-// left running.
 {
 	const previous = currentTimer();
 	if (previous) clearInterval(previous);
 	rememberTimer(null);
 }
 
-/** Re-render the widget from the running and delivering maps plus the launch
- * queue and in-flight launches; remove it when all of them are empty. */
-export function updateRunningWidget(): void {
-	const ctx = getLatestCtx();
-	if (!ctx || !ctx.hasUI) return;
-
-	if (running.size === 0 && delivering.size === 0 && queuedCount() === 0 && pendingLaunchCount() === 0) {
-		// Passing undefined for content removes the widget.
-		ctx.ui.setWidget(WIDGET_KEY, undefined);
-		stopWidgetTimer();
-		return;
-	}
-	// Delivering rows are frozen (clock and word never change), so the 1 Hz
-	// repaint only earns its keep while live children run — or while queued
-	// and mid-launch rows need their waiting clocks ticked. The
-	// delivering-only phase is repainted event-driven instead: the delivery
-	// listener on removal, trackChild (via ensureWidgetTimer) on the next
-	// spawn. This also means a permanently stuck row - a result dropped by
-	// Escape - never becomes a permanent wakeup source.
-	if (running.size === 0 && queuedCount() === 0 && pendingLaunchCount() === 0) stopWidgetTimer();
-
-	// Snapshot the rows now; the component form gets the real terminal width
-	// at render time, which is what lets the elapsed clock right-anchor.
-	// The liveness fields are derived HERE, synchronously off the record (no
-	// fs, nothing async), from the same observation fields the watcher uses —
-	// so render(width) below stays layout-only and the two surfaces can never
-	// disagree. Worst case the widget lags a status flip by ~1s (the two 1 Hz
-	// timers are unsynchronized), which is display-only: steer decisions live
-	// in the watcher path, never in widget renders.
-	const now = Date.now();
-	const rows: WidgetRow[] = [...running.values()].map((child) => {
+/** Snapshot every lifecycle, then order by delivering, stalled, waiting,
+ * starting, active, and queued. Launch time is the stable tiebreaker. */
+export function collectLifecycleWidgetRows(now = Date.now()): LifecycleWidgetRow[] {
+	const rows: LifecycleWidgetRow[] = [...running.values()].map((child) => {
 		const obs = child.activity;
 		const snap = obs?.snapshot;
 		const status = obs
@@ -88,13 +69,17 @@ export function updateRunningWidget(): void {
 			: ("starting" as const);
 		const tool = snap?.inRun ? oldestActiveTool(snap.activeTools) : undefined;
 		return {
-			// External children carry their tool's name in the row, so a human
-			// scanning the widget sees WHAT is running in that pane.
-			name: child.harness ? `${child.name} · ${child.harness}` : child.name,
+			id: child.id,
+			lifecycle: "running",
+			startedAt: child.startTime,
+			name: child.name,
 			agent: child.agent,
+			harness: child.harness,
 			elapsedSeconds: Math.round((now - child.startTime) / 1000),
 			forked: child.context === "forked",
+			interactive: !child.autoExit,
 			worktree: child.worktree !== undefined,
+			external: child.harness !== undefined,
 			status,
 			toolName: tool?.name,
 			toolElapsedSeconds:
@@ -104,65 +89,128 @@ export function updateRunningWidget(): void {
 			contextTokens: snap?.context?.tokens ?? undefined,
 		};
 	});
-	// Exited children whose result is still queued render below the live
-	// ones: identity plus the frozen exit clock, no telemetry - the process
-	// is gone, and the closing economics travel in the result message itself.
+
 	for (const child of delivering.values()) {
 		rows.push({
-			name: child.harness ? `${child.name} · ${child.harness}` : child.name,
+			id: child.id,
+			lifecycle: "delivering",
+			startedAt: child.startedAt,
+			name: child.name,
 			agent: child.agent,
+			harness: child.harness,
 			elapsedSeconds: child.elapsedSeconds,
 			forked: child.forked,
+			interactive: child.interactive,
 			worktree: child.worktree,
+			external: child.harness !== undefined,
 			status: "delivering",
 		});
 	}
-	// Mid-launch children (slot claimed, pipeline running, not yet tracked)
-	// render as "starting" so a child dequeued for launch never vanishes
-	// from the widget between its queued row and its running row. trackChild
-	// repaints while the claim is still held, so skip any claim whose child
-	// is already registered — it must not render twice.
+
 	for (const pending of pendingLaunches()) {
 		if (running.has(pending.spec.id)) continue;
 		const display = specDisplay(pending.spec);
 		rows.push({
+			id: pending.spec.id,
+			lifecycle: "pending",
+			startedAt: pending.claimedAt,
 			name: display.name,
 			agent: display.agent,
+			harness: pending.spec.harness === "pi" ? undefined : pending.spec.harness,
 			elapsedSeconds: Math.round((now - pending.claimedAt) / 1000),
 			forked: pending.spec.context === "forked",
+			interactive: !pending.spec.autoExit,
 			worktree: pending.spec.kind === "spawn" ? pending.spec.useWorktree : pending.spec.worktree !== undefined,
+			external: pending.spec.harness !== "pi",
 			status: "starting",
 		});
 	}
-	// Launches waiting for a concurrency slot render last, in start order.
-	// The clock counts time spent waiting; no process exists yet, so there
-	// is no telemetry to show.
+
 	for (const entry of queuedEntries()) {
 		const display = specDisplay(entry.spec);
 		rows.push({
+			id: entry.spec.id,
+			lifecycle: "queued",
+			startedAt: entry.queuedAt,
 			name: display.name,
 			agent: display.agent,
+			harness: entry.spec.harness === "pi" ? undefined : entry.spec.harness,
 			elapsedSeconds: Math.round((now - entry.queuedAt) / 1000),
 			forked: entry.spec.context === "forked",
+			interactive: !entry.spec.autoExit,
 			worktree: entry.spec.kind === "spawn" ? entry.spec.useWorktree : entry.spec.worktree !== undefined,
+			external: entry.spec.harness !== "pi",
 			status: "queued",
 		});
 	}
+	return rows.sort((left, right) => {
+		const priority = rowPriority(left) - rowPriority(right);
+		return priority !== 0 ? priority : left.startedAt - right.startedAt;
+	});
+}
+
+function rowPriority(row: LifecycleWidgetRow): number {
+	switch (row.status) {
+		case "delivering": return 0;
+		case "stalled": return 1;
+		case "waiting": return 2;
+		case "starting": return 3;
+		case "active": return 4;
+		case "queued": return 5;
+		default: return 6;
+	}
+}
+
+export function compactWidgetSnapshot(
+	now = Date.now(),
+	maxRows = config.widgetMaxRows,
+): CompactWidgetSnapshot {
+	const allRows = collectLifecycleWidgetRows(now);
+	const rowLimit = Number.isFinite(maxRows) ? Math.max(1, Math.floor(maxRows)) : config.widgetMaxRows;
+	const rows = allRows.slice(0, rowLimit);
+	const hiddenRows = allRows.slice(rows.length);
+	return {
+		rows,
+		hiddenRows: hiddenRows.length,
+		hiddenStalledRows: hiddenRows.filter((row) => row.status === "stalled").length,
+		hiddenWaitingRows: hiddenRows.filter((row) => row.status === "waiting").length,
+		hiddenQueuedRows: hiddenRows.filter((row) => row.status === "queued").length,
+		totalRows: allRows.length,
+	};
+}
+
+export function updateRunningWidget(): void {
+	const ctx = getLatestCtx();
+	if (!ctx || !ctx.hasUI) return;
+
+	if (running.size === 0 && delivering.size === 0 && queuedCount() === 0 && pendingLaunchCount() === 0) {
+		ctx.ui.setWidget(WIDGET_KEY, undefined);
+		stopWidgetTimer();
+		return;
+	}
+	if (running.size === 0 && queuedCount() === 0 && pendingLaunchCount() === 0) stopWidgetTimer();
+
+	const snapshot = compactWidgetSnapshot();
 	ctx.ui.setWidget(
 		WIDGET_KEY,
 		(_tui, theme) => ({
 			invalidate(): void {},
 			render(width: number): string[] {
-				return formatRunningWidgetLines(rows, width, {
+				return formatRunningWidgetLines(snapshot.rows, width, {
 					dim: (text) => theme.fg("dim", text),
 					border: (text) => theme.fg("borderMuted", text),
-					// The state marks stack the terminal's faint attribute (SGR 2)
-					// on top of the theme's dim color, so they sit a notch quieter
-					// than the clock. \x1b[22m turns only the faintness back off.
-					slot: (text) => `\x1b[2m${theme.fg("dim", text)}\x1b[22m`,
-					// Stalled is the only status that should pop: the theme's
-					// warning color, same precedent as the implant banner.
+					agent: (text) => theme.fg("dim", text),
+					slot: (text) => theme.fg("muted", text),
 					warn: (text) => theme.fg("warning", text),
+				}, {
+					summary: snapshot.hiddenRows > 0
+						? {
+							hiddenRows: snapshot.hiddenRows,
+							stalledRows: snapshot.hiddenStalledRows,
+							waitingRows: snapshot.hiddenWaitingRows,
+							queuedRows: snapshot.hiddenQueuedRows,
+						}
+						: undefined,
 				});
 			},
 		}),
@@ -170,7 +218,6 @@ export function updateRunningWidget(): void {
 	);
 }
 
-/** Start the 1-second refresh timer if it isn't already running. */
 export function ensureWidgetTimer(): void {
 	if (currentTimer()) return;
 	rememberTimer(setInterval(updateRunningWidget, 1000));
