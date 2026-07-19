@@ -24,6 +24,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { oldestActiveTool, toolElapsedSeconds, type ActivityObservation } from "./activity.ts";
 import { agentDefsDir, collectAgentInventory, projectDefsDir } from "./agents.ts";
+import { pendingLaunches, queuedEntries, specDisplay } from "./capacity.ts";
 import { updateCatalogue } from "./catalogue.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { delivering, running } from "./state.ts";
@@ -169,13 +170,77 @@ function describeDeliveringChildren(): { lines: string[]; details: unknown[] } {
 	return { lines, details };
 }
 
+/**
+ * The "Launching" bullets: children whose launch pipeline is running right
+ * now (slot claimed, not yet in the running map — a window of a few
+ * seconds). Folded into the queued section so a child dequeued for launch
+ * never disappears from every list between "queued" and "running".
+ */
+function describeLaunchingChildren(nowMs: number): { lines: string[]; details: unknown[] } {
+	const lines: string[] = [];
+	const details: unknown[] = [];
+	for (const pending of pendingLaunches()) {
+		const display = specDisplay(pending.spec);
+		const name = sanitizeDisplayText(display.name);
+		const agent = display.agent === undefined ? undefined : sanitizeDisplayText(display.agent);
+		const identityParts = [`id ${pending.spec.id}`];
+		if (agent) identityParts.push(`agent ${agent}`);
+		lines.push(
+			`• "${name}" (${identityParts.join(", ")}): starting right now - it will appear as running within seconds (do not poll or re-issue)`,
+		);
+		details.push({
+			id: pending.spec.id,
+			name: display.name,
+			agent: display.agent ?? null,
+			kind: pending.spec.kind,
+			status: "starting",
+			claimedSeconds: Math.max(0, Math.round((nowMs - pending.claimedAt) / 1000)),
+		});
+	}
+	return { lines, details };
+}
+
+/**
+ * The "Queued" section: launches admitted by subagent_spawn/subagent_resume
+ * that are waiting for a concurrency slot (capacity.ts). Without these
+ * bullets the model would see a child it queued in NO list and might queue
+ * duplicate work. Positions are 1-based in start order.
+ */
+function describeQueuedChildren(nowMs: number): { lines: string[]; details: unknown[] } {
+	const lines: string[] = [];
+	const details: unknown[] = [];
+	const entries = queuedEntries();
+	for (let i = 0; i < entries.length; i++) {
+		const entry = entries[i];
+		const display = specDisplay(entry.spec);
+		const name = sanitizeDisplayText(display.name);
+		const agent = display.agent === undefined ? undefined : sanitizeDisplayText(display.agent);
+		const identityParts = [`id ${entry.spec.id}`];
+		if (agent) identityParts.push(`agent ${agent}`);
+		const waitedSeconds = Math.max(0, Math.round((nowMs - entry.queuedAt) / 1000));
+		lines.push(
+			`• "${name}" (${identityParts.join(", ")}): queued ${humanElapsed(waitedSeconds)} ago, position ${i + 1} of ${entries.length} - starts automatically when a concurrency slot frees (do not poll or re-issue)`,
+		);
+		details.push({
+			id: entry.spec.id,
+			name: display.name,
+			agent: display.agent ?? null,
+			kind: entry.spec.kind,
+			status: "queued",
+			position: i + 1,
+			waitedSeconds,
+		});
+	}
+	return { lines, details };
+}
+
 export function registerSubagentListTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "subagent_list",
 		label: "List Subagents",
 		description:
 			"List the available agent definitions (<name>.md files from the project's .pi/subagents/ or the global subagents dir; project shadows global) usable as the `agent` parameter of subagent_spawn. " +
-			"Also reports currently running sub-agents with their live status, context usage, and cost, plus just-finished sub-agents whose result message is still on its way.",
+			"Also reports currently running sub-agents with their live status, context usage, and cost, just-finished sub-agents whose result message is still on its way, and launches queued for a free concurrency slot.",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			const inventory = collectAgentInventory(ctx.modelRegistry, ctx.cwd);
@@ -184,12 +249,18 @@ export function registerSubagentListTool(pi: ExtensionAPI): void {
 			updateCatalogue(inventory);
 			const runningChildren = describeRunningChildren(Date.now());
 			const deliveringChildren = describeDeliveringChildren();
+			const launchingChildren = describeLaunchingChildren(Date.now());
+			const queuedChildren = describeQueuedChildren(Date.now());
+			const pendingLines = [...launchingChildren.lines, ...queuedChildren.lines];
 			const sections: string[] = [];
 			if (runningChildren.lines.length > 0) {
 				sections.push(`Currently running (${runningChildren.lines.length}):\n${runningChildren.lines.join("\n")}`);
 			}
 			if (deliveringChildren.lines.length > 0) {
 				sections.push(`Finished, result on its way (${deliveringChildren.lines.length}):\n${deliveringChildren.lines.join("\n")}`);
+			}
+			if (pendingLines.length > 0) {
+				sections.push(`Starting or queued for a concurrency slot (${pendingLines.length}):\n${pendingLines.join("\n")}`);
 			}
 			const childrenSection = sections.length === 0 ? undefined : sections.join("\n\n");
 
@@ -199,7 +270,13 @@ export function registerSubagentListTool(pi: ExtensionAPI): void {
 					"subagent_spawn defaults to the 'worker' agent, so create worker.md in one of those directories before spawning.";
 				return {
 					content: [{ type: "text", text: childrenSection ? `${noAgents}\n\n${childrenSection}` : noAgents }],
-					details: { count: 0, running: runningChildren.details, delivering: deliveringChildren.details },
+					details: {
+						count: 0,
+						running: runningChildren.details,
+						delivering: deliveringChildren.details,
+						starting: launchingChildren.details,
+						queued: queuedChildren.details,
+					},
 				};
 			}
 			const lines = inventory.map((agent) => {
@@ -221,7 +298,13 @@ export function registerSubagentListTool(pi: ExtensionAPI): void {
 			const text = childrenSection ? `${lines.join("\n")}\n\n${childrenSection}` : lines.join("\n");
 			return {
 				content: [{ type: "text", text }],
-				details: { count: inventory.length, running: runningChildren.details, delivering: deliveringChildren.details },
+				details: {
+					count: inventory.length,
+					running: runningChildren.details,
+					delivering: deliveringChildren.details,
+					starting: launchingChildren.details,
+					queued: queuedChildren.details,
+				},
 			};
 		},
 	});

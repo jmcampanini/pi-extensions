@@ -6,6 +6,11 @@
  * resuming just points a fresh pi process at the same file. The child's
  * launch identity (system prompt, tools, model, thinking, auto-exit) is
  * restored from its `.meta` sidecar; explicit params always win.
+ *
+ * A resume consumes a concurrency slot exactly like a spawn (it opens a new
+ * pane and a new child process), so it goes through the same admission fork:
+ * validation resolves everything into a pure spec, then the launch runs now
+ * ('started') or queues (capacity.ts starts it when a slot frees, 'queued').
  */
 
 import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -15,6 +20,19 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { activityFilePath, clearActivityFile } from "./activity.ts";
+import {
+	AbandonLaunch,
+	admitLaunch,
+	assertLaunchStillWanted,
+	findQueued,
+	isPendingLaunch,
+	pendingResumeFor,
+	registerLauncher,
+	releaseClaim,
+	requestDrain,
+	RequeueLaunch,
+	type ResumeSpec,
+} from "./capacity.ts";
 import { config } from "./config.ts";
 import {
 	clearExternalResult,
@@ -30,8 +48,9 @@ import {
 	formatExpandedSubagentResumeCall,
 } from "./subagent-call.ts";
 import { renderSubagentLaunchResult } from "./subagent-result.ts";
-import { createPane, isTmuxAvailable, sendLongCommand, shellQuote, sleep } from "./tmux.ts";
-import { ledger, running } from "./state.ts";
+import { updateRunningWidget } from "./running-widget.ts";
+import { closePane, createPane, isTmuxAvailable, sendLongCommand, shellQuote, sleep } from "./tmux.ts";
+import { ledger, moduleGeneration, running } from "./state.ts";
 import { trackChild } from "./watcher.ts";
 
 const ResumeParams = Type.Object({
@@ -81,7 +100,9 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 		description:
 			"Resume a previous sub-agent session with an optional follow-up message. Pass the `id` from a " +
 			"result/ping message (preferred), or `sessionPath` if the id is no longer known (e.g. after a restart). " +
-			"ASYNC — returns immediately; the result steers back automatically. Do not poll.",
+			"ASYNC — returns immediately with status 'started', or 'queued' when the concurrency limit of " +
+			`${config.maxConcurrentSubagents} sub-agents (shared with subagent_spawn) is reached; a queued ` +
+			"resume starts automatically as slots free. The result steers back automatically. Do not poll.",
 		parameters: ResumeParams,
 		renderCall(args, theme, context) {
 			const presentation = resumeCallPresentation(args);
@@ -121,6 +142,21 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				throw new Error("Subagents need tmux: start pi inside a tmux session.");
 			}
 
+			// A queued or just-dequeued child has never run (it is not in the
+			// ledger yet), so there is no session to reopen — catch the id
+			// here for a better answer than "unknown id".
+			if (params.id && findQueued(params.id)) {
+				throw new Error(
+					`Sub-agent id "${params.id}" is still queued and has not started yet — there is nothing to resume. ` +
+						"It launches automatically when a concurrency slot frees; wait for its result instead.",
+				);
+			}
+			if (params.id && isPendingLaunch(params.id)) {
+				throw new Error(
+					`Sub-agent id "${params.id}" is starting right now — there is nothing to resume yet. Wait for its result instead.`,
+				);
+			}
+
 			// Resolve which session to reopen: short id via this session's
 			// ledger (preferred — no long path to copy around), else an
 			// explicit path (survives parent restarts, when the ledger is gone).
@@ -150,8 +186,10 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 
 			// Refuse to attach a second pi process to a session that is still
 			// running — two processes appending to one .jsonl corrupts it.
-			// Checked synchronously (before any await) so parallel resume calls
-			// cannot race past each other.
+			// Checked synchronously (before any await) against BOTH the running
+			// map and capacity.ts's queue/claims, so parallel resume calls
+			// cannot race each other into a double-attach: whichever call runs
+			// first claims or queues, and the other sees it here.
 			// Children in state.ts's delivering map are deliberately NOT
 			// blocked: their pi process has exited, so there is no second
 			// writer. A resume during that window mints a new id; the old
@@ -164,19 +202,11 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 					);
 				}
 			}
-
-			// Every sidecar clear sits AFTER the guard above: a rejected resume
-			// of a busy child must leave that child's files alone. A leftover
-			// `.exit` from a previous run would fake an instant completion, but
-			// clearing it before the guard would race a child completing RIGHT
-			// NOW - its just-written marker would be deleted, the guard would
-			// then reject the resume, and an external child (whose process does
-			// not exit on completion, so no screen sentinel ever appears) would
-			// strand as running forever. Clearing `.activity` early would let a
-			// rejected resume delete the live child's snapshot and manufacture
-			// a false stall steer ~60s later.
-			clearExitSidecar(sessionPath);
-			clearActivityFile(sessionPath);
+			if (pendingResumeFor(targetPath)) {
+				throw new Error(
+					"A resume of this session is already queued or starting — wait for its result instead of resuming again.",
+				);
+			}
 
 			// Reapply the child's original launch settings from the `.meta`
 			// sidecar (read above). Explicit params always win; a missing meta
@@ -209,39 +239,6 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			const systemPromptFile =
 				meta.systemPromptFile && existsSync(meta.systemPromptFile) ? meta.systemPromptFile : undefined;
 			const id = randomUUID().slice(0, 8);
-			const base = artifactBase(ctx);
-			const slug = slugify(name);
-
-			// Backfill: children spawned before display names were seeded show
-			// raw @file task text in pi's session picker. Give them the same
-			// "subagent › agent › name" label on resume — but only when the file
-			// has NO name yet (a human may have renamed it in the picker), and
-			// only for sessions this extension created (meta has name + agent).
-			// Runs before the child pi process starts, so there is one writer.
-			// Never for external children: appending would CREATE a file at an
-			// anchor that must stay absent from pi's session picker.
-			if (!profile && meta.name && meta.agent && readSessionName(sessionPath) === undefined) {
-				appendSessionName(sessionPath, `subagent › ${meta.agent} › ${meta.name}`);
-			}
-
-			// Only entries added AFTER this point count toward the new summary.
-			// (External results come from `<anchor>.result`, not entry counting.)
-			const skipEntries = profile ? 0 : countEntries(sessionPath);
-
-			// The follow-up message rides in as a file, like task delivery. For
-			// external children the file is expanded onto the tool's command
-			// line as a bare positional, where a dash-leading message would
-			// parse as an option (verified: claude rejects "--foo ..." outright
-			// and silently swallows "-v ..." as --version). The heading shield
-			// mirrors the task path's "# Your task" and makes a dash-leading
-			// first byte impossible; pi children are immune (@file delivery)
-			// and keep the verbatim message.
-			let messageFile: string | undefined;
-			if (params.message) {
-				messageFile = join(base, "resume", `${slug}-${id}.md`);
-				mkdirSync(dirname(messageFile), { recursive: true });
-				writeFileSync(messageFile, profile ? `# Follow-up\n\n${params.message}` : params.message, "utf8");
-			}
 
 			// Run in the directory the original child used, so relative paths
 			// and tools behave the same: pi children record it in their session
@@ -258,16 +255,10 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			// fails, the sentinel reports exit 1 after ~1s, and the watcher
 			// delivers a misleading "failed" result with a stale summary. Catch
 			// it here and say what actually happened — for worktree children
-			// that usually means auto-cleanup removed the directory.
+			// that usually means auto-cleanup removed the directory. (The
+			// launch pipeline re-checks: a queued resume can outlive its cwd.)
 			if (sessionCwd && !existsSync(sessionCwd)) {
-				if (meta.worktree) {
-					throw new Error(
-						`Cannot resume: this sub-agent ran in a git worktree at ${meta.worktree.dir} that no longer exists (usually auto-cleanup after it finished with no changes). Use subagent_spawn to launch a new child instead.`,
-					);
-				}
-				throw new Error(
-					`Cannot resume: the sub-agent's working directory no longer exists: ${sessionCwd}. Use subagent_spawn to launch a new child instead.`,
-				);
+				throw vanishedCwdError(sessionCwd, meta.worktree !== undefined, meta.worktree?.dir);
 			}
 
 			// External children resume through their own tool's resume flag,
@@ -285,79 +276,80 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				externalSessionId = recorded;
 			}
 
-			const command = profile
-				? profile.buildResumeCommand({
-						cwd: sessionCwd as string,
-						anchor: sessionPath,
-						runId: id,
-						autoExit,
-						model,
-						thinking,
-						tools,
-						systemPromptFile,
-						passThrough: meta.harnessPassThrough,
-						messageFile,
-						resumeSessionId: externalSessionId,
-					})
-				: buildLaunchCommand({
-						cwd: sessionCwd,
-						env: buildChildEnv({
-							PI_SUBAGENT_SESSION: sessionPath,
-							PI_SUBAGENT_NAME: name,
-							// The liveness pair (see activity.ts): a resume mints a FRESH
-							// run id, so any snapshot surviving the clear above is fenced
-							// off as foreign by the reader.
-							PI_SUBAGENT_ID: id,
-							PI_SUBAGENT_ACTIVITY_FILE: activityFilePath(sessionPath),
-							PI_SUBAGENT_AGENT: meta.agent,
-							PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
-						}),
-						sessionFile: sessionPath,
-						model,
-						thinking,
-						systemPromptFile,
-						tools,
-						passThrough: meta.harnessPassThrough,
-						promptArg: messageFile ? shellQuote(`@${messageFile}`) : "",
-					});
-
-			// The stale result file is cleared LAST, once nothing below can
-			// refuse the relaunch: left in place it would masquerade as the new
-			// run's final message, but clearing it any earlier would let a
-			// resume that still fails validation (or a resume racing an
-			// undelivered result) destroy the only copy of the previous run's
-			// outcome. (Delivery itself is safe regardless - the watcher
-			// captures the summary onto the delivery record at exit time.)
-			if (profile) clearExternalResult(sessionPath);
-
-			const paneId = createPane(name);
-			await sleep(config.shellReadyDelayMs);
-			const scriptPath = join(base, "scripts", `${slug}-${id}-resume.sh`);
-			sendLongCommand(paneId, command, scriptPath);
-
-			trackChild(pi, {
+			// Everything a relaunch needs, as pure data (see capacity.ts). The
+			// session-picker backfill label is decided here (sessions this
+			// extension created, pi children only) but applied at launch, and
+			// only if the session still has no name by then.
+			const spec: ResumeSpec = {
+				kind: "resume",
 				id,
+				sessionPath,
 				name,
 				agent: meta.agent,
-				harness: profile ? harness : undefined,
-				paneId,
-				sessionFile: sessionPath,
-				startTime: Date.now(),
-				skipEntries,
+				harness,
+				autoExit,
 				tools,
 				model,
-				autoExit,
+				thinking,
+				systemPromptFile,
+				message: params.message,
 				context: meta.context,
-				// The ORIGINAL worktree snapshot rides along unchanged: keeping
-				// the original baseCommit means work committed in an earlier run
-				// still counts as "changes" when this run's cleanup decides.
 				worktree: meta.worktree,
-				abort: new AbortController(),
+				harnessPassThrough: meta.harnessPassThrough,
+				cwd: sessionCwd,
+				cwdFromWorktree: meta.worktree !== undefined,
+				backfillLabel:
+					!profile && meta.name && meta.agent ? `subagent › ${meta.agent} › ${meta.name}` : undefined,
+				externalSessionId,
+				base: artifactBase(ctx),
+				slug: slugify(name),
 				// A resume without a message hands the pane to a human — that
 				// child legitimately idles forever and must read "waiting", not
 				// stuck-at-"starting" (see status.ts).
 				expectsRun: Boolean(params.message),
-			});
+			};
+
+			// The fork: claim a slot and relaunch now, or join the queue — same
+			// contract as subagent_spawn (see there for the race reasoning).
+			const admission = admitLaunch(spec);
+			if (admission.status === "queued") {
+				updateRunningWidget();
+				const ahead = admission.ahead > 0 ? `, ${admission.ahead} ahead of it in the queue` : "";
+				return {
+					content: [
+						{
+							type: "text",
+							text:
+								`Resume of sub-agent "${name}" queued (id ${id}): all ` +
+								`${config.maxConcurrentSubagents} concurrency slots are busy${ahead}. ` +
+								"It starts automatically when a slot frees, and its result arrives like " +
+								"any other sub-agent's — do not poll, and do not re-issue this resume.",
+						},
+					],
+					details: { id, sessionFile: sessionPath, status: "queued", ahead: admission.ahead },
+				};
+			}
+
+			let launched: { paneId: string };
+			try {
+				launched = await runResumeLaunch(pi, spec);
+			} catch (error) {
+				releaseClaim(id);
+				// The failed launch freed its slot — without this, queued work
+				// behind it could sit forever with capacity free (nothing else
+				// triggers a drain until some running child exits).
+				requestDrain(pi);
+				updateRunningWidget();
+				// The boundary guards can only fire inline when the turn was
+				// already aborted mid-launch; translate them for the transcript.
+				if (error instanceof RequeueLaunch || error instanceof AbandonLaunch) {
+					throw new Error(
+						"Sub-agent resume was interrupted by a session reload/shutdown before it started — " +
+							"nothing is running. Re-issue the call if the work is still needed.",
+					);
+				}
+				throw error;
+			}
 
 			return {
 				content: [
@@ -366,8 +358,176 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 						text: `Resumed sub-agent "${name}" (id ${id}). Its result will arrive automatically — do not poll.`,
 					},
 				],
-				details: { id, sessionFile: sessionPath, paneId },
+				details: { id, sessionFile: sessionPath, paneId: launched.paneId },
 			};
 		},
 	});
+
+	// The queue drain relaunches resumes through the same pipeline the inline
+	// path uses (see the matching registration in tool-spawn.ts).
+	registerLauncher("resume", (piApi, spec) => runResumeLaunch(piApi, spec as ResumeSpec));
+}
+
+function vanishedCwdError(cwd: string, fromWorktree: boolean, worktreeDir?: string): Error {
+	if (fromWorktree) {
+		return new Error(
+			`Cannot resume: this sub-agent ran in a git worktree at ${worktreeDir ?? cwd} that no longer exists (usually auto-cleanup after it finished with no changes). Use subagent_spawn to launch a new child instead.`,
+		);
+	}
+	return new Error(
+		`Cannot resume: the sub-agent's working directory no longer exists: ${cwd}. Use subagent_spawn to launch a new child instead.`,
+	);
+}
+
+/**
+ * The relaunch pipeline — every side effect of reopening a child session.
+ * Runs inline or from the queue drain; same claim/rollback contract as
+ * tool-spawn.ts's runSpawnLaunch. Unlike the old inline-only code, a failure
+ * after the pane opened now closes it again instead of leaking it.
+ */
+async function runResumeLaunch(pi: ExtensionAPI, spec: ResumeSpec): Promise<{ paneId: string }> {
+	const launchGeneration = moduleGeneration();
+	const profile = spec.harness === "pi" ? undefined : requireHarnessProfile(spec.harness);
+
+	// Re-run the two liveness checks that can change while a resume waits in
+	// the queue. The busy re-check is belt-and-braces (the admission dedupe
+	// makes a second attach impossible by construction); the cwd re-check is
+	// real — worktree auto-cleanup can remove it between queue and launch.
+	const targetPath = resolve(spec.sessionPath);
+	for (const child of running.values()) {
+		if (resolve(child.sessionFile) === targetPath) {
+			throw new Error(
+				`Sub-agent "${child.name}" (id ${child.id}) is running on this session — the queued resume was skipped.`,
+			);
+		}
+	}
+	if (spec.cwd && !existsSync(spec.cwd)) {
+		throw vanishedCwdError(spec.cwd, spec.cwdFromWorktree, spec.worktree?.dir);
+	}
+
+	// Every sidecar clear sits AFTER the admission and busy guards: a
+	// rejected resume of a busy child must leave that child's files alone. A
+	// leftover `.exit` from a previous run would fake an instant completion,
+	// but clearing it while a child completes RIGHT NOW would delete its
+	// just-written marker; the guards above make this window writer-free.
+	// Clearing `.activity` for a live child would manufacture a false stall
+	// steer ~60s later — same reasoning.
+	clearExitSidecar(spec.sessionPath);
+	clearActivityFile(spec.sessionPath);
+
+	// Backfill: children spawned before display names were seeded show raw
+	// @file task text in pi's session picker. Give them the same
+	// "subagent › agent › name" label on resume — but only when the file
+	// STILL has no name (a human may have renamed it in the picker; decided
+	// at call time, re-checked here because a queued resume waits). Runs
+	// before the child pi process starts, so there is one writer. Never for
+	// external children: appending would CREATE a file at an anchor that
+	// must stay absent from pi's session picker.
+	if (spec.backfillLabel && readSessionName(spec.sessionPath) === undefined) {
+		appendSessionName(spec.sessionPath, spec.backfillLabel);
+	}
+
+	// Only entries added AFTER this point count toward the new summary.
+	// (External results come from `<anchor>.result`, not entry counting.)
+	const skipEntries = profile ? 0 : countEntries(spec.sessionPath);
+
+	// The follow-up message rides in as a file, like task delivery. For
+	// external children the file is expanded onto the tool's command
+	// line as a bare positional, where a dash-leading message would
+	// parse as an option (verified: claude rejects "--foo ..." outright
+	// and silently swallows "-v ..." as --version). The heading shield
+	// mirrors the task path's "# Your task" and makes a dash-leading
+	// first byte impossible; pi children are immune (@file delivery)
+	// and keep the verbatim message.
+	let messageFile: string | undefined;
+	if (spec.message) {
+		messageFile = join(spec.base, "resume", `${spec.slug}-${spec.id}.md`);
+		mkdirSync(dirname(messageFile), { recursive: true });
+		writeFileSync(messageFile, profile ? `# Follow-up\n\n${spec.message}` : spec.message, "utf8");
+	}
+
+	const command = profile
+		? profile.buildResumeCommand({
+				cwd: spec.cwd as string,
+				anchor: spec.sessionPath,
+				runId: spec.id,
+				autoExit: spec.autoExit,
+				model: spec.model,
+				thinking: spec.thinking,
+				tools: spec.tools,
+				systemPromptFile: spec.systemPromptFile,
+				passThrough: spec.harnessPassThrough,
+				messageFile,
+				resumeSessionId: spec.externalSessionId,
+			})
+		: buildLaunchCommand({
+				cwd: spec.cwd,
+				env: buildChildEnv({
+					PI_SUBAGENT_SESSION: spec.sessionPath,
+					PI_SUBAGENT_NAME: spec.name,
+					// The liveness pair (see activity.ts): a resume mints a FRESH
+					// run id, so any snapshot surviving the clear above is fenced
+					// off as foreign by the reader.
+					PI_SUBAGENT_ID: spec.id,
+					PI_SUBAGENT_ACTIVITY_FILE: activityFilePath(spec.sessionPath),
+					PI_SUBAGENT_AGENT: spec.agent,
+					PI_SUBAGENT_AUTO_EXIT: spec.autoExit ? "1" : undefined,
+				}),
+				sessionFile: spec.sessionPath,
+				model: spec.model,
+				thinking: spec.thinking,
+				systemPromptFile: spec.systemPromptFile,
+				tools: spec.tools,
+				passThrough: spec.harnessPassThrough,
+				promptArg: messageFile ? shellQuote(`@${messageFile}`) : "",
+			});
+
+	// The stale result file is cleared LAST, once nothing below can
+	// refuse the relaunch: left in place it would masquerade as the new
+	// run's final message, but clearing it any earlier would let a
+	// resume that still fails validation (or a resume racing an
+	// undelivered result) destroy the only copy of the previous run's
+	// outcome. (Delivery itself is safe regardless - the watcher
+	// captures the summary onto the delivery record at exit time.)
+	if (profile) clearExternalResult(spec.sessionPath);
+
+	const scriptPath = join(spec.base, "scripts", `${spec.slug}-${spec.id}-resume.sh`);
+	let paneId: string | undefined;
+	try {
+		// Same interleave discipline as the spawn pipeline: the sleep is the
+		// last await, the boundary guard runs after it, and everything from
+		// the guard through trackChild is synchronous. Guard before send —
+		// after the send the child owns its session.
+		paneId = createPane(spec.name);
+		await sleep(config.shellReadyDelayMs);
+		assertLaunchStillWanted(launchGeneration);
+		sendLongCommand(paneId, command, scriptPath);
+	} catch (error) {
+		if (paneId !== undefined) closePane(paneId);
+		throw error;
+	}
+
+	trackChild(pi, {
+		id: spec.id,
+		name: spec.name,
+		agent: spec.agent,
+		harness: profile ? spec.harness : undefined,
+		paneId,
+		sessionFile: spec.sessionPath,
+		startTime: Date.now(),
+		skipEntries,
+		tools: spec.tools,
+		model: spec.model,
+		autoExit: spec.autoExit,
+		context: spec.context,
+		// The ORIGINAL worktree snapshot rides along unchanged: keeping
+		// the original baseCommit means work committed in an earlier run
+		// still counts as "changes" when this run's cleanup decides.
+		worktree: spec.worktree,
+		abort: new AbortController(),
+		expectsRun: spec.expectsRun,
+	});
+	releaseClaim(spec.id);
+
+	return { paneId };
 }

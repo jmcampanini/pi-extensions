@@ -33,6 +33,7 @@ import {
 	readActivityFile,
 	type ActivityObservation,
 } from "./activity.ts";
+import { drainQueue } from "./capacity.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { readExternalResult } from "./harnesses.ts";
@@ -354,6 +355,11 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 	updateRunningWidget();
 	if (running.size > 0) refreshLayout();
 	startFinalizer(pi, record);
+	// The exit above released a concurrency slot — start queued launches.
+	// (The silent-abort path earlier never drains: it only runs when this
+	// module generation is dying, and drainQueue no-ops on an aborted
+	// generation anyway; the replacement drains after adoption instead.)
+	drainQueue(pi);
 }
 
 async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, generation: number): Promise<void> {

@@ -46,7 +46,7 @@ This uses the listed `worker` in the parent's working directory with explicit fr
 | Need | Choice |
 |---|---|
 | A self-contained task | Use `context: "fresh"`, the default. Project files and instructions still load. Include the objective, paths, facts, constraints, edit permission, output, and verification in the task. |
-| Parent discussion or decisions would be difficult or lossy to restate | Use `context: "forked"`. It copies completed parent history before the current turn. That history goes to the child's selected model and provider, so do not fork unnecessary or sensitive context. A first-turn fork may fail before the parent session is written. |
+| Parent discussion or decisions would be difficult or lossy to restate | Use `context: "forked"`. It copies completed parent history as of the moment the child launches — immediately when a concurrency slot is free, or when a queued launch starts. That history goes to the child's selected model and provider, so do not fork unnecessary or sensitive context. A first-turn fork may fail before the parent session is written. |
 | Follow-up depends on a child's findings or tool history | Use `subagent_resume` to continue that child's conversation. |
 | A human should drive the pane | Set `autoExit: false`. The child normally finishes by calling `subagent_done`, or can ask for help with `caller_ping`. |
 
@@ -54,9 +54,9 @@ This uses the listed `worker` in the parent's working directory with explicit fr
 
 Parent operations use the singular `subagent` namespace: model tools follow `subagent_<operation>`, and slash commands follow `/subagent-<operation>`. Creation is `spawn` because it launches an existing agent definition as an independent child process and session; it does not create a definition.
 
-- **`subagent_spawn`** starts a child. `name` and `task` are required. Calls can choose an agent, context, model, thinking, tools, directory, worktree, and exit behavior. Call values override agent definitions. Explicit `worktree: true` cannot be combined with `cwd`.
-- **`subagent_list`** reports definitions (each agent's `details`, or its full `description` when absent), problems, live children, run economics, and results still being delivered. Use it for selection or diagnosis, not polling.
-- **`subagent_resume`** handles help, retries, and follow-up while restoring launch identity. Use `id` in the same parent process, including after `/reload`; after restart use `sessionPath`. Autonomous resume requires a message. Message-free resume requires an effective `autoExit: false` for human control.
+- **`subagent_spawn`** starts a child. `name` and `task` are required. Calls can choose an agent, context, model, thinking, tools, directory, worktree, and exit behavior. Call values override agent definitions. Explicit `worktree: true` cannot be combined with `cwd`. Returns `started`, or `queued` at the concurrency limit (see Concurrency and the launch queue).
+- **`subagent_list`** reports definitions (each agent's `details`, or its full `description` when absent), problems, live children, run economics, results still being delivered, and launches queued for a concurrency slot. Use it for selection or diagnosis, not polling.
+- **`subagent_resume`** handles help, retries, and follow-up while restoring launch identity. Use `id` in the same parent process, including after `/reload`; after restart use `sessionPath`. Autonomous resume requires a message. Message-free resume requires an effective `autoExit: false` for human control. A resume opens a new pane and process, so it consumes a concurrency slot exactly like a spawn and can return `queued` the same way.
 
 A blocked child calls `caller_ping` and exits. Its question wakes the parent, which answers with `subagent_resume({ id, message })`.
 
@@ -101,6 +101,14 @@ Observability caveat: Claude Code fires no lifecycle notifier when a human inter
 
 Intentionally not included in v1: tools beyond Claude Code (the profile registry accepts more later), per-run cost and context-size reporting, mid-run help requests (`caller_ping`), forked context, the in-pane identity banner, and pane-content-based liveness for tools without lifecycle notifiers.
 
+## Concurrency and the launch queue
+
+At most `maxConcurrentSubagents` children run at once (default 9 — the most panes the dedicated tmux window tiles legibly). The limit counts every child holding a pane: autonomous, interactive, and external-harness children alike, from spawns and resumes. Children whose result is still `delivering` have already released their pane and do not count.
+
+A launch past the limit is queued, not rejected: the tool call returns `queued` immediately with the child's id, and the launch starts automatically, in call order, as running children exit. A queued entry is pure data — no worktree, session file, or pane exists until it actually starts — so cancelling it (via `x` in `/subagent-running`) cleans up nothing and simply informs the parent model that no result will arrive. Fan-out needs no batching logic: issue all the spawns at once and the queue self-batches through the limit. One semantic difference from an immediate start: a `forked` child copies the parent conversation at launch time, so a fork that waited in the queue sees the parent as of when it actually started.
+
+Because side effects wait for the slot, a queued launch can fail when it finally starts (its directory vanished, tmux refused a pane). The failure arrives as a message naming the child, the error, and what to do — the entry is removed and nothing half-started is left behind. Both tool descriptions advertise the effective configured limit, and `/reload` preserves the queue along with running children; quit, `/new`, and `/resume` discard it.
+
 ## Parallel edit safety
 
 Never give parallel children overlapping write scopes in one checkout. Assign disjoint files or use `worktree: true`.
@@ -111,7 +119,7 @@ Cleanup favors leftovers over lost work. `auto` removes only a successful, prova
 
 ## Observe, control, and receive results
 
-The live display and `subagent_list` show `starting`, `active`, `waiting`, or `stalled`. Stalled means liveness reports stayed missing, unreadable, or stale for 60 seconds, or a prompted run never started. It is a warning, not completion; supervision continues. A valid `active` report does not age out because a long tool may emit no events. `delivering` means the child exited and its result awaits a parent turn boundary.
+The live display and `subagent_list` show `starting`, `active`, `waiting`, or `stalled`. Stalled means liveness reports stayed missing, unreadable, or stale for 60 seconds, or a prompted run never started. It is a warning, not completion; supervision continues. A valid `active` report does not age out because a long tool may emit no events. `delivering` means the child exited and its result awaits a parent turn boundary. `queued` means the launch is waiting for a concurrency slot and has not started.
 
 - `/subagent-available` toggles the zero-token definition overview.
 - `/subagent-running` uses arrows or `j`/`k` to select, Enter to visit, `z` to visit and zoom, `x` to stop, and Escape or Ctrl+C to cancel.
@@ -133,6 +141,7 @@ Settings resolve from built-in defaults, then `$PI_CODING_AGENT_DIR/subagents.js
 | `layout` | `window` (`main` and `off` are also valid) |
 | `mainWidth` | `60%` |
 | `shellReadyDelayMs` | `500` |
+| `maxConcurrentSubagents` | `9` (`1` through `9`; further launches queue) |
 | `callPreviewLines` | `3` (start and resume calls, `0` through `20`) |
 | `resultPreviewLines` | `5` (completed, failed, and stopped results, `0` through `20`) |
 | `worktreeCreateCommand` | Built-in Git creation under `.pi/worktrees/` |
@@ -141,7 +150,7 @@ Settings resolve from built-in defaults, then `$PI_CODING_AGENT_DIR/subagents.js
 
 Preview limits count visual lines after sanitized, whitespace-flattened text wraps to the current terminal width. A value of `0` keeps only the collapsed header. Results add an ellipsis when the line limit hides more preview text; start and resume calls rely on the configured expansion-key hint instead. Persisted result previews keep at most 2,000 source code points plus an ellipsis, so that storage ceiling can be reached before a high visual-line limit on a very wide terminal. Expansion preserves the complete existing content, including Markdown rendering for results.
 
-The matching environment overrides are `PI_SUBAGENT_CALL_PREVIEW_LINES` and `PI_SUBAGENT_RESULT_PREVIEW_LINES`:
+Every key has a matching environment override named `PI_SUBAGENT_` plus the key in SCREAMING_SNAKE (for example `PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS`, `PI_SUBAGENT_CALL_PREVIEW_LINES`, `PI_SUBAGENT_RESULT_PREVIEW_LINES`):
 
 ```json
 {

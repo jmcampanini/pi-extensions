@@ -29,6 +29,8 @@ export interface SubagentsConfig {
 	mainWidth: string;
 	/** Pause between opening a pane and typing the launch command. */
 	shellReadyDelayMs: number;
+	/** How many sub-agents may run at once; further launches queue (1–9). */
+	maxConcurrentSubagents: number;
 	/** Wrapped task or follow-up lines shown while a call is collapsed. */
 	callPreviewLines: number;
 	/** Wrapped response lines shown while a delivered result is collapsed. */
@@ -60,6 +62,7 @@ const DEFAULTS: SubagentsConfig = {
 	layout: "window",
 	mainWidth: "60%",
 	shellReadyDelayMs: 500,
+	maxConcurrentSubagents: 9,
 	callPreviewLines: 3,
 	resultPreviewLines: 5,
 	worktreeCreateCommand: DEFAULT_WORKTREE_CREATE_COMMAND,
@@ -97,6 +100,15 @@ function requireMainWidth(value: unknown, source: string): string {
 function requireDelayMs(value: unknown, source: string): number {
 	if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
 	throw new Error(`${source}: invalid shellReadyDelayMs ${JSON.stringify(value)} — use a non-negative integer`);
+}
+
+// 9 is the most panes the dedicated tmux window tiles legibly; raising the
+// ceiling is the multi-window feature (issue #27, phase 3), not a config edit.
+function requireMaxConcurrent(value: unknown, source: string): number {
+	if (typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 9) return value;
+	throw new Error(
+		`${source}: invalid maxConcurrentSubagents ${JSON.stringify(value)} — use an integer from 1 through 9`,
+	);
 }
 
 function requirePreviewLines(value: unknown, source: string): number {
@@ -154,6 +166,12 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 		if (file.shellReadyDelayMs !== undefined) {
 			result.shellReadyDelayMs = requireDelayMs(file.shellReadyDelayMs, `${filePath}: shellReadyDelayMs`);
 		}
+		if (file.maxConcurrentSubagents !== undefined) {
+			result.maxConcurrentSubagents = requireMaxConcurrent(
+				file.maxConcurrentSubagents,
+				`${filePath}: maxConcurrentSubagents`,
+			);
+		}
 		if (file.callPreviewLines !== undefined) {
 			result.callPreviewLines = requirePreviewLines(file.callPreviewLines, `${filePath}: callPreviewLines`);
 		}
@@ -196,6 +214,12 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 		result.shellReadyDelayMs = requireDelayMs(
 			coerceNumericEnvValue(env.PI_SUBAGENT_SHELL_READY_DELAY_MS),
 			"PI_SUBAGENT_SHELL_READY_DELAY_MS",
+		);
+	}
+	if (env.PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS) {
+		result.maxConcurrentSubagents = requireMaxConcurrent(
+			coerceNumericEnvValue(env.PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS),
+			"PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS",
 		);
 	}
 	if (env.PI_SUBAGENT_CALL_PREVIEW_LINES) {

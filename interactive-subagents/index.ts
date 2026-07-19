@@ -41,12 +41,13 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { armDrainHook, clearQueueForShutdown, drainQueue, pendingLaunchCount, queuedCount } from "./capacity.ts";
 import { registerCatalogue } from "./catalogue.ts";
 import { resetOverview, registerSubagentAvailableCommand } from "./command-available.ts";
 import { registerSubagentRunningCommand } from "./command-running.ts";
 import { registerDeliveryListener } from "./delivery.ts";
 import { registerSubagentResultRenderer } from "./result-message.ts";
-import { stopWidgetTimer } from "./running-widget.ts";
+import { stopWidgetTimer, updateRunningWidget } from "./running-widget.ts";
 import { completeReloadHandoff, prepareForReload, resetForShutdown, setLatestCtx } from "./state.ts";
 import { registerSubagentListTool } from "./tool-list.ts";
 import { registerSubagentResumeTool } from "./tool-resume.ts";
@@ -67,9 +68,15 @@ export default function (pi: ExtensionAPI) {
 	// the session ends or is replaced (/new, /resume, quit, reload).
 	pi.on("session_start", (event, ctx) => {
 		setLatestCtx(ctx);
+		// This generation now owns queue draining and repaints, even for
+		// slot releases a dying generation unwinds later (see capacity.ts).
+		armDrainHook(pi, updateRunningWidget);
 		if (event.reason === "reload") {
 			adoptRunningChildren(pi);
 			completeReloadHandoff();
+			// Launches queued before the reload (including any a dying
+			// generation rolled back and requeued mid-flight) restart here.
+			drainQueue(pi);
 		}
 	});
 
@@ -77,11 +84,18 @@ export default function (pi: ExtensionAPI) {
 		stopWidgetTimer();
 		resetOverview();
 		if (event.reason === "reload") {
+			// Queued and mid-flight launches count as pending work: the
+			// reaper must be armed for them even with nothing running.
 			prepareForReload((children) => {
 				for (const child of children) closePane(child.paneId);
-			});
+				// The reaper only fires when no replacement adopted — the
+				// extension is gone, so queued launches can never start.
+				clearQueueForShutdown();
+			}, undefined, queuedCount() + pendingLaunchCount() > 0);
 			return;
 		}
+		// Destructive boundary: queued children never existed — drop them.
+		clearQueueForShutdown();
 		for (const child of resetForShutdown()) closePane(child.paneId);
 	});
 
