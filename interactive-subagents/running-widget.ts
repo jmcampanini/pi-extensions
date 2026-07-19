@@ -8,7 +8,7 @@
  */
 
 import { oldestActiveTool, toolElapsedSeconds } from "./activity.ts";
-import { pendingLaunchCount, pendingLaunches, queuedCount, queuedEntries, specDisplay } from "./capacity.ts";
+import { pendingLaunchCount, pendingLaunches, queuedCount, queuedEntries, specDisplay, type LaunchSpec } from "./capacity.ts";
 import { config } from "./config.ts";
 import { computeStatus } from "./status.ts";
 import { formatRunningWidgetLines, type WidgetRow } from "./widget.ts";
@@ -49,6 +49,30 @@ function rememberTimer(timer: ReturnType<typeof setInterval> | null): void {
 	const previous = currentTimer();
 	if (previous) clearInterval(previous);
 	rememberTimer(null);
+}
+
+function launchWidgetRow(
+	spec: LaunchSpec,
+	lifecycle: "pending" | "queued",
+	startedAt: number,
+	now: number,
+): LifecycleWidgetRow {
+	const display = specDisplay(spec);
+	const external = spec.harness !== "pi";
+	return {
+		id: spec.id,
+		lifecycle,
+		startedAt,
+		name: display.name,
+		agent: display.agent,
+		harness: external ? spec.harness : undefined,
+		elapsedSeconds: Math.round((now - startedAt) / 1000),
+		forked: spec.context === "forked",
+		interactive: !spec.autoExit,
+		worktree: spec.kind === "spawn" ? spec.useWorktree : spec.worktree !== undefined,
+		external,
+		status: lifecycle === "pending" ? "starting" : "queued",
+	};
 }
 
 /** Snapshot every lifecycle, then order by delivering, stalled, waiting,
@@ -109,39 +133,11 @@ export function collectLifecycleWidgetRows(now = Date.now()): LifecycleWidgetRow
 
 	for (const pending of pendingLaunches()) {
 		if (running.has(pending.spec.id)) continue;
-		const display = specDisplay(pending.spec);
-		rows.push({
-			id: pending.spec.id,
-			lifecycle: "pending",
-			startedAt: pending.claimedAt,
-			name: display.name,
-			agent: display.agent,
-			harness: pending.spec.harness === "pi" ? undefined : pending.spec.harness,
-			elapsedSeconds: Math.round((now - pending.claimedAt) / 1000),
-			forked: pending.spec.context === "forked",
-			interactive: !pending.spec.autoExit,
-			worktree: pending.spec.kind === "spawn" ? pending.spec.useWorktree : pending.spec.worktree !== undefined,
-			external: pending.spec.harness !== "pi",
-			status: "starting",
-		});
+		rows.push(launchWidgetRow(pending.spec, "pending", pending.claimedAt, now));
 	}
 
 	for (const entry of queuedEntries()) {
-		const display = specDisplay(entry.spec);
-		rows.push({
-			id: entry.spec.id,
-			lifecycle: "queued",
-			startedAt: entry.queuedAt,
-			name: display.name,
-			agent: display.agent,
-			harness: entry.spec.harness === "pi" ? undefined : entry.spec.harness,
-			elapsedSeconds: Math.round((now - entry.queuedAt) / 1000),
-			forked: entry.spec.context === "forked",
-			interactive: !entry.spec.autoExit,
-			worktree: entry.spec.kind === "spawn" ? entry.spec.useWorktree : entry.spec.worktree !== undefined,
-			external: entry.spec.harness !== "pi",
-			status: "queued",
-		});
+		rows.push(launchWidgetRow(entry.spec, "queued", entry.queuedAt, now));
 	}
 	return rows.sort((left, right) => {
 		const priority = rowPriority(left) - rowPriority(right);

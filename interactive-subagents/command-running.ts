@@ -24,6 +24,10 @@ export const RUNNING_PICKER_MAX_ROWS = 10;
 
 type PickerAction = "goto" | "zoom" | "stop";
 
+type PickerChoice = { row: LifecycleWidgetRow; action: PickerAction };
+
+const plainText = (text: string): string => text;
+
 export interface RunningPickerStyle {
 	border?: (text: string) => string;
 	title?: (text: string) => string;
@@ -59,14 +63,14 @@ export function formatRunningPickerLines(
 	maxRows = RUNNING_PICKER_MAX_ROWS,
 ): string[] {
 	const safeWidth = Math.max(0, width);
-	const border = style.border ?? ((text: string) => text);
-	const title = style.title ?? ((text: string) => text);
-	const selected = style.selected ?? ((text: string) => text);
-	const nameStyle = style.name ?? ((text: string) => text);
-	const agentStyle = style.agent ?? ((text: string) => text);
-	const markerStyle = style.marker ?? ((text: string) => text);
-	const meta = style.meta ?? ((text: string) => text);
-	const dim = style.dim ?? ((text: string) => text);
+	const border = style.border ?? plainText;
+	const title = style.title ?? plainText;
+	const selected = style.selected ?? plainText;
+	const nameStyle = style.name ?? plainText;
+	const agentStyle = style.agent ?? plainText;
+	const markerStyle = style.marker ?? plainText;
+	const meta = style.meta ?? plainText;
+	const dim = style.dim ?? plainText;
 	const limit = Math.max(1, Math.floor(maxRows));
 	const start = Math.max(0, Math.min(viewportStart, Math.max(0, rows.length - limit)));
 	const end = Math.min(rows.length, start + limit);
@@ -139,12 +143,12 @@ export function registerSubagentRunningCommand(
 			}
 
 			let refreshTimer: ReturnType<typeof setInterval> | undefined;
-			let choice: { row: LifecycleWidgetRow; action: PickerAction } | undefined;
+			let choice: PickerChoice | undefined;
 			try {
-				choice = await ctx.ui.custom<{ row: LifecycleWidgetRow; action: PickerAction } | undefined>(
+				choice = await ctx.ui.custom<PickerChoice | undefined>(
 					(tui, theme, _keybindings, done) => {
 					refreshTimer = setInterval(() => tui.requestRender(), 1000);
-					const close = (value: { row: LifecycleWidgetRow; action: PickerAction } | undefined): void => {
+					const close = (value: PickerChoice | undefined): void => {
 						if (refreshTimer) clearInterval(refreshTimer);
 						refreshTimer = undefined;
 						done(value);
@@ -170,6 +174,12 @@ export function registerSubagentRunningCommand(
 						viewportStart = nextViewport(cursor, viewportStart, rows.length, RUNNING_PICKER_MAX_ROWS);
 						return { rows, cursor };
 					};
+					const selectRow = (rows: LifecycleWidgetRow[], cursor: number): void => {
+						selectedId = rows[cursor].id;
+						fallbackIndex = cursor;
+						viewportStart = nextViewport(cursor, viewportStart, rows.length, RUNNING_PICKER_MAX_ROWS);
+						tui.requestRender();
+					};
 
 					return {
 						handleInput(data: string): void {
@@ -180,19 +190,11 @@ export function registerSubagentRunningCommand(
 							const current = currentSelection();
 							if (current.rows.length === 0) return;
 							if (matchesKey(data, "up") || data === "k") {
-								const cursor = (current.cursor - 1 + current.rows.length) % current.rows.length;
-								selectedId = current.rows[cursor].id;
-								fallbackIndex = cursor;
-								viewportStart = nextViewport(cursor, viewportStart, current.rows.length, RUNNING_PICKER_MAX_ROWS);
-								tui.requestRender();
+								selectRow(current.rows, (current.cursor - 1 + current.rows.length) % current.rows.length);
 								return;
 							}
 							if (matchesKey(data, "down") || data === "j") {
-								const cursor = (current.cursor + 1) % current.rows.length;
-								selectedId = current.rows[cursor].id;
-								fallbackIndex = cursor;
-								viewportStart = nextViewport(cursor, viewportStart, current.rows.length, RUNNING_PICKER_MAX_ROWS);
-								tui.requestRender();
+								selectRow(current.rows, (current.cursor + 1) % current.rows.length);
 								return;
 							}
 							const row = current.rows[current.cursor];
