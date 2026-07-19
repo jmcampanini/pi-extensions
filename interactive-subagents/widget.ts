@@ -74,11 +74,12 @@ export interface WidgetRow {
 	/** Live status computed by the parent's watcher. All four segment fields
 	 * are optional: a row without a status renders byte-identical to the v1
 	 * row, so the segment machinery only engages when the controller opts in.
-	 * "delivering" is the one exit-lifecycle state, supplied by the controller
-	 * from the delivering map and never produced by computeStatus - the child
-	 * has exited and its result message is still queued for the parent; the
-	 * controller passes no tool/token telemetry with it. */
-	status?: "starting" | "active" | "waiting" | "stalled" | "delivering";
+	 * Two states never come from computeStatus: "delivering" (exit lifecycle
+	 * — the child has exited and its result message is still queued for the
+	 * parent) and "queued" (pre-launch — the child is waiting for a
+	 * concurrency slot, see capacity.ts). The controller passes no tool/token
+	 * telemetry with either. */
+	status?: "starting" | "active" | "waiting" | "stalled" | "delivering" | "queued";
 	/** Longest-running tool call's name. Child-written and therefore hostile:
 	 * re-sanitized inside the renderer, never trusted. Shown only while
 	 * status is "active". */

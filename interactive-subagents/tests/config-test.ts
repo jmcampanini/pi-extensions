@@ -24,6 +24,7 @@ function dirWith(content: string | null): string {
 
 // the worktree defaults repeat in several whole-object assertions below
 const previewDefaults = {
+	maxConcurrentSubagents: 9,
 	callPreviewLines: 3,
 	resultPreviewLines: 5,
 };
@@ -38,8 +39,8 @@ eq("defaults", loadConfig({ PI_CODING_AGENT_DIR: dirWith(null) }),
 	{ layout: "window", mainWidth: "60%", shellReadyDelayMs: 500, ...previewDefaults, ...worktreeDefaults });
 
 // full file applies
-eq("file applies", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window","mainWidth":"120","shellReadyDelayMs":250,"callPreviewLines":4,"resultPreviewLines":8}') }),
-	{ layout: "window", mainWidth: "120", shellReadyDelayMs: 250, callPreviewLines: 4, resultPreviewLines: 8, ...worktreeDefaults });
+eq("file applies", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window","mainWidth":"120","shellReadyDelayMs":250,"maxConcurrentSubagents":4,"callPreviewLines":4,"resultPreviewLines":8}') }),
+	{ layout: "window", mainWidth: "120", shellReadyDelayMs: 250, maxConcurrentSubagents: 4, callPreviewLines: 4, resultPreviewLines: 8, ...worktreeDefaults });
 
 // partial file merges with defaults
 eq("partial file", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"off"}') }),
@@ -62,6 +63,31 @@ eq("result preview env beats file",
 		PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":2}'),
 		PI_SUBAGENT_RESULT_PREVIEW_LINES: "9",
 	}).resultPreviewLines, 9);
+
+// ── maxConcurrentSubagents ────────────────────────────────────────────────
+
+eq("max concurrent accepts the minimum",
+	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":1}') }).maxConcurrentSubagents, 1);
+eq("max concurrent env beats file",
+	loadConfig({
+		PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":3}'),
+		PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS: "5",
+	}).maxConcurrentSubagents, 5);
+throws("zero max concurrent is rejected",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":0}') }),
+	"integer from 1 through 9");
+throws("max concurrent above 9 is rejected",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":10}') }),
+	"integer from 1 through 9");
+throws("fractional max concurrent is rejected",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":2.5}') }),
+	"integer from 1 through 9");
+throws("string max concurrent in file is rejected",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":"9"}') }),
+	'"9"');
+throws("invalid max concurrent env names the variable",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS: "lots" }),
+	"PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS");
 
 // failures — each names the offender
 throws("unknown key", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layot":"main"}') }), "unknown key(s) layot");

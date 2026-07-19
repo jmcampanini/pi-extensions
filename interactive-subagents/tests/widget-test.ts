@@ -458,6 +458,19 @@ for (let w = -2; w <= 90; w++) {
 }
 eq("no v2 line ever exceeds the render width", v2WidthViolations, 0);
 
+// ── the queued pre-launch state ──────────────────────────────────────────
+// Supplied by the controller from capacity.ts's launch queue, never by
+// computeStatus: the clock counts time waiting for a concurrency slot, and
+// there is no process yet, so no tool/token telemetry and never warn.
+const queuedRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 42, status: "queued" }];
+eq("queued row exact string", formatRunningWidgetLines(queuedRow, 50)[1],
+	" [scout]    Auth            queued        · 00:42 ");
+const queuedStyled = formatRunningWidgetLines(queuedRow, 50,
+	{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
+eq("queued core and clock separator render dim",
+	queuedStyled[1].includes(`<D>queued${" ".repeat(7)}</D><D> · </D><D>00:42</D> `), true);
+eq("queued never uses the warn hook", queuedStyled[1].includes("<W>"), false);
+
 // ── the delivering exit state ────────────────────────────────────────────
 // An exit-lifecycle state supplied by the controller from the delivering
 // map, never by computeStatus: frozen clock, no tool/token telemetry, dim

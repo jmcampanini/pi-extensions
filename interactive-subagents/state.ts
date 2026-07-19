@@ -141,15 +141,19 @@ function clearTrackedState(): RunningSubagent[] {
 	return children;
 }
 
-/** Stop old work while preserving live and finalizing records for adoption. */
+/** Stop old work while preserving live and finalizing records for adoption.
+ * `extraPendingWork` arms the reaper even with nothing running — the caller
+ * has other state (queued launches) that must be discarded if no
+ * replacement ever adopts. */
 export function prepareForReload(
 	onExpired: (children: RunningSubagent[]) => void,
 	timeoutMs = RELOAD_HANDOFF_TIMEOUT_MS,
+	extraPendingWork = false,
 ): void {
 	lifetime.controller.abort();
 	reloadState.latestCtx = null;
 	if (reloadState.handoffTimer) clearTimeout(reloadState.handoffTimer);
-	if (running.size === 0 && reloadState.delivering.size === 0) return;
+	if (running.size === 0 && reloadState.delivering.size === 0 && !extraPendingWork) return;
 	const timer = setTimeout(() => {
 		if (reloadState.handoffTimer !== timer) return;
 		reloadState.handoffTimer = undefined;

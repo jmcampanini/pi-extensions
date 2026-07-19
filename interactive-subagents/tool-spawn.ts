@@ -11,11 +11,14 @@
  * throws) goes straight back into the model's context as the tool result.
  *
  * The spawn itself: resolve the agent definition (explicit params beat
- * frontmatter beat built-in defaults), write the task and system prompt as
- * artifact files, build the launch command (launch.ts), open a pane
- * (tmux.ts), and hand the child to the watcher (watcher.ts). The tool
- * returns as soon as the child is RUNNING — the result arrives later as a
- * steered message.
+ * frontmatter beat built-in defaults) into a pure LAUNCH SPEC, then either
+ * run the launch pipeline now (a concurrency slot was free — the tool
+ * returns 'started' as soon as the child is RUNNING) or queue the spec
+ * (capacity.ts launches it when a slot frees — the tool returns 'queued'
+ * immediately). The pipeline writes the task and system prompt as artifact
+ * files, builds the launch command (launch.ts), opens a pane (tmux.ts), and
+ * hands the child to the watcher (watcher.ts). Results always arrive later
+ * as steered messages.
  */
 
 import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -27,6 +30,16 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { activityFilePath, clearActivityFile } from "./activity.ts";
 import { agentDefsDir, loadAgentDefinition, projectDefsDir } from "./agents.ts";
+import {
+	AbandonLaunch,
+	admitLaunch,
+	assertLaunchStillWanted,
+	registerLauncher,
+	releaseClaim,
+	requestDrain,
+	RequeueLaunch,
+	type SpawnSpec,
+} from "./capacity.ts";
 import { config } from "./config.ts";
 import { clearExternalResult, requireHarnessProfile } from "./harnesses.ts";
 import {
@@ -40,8 +53,10 @@ import {
 } from "./launch.ts";
 import { assertValidThinkingLevel, resolveUsableModel, THINKING_LEVELS } from "./models.ts";
 import { countEntries, seedForkSession, seedFreshSession } from "./session.ts";
+import { moduleGeneration } from "./state.ts";
 import { formatCollapsedSubagentCall, formatExpandedSubagentCall } from "./subagent-call.ts";
 import { renderSubagentLaunchResult } from "./subagent-result.ts";
+import { updateRunningWidget } from "./running-widget.ts";
 import { closePane, createPane, isTmuxAvailable, sendLongCommand, shellQuote, sleep } from "./tmux.ts";
 import { trackChild } from "./watcher.ts";
 import { createWorktree, removeWorktree, type WorktreeInfo } from "./worktree.ts";
@@ -66,7 +81,7 @@ const SubagentSpawnParams = Type.Object({
 		Type.Union([Type.Literal("fresh"), Type.Literal("forked")], {
 			description:
 				"'fresh' = no parent conversation (default; project files and instructions still load). Use for self-contained work and include all needed context in `task`. " +
-				"'forked' = copies this conversation before the current turn. Use when the task materially depends on accumulated discussion, reads, or decisions that would be difficult or lossy to restate, or to try parallel approaches from the same starting point. " +
+				"'forked' = copies this conversation up to the moment the child actually launches — immediately when a concurrency slot is free, or later when a queued launch starts. Use when the task materially depends on accumulated discussion, reads, or decisions that would be difficult or lossy to restate, or to try parallel approaches from the same starting point. " +
 				"Forked history is sent to the child's selected model/provider, so prefer fresh when that history is unnecessary or sensitive. Use subagent_resume instead when a follow-up depends on a previous child's own context. Overrides the agent definition.",
 		}),
 	),
@@ -120,7 +135,11 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 		label: "Spawn Subagent",
 		description:
 			"Spawn a sub-agent in a tmux pane to work on a task. ASYNC — this returns " +
-			"immediately with status 'started'; the sub-agent's result is automatically " +
+			"immediately with status 'started', or status 'queued' when " +
+			`${config.maxConcurrentSubagents} sub-agents (the concurrency limit, shared ` +
+			"with subagent_resume) are already running. Queued sub-agents start " +
+			"automatically, in order, as running ones finish — never re-issue a queued " +
+			"spawn. Either way the sub-agent's result is automatically " +
 			"steered into this conversation when it finishes. NEVER poll for results: " +
 			"do not sleep, do not read the child session file, do not check panes. " +
 			"Just continue with other work or end your turn — you will be woken with " +
@@ -259,25 +278,12 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			}
 
 			const id = randomUUID().slice(0, 8);
-			const base = artifactBase(ctx);
-			const slug = slugify(params.name);
 
-			// Resolve the working directory to an absolute path — it feeds the
-			// launch script's `cd`, the session-dir naming, and the fork header.
-			// Worktree mode asks the user-pluggable create command for a fresh
-			// directory (this is deliberately the LAST step before side effects,
-			// so every earlier failure needs no rollback). Otherwise, relative
-			// paths resolve against this session's cwd and a leading ~ expands.
-			let cwd: string;
-			let worktree: WorktreeInfo | undefined;
-			if (useWorktree) {
-				worktree = await createWorktree({
-					name: `${slug}-${id}`,
-					parentCwd: ctx.cwd,
-					command: config.worktreeCreateCommand,
-				});
-				cwd = worktree.dir;
-			} else {
+			// Resolve a non-worktree cwd now — it is pure (worktree directories
+			// are only created at launch time): relative paths resolve against
+			// this session's cwd and a leading ~ expands.
+			let cwd: string | undefined;
+			if (!useWorktree) {
 				const rawCwd = params.cwd ?? ctx.cwd;
 				const tildeExpanded =
 					rawCwd === "~" ? homedir() : rawCwd.startsWith("~/") ? join(homedir(), rawCwd.slice(2)) : rawCwd;
@@ -287,218 +293,362 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 				}
 			}
 
-			// Everything below has side effects (files on disk, a tmux pane, a
-			// watcher). If any of it throws after a worktree was created, roll
-			// the worktree back — it is seconds old and provably clean, so
-			// removing it cannot destroy work — then rethrow the real error.
-			try {
-				const childSessionFile = generateChildSessionFile(cwd);
-				mkdirSync(dirname(childSessionFile), { recursive: true });
-				// Fresh UUID paths make a leftover sidecar, activity, or result
-				// file impossible today, but the poller and the liveness reader
-				// trust these paths completely — keep them provably clean.
-				clearExitSidecar(childSessionFile);
-				clearActivityFile(childSessionFile);
-				clearExternalResult(childSessionFile);
+			// Everything a launch needs, as pure data (see capacity.ts): the
+			// launch may run right now, or later when a concurrency slot frees.
+			const spec: SpawnSpec = {
+				kind: "spawn",
+				id,
+				name: params.name,
+				task: params.task,
+				agentName,
+				harness,
+				agentBody: agentDef.body,
+				harnessPassThrough: agentDef.harnessPassThrough,
+				context,
+				model,
+				thinking,
+				tools,
+				autoExit,
+				useWorktree,
+				cwd,
+				parentCwd: ctx.cwd,
+				parentSessionFile,
+				base: artifactBase(ctx),
+				slug: slugify(params.name),
+			};
 
-				// pi children pre-seed the child's session file so pi's session picker
-				// shows a readable entry: the header's parentSession nests the child
-				// under THIS session in threaded view, and the seeded display name
-				// ("subagent › <agent> › <name>") replaces the raw @file task text.
-				// Forked additionally copies the parent's conversation, and records the
-				// seed's entry count so the eventual summary can only come from turns
-				// the CHILD added — without this, a copied parent assistant message
-				// could be reported as the child's "result".
-				// External children get NO session file at all: the path is only the
-				// anchor their sidecars sit next to, so it never appears in pi's
-				// session picker, and the result is read from `<anchor>.result`.
-				let skipEntries = 0;
-				if (!profile) {
-					const sessionLabel = `subagent › ${agentName} › ${params.name}`;
-					if (context === "forked") {
-						seedForkSession({ parentSessionFile, childSessionFile, childCwd: cwd, name: sessionLabel });
-						skipEntries = countEntries(childSessionFile);
-					} else {
-						seedFreshSession({ parentSessionFile, childSessionFile, childCwd: cwd, name: sessionLabel });
-					}
-				}
-
-				// The child session file now exists on disk, so from here until the
-				// launch command is actually sent, a failure (tmux gone, pane limits,
-				// disk errors) must delete the seed again — otherwise every failed
-				// spawn leaves a phantom named session in pi's picker. Once
-				// sendLongCommand succeeds the child owns the file, and deleting it
-				// would corrupt a live session — hence this exact try range. (The
-				// outer catch then rolls back the worktree, if any.)
-				const scriptPath = join(base, "scripts", `${slug}-${id}.sh`);
-				let paneId: string | undefined;
-				try {
-					// The task the child receives — always delivered as a file: multi-KB
-					// tasks never touch the shell command line, tasks starting with "-" or
-					// "@" can't be misparsed as CLI flags, and the exact text stays
-					// inspectable under artifacts/. Forked children already carry the
-					// conversation so they get the raw task; fresh children also get
-					// instructions about how their run ends — from the profile for
-					// external children, whose panes have no pi control tools.
-					const fullTask =
-						context === "forked"
-							? params.task
-							: `# Your task\n\n${params.task}\n\n---\n` +
-								(profile
-									? profile.completionInstruction(autoExit)
-									: (autoExit
-											? "Complete your task autonomously. When you finish your final reply, this session closes automatically. "
-											: "When your task is complete, write a final summary message and then call the subagent_done tool. If you are blocked, call caller_ping. ") +
-										"Your final assistant message is reported back to the caller as your result.");
-					const taskFile = join(base, "tasks", `${slug}-${id}.md`);
-					mkdirSync(dirname(taskFile), { recursive: true });
-					writeFileSync(taskFile, fullTask, "utf8");
-
-					// The agent's body becomes an appended system prompt. We pass a FILE
-					// PATH — pi auto-reads existing paths for --append-system-prompt —
-					// which sidesteps shell-escaping of multiline text entirely.
-					let systemPromptFile: string | undefined;
-					if (agentDef.body !== "") {
-						systemPromptFile = join(base, "sysprompts", `${slug}-${id}.md`);
-						mkdirSync(dirname(systemPromptFile), { recursive: true });
-						writeFileSync(systemPromptFile, agentDef.body, "utf8");
-					}
-
-					// Assemble the launch command: the external profile builds its
-					// tool's command line (lifecycle notifiers baked in); pi children
-					// go through launch.ts as before (see both for every piece).
-					const command = profile
-						? profile.buildLaunchCommand({
-								cwd,
-								anchor: childSessionFile,
-								runId: id,
-								autoExit,
-								model,
-								thinking,
-								tools,
-								systemPromptFile,
-								passThrough: agentDef.harnessPassThrough,
-								taskFile,
-							})
-						: buildLaunchCommand({
-								cwd,
-								env: buildChildEnv({
-									PI_SUBAGENT_SESSION: childSessionFile,
-									PI_SUBAGENT_NAME: params.name,
-									// The liveness pair (see activity.ts): the run id stamps
-									// snapshot ownership, the path tells the recorder where to
-									// write.
-									PI_SUBAGENT_ID: id,
-									PI_SUBAGENT_ACTIVITY_FILE: activityFilePath(childSessionFile),
-									PI_SUBAGENT_AGENT: agentName,
-									PI_SUBAGENT_AUTO_EXIT: autoExit ? "1" : undefined,
-								}),
-								sessionFile: childSessionFile,
-								model,
-								thinking,
-								systemPromptFile,
-								tools,
-								passThrough: agentDef.harnessPassThrough,
-								promptArg: shellQuote(`@${taskFile}`),
-							});
-
-					// Launch-metadata sidecar: records the child's identity settings so
-					// subagent_resume can reapply them later (system prompt, tools,
-					// model, thinking, auto-exit, worktree, harness). Without this, a
-					// resumed agent silently loses its system prompt and restrictions —
-					// they live on the command line, not in the conversation. The cwd is
-					// recorded only for external children, which have no session header
-					// to read it back from.
-					writeLaunchMeta(childSessionFile, {
-						name: params.name,
-						agent: agentName,
-						tools,
-						model,
-						thinking,
-						systemPromptFile,
-						autoExit,
-						context,
-						worktree,
-						harness: profile ? harness : undefined,
-						harnessPassThrough: agentDef.harnessPassThrough,
-						cwd: profile ? cwd : undefined,
-					});
-
-					// Create the pane, give its shell a moment, then run the launch
-					// script (written to artifacts for debuggability).
-					paneId = createPane(params.name);
-					await sleep(config.shellReadyDelayMs);
-					sendLongCommand(paneId, command, scriptPath);
-				} catch (error) {
-					rmSync(childSessionFile, { force: true });
-					rmSync(`${childSessionFile}.meta`, { force: true });
-					clearActivityFile(childSessionFile);
-					clearExternalResult(childSessionFile);
-					if (paneId !== undefined) closePane(paneId);
-					throw error;
-				}
-
-				trackChild(pi, {
-					id,
-					name: params.name,
-					agent: agentName,
-					harness: profile ? harness : undefined,
-					paneId,
-					sessionFile: childSessionFile,
-					startTime: Date.now(),
-					skipEntries,
-					tools,
-					model,
-					autoExit,
-					context,
-					worktree,
-					abort: new AbortController(),
-					// A spawn always delivers a task, so the starting watchdog is
-					// always armed (see status.ts).
-					expectsRun: true,
-				});
-
-				// Worktree spawns also tell the model WHERE the child works, so it
-				// can inspect or merge later. Branch phrasing is skipped when the
-				// worktree is on a detached HEAD (there is no branch to name).
-				const where = worktree
-					? ` in worktree ${worktree.dir}` + (worktree.branch === "HEAD" ? "" : ` on branch ${worktree.branch}`)
-					: "";
+			// The fork: claim a slot and launch now, or join the queue. No await
+			// sits between admitLaunch and either outcome, so parallel spawn
+			// calls cannot race past the limit (see capacity.ts).
+			const admission = admitLaunch(spec);
+			if (admission.status === "queued") {
+				updateRunningWidget();
+				const ahead = admission.ahead > 0 ? `, ${admission.ahead} ahead of it in the queue` : "";
+				const forkNote =
+					context === "forked"
+						? " Its forked context will copy this conversation as of the moment it launches."
+						: "";
 				return {
 					content: [
 						{
 							type: "text",
 							text:
-								`Sub-agent "${params.name}" started (id ${id}, ${context} context)${where}. ` +
-								"Its result will arrive automatically — do not poll; continue with other work or end your turn.",
+								`Sub-agent "${params.name}" queued (id ${id}, ${context} context): all ` +
+								`${config.maxConcurrentSubagents} concurrency slots are busy${ahead}. ` +
+								"It starts automatically when a slot frees, and its result arrives like " +
+								`any other sub-agent's — do not poll, and do not re-issue this spawn.${forkNote}`,
 						},
 					],
-					details: {
-						id,
-						sessionFile: childSessionFile,
-						paneId,
-						launchScript: scriptPath,
-						worktreeDir: worktree?.dir,
-						worktreeBranch: worktree?.branch,
-					},
+					details: { id, status: "queued", ahead: admission.ahead },
 				};
+			}
+
+			let launched: LaunchedSpawn;
+			try {
+				launched = await runSpawnLaunch(pi, spec);
 			} catch (error) {
-				// Best-effort rollback; removeWorktree never throws, and the
-				// original launch error is what the model needs to see — but a
-				// rollback that ITSELF failed must not be silent, or the leaked
-				// worktree (and branch) would linger with zero signal anywhere.
-				if (worktree) {
-					const rollback = await removeWorktree(worktree, config.worktreeCleanupCommand);
-					if (rollback.status === "cleanup-failed") {
-						const message = error instanceof Error ? error.message : String(error);
-						throw new Error(
-							`${message}\n\nAlso: rolling back the worktree failed (${rollback.error}) — ` +
-								`remove ${worktree.dir} manually.`,
-						);
-					}
+				releaseClaim(id);
+				// The failed launch freed its slot — without this, queued work
+				// behind it could sit forever with capacity free (nothing else
+				// triggers a drain until some running child exits).
+				requestDrain(pi);
+				updateRunningWidget();
+				// The boundary guards can only fire inline when the turn was
+				// already aborted mid-launch; translate them for the transcript.
+				if (error instanceof RequeueLaunch || error instanceof AbandonLaunch) {
+					throw new Error(
+						"Sub-agent launch was interrupted by a session reload/shutdown before it started — " +
+							"nothing is running. Re-issue the call if the work is still needed.",
+					);
 				}
 				throw error;
 			}
+
+			// Worktree spawns also tell the model WHERE the child works, so it
+			// can inspect or merge later. Branch phrasing is skipped when the
+			// worktree is on a detached HEAD (there is no branch to name).
+			const worktree = launched.worktree;
+			const where = worktree
+				? ` in worktree ${worktree.dir}` + (worktree.branch === "HEAD" ? "" : ` on branch ${worktree.branch}`)
+				: "";
+			return {
+				content: [
+					{
+						type: "text",
+						text:
+							`Sub-agent "${params.name}" started (id ${id}, ${context} context)${where}. ` +
+							"Its result will arrive automatically — do not poll; continue with other work or end your turn.",
+					},
+				],
+				details: {
+					id,
+					sessionFile: launched.childSessionFile,
+					paneId: launched.paneId,
+					launchScript: launched.scriptPath,
+					worktreeDir: worktree?.dir,
+					worktreeBranch: worktree?.branch,
+				},
+			};
 		},
 	});
+
+	// The queue drain launches spawns through the same pipeline the inline
+	// path uses. Registered here rather than at module load so the registry
+	// always holds the closures of the module generation pi just activated.
+	registerLauncher("spawn", (piApi, spec) => runSpawnLaunch(piApi, spec as SpawnSpec));
+}
+
+interface LaunchedSpawn {
+	paneId: string;
+	childSessionFile: string;
+	scriptPath: string;
+	worktree?: WorktreeInfo;
+}
+
+/**
+ * The launch pipeline — every side effect of starting a child, in rollback
+ * scopes. Runs inline (a slot was free at call time) or from the queue drain
+ * (capacity.ts), which is why it takes a pure spec instead of tool params: by
+ * the time a queued launch runs, the tool call that created it is long gone.
+ * Contract with capacity.ts: the claim is released in the same synchronous
+ * step that registers the child; on a throw every side effect is rolled back
+ * and the CALLER releases the claim.
+ */
+async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<LaunchedSpawn> {
+	const launchGeneration = moduleGeneration();
+	const profile = spec.harness === "pi" ? undefined : requireHarnessProfile(spec.harness);
+
+	// Resolve the working directory. Worktree mode asks the user-pluggable
+	// create command for a fresh directory; a plain cwd was already validated
+	// at call time but is re-checked — it can vanish while a launch queues.
+	let cwd: string;
+	let worktree: WorktreeInfo | undefined;
+	if (spec.useWorktree) {
+		worktree = await createWorktree({
+			name: `${spec.slug}-${spec.id}`,
+			parentCwd: spec.parentCwd,
+			command: config.worktreeCreateCommand,
+		});
+		cwd = worktree.dir;
+	} else {
+		cwd = spec.cwd as string;
+		if (!existsSync(cwd)) {
+			throw new Error(`Sub-agent cwd no longer exists: ${cwd}`);
+		}
+	}
+
+	// Everything below has side effects (files on disk, a tmux pane, a
+	// watcher). If any of it throws after a worktree was created, roll
+	// the worktree back — it is seconds old and provably clean, so
+	// removing it cannot destroy work — then rethrow the real error.
+	try {
+		const childSessionFile = generateChildSessionFile(cwd);
+		mkdirSync(dirname(childSessionFile), { recursive: true });
+		// Fresh UUID paths make a leftover sidecar, activity, or result
+		// file impossible today, but the poller and the liveness reader
+		// trust these paths completely — keep them provably clean.
+		clearExitSidecar(childSessionFile);
+		clearActivityFile(childSessionFile);
+		clearExternalResult(childSessionFile);
+
+		// pi children pre-seed the child's session file so pi's session picker
+		// shows a readable entry: the header's parentSession nests the child
+		// under THIS session in threaded view, and the seeded display name
+		// ("subagent › <agent> › <name>") replaces the raw @file task text.
+		// Forked additionally copies the parent's conversation — as of LAUNCH
+		// time, so a fork that waited in the queue forks the parent as of when
+		// it actually starts — and records the seed's entry count so the
+		// eventual summary can only come from turns the CHILD added.
+		// External children get NO session file at all: the path is only the
+		// anchor their sidecars sit next to, so it never appears in pi's
+		// session picker, and the result is read from `<anchor>.result`.
+		let skipEntries = 0;
+		if (!profile) {
+			const sessionLabel = `subagent › ${spec.agentName} › ${spec.name}`;
+			if (spec.context === "forked") {
+				seedForkSession({
+					parentSessionFile: spec.parentSessionFile,
+					childSessionFile,
+					childCwd: cwd,
+					name: sessionLabel,
+				});
+				skipEntries = countEntries(childSessionFile);
+			} else {
+				seedFreshSession({
+					parentSessionFile: spec.parentSessionFile,
+					childSessionFile,
+					childCwd: cwd,
+					name: sessionLabel,
+				});
+			}
+		}
+
+		// The child session file now exists on disk, so from here until the
+		// launch command is actually sent, a failure (tmux gone, pane limits,
+		// disk errors) must delete the seed again — otherwise every failed
+		// spawn leaves a phantom named session in pi's picker. Once
+		// sendLongCommand succeeds the child owns the file, and deleting it
+		// would corrupt a live session — hence this exact try range. (The
+		// outer catch then rolls back the worktree, if any.)
+		const scriptPath = join(spec.base, "scripts", `${spec.slug}-${spec.id}.sh`);
+		let paneId: string | undefined;
+		try {
+			// The task the child receives — always delivered as a file: multi-KB
+			// tasks never touch the shell command line, tasks starting with "-" or
+			// "@" can't be misparsed as CLI flags, and the exact text stays
+			// inspectable under artifacts/. Forked children already carry the
+			// conversation so they get the raw task; fresh children also get
+			// instructions about how their run ends — from the profile for
+			// external children, whose panes have no pi control tools.
+			const fullTask =
+				spec.context === "forked"
+					? spec.task
+					: `# Your task\n\n${spec.task}\n\n---\n` +
+						(profile
+							? profile.completionInstruction(spec.autoExit)
+							: (spec.autoExit
+									? "Complete your task autonomously. When you finish your final reply, this session closes automatically. "
+									: "When your task is complete, write a final summary message and then call the subagent_done tool. If you are blocked, call caller_ping. ") +
+								"Your final assistant message is reported back to the caller as your result.");
+			const taskFile = join(spec.base, "tasks", `${spec.slug}-${spec.id}.md`);
+			mkdirSync(dirname(taskFile), { recursive: true });
+			writeFileSync(taskFile, fullTask, "utf8");
+
+			// The agent's body becomes an appended system prompt. We pass a FILE
+			// PATH — pi auto-reads existing paths for --append-system-prompt —
+			// which sidesteps shell-escaping of multiline text entirely.
+			let systemPromptFile: string | undefined;
+			if (spec.agentBody !== "") {
+				systemPromptFile = join(spec.base, "sysprompts", `${spec.slug}-${spec.id}.md`);
+				mkdirSync(dirname(systemPromptFile), { recursive: true });
+				writeFileSync(systemPromptFile, spec.agentBody, "utf8");
+			}
+
+			// Assemble the launch command: the external profile builds its
+			// tool's command line (lifecycle notifiers baked in); pi children
+			// go through launch.ts as before (see both for every piece).
+			const command = profile
+				? profile.buildLaunchCommand({
+						cwd,
+						anchor: childSessionFile,
+						runId: spec.id,
+						autoExit: spec.autoExit,
+						model: spec.model,
+						thinking: spec.thinking,
+						tools: spec.tools,
+						systemPromptFile,
+						passThrough: spec.harnessPassThrough,
+						taskFile,
+					})
+				: buildLaunchCommand({
+						cwd,
+						env: buildChildEnv({
+							PI_SUBAGENT_SESSION: childSessionFile,
+							PI_SUBAGENT_NAME: spec.name,
+							// The liveness pair (see activity.ts): the run id stamps
+							// snapshot ownership, the path tells the recorder where to
+							// write.
+							PI_SUBAGENT_ID: spec.id,
+							PI_SUBAGENT_ACTIVITY_FILE: activityFilePath(childSessionFile),
+							PI_SUBAGENT_AGENT: spec.agentName,
+							PI_SUBAGENT_AUTO_EXIT: spec.autoExit ? "1" : undefined,
+						}),
+						sessionFile: childSessionFile,
+						model: spec.model,
+						thinking: spec.thinking,
+						systemPromptFile,
+						tools: spec.tools,
+						passThrough: spec.harnessPassThrough,
+						promptArg: shellQuote(`@${taskFile}`),
+					});
+
+			// Launch-metadata sidecar: records the child's identity settings so
+			// subagent_resume can reapply them later (system prompt, tools,
+			// model, thinking, auto-exit, worktree, harness). Without this, a
+			// resumed agent silently loses its system prompt and restrictions —
+			// they live on the command line, not in the conversation. The cwd is
+			// recorded only for external children, which have no session header
+			// to read it back from.
+			writeLaunchMeta(childSessionFile, {
+				name: spec.name,
+				agent: spec.agentName,
+				tools: spec.tools,
+				model: spec.model,
+				thinking: spec.thinking,
+				systemPromptFile,
+				autoExit: spec.autoExit,
+				context: spec.context,
+				worktree,
+				harness: profile ? spec.harness : undefined,
+				harnessPassThrough: spec.harnessPassThrough,
+				cwd: profile ? cwd : undefined,
+			});
+
+			// Create the pane, give its shell a moment, then run the launch
+			// script (written to artifacts for debuggability). The sleep above
+			// the send is the LAST interleave point: the boundary guard runs
+			// after it, and everything from the guard through trackChild below
+			// is synchronous — a reload or /new observed here cannot slip in
+			// between passing the guard and registering the child. The guard
+			// sits BEFORE the send on purpose: after the send the child owns
+			// its session file, and this catch's rollback would corrupt it.
+			paneId = createPane(spec.name);
+			await sleep(config.shellReadyDelayMs);
+			assertLaunchStillWanted(launchGeneration);
+			sendLongCommand(paneId, command, scriptPath);
+		} catch (error) {
+			rmSync(childSessionFile, { force: true });
+			rmSync(`${childSessionFile}.meta`, { force: true });
+			clearActivityFile(childSessionFile);
+			clearExternalResult(childSessionFile);
+			if (paneId !== undefined) closePane(paneId);
+			throw error;
+		}
+
+		trackChild(pi, {
+			id: spec.id,
+			name: spec.name,
+			agent: spec.agentName,
+			harness: profile ? spec.harness : undefined,
+			paneId,
+			sessionFile: childSessionFile,
+			startTime: Date.now(),
+			skipEntries,
+			tools: spec.tools,
+			model: spec.model,
+			autoExit: spec.autoExit,
+			context: spec.context,
+			worktree,
+			abort: new AbortController(),
+			// A spawn always delivers a task, so the starting watchdog is
+			// always armed (see status.ts).
+			expectsRun: true,
+		});
+		releaseClaim(spec.id);
+
+		return { paneId, childSessionFile, scriptPath, worktree };
+	} catch (error) {
+		// Best-effort rollback; removeWorktree never throws, and the
+		// original launch error is what the model needs to see — but a
+		// rollback that ITSELF failed must not be silent, or the leaked
+		// worktree (and branch) would linger with zero signal anywhere.
+		// The warning is appended to the ORIGINAL error rather than thrown
+		// as a new one: capacity.ts dispatches on the error's class
+		// (RequeueLaunch/AbandonLaunch), and wrapping would silently turn a
+		// requeue into a dropped entry.
+		if (worktree) {
+			const rollback = await removeWorktree(worktree, config.worktreeCleanupCommand);
+			if (rollback.status === "cleanup-failed") {
+				const warning =
+					`\n\nAlso: rolling back the worktree failed (${rollback.error}) — ` +
+					`remove ${worktree.dir} manually.`;
+				if (error instanceof Error) {
+					error.message += warning;
+					throw error;
+				}
+				throw new Error(`${String(error)}${warning}`);
+			}
+		}
+		throw error;
+	}
 }

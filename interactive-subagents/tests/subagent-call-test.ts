@@ -2,6 +2,7 @@ import { initTheme, type ExtensionAPI, type Theme, type ToolDefinition } from "@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { config } from "../config.ts";
 import { ledger } from "../state.ts";
 import * as subagentCall from "../subagent-call.ts";
 import { registerSubagentResumeTool } from "../tool-resume.ts";
@@ -343,6 +344,16 @@ registerSubagentSpawnTool({
 	},
 } as unknown as ExtensionAPI);
 eq("registered spawn tool uses the canonical name", registeredSpawnTool?.name, "subagent_spawn");
+// The advertised limit must be the ENFORCED limit: the description is built
+// from the same config singleton capacity.ts counts against, so it cannot
+// drift — this assertion pins that derivation.
+eq(
+	"spawn description advertises the configured concurrency limit",
+	registeredSpawnTool?.description?.includes(
+		`or status 'queued' when ${config.maxConcurrentSubagents} sub-agents (the concurrency limit, shared with subagent_resume) are already running`,
+	),
+	true,
+);
 const callRenderer = registeredSpawnTool?.renderCall;
 if (callRenderer === undefined) {
 	eq("registered subagent_spawn tool has a call renderer", false, true);
@@ -403,6 +414,13 @@ eq(
 		"An effective true requires a message; false stays open for a human and permits a message-free handoff.",
 );
 eq("registered resume tool uses the canonical name", registeredResumeTool?.name, "subagent_resume");
+eq(
+	"resume description advertises the same configured concurrency limit",
+	registeredResumeTool?.description?.includes(
+		`or 'queued' when the concurrency limit of ${config.maxConcurrentSubagents} sub-agents (shared with subagent_spawn) is reached`,
+	),
+	true,
+);
 const resumeCallRenderer = registeredResumeTool?.renderCall;
 if (resumeCallRenderer === undefined) {
 	eq("registered subagent_resume tool has a call renderer", false, true);

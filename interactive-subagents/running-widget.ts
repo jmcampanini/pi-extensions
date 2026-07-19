@@ -14,6 +14,7 @@
  */
 
 import { oldestActiveTool, toolElapsedSeconds } from "./activity.ts";
+import { pendingLaunchCount, pendingLaunches, queuedCount, queuedEntries, specDisplay } from "./capacity.ts";
 import { computeStatus } from "./status.ts";
 import { formatRunningWidgetLines, type WidgetRow } from "./widget.ts";
 import { delivering, getLatestCtx, running } from "./state.ts";
@@ -42,24 +43,26 @@ function rememberTimer(timer: ReturnType<typeof setInterval> | null): void {
 	rememberTimer(null);
 }
 
-/** Re-render the widget from the running and delivering maps; remove it when both are empty. */
+/** Re-render the widget from the running and delivering maps plus the launch
+ * queue and in-flight launches; remove it when all of them are empty. */
 export function updateRunningWidget(): void {
 	const ctx = getLatestCtx();
 	if (!ctx || !ctx.hasUI) return;
 
-	if (running.size === 0 && delivering.size === 0) {
+	if (running.size === 0 && delivering.size === 0 && queuedCount() === 0 && pendingLaunchCount() === 0) {
 		// Passing undefined for content removes the widget.
 		ctx.ui.setWidget(WIDGET_KEY, undefined);
 		stopWidgetTimer();
 		return;
 	}
 	// Delivering rows are frozen (clock and word never change), so the 1 Hz
-	// repaint only earns its keep while live children run. The delivering-only
-	// phase is repainted event-driven instead: the delivery listener on
-	// removal, trackChild (via ensureWidgetTimer) on the next spawn. This
-	// also means a permanently stuck row - a result dropped by Escape - never
-	// becomes a permanent wakeup source.
-	if (running.size === 0) stopWidgetTimer();
+	// repaint only earns its keep while live children run — or while queued
+	// and mid-launch rows need their waiting clocks ticked. The
+	// delivering-only phase is repainted event-driven instead: the delivery
+	// listener on removal, trackChild (via ensureWidgetTimer) on the next
+	// spawn. This also means a permanently stuck row - a result dropped by
+	// Escape - never becomes a permanent wakeup source.
+	if (running.size === 0 && queuedCount() === 0 && pendingLaunchCount() === 0) stopWidgetTimer();
 
 	// Snapshot the rows now; the component form gets the real terminal width
 	// at render time, which is what lets the elapsed clock right-anchor.
@@ -112,6 +115,37 @@ export function updateRunningWidget(): void {
 			forked: child.forked,
 			worktree: child.worktree,
 			status: "delivering",
+		});
+	}
+	// Mid-launch children (slot claimed, pipeline running, not yet tracked)
+	// render as "starting" so a child dequeued for launch never vanishes
+	// from the widget between its queued row and its running row. trackChild
+	// repaints while the claim is still held, so skip any claim whose child
+	// is already registered — it must not render twice.
+	for (const pending of pendingLaunches()) {
+		if (running.has(pending.spec.id)) continue;
+		const display = specDisplay(pending.spec);
+		rows.push({
+			name: display.name,
+			agent: display.agent,
+			elapsedSeconds: Math.round((now - pending.claimedAt) / 1000),
+			forked: pending.spec.context === "forked",
+			worktree: pending.spec.kind === "spawn" ? pending.spec.useWorktree : pending.spec.worktree !== undefined,
+			status: "starting",
+		});
+	}
+	// Launches waiting for a concurrency slot render last, in start order.
+	// The clock counts time spent waiting; no process exists yet, so there
+	// is no telemetry to show.
+	for (const entry of queuedEntries()) {
+		const display = specDisplay(entry.spec);
+		rows.push({
+			name: display.name,
+			agent: display.agent,
+			elapsedSeconds: Math.round((now - entry.queuedAt) / 1000),
+			forked: entry.spec.context === "forked",
+			worktree: entry.spec.kind === "spawn" ? entry.spec.useWorktree : entry.spec.worktree !== undefined,
+			status: "queued",
 		});
 	}
 	ctx.ui.setWidget(
