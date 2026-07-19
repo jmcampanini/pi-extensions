@@ -47,8 +47,10 @@ export interface DeliveringSubagent {
 	agent?: string;
 	/** Which external tool ran the child ("claude-code"); absent = pi. */
 	harness?: string;
+	startedAt: number;
 	elapsedSeconds: number;
 	forked: boolean;
+	interactive: boolean;
 	worktree: boolean;
 }
 
@@ -92,8 +94,12 @@ const reloadState = (slots[STATE_KEY] as ReloadState | undefined) ?? {
 	latestCtx: null,
 	nextGeneration: 0,
 };
-// Upgrade a coordinator created by the pre-delivery feature during hot reload.
+// Upgrade process-stable state created by an older module during hot reload.
 reloadState.delivering ??= new Map<string, DeliveryRecord>();
+for (const record of reloadState.delivering.values()) {
+	record.startedAt ??= record.child.startTime;
+	record.interactive ??= !record.child.autoExit;
+}
 slots[STATE_KEY] = reloadState;
 
 reloadState.lifetime?.controller.abort();

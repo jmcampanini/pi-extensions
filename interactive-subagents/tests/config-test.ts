@@ -27,6 +27,7 @@ const previewDefaults = {
 	maxConcurrentSubagents: 9,
 	callPreviewLines: 3,
 	resultPreviewLines: 5,
+	widgetMaxRows: 5,
 };
 const worktreeDefaults = {
 	worktreeCreateCommand: DEFAULT_WORKTREE_CREATE_COMMAND,
@@ -39,8 +40,8 @@ eq("defaults", loadConfig({ PI_CODING_AGENT_DIR: dirWith(null) }),
 	{ layout: "window", mainWidth: "60%", shellReadyDelayMs: 500, ...previewDefaults, ...worktreeDefaults });
 
 // full file applies
-eq("file applies", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window","mainWidth":"120","shellReadyDelayMs":250,"maxConcurrentSubagents":4,"callPreviewLines":4,"resultPreviewLines":8}') }),
-	{ layout: "window", mainWidth: "120", shellReadyDelayMs: 250, maxConcurrentSubagents: 4, callPreviewLines: 4, resultPreviewLines: 8, ...worktreeDefaults });
+eq("file applies", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window","mainWidth":"120","shellReadyDelayMs":250,"maxConcurrentSubagents":4,"callPreviewLines":4,"resultPreviewLines":8,"widgetMaxRows":7}') }),
+	{ layout: "window", mainWidth: "120", shellReadyDelayMs: 250, maxConcurrentSubagents: 4, callPreviewLines: 4, resultPreviewLines: 8, widgetMaxRows: 7, ...worktreeDefaults });
 
 // partial file merges with defaults
 eq("partial file", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"off"}') }),
@@ -63,6 +64,22 @@ eq("result preview env beats file",
 		PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":2}'),
 		PI_SUBAGENT_RESULT_PREVIEW_LINES: "9",
 	}).resultPreviewLines, 9);
+eq("widget rows env beats file",
+	loadConfig({
+		PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":3}'),
+		PI_SUBAGENT_WIDGET_MAX_ROWS: "8",
+	}).widgetMaxRows, 8);
+eq("widget rows accept one",
+	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":1}') }).widgetMaxRows, 1);
+throws("negative widget rows are rejected",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":-1}') }),
+	"positive integer");
+throws("fractional widget rows are rejected",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":2.5}') }),
+	"positive integer");
+throws("invalid widget rows env names the variable",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_WIDGET_MAX_ROWS: "0" }),
+	"PI_SUBAGENT_WIDGET_MAX_ROWS");
 
 // ── maxConcurrentSubagents ────────────────────────────────────────────────
 

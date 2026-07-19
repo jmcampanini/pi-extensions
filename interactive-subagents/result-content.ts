@@ -1,3 +1,4 @@
+import { assertValidAgentIdentifier } from "./agent-identifier.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { formatCost, formatTokens } from "./widget.ts";
 
@@ -35,11 +36,12 @@ function inline(text: string): string {
 }
 
 export function buildSubagentResultEnvelope(input: SubagentResultEnvelope): SubagentResultEnvelopeContent {
+	assertValidAgentIdentifier(input.agent, "Result agent identifier");
 	const lines = [
 		"Subagent result",
 		`Status: ${input.status}`,
 		`Name: ${inline(input.name)}`,
-		`Agent: ${inline(input.agent) || "worker"}`,
+		`Agent: ${inline(input.agent)}`,
 		...(input.harness ? [`Harness: ${inline(input.harness)}`] : []),
 		`ID: ${inline(input.id)}`,
 		`Elapsed: ${inline(input.elapsed)}`,

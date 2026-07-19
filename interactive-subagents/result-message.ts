@@ -1,5 +1,6 @@
 import { estimateTokens, getMarkdownTheme, keyText, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Box, Markdown, Text, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { isValidAgentIdentifier } from "./agent-identifier.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { formatCost, formatTokens } from "./widget.ts";
@@ -158,7 +159,7 @@ function parseExpandedPresentation(value: unknown): SubagentExpandedResultPresen
 
 export function parseSubagentResultDetails(value: unknown): SubagentResultDetails | undefined {
 	if (!isRecord(value) || typeof value.id !== "string" || typeof value.name !== "string") return undefined;
-	if (value.agent !== undefined && typeof value.agent !== "string") return undefined;
+	if (value.agent !== undefined && !isValidAgentIdentifier(value.agent)) return undefined;
 	if (!isRecord(value.presentation)) return undefined;
 	const presentation = value.presentation;
 	if (presentation.version !== 2) return undefined;

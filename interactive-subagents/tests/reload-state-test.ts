@@ -82,7 +82,7 @@ const sharedCleanup = Promise.resolve().then(() => {
 	cleanupRuns++;
 	return { status: "kept" as const, code: "mode-never" as const, reason: "test" };
 });
-const delivery: DeliveryRecord = {
+const delivery = {
 	id: child.id,
 	name: child.name,
 	agent: "worker",
@@ -93,11 +93,13 @@ const delivery: DeliveryRecord = {
 	exit: { reason: "exited", exitCode: 0 },
 	worktreeCleanup: sharedCleanup,
 	sendAccepted: true,
-};
+} as unknown as DeliveryRecord;
 replacement.setDeliveryRecord(delivery);
 replacement.prepareForReload(() => {});
 const second = await import(new URL(`../state.ts?reload-test-2=${Date.now()}`, import.meta.url).href) as typeof initial;
 eq("first delivery reload keeps the sole enriched record", second.deliveryRecord(child.id), delivery);
+eq("delivery reload backfills launch time", second.deliveryRecord(child.id)?.startedAt, child.startTime);
+eq("delivery reload backfills the interactive marker", second.deliveryRecord(child.id)?.interactive, true);
 second.completeReloadHandoff();
 second.prepareForReload(() => {});
 const third = await import(new URL(`../state.ts?reload-test-3=${Date.now()}`, import.meta.url).href) as typeof initial;

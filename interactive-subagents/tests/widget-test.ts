@@ -1,6 +1,8 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
+	EXTERNAL_MARK,
 	FORK_MARK,
+	INTERACTIVE_MARK,
 	WORKTREE_MARK,
 	clampToolName,
 	displayColumns,
@@ -45,60 +47,57 @@ const rows = [
 const lines = formatRunningWidgetLines(rows, 60);
 eq("border rule + child rows, no footer", lines.length, 3);
 eq("top rule spans width", lines[0], "─".repeat(60));
-eq("row 1", lines[1], " [scout]     Auth" + " ".repeat(60 - 17 - 6) + "00:23 ");
-eq("row 2", lines[2], " [worker]    quick fix" + " ".repeat(60 - 22 - 6) + "00:04 ");
+eq("row 1 omits brackets and the unused marker group", lines[1],
+	" scout  Auth" + " ".repeat(60 - 12 - 6) + "00:23 ");
+eq("row 2 omits brackets and the unused marker group", lines[2],
+	" worker quick fix" + " ".repeat(60 - 17 - 6) + "00:04 ");
 eq("rows exactly width wide", lines.every((l) => l.length === 60), true);
 
-// Agent identifiers have a widget-only 12-column budget inside their
-// brackets. The shared column is sized from those rendered tags, while the
-// full identifier remains available for display prefix de-duplication.
+// Valid identifiers occupy at most 20 display columns and render in full.
+// The renderer still clamps hostile persisted input defensively.
 const tagRows = formatRunningWidgetLines([
 	{ name: "short child", agent: "scout", elapsedSeconds: 1 },
-	{ name: "boundary child", agent: "abcdefghijkl", elapsedSeconds: 2 },
-	{ name: "long child", agent: "abcdefghijklm", elapsedSeconds: 3 },
+	{ name: "boundary child", agent: "abcdefghijklmnopqrst", elapsedSeconds: 2 },
+	{ name: "long child", agent: "abcdefghijklmnopqrstu", elapsedSeconds: 3 },
 ], 72);
-eq("short agent tag remains unchanged", tagRows[1].includes("[scout]"), true);
-eq("12-column agent tag remains unchanged", tagRows[2].includes("[abcdefghijkl]"), true);
-eq("long ASCII agent tag truncates within the budget", tagRows[3].includes("[abcdefghijk…]"), true);
-const tagInteriors = tagRows.slice(1).map((line) => line.match(/\[([^\]]*)\]/)?.[1] ?? "");
-eq("every rendered agent identifier fits 12 display columns",
-	tagInteriors.every((tag) => visibleWidth(tag) <= 12), true);
-eq("mixed clamped tags keep child names aligned",
+eq("short agent identifier remains unchanged and unbracketed", tagRows[1].includes("scout"), true);
+eq("20-column agent identifier remains unchanged", tagRows[2].includes("abcdefghijklmnopqrst"), true);
+eq("hostile overlong identifier is defensively clamped", tagRows[3].includes("abcdefghijklmnopqrs…"), true);
+eq("agent identifiers never render brackets", tagRows.slice(1).some((line) => line.includes("[")), false);
+eq("mixed identifier widths keep task names aligned",
 	tagRows.slice(1).map((line, index) => line.indexOf(["short child", "boundary child", "long child"][index])),
-	[19, 19, 19]);
+	[22, 22, 22]);
 
 const familyEmoji = "👨‍👩‍👧‍👦";
 const wideTagRows = formatRunningWidgetLines([
-	{ name: "CJK boundary", agent: "検索検索検索", elapsedSeconds: 1 },
-	{ name: "CJK long", agent: "検索検索検索検", elapsedSeconds: 2 },
-	{ name: "emoji long", agent: "💥".repeat(7), elapsedSeconds: 3 },
-	{ name: "emoji cluster long", agent: familyEmoji.repeat(7), elapsedSeconds: 4 },
+	{ name: "CJK boundary", agent: "検索".repeat(5), elapsedSeconds: 1 },
+	{ name: "CJK long", agent: "検索".repeat(5) + "検", elapsedSeconds: 2 },
+	{ name: "emoji long", agent: "💥".repeat(11), elapsedSeconds: 3 },
+	{ name: "emoji cluster long", agent: familyEmoji.repeat(11), elapsedSeconds: 4 },
 ], 72);
-eq("12-column wide agent tag remains unchanged", wideTagRows[1].includes("[検索検索検索]"), true);
-eq("wide agent tag truncates without splitting a glyph", wideTagRows[2].includes("[検索検索検…]"), true);
-eq("emoji agent tag truncates without splitting a surrogate pair",
-	wideTagRows[3].includes(`[${"💥".repeat(5)}…]`), true);
-eq("emoji agent tag truncates without splitting a grapheme cluster",
-	wideTagRows[4].includes(`[${familyEmoji.repeat(5)}…]`), true);
-eq("wide and emoji rendered agent identifiers fit 12 display columns",
-	wideTagRows.slice(1).every((line) => visibleWidth(line.match(/\[([^\]]*)\]/)?.[1] ?? "") <= 12), true);
+eq("20-column wide identifier remains unchanged", wideTagRows[1].includes("検索".repeat(5)), true);
+eq("wide identifier clamp does not split a glyph", wideTagRows[2].includes("検索検索検索検索検…"), true);
+eq("emoji identifier clamp does not split a surrogate pair",
+	wideTagRows[3].includes(`${"💥".repeat(9)}…`), true);
+eq("emoji identifier clamp does not split a grapheme cluster",
+	wideTagRows[4].includes(`${familyEmoji.repeat(9)}…`), true);
 
-const fullAgent = "abcdefghijklmnop";
+const fullAgent = "abcdefghijklmnopqrstuvwx";
 const fullPrefixRow = formatRunningWidgetLines(
 	[{ name: `${fullAgent}: Auth`, agent: fullAgent, elapsedSeconds: 4 }], 50);
 eq("prefix de-duplication compares against the full agent identifier",
-	fullPrefixRow[1].includes("[abcdefghijk…]    Auth"), true);
-eq("truncated agent identifier is not used for prefix de-duplication",
+	fullPrefixRow[1].includes("abcdefghijklmnopqrs… Auth"), true);
+eq("clamped identifier is not used for prefix de-duplication",
 	fullPrefixRow[1].includes(`${fullAgent}: Auth`), false);
 
 const narrowLongTag = formatRunningWidgetLines(
-	[{ name: "Task details that should reclaim width", agent: "a-very-long-agent-definition", elapsedSeconds: 4 }], 30);
-eq("clamped long tag leaves narrow-terminal room for the child name",
-	narrowLongTag[1].includes("[a-very-long…]    Ta…"), true);
-eq("narrow long-tag row fits terminal columns", visibleWidth(narrowLongTag[1]) <= 30, true);
+	[{ name: "Task details that should reclaim width", agent: "a-very-long-agent-x", elapsedSeconds: 4 }], 30);
+eq("maximum-width identity leaves the narrow task a final ellipsis",
+	narrowLongTag[1].includes("a-very-long-agent-x …"), true);
+eq("narrow identifier row fits terminal columns", visibleWidth(narrowLongTag[1]) <= 30, true);
 
-// style hooks wrap ONLY the clock, the state slot, and the rule; layout math
-// stays plain
+// style hooks wrap ONLY the clock, marker group, and rule; layout math stays
+// plain
 const styled = formatRunningWidgetLines(rows, 60, { dim: (t) => `<D>${t}</D>`, border: (t) => `<B>${t}</B>` });
 eq("border styled", styled[0], `<B>${"─".repeat(60)}</B>`);
 eq("clock styled + trailing space", styled[1].endsWith("<D>00:23</D> "), true);
@@ -108,7 +107,7 @@ eq("styled row plain-length preserved", styled[1].replaceAll("<D>", "").replaceA
 const narrow = formatRunningWidgetLines(
 	[{ name: "a very long task name that cannot possibly fit", agent: "scout", elapsedSeconds: 61 }], 30);
 eq("narrow keeps clock one off the edge", narrow[1].endsWith("01:01 "), true);
-eq("narrow keeps tag", narrow[1].startsWith(" [scout]"), true);
+eq("narrow keeps identifier", narrow[1].startsWith(" scout"), true);
 eq("narrow truncates with ellipsis", narrow[1].includes("…"), true);
 eq("narrow row fits width", narrow[1].length <= 30, true);
 
@@ -116,10 +115,10 @@ eq("narrow row fits width", narrow[1].length <= 30, true);
 const mixed = formatRunningWidgetLines(
 	[{ name: "old resume", agent: undefined, elapsedSeconds: 10 },
 	 { name: "Auth", agent: "scout", elapsedSeconds: 20 }], 50);
-eq("blank tag pads to column", mixed[1].startsWith(" ".repeat(12) + "old resume"), true);
+eq("missing identifier keeps the shared column aligned", mixed[1].startsWith(" ".repeat(7) + "old resume"), true);
 
-// state slot: fixed fork + worktree columns between the tag and the name,
-// blank when a state doesn't apply, so names align across rows
+// Marker columns appear between the tag and name only when at least one row
+// uses them; blank cells keep the remaining rows aligned.
 const stateRows = [
 	{ name: "Auth", agent: "scout", elapsedSeconds: 23, forked: true, worktree: true },
 	{ name: "quick fix", agent: "worker", elapsedSeconds: 4 },
@@ -127,12 +126,60 @@ const stateRows = [
 ];
 const stateLines = formatRunningWidgetLines(stateRows, 60);
 eq("forked worktree row shows both marks", stateLines[1],
-	` [scout]  ${FORK_MARK}${WORKTREE_MARK} Auth` + " ".repeat(37) + "00:23 ");
+	` scout  ${FORK_MARK}${WORKTREE_MARK} Auth` + " ".repeat(39) + "00:23 ");
 eq("stateless row gets a blank slot, name still aligned", stateLines[2],
-	" [worker]    quick fix" + " ".repeat(32) + "00:04 ");
+	" worker    quick fix" + " ".repeat(34) + "00:04 ");
 eq("worktree-only row leaves the fork column blank", stateLines[3],
-	` [judge]   ${WORKTREE_MARK} API review` + " ".repeat(31) + "01:12 ");
+	` judge   ${WORKTREE_MARK} API review` + " ".repeat(33) + "01:12 ");
 eq("state rows exactly width wide", stateLines.every((l) => l.length === 60), true);
+
+const allMarkerRows = formatRunningWidgetLines([
+	{ name: "all", agent: "worker", elapsedSeconds: 1, forked: true, interactive: true, worktree: true, external: true },
+	{ name: "interactive external", agent: "worker", elapsedSeconds: 2, interactive: true, external: true },
+	{ name: "worktree", agent: "worker", elapsedSeconds: 3, worktree: true },
+	{ name: "none", agent: "worker", elapsedSeconds: 4 },
+], 60);
+eq("markers use canonical f,i,w,x order", allMarkerRows[1],
+	` worker ${FORK_MARK}${INTERACTIVE_MARK}${WORKTREE_MARK}${EXTERNAL_MARK} all` + " ".repeat(38) + "00:01 ");
+eq("used marker columns stay aligned with blank cells", allMarkerRows[2],
+	` worker  ${INTERACTIVE_MARK} ${EXTERNAL_MARK} interactive external` + " ".repeat(21) + "00:02 ");
+eq("rows without flags retain blanks for every used marker", allMarkerRows[4],
+	" worker      none" + " ".repeat(37) + "00:04 ");
+
+const subsetMarkers = formatRunningWidgetLines([
+	{ name: "external", agent: "worker", elapsedSeconds: 1, external: true },
+	{ name: "worktree", agent: "worker", elapsedSeconds: 2, worktree: true },
+], 50);
+eq("unused f and i columns disappear while w,x remain aligned", subsetMarkers.slice(1), [
+	` worker  ${EXTERNAL_MARK} external` + " ".repeat(25) + "00:01 ",
+	` worker ${WORKTREE_MARK}  worktree` + " ".repeat(25) + "00:02 ",
+]);
+
+const summaryLines = formatRunningWidgetLines(
+	[{ name: "only", agent: "worker", elapsedSeconds: 1 }],
+	80,
+	{},
+	{ summary: { hiddenRows: 5, stalledRows: 1, waitingRows: 2, queuedRows: 1 } },
+);
+eq("compact summary reports nonzero hidden categories in attention order",
+	summaryLines[2], " +5 more · 1 stalled · 2 waiting · 1 queued · /subagent-running");
+eq("hidden summary adds exactly one line", summaryLines.length, 3);
+const zeroSummary = formatRunningWidgetLines(
+	[{ name: "only", agent: "worker", elapsedSeconds: 1 }],
+	60,
+	{},
+	{ summary: { hiddenRows: 0, stalledRows: 0, waitingRows: 0, queuedRows: 0 } },
+);
+eq("summary disappears when no rows are hidden", zeroSummary.length, 2);
+let summaryWidthViolations = 0;
+for (let width = -2; width <= 60; width++) {
+	for (const line of formatRunningWidgetLines(rows, width, {}, {
+		summary: { hiddenRows: 99, stalledRows: 2, waitingRows: 3, queuedRows: 42 },
+	})) {
+		if (visibleWidth(line) > Math.max(0, width)) summaryWidthViolations++;
+	}
+}
+eq("summary and detailed rows remain width-safe together", summaryWidthViolations, 0);
 
 // without a slot hook the marks fall back to dim; layout math stays plain
 const stateStyled = formatRunningWidgetLines(stateRows, 60, { dim: (t) => `<D>${t}</D>` });
@@ -140,16 +187,21 @@ eq("mark slot falls back to dim", stateStyled[1].includes(`<D>${FORK_MARK}${WORK
 eq("styled state row plain-length preserved",
 	stateStyled[1].replaceAll("<D>", "").replaceAll("</D>", "").length, 60);
 
-// a dedicated slot hook wins over dim, so pi can render the marks fainter
-const slotStyled = formatRunningWidgetLines(stateRows, 60,
-	{ dim: (t) => `<D>${t}</D>`, slot: (t) => `<S>${t}</S>` });
-eq("slot hook styles the marks", slotStyled[1].includes(`<S>${FORK_MARK}${WORKTREE_MARK}</S> Auth`), true);
+// Dedicated hooks keep identifiers darker than marker letters.
+const slotStyled = formatRunningWidgetLines(stateRows, 60, {
+	dim: (t) => `<D>${t}</D>`,
+	agent: (t) => `<A>${t}</A>`,
+	slot: (t) => `<M>${t}</M>`,
+});
+eq("agent hook styles the unbracketed identifier", slotStyled[1].includes(`<A>scout</A>  `), true);
+eq("marker hook styles the brighter letters", slotStyled[1].includes(`<M>${FORK_MARK}${WORKTREE_MARK}</M> Auth`), true);
+eq("widget styles add no SGR faint sequence", slotStyled.join("\n").includes("\x1b[2m"), false);
 eq("clock still uses dim", slotStyled[1].endsWith("<D>00:23</D> "), true);
 
-// narrow width with a state slot: icons survive, the name gives way
+// narrow width with a marker group: markers survive, the name gives way
 const narrowState = formatRunningWidgetLines(
 	[{ name: "a very long task name that cannot possibly fit", agent: "scout", elapsedSeconds: 61, forked: true }], 30);
-eq("narrow keeps the state slot", narrowState[1].includes(` [scout] ${FORK_MARK}  `), true);
+eq("narrow keeps the marker group", narrowState[1].includes(` scout ${FORK_MARK} `), true);
 eq("narrow state row truncates with ellipsis", narrowState[1].includes("…"), true);
 eq("narrow state row fits width", narrowState[1].length <= 30, true);
 
@@ -173,7 +225,7 @@ const hostileRow = formatRunningWidgetLines(
 	50,
 );
 eq("widget removes input terminal controls", hostileRow.join("").includes("\x1b"), false);
-eq("widget preserves safe identity text", hostileRow[1].includes("[worker]    safe name"), true);
+eq("widget preserves safe identity text", hostileRow[1].includes("worker safe name"), true);
 
 // ── v2 liveness: the status segment ──────────────────────────────────────
 
@@ -183,7 +235,7 @@ const v2NoStatusRows: WidgetRow[] = [
 	{ name: "Scout: Auth", agent: "scout", elapsedSeconds: 23, toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 },
 	{ name: "quick fix", agent: "worker", elapsedSeconds: 4 },
 ];
-eq("rows without status render exact v1 rows", formatRunningWidgetLines(v2NoStatusRows, 60), lines);
+eq("rows without status retain the identity-name-clock layout", formatRunningWidgetLines(v2NoStatusRows, 60), lines);
 
 // The example block, pinned exactly at width 78: full segment on the active
 // row, fixed context cells on every row, and blanks when context is unknown.
@@ -195,23 +247,23 @@ const exampleRows: WidgetRow[] = [
 ];
 const exampleLines = formatRunningWidgetLines(exampleRows, 78);
 eq("example block: active row", exampleLines[1],
-	" [scout]  fw Auth" + " ".repeat(29) + "bash 7m · active ·  84k · 03:12 ");
+	" scout  fw Auth" + " ".repeat(31) + "bash 7m · active ·  84k · 03:12 ");
 eq("example block: waiting row rounds and pads the tokens", exampleLines[2],
-	" [worker]    quick fix" + " ".repeat(33) + "waiting ·   6k · 00:41 ");
+	" worker    quick fix" + " ".repeat(35) + "waiting ·   6k · 00:41 ");
 eq("example block: stalled row reserves unknown context columns", exampleLines[3],
-	" [judge]   w API review" + " ".repeat(32) + "stalled" + " ".repeat(8) + "· 01:12 ");
+	" judge   w API review" + " ".repeat(34) + "stalled" + " ".repeat(8) + "· 01:12 ");
 eq("example block rows exactly width wide", exampleLines.every((l) => l.length === 78), true);
 
 // starting row exact string
 const startingLines = formatRunningWidgetLines(
 	[{ name: "boot up", agent: "worker", elapsedSeconds: 5, status: "starting" }] as WidgetRow[], 50);
 eq("starting row reserves unknown context columns", startingLines[1],
-	" [worker]    boot up" + " ".repeat(6) + "starting" + " ".repeat(8) + "· 00:05 ");
+	" worker boot up" + " ".repeat(11) + "starting" + " ".repeat(8) + "· 00:05 ");
 
 // stalled-only row exact string
 const stalledLines = formatRunningWidgetLines(
 	[{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "stalled" }] as WidgetRow[], 40);
-eq("stalled-only row", stalledLines[1], " [judge]    AP…  stalled" + " ".repeat(8) + "· 01:12 ");
+eq("stalled-only row", stalledLines[1], " judge API rev…  stalled" + " ".repeat(8) + "· 01:12 ");
 
 // The degradation ladder on one row at descending widths: the tool drops,
 // then the name truncates around the fixed state/context/clock core. Once the
@@ -219,37 +271,37 @@ eq("stalled-only row", stalledLines[1], " [judge]    AP…  stalled" + " ".repea
 const ladderRow: WidgetRow[] = [{ name: "Auth refactor", agent: "scout", elapsedSeconds: 192,
 	status: "active", toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 }];
 const ladderAt = (w: number) => formatRunningWidgetLines(ladderRow, w)[1];
-eq("ladder 54: tool drops before the name truncates", ladderAt(54),
-	" [scout]    Auth refactor" + " ".repeat(7) + "active ·  84k · 03:12 ");
+eq("ladder 54: full tool segment returns beside the full name", ladderAt(54),
+	" scout Auth refactor  bash 7m · active ·  84k · 03:12 ");
 eq("tool remains absent through the full-name boundary",
-	[55, 56, 57, 58].every((width) => !ladderAt(width).includes("bash") && ladderAt(width).includes("Auth refactor")), true);
-eq("tool returns only when it and the full name fit", ladderAt(59).includes("Auth refactor  bash 7m"), true);
+	[44, 45, 46, 47, 48, 49, 50, 51, 52, 53].every((width) => !ladderAt(width).includes("bash") && ladderAt(width).includes("Auth refactor")), true);
+eq("tool returns only when it and the full name fit", ladderAt(54).includes("Auth refactor  bash 7m"), true);
 eq("ladder 53: fixed core remains aligned", ladderAt(53),
-	" [scout]    Auth refactor" + " ".repeat(6) + "active ·  84k · 03:12 ");
-eq("ladder 44: name truncates around the fixed core", ladderAt(44),
-	" [scout]    Auth re…  active ·  84k · 03:12 ");
-eq("ladder 43: fixed core wins another name column", ladderAt(43),
-	" [scout]    Auth r…  active ·  84k · 03:12 ");
+	" scout Auth refactor" + " ".repeat(11) + "active ·  84k · 03:12 ");
+eq("ladder 44: full name fits beside the fixed core", ladderAt(44),
+	" scout Auth refactor  active ·  84k · 03:12 ");
+eq("ladder 43: fixed core takes the first name column", ladderAt(43),
+	" scout Auth refact…  active ·  84k · 03:12 ");
 eq("ladder 38: fixed core remains while the name shrinks", ladderAt(38),
-	" [scout]    A…  active ·  84k · 03:12 ");
-eq("ladder 37: fixed core remains at its identity-width limit", ladderAt(37),
-	" [scout]    …  active ·  84k · 03:12 ");
-eq("ladder 32: core no longer fits, so the safe v1 row returns", ladderAt(32), " [scout]    Auth refact…  03:12 ");
-eq("ladder 17: identity-only plain clamp", ladderAt(17), " [scout]    03:12");
+	" scout Auth r…  active ·  84k · 03:12 ");
+eq("ladder 32: fixed core remains at its identity-width limit", ladderAt(32),
+	" scout …  active ·  84k · 03:12 ");
+eq("ladder 28: core no longer fits, so the safe name row returns", ladderAt(28), " scout Auth refactor  03:12 ");
+eq("ladder 17: identity-only plain clamp", ladderAt(17), " scout A…  03:12 ");
 
 // A short name is never truncated to keep the optional tool. Once the tool
 // drops, the required core can truncate a long name below the old floor.
-eq("required core may shrink a long name below 10 columns", ladderAt(44).includes(" Auth re… "), true);
+eq("required core may shrink a long name below 10 columns", ladderAt(39).includes(" Auth re… "), true);
 const shortNameRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 192,
 	status: "active", toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 }];
-eq("short name 48: tool drops before truncating the whole name",
-	formatRunningWidgetLines(shortNameRow, 48)[1],
-	" [scout]    Auth" + " ".repeat(10) + "active ·  84k · 03:12 ");
-eq("short name 47: fixed core stays and name remains whole",
-	formatRunningWidgetLines(shortNameRow, 47)[1],
-	" [scout]    Auth" + " ".repeat(9) + "active ·  84k · 03:12 ");
+eq("short name 44: tool drops before truncating the whole name",
+	formatRunningWidgetLines(shortNameRow, 44)[1],
+	" scout Auth" + " ".repeat(11) + "active ·  84k · 03:12 ");
+eq("short name 45: tool returns with the whole name",
+	formatRunningWidgetLines(shortNameRow, 45)[1],
+	" scout Auth  bash 7m · active ·  84k · 03:12 ");
 eq("short name never gains an ellipsis for a segment",
-	formatRunningWidgetLines(shortNameRow, 47)[1].includes("…"), false);
+	formatRunningWidgetLines(shortNameRow, 45)[1].includes("…"), false);
 
 // Mixed tiers at ONE width: a full-segment row and a stalled row sharing a
 // tagWidth — every line exactly the width, both clocks on the right edge.
@@ -260,9 +312,9 @@ const mixedTierRows: WidgetRow[] = [
 ];
 const mixedTier = formatRunningWidgetLines(mixedTierRows, 60);
 eq("mixed tiers: full-segment row", mixedTier[1],
-	" [scout]    Auth" + " ".repeat(12) + "bash 7m · active ·  84k · 03:12 ");
+	" scout Auth" + " ".repeat(17) + "bash 7m · active ·  84k · 03:12 ");
 eq("mixed tiers: stalled row", mixedTier[2],
-	" [judge]    API review" + " ".repeat(15) + "stalled" + " ".repeat(8) + "· 01:12 ");
+	" judge API review" + " ".repeat(20) + "stalled" + " ".repeat(8) + "· 01:12 ");
 eq("mixed tiers: rows exactly width wide", mixedTier.every((l) => l.length === 60), true);
 eq("mixed tiers: both clocks end at the right edge",
 	mixedTier[1].endsWith("03:12 ") && mixedTier[2].endsWith("01:12 "), true);
@@ -384,7 +436,7 @@ const whitespaceRows = formatRunningWidgetLines(
 	   toolName: "a\tb\nc\rd", toolElapsedSeconds: 420, contextTokens: 84_000 }] as WidgetRow[], 70);
 eq("no tab/newline/CR ever survives into a widget line", /[\t\n\r]/.test(whitespaceRows.join("")), false);
 eq("tab and newline in toolName become single spaces", whitespaceRows[1].includes("a b c d 7m"), true);
-eq("newline in agent becomes a single space", whitespaceRows[1].includes("[sc out]"), true);
+eq("newline in agent becomes a single space", whitespaceRows[1].includes("sc out"), true);
 eq("tab in name becomes a single space", whitespaceRows[1].includes("Au th"), true);
 
 // The code-unit clamps never split a surrogate pair: the dangling high
@@ -426,8 +478,8 @@ eq("no width ever emits a lone surrogate", loneSurrogateLines, 0);
 const flagRegression = formatRunningWidgetLines(
 	[{ name: "🇺🇸".repeat(6), agent: "scout", elapsedSeconds: 47 }] as WidgetRow[], 22)[1];
 eq("regional-indicator truncation fits pi-tui at the reported width", visibleWidth(flagRegression) <= 22, true);
-eq("regional-indicator truncation never splits a flag pair",
-	flagRegression.includes("🇺…") || flagRegression.includes("🇸…"), false);
+eq("regional-indicator truncation keeps complete flag graphemes",
+	flagRegression, " scout 🇺🇸🇺🇸🇺🇸…  00:47 ");
 const wideNameCore = formatRunningWidgetLines(
 	[{ name: "検索検索検索検索検索検索", agent: "scout", elapsedSeconds: 47,
 	   status: "active", contextTokens: 6_000 }] as WidgetRow[], 50);
@@ -464,7 +516,7 @@ eq("no v2 line ever exceeds the render width", v2WidthViolations, 0);
 // there is no process yet, so no tool/token telemetry and never warn.
 const queuedRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 42, status: "queued" }];
 eq("queued row exact string", formatRunningWidgetLines(queuedRow, 50)[1],
-	" [scout]    Auth            queued        · 00:42 ");
+	" scout Auth                 queued        · 00:42 ");
 const queuedStyled = formatRunningWidgetLines(queuedRow, 50,
 	{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
 eq("queued core and clock separator render dim",
@@ -478,11 +530,11 @@ eq("queued never uses the warn hook", queuedStyled[1].includes("<W>"), false);
 // fixed telemetry core and the sweep must absorb it.
 const deliveringRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "delivering" }];
 eq("delivering row exact string", formatRunningWidgetLines(deliveringRow, 50)[1],
-	" [scout]    Auth        delivering        · 03:12 ");
+	" scout Auth             delivering        · 03:12 ");
 eq("delivering truncates the name around the fixed telemetry core",
 	formatRunningWidgetLines(
 		[{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "delivering" }] as WidgetRow[], 43)[1],
-	" [judge]    AP…  delivering        · 01:12 ");
+	" judge API rev…  delivering        · 01:12 ");
 const deliveringStyled = formatRunningWidgetLines(deliveringRow, 50,
 	{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
 eq("delivering core and clock separator render dim",
@@ -492,9 +544,9 @@ eq("delivering never uses the warn hook", deliveringStyled[1].includes("<W>"), f
 // the name first. Once the core no longer fits, the row uses v1 geometry.
 const deliveringLadder: WidgetRow[] = [{ name: "Auth refactor", agent: "scout", elapsedSeconds: 192, status: "delivering" }];
 eq("delivering ladder 42: fixed core truncates the name",
-	formatRunningWidgetLines(deliveringLadder, 42)[1], " [scout]    A…  delivering        · 03:12 ");
-eq("delivering ladder 37: fixed core drops to v1 geometry",
-	formatRunningWidgetLines(deliveringLadder, 37)[1], " [scout]    Auth refactor      03:12 ");
+	formatRunningWidgetLines(deliveringLadder, 42)[1], " scout Auth r…  delivering        · 03:12 ");
+eq("delivering ladder 32: fixed core drops to name-and-clock geometry",
+	formatRunningWidgetLines(deliveringLadder, 32)[1], " scout Auth refactor      03:12 ");
 // Width sweep with delivering rows: worst-case tag, both marks, H:MM:SS
 // clock. No width - including negative - may ever overflow.
 const deliveringOverflowRows: WidgetRow[] = [

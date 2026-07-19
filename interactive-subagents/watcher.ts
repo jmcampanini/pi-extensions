@@ -33,6 +33,7 @@ import {
 	readActivityFile,
 	type ActivityObservation,
 } from "./activity.ts";
+import { assertValidAgentIdentifier } from "./agent-identifier.ts";
 import { drainQueue } from "./capacity.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
@@ -202,6 +203,7 @@ function startWatcher(pi: ExtensionAPI, child: RunningSubagent): void {
 
 /** Register a child and start its supervision machinery. */
 export function trackChild(pi: ExtensionAPI, child: RunningSubagent): void {
+	if (child.agent !== undefined) assertValidAgentIdentifier(child.agent);
 	child.activity = newActivityObservation(Date.now());
 	running.set(child.id, child);
 	ledger.set(child.id, { sessionFile: child.sessionFile, name: child.name });
@@ -212,11 +214,19 @@ export function trackChild(pi: ExtensionAPI, child: RunningSubagent): void {
 
 /** Rebind every live or finalizing child to the replacement runtime. */
 export function adoptRunningChildren(pi: ExtensionAPI): void {
-	if (running.size === 0 && [...deliveryRecords()].length === 0) return;
+	const records = [...deliveryRecords()];
+	if (running.size === 0 && records.length === 0) return;
+	for (const child of running.values()) {
+		if (child.agent !== undefined) assertValidAgentIdentifier(child.agent);
+	}
+	for (const record of records) {
+		if (record.agent !== undefined) assertValidAgentIdentifier(record.agent);
+		if (record.child.agent !== undefined) assertValidAgentIdentifier(record.child.agent);
+	}
 	ensureWidgetTimer();
 	updateRunningWidget();
 	for (const child of running.values()) startWatcher(pi, child);
-	for (const record of deliveryRecords()) startFinalizer(pi, record);
+	for (const record of records) startFinalizer(pi, record);
 }
 
 function ownsActiveWatcher(child: RunningSubagent, generation: number): boolean {
@@ -337,8 +347,10 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 		name: child.name,
 		agent: child.agent,
 		harness: child.harness,
+		startedAt: child.startTime,
 		elapsedSeconds: Math.round((Date.now() - child.startTime) / 1000),
 		forked: child.context === "forked",
+		interactive: !child.autoExit,
 		worktree: child.worktree !== undefined,
 		child,
 		exit: result,

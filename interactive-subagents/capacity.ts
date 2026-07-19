@@ -28,6 +28,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolve } from "node:path";
+import { assertValidAgentIdentifier } from "./agent-identifier.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { moduleGeneration, moduleSignal, running } from "./state.ts";
@@ -108,8 +109,18 @@ export interface QueuedLaunch {
 }
 
 /** The display name/agent pair every surface (widget, picker, list) shows. */
+function launchAgent(spec: LaunchSpec): string | undefined {
+	return spec.kind === "spawn" ? spec.agentName : spec.agent;
+}
+
+function validateLaunchSpec(spec: LaunchSpec): void {
+	const agent = launchAgent(spec);
+	if (agent !== undefined) assertValidAgentIdentifier(agent);
+}
+
 export function specDisplay(spec: LaunchSpec): { name: string; agent?: string } {
-	return spec.kind === "spawn" ? { name: spec.name, agent: spec.agentName } : { name: spec.name, agent: spec.agent };
+	validateLaunchSpec(spec);
+	return { name: spec.name, agent: launchAgent(spec) };
 }
 
 // ── the globalThis store ─────────────────────────────────────────────────
@@ -164,13 +175,22 @@ export function findQueued(id: string): QueuedLaunch | undefined {
 
 /** In-flight launches: slot claimed, child not yet registered in `running`.
  * The widget and subagent_list show these so a child dequeued for launch
- * never vanishes from every surface during its pipeline. */
+ * never vanishes from every surface during its pipeline. Invalid claims
+ * retained across reload stay capacity-counted until their old launcher
+ * unwinds, but are quarantined from lifecycle projections. */
 export function pendingLaunches(): PendingLaunch[] {
-	return [...store.claims.values()];
+	return [...store.claims.values()].filter((pending) => {
+		try {
+			validateLaunchSpec(pending.spec);
+			return true;
+		} catch {
+			return false;
+		}
+	});
 }
 
 export function pendingLaunchCount(): number {
-	return store.claims.size;
+	return pendingLaunches().length;
 }
 
 /** True when this id is queued or mid-launch (not yet in `running`). */
@@ -203,6 +223,7 @@ export type Admission = { status: "run" } | { status: "queued"; ahead: number };
  * that registers the child (or on failure) — a leaked claim is a leaked slot.
  */
 export function admitLaunch(spec: LaunchSpec): Admission {
+	validateLaunchSpec(spec);
 	if (store.queue.length === 0 && hasCapacity()) {
 		store.claims.set(spec.id, { spec, claimedAt: Date.now() });
 		return { status: "run" };
@@ -286,6 +307,13 @@ export function drainQueue(pi: ExtensionAPI): void {
 	if (moduleSignal().aborted) return;
 	while (store.queue.length > 0 && hasCapacity()) {
 		const entry = store.queue.shift() as QueuedLaunch;
+		try {
+			validateLaunchSpec(entry.spec);
+		} catch (error) {
+			notifyRejectedLaunch(pi, entry.spec, error);
+			store.queueChangedHook?.();
+			continue;
+		}
 		store.claims.set(entry.spec.id, { spec: entry.spec, claimedAt: Date.now() });
 		void launchDequeued(pi, entry);
 	}
@@ -299,6 +327,19 @@ export function drainQueue(pi: ExtensionAPI): void {
 export function armDrainHook(pi: ExtensionAPI, onQueueChanged?: () => void): void {
 	store.drainHook = () => drainQueue(pi);
 	store.queueChangedHook = onQueueChanged;
+	// The queue survives reload and may predate the current validation rules.
+	let removed = false;
+	for (let index = store.queue.length - 1; index >= 0; index--) {
+		const entry = store.queue[index];
+		try {
+			validateLaunchSpec(entry.spec);
+		} catch (error) {
+			store.queue.splice(index, 1);
+			removed = true;
+			notifyRejectedLaunch(pi, entry.spec, error);
+		}
+	}
+	if (removed) store.queueChangedHook?.();
 }
 
 /** Drain via the newest generation when armed; fall back to this module's. */
@@ -385,7 +426,30 @@ function runningLine(): string {
 	return `Currently ${running.size} running, ${store.queue.length} queued.`;
 }
 
+function notifyRejectedLaunch(pi: ExtensionAPI, spec: LaunchSpec, error: unknown): void {
+	const message = error instanceof Error ? error.message : String(error);
+	try {
+		pi.sendMessage(
+			{
+				customType: "subagent_launch_failed",
+				content:
+					`Queued sub-agent id ${spec.id} failed validation before launch: ${message}\n` +
+					`It was removed from the queue and nothing was started; no result will arrive for it. ${runningLine()}`,
+				display: true,
+				details: { id: spec.id, kind: spec.kind, error: message },
+			},
+			{ triggerTurn: true, deliverAs: "steer" },
+		);
+	} catch {}
+}
+
 function notifyLaunchFailure(pi: ExtensionAPI, spec: LaunchSpec, error: unknown): void {
+	try {
+		validateLaunchSpec(spec);
+	} catch (validationError) {
+		notifyRejectedLaunch(pi, spec, validationError);
+		return;
+	}
 	const message = error instanceof Error ? error.message : String(error);
 	try {
 		pi.sendMessage(

@@ -1,29 +1,21 @@
 /**
  * widget.ts — rendering the running-subagents widget.
  *
- * The style: a bracketed agent-type tag, the task-focused display name, and
- * a right-anchored elapsed clock — no counts or hints. A row EXISTING means
- * that child is running, or has exited with its result message still queued
- * for the parent (status `delivering`, frozen clock); the right edge carries
- * the live status segment.
- *
- * Each row is a fixed four-column grid: the bracketed agent-type tag
- * (padded to the widest tag), one space, a two-column state slot (`f` when
- * the conversation is forked, `w` when the child runs in a worktree, blank
- * when a state doesn't apply), one padding space, then the name. The marks
- * render extra-faint — quieter than the clock — so they read as texture.
- * When the controller supplies a live status, a telemetry segment sits
- * immediately left of the clock, joined by a middle-dot separator:
+ * Each row starts with an unbracketed agent identifier, padded to the widest
+ * visible identifier, followed by only the marker columns used by visible
+ * rows. Markers are `f` forked, `i` interactive, `w` worktree, and `x`
+ * external harness. Blank cells preserve alignment within active columns;
+ * when none apply, the marker group and its separator disappear. The
+ * task-focused display name follows, while status telemetry and elapsed time
+ * stay anchored at the right edge.
  *
  *   ──────────────────────────────────────────────────────────────────
- *   [scout]  fw Auth                  bash 7m · active ·  84k · 03:12
- *   [worker]    quick fix                      waiting ·   6k · 00:41
- *   [judge]   w API review                            stalled         · 01:12
+ *   scout  fw Auth                    bash 7m · active ·  84k · 03:12
+ *   worker    quick fix                        waiting ·   6k · 00:41
+ *   judge   w API review                              stalled         · 01:12
  *
- * The optional tool sits at the segment's variable left edge. It drops
- * before the name truncates, while state and known context stay visible.
- * A row WITHOUT a status renders byte-identical to the v1 row, which the
- * v1 exact-string tests pin.
+ * The optional tool drops before the task name truncates, while identity,
+ * active markers, required status, known context, and the clock take priority.
  *
  * A faded rule tops the block to separate it from the transcript, the clock
  * sits one space off the edge and renders dim. Styling is injected as plain
@@ -32,6 +24,7 @@
  */
 
 import { sliceByColumn, visibleWidth } from "@earendil-works/pi-tui";
+import { AGENT_IDENTIFIER_MAX_COLUMNS } from "./agent-identifier.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 
 // ── the state marks ──────────────────────────────────────────────────────
@@ -39,10 +32,12 @@ import { sanitizeDisplayText } from "./display-text.ts";
 
 /** Marks a child whose conversation is a fork of the parent's. */
 export const FORK_MARK = "f";
+/** Marks a child that stays open for a human instead of exiting automatically. */
+export const INTERACTIVE_MARK = "i";
 /** Marks a child running in its own git worktree. */
 export const WORKTREE_MARK = "w";
-
-const AGENT_TAG_MAX_COLUMNS = 12;
+/** Marks a child running through an external harness. */
+export const EXTERNAL_MARK = "x";
 
 /** Optional styling hooks; identity (no styling) when omitted. */
 export interface WidgetStyle {
@@ -50,8 +45,9 @@ export interface WidgetStyle {
 	dim?: (text: string) => string;
 	/** Applied to the top rule (pi passes the theme's muted border color). */
 	border?: (text: string) => string;
-	/** Applied to the state marks; pi passes an extra-faint version of dim so
-	 * the letters sit quieter than the clock. Falls back to `dim`. */
+	/** Applied to agent identifiers; pi passes the theme's dim color. */
+	agent?: (text: string) => string;
+	/** Applied to marker letters; pi passes the brighter muted color. */
 	slot?: (text: string) => string;
 	/** Applied to the status segment when status is "stalled" (pi passes the
 	 * theme's warning color, same precedent as the implant banner). Falls
@@ -69,12 +65,15 @@ export interface WidgetRow {
 	elapsedSeconds: number;
 	/** True when the child's conversation was forked from the parent's. */
 	forked?: boolean;
+	/** True when the pane stays open for a human instead of auto-exiting. */
+	interactive?: boolean;
 	/** True when the child runs in its own git worktree. */
 	worktree?: boolean;
+	/** True when a non-pi harness runs the child. */
+	external?: boolean;
 	/** Live status computed by the parent's watcher. All four segment fields
-	 * are optional: a row without a status renders byte-identical to the v1
-	 * row, so the segment machinery only engages when the controller opts in.
-	 * Two states never come from computeStatus: "delivering" (exit lifecycle
+	 * are optional; without a status the row uses only identity, task, markers,
+	 * and elapsed time. Two states never come from computeStatus: "delivering" (exit lifecycle
 	 * — the child has exited and its result message is still queued for the
 	 * parent) and "queued" (pre-launch — the child is waiting for a
 	 * concurrency slot, see capacity.ts). The controller passes no tool/token
@@ -90,6 +89,37 @@ export interface WidgetRow {
 	 * Absent (or non-finite) context reserves a blank fixed-width cell rather
 	 * than rendering "?"; the number returns on the next turn_end. */
 	contextTokens?: number;
+}
+
+export interface MarkerColumn {
+	mark: string;
+	applies: (row: WidgetRow) => boolean;
+}
+
+const MARKER_COLUMNS: readonly MarkerColumn[] = [
+	{ mark: FORK_MARK, applies: (row) => Boolean(row.forked) },
+	{ mark: INTERACTIVE_MARK, applies: (row) => Boolean(row.interactive) },
+	{ mark: WORKTREE_MARK, applies: (row) => Boolean(row.worktree) },
+	{ mark: EXTERNAL_MARK, applies: (row) => Boolean(row.external) },
+];
+
+export function activeMarkerColumns(rows: readonly WidgetRow[]): MarkerColumn[] {
+	return MARKER_COLUMNS.filter((column) => rows.some(column.applies));
+}
+
+export function formatMarkerCells(row: WidgetRow, columns: readonly MarkerColumn[]): string {
+	return columns.map((column) => column.applies(row) ? column.mark : " ").join("");
+}
+
+export interface WidgetSummary {
+	hiddenRows: number;
+	stalledRows: number;
+	waitingRows: number;
+	queuedRows: number;
+}
+
+export interface WidgetRenderOptions {
+	summary?: WidgetSummary;
 }
 
 /** Zero-padded MM:SS, growing to H:MM:SS past an hour. */
@@ -136,8 +166,8 @@ export function formatCost(costUsd: number): string {
 }
 
 /**
- * The tag column states the agent type, so a name that repeats it
- * ("Scout: Auth" next to [scout]) is redundant — strip the exact type prefix
+ * The agent column states the agent type, so a name that repeats it
+ * ("Scout: Auth" next to scout) is redundant — strip the exact type prefix
  * plus a separator, for DISPLAY only. Anything less exact stays untouched.
  */
 export function stripAgentPrefix(name: string, agent: string | undefined): string {
@@ -247,30 +277,31 @@ function chooseSegment(row: WidgetRow, availableWidth: number, nameWidth: number
 	return displayColumns(segments.core) + CLOCK_SEPARATOR_WIDTH <= availableWidth ? segments.core : "";
 }
 
-export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style: WidgetStyle = {}): string[] {
+export function formatRunningWidgetLines(
+	rows: WidgetRow[],
+	width: number,
+	style: WidgetStyle = {},
+	options: WidgetRenderOptions = {},
+): string[] {
 	const dim = style.dim ?? ((text: string) => text);
 	const border = style.border ?? ((text: string) => text);
+	const agentStyle = style.agent ?? dim;
 	const slotStyle = style.slot ?? dim;
 	const warn = style.warn ?? dim;
 
-	// Sanitize AND single-line: names and agent tags are one-row surfaces
-	// here, so surviving tabs/newlines become plain spaces (see singleLine).
 	const safeRows = rows.map((row) => ({
 		...row,
 		name: singleLine(sanitizeDisplayText(row.name)),
 		agent: row.agent === undefined ? undefined : singleLine(sanitizeDisplayText(row.agent)),
 	}));
 
-	// Tag column: "[scout]" padded so names align across rows. Clamp only the
-	// rendered identifier; the full row.agent remains available for prefix
-	// de-duplication and every non-widget use. A row with no agent type gets
-	// blank padding — absence communicates absence.
-	const tags = safeRows.map((row) =>
-		row.agent ? `[${truncateToColumns(row.agent, AGENT_TAG_MAX_COLUMNS)}]` : "",
+	const agents = safeRows.map((row) =>
+		row.agent ? truncateToColumns(row.agent, AGENT_IDENTIFIER_MAX_COLUMNS) : "",
 	);
-	const tagWidth = Math.max(...tags.map(displayColumns), 0);
+	const agentWidth = Math.max(...agents.map(displayColumns), 0);
 	const elapsedValues = safeRows.map((row) => formatElapsed(row.elapsedSeconds));
 	const elapsedWidth = Math.max(...elapsedValues.map(displayColumns), 0);
+	const markerColumns = activeMarkerColumns(safeRows);
 
 	// Guard the two places that would misbehave on a negative width
 	// (repeat throws, slice counts from the end).
@@ -281,18 +312,20 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 
 	for (let i = 0; i < safeRows.length; i++) {
 		const row = safeRows[i];
-		const tag = padToColumns(tags[i], tagWidth);
+		const agent = padToColumns(agents[i], agentWidth);
 		const elapsed = elapsedValues[i].padStart(elapsedWidth, " ");
-		// The four-column grid: padded tag, one space, the two-column state
-		// slot (blank columns when a state doesn't apply), one padding space,
-		// then the name.
-		const prefix = ` ${tag} `;
-		const slot = (row.forked ? FORK_MARK : " ") + (row.worktree ? WORKTREE_MARK : " ");
+		const prefix = ` ${agentWidth > 0 ? `${agent} ` : ""}`;
+		const styledAgent = agents[i] === ""
+			? agent
+			: agentStyle(agents[i]) + " ".repeat(Math.max(0, agentWidth - displayColumns(agents[i])));
+		const styledPrefix = ` ${agentWidth > 0 ? `${styledAgent} ` : ""}`;
+		const markerCells = formatMarkerCells(row, markerColumns);
+		const markerPadding = markerColumns.length > 0 ? " " : "";
 		const name = stripAgentPrefix(row.name, row.agent);
 
 		// Right-anchor the clock one space off the edge. The flex gap absorbs
 		// the width; when space runs out the optional tool gives way first,
-		// then the NAME truncates (ellipsis, then nothing). The tag, state slot,
+		// then the NAME truncates (ellipsis, then nothing). The identifier, marker group,
 		// telemetry core, and clock are the identity and anchors; prose is
 		// sacrificial. Layout is computed on plain text; the dim wrappers are
 		// applied last so ANSI codes never enter
@@ -301,9 +334,9 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 		// participates in fixedWidth. A line wider than the terminal is
 		// FATAL upstream, so the segment can never be bolted on afterwards.
 		// Everything except the name and the flex gap has a fixed width: the
-		// prefix, the slot, its padding space, the segment plus its separator,
-		// the clock, and its trailing space.
-		const baseWidth = displayColumns(prefix) + displayColumns(slot) + 1
+		// prefix, the marker group and its optional padding, the segment plus
+		// its separator, the clock, and its trailing space.
+		const baseWidth = displayColumns(prefix) + displayColumns(markerCells) + displayColumns(markerPadding)
 			+ displayColumns(elapsed) + 1;
 		const segment = chooseSegment(row, width - baseWidth, displayColumns(name));
 		const segmentWidth = segment === "" ? 0 : displayColumns(segment) + CLOCK_SEPARATOR_WIDTH;
@@ -323,14 +356,23 @@ export function formatRunningWidgetLines(rows: WidgetRow[], width: number, style
 		// and clock fields. Under normal widths the column-aware budget keeps the
 		// styled line exact without sacrificing the right-side suffix.
 		const segmentStyle = row.status === "stalled" ? warn : dim;
-		const plainLine = prefix + slot + " " + clippedName + " ".repeat(gap)
+		const plainLine = prefix + markerCells + markerPadding + clippedName + " ".repeat(gap)
 			+ (segment !== "" ? segment + CLOCK_SEPARATOR : "") + elapsed + " ";
 		lines.push(
 			displayColumns(plainLine) <= width
-				? prefix + slotStyle(slot) + " " + clippedName + " ".repeat(gap)
+				? styledPrefix + (markerCells === "" ? "" : slotStyle(markerCells)) + markerPadding
+					+ clippedName + " ".repeat(gap)
 					+ (segment !== "" ? segmentStyle(segment) + dim(CLOCK_SEPARATOR) : "") + dim(elapsed) + " "
 				: clampToColumns(plainLine, safeWidth),
 		);
+	}
+	if (options.summary && options.summary.hiddenRows > 0) {
+		const summaryParts = [`+${options.summary.hiddenRows} more`];
+		if (options.summary.stalledRows > 0) summaryParts.push(`${options.summary.stalledRows} stalled`);
+		if (options.summary.waitingRows > 0) summaryParts.push(`${options.summary.waitingRows} waiting`);
+		if (options.summary.queuedRows > 0) summaryParts.push(`${options.summary.queuedRows} queued`);
+		summaryParts.push("/subagent-running");
+		lines.push(dim(truncateToColumns(` ${summaryParts.join(" · ")}`, safeWidth)));
 	}
 	return lines;
 }

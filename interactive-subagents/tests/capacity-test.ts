@@ -34,6 +34,13 @@ function ok(label: string, cond: boolean) {
 	if (cond) { pass++; console.log(`  ok  ${label}`); }
 	else { fail++; console.log(`  FAIL ${label}`); }
 }
+function throws(label: string, fn: () => unknown, contains: string) {
+	try { fn(); fail++; console.log(`  FAIL ${label}: expected throw`); }
+	catch (error) {
+		if (String(error).includes(contains)) { pass++; console.log(`  ok  ${label}`); }
+		else { fail++; console.log(`  FAIL ${label}: ${String(error)}`); }
+	}
+}
 
 function spawnSpec(id: string): SpawnSpec {
 	return {
@@ -100,6 +107,11 @@ function reset(): void {
 // ── admission ─────────────────────────────────────────────────────────────
 
 reset();
+const invalidAgentSpec = { ...spawnSpec("invalid"), agentName: "code reviewer" };
+throws("admission rejects an invalid persisted agent identifier",
+	() => capacity.admitLaunch(invalidAgentSpec), "whitespace");
+eq("invalid admission creates no claim or queue entry",
+	[capacity.pendingLaunchCount(), capacity.queuedCount()], [0, 0]);
 eq("admit under capacity runs", capacity.admitLaunch(spawnSpec("a")), { status: "run" });
 capacity.releaseClaim("a");
 
@@ -237,6 +249,18 @@ capacity.armDrainHook(fakePi);
 capacity.requestDrain(fakePi);
 await flush();
 eq("armed drain hook launches the requeued entry", launched, ["a"]);
+
+reset();
+const retainedInvalid = { ...spawnSpec("retained-invalid"), agentName: "code reviewer" };
+(capacity.queuedEntries() as Array<{ spec: SpawnSpec; queuedAt: number }>).push({
+	spec: retainedInvalid,
+	queuedAt: Date.now(),
+});
+capacity.armDrainHook(fakePi);
+eq("reload hook discards an invalid retained queue entry", capacity.queuedCount(), 0);
+eq("invalid retained queue entry gets a failure notice", sent.map((message) => message.customType), ["subagent_launch_failed"]);
+ok("retained-entry notice does not reformat the invalid identifier",
+	!sent[0]?.content?.includes(retainedInvalid.agentName));
 
 // AbandonLaunch drops the entry, silently
 reset();

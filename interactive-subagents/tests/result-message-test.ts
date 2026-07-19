@@ -100,9 +100,6 @@ eq("narrow headers preserve a clipped agent profile before the name", narrowHead
 eq("narrow headers preserve the result status", narrowHeader.endsWith("· done"), true);
 const statusOnlyHeader = plain(formatCollapsedSubagentResult(details("failed"), 20, 5, "Ctrl+O")[0] ?? "");
 eq("very narrow headers prioritize exceptional status", statusOnlyHeader.includes("failed"), true);
-const blankAgentDetails = { ...details("completed"), agent: " \t " };
-eq("blank result agents fall back to worker before the name", plain(formatCollapsedSubagentResult(blankAgentDetails, 120, 5, "")[0] ?? "").includes("subagent result · worker · API review"), true);
-
 for (const width of [0, 1, 2, 8, 20, 40, 80]) {
 	const hostile: SubagentResultDetails = {
 		id: "wide0001",
@@ -119,6 +116,10 @@ for (const width of [0, 1, 2, 8, 20, 40, 80]) {
 const current = details("completed");
 eq("current structured details parse", parseSubagentResultDetails(current)?.presentation.status, "completed");
 eq("current structured details preserve sizes", parseSubagentResultDetails(current), current);
+eq("persisted result rejects an invalid agent identifier", parseSubagentResultDetails({
+	...current,
+	agent: "code reviewer",
+}), undefined);
 eq("invalid optional sizes are omitted", parseSubagentResultDetails({
 	...current,
 	contextTokens: -1,

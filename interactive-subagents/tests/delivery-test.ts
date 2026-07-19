@@ -41,7 +41,16 @@ function fakePi(): { on: (type: string, handler: Handler) => void; emit: (type: 
 // ── helpers: a seeded delivering entry and a well-formed landed message ──
 
 function seed(id: string): void {
-	delivering.set(id, { id, name: `child-${id}`, agent: "worker", elapsedSeconds: 42, forked: false, worktree: false });
+	delivering.set(id, {
+		id,
+		name: `child-${id}`,
+		agent: "worker",
+		startedAt: 1,
+		elapsedSeconds: 42,
+		forked: false,
+		interactive: false,
+		worktree: false,
+	});
 }
 function message(id: unknown, customType: string = "subagent_result"): unknown {
 	return { role: "custom", customType, content: "prose", display: true, details: { id }, timestamp: 1 };

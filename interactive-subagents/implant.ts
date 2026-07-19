@@ -31,6 +31,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "@sinclair/typebox";
 import { writeFileSync } from "node:fs";
 import { registerActivityRecorder } from "./activity.ts";
+import { assertValidAgentIdentifier } from "./agent-identifier.ts";
 import { formatBannerLine } from "./banner.ts";
 import type { ChildEnvVars, ExitSidecar } from "./protocol.ts";
 
@@ -50,6 +51,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Not launched as a subagent — do nothing.
 	if (!sessionFile) return;
+	if (agentName !== undefined) assertValidAgentIdentifier(agentName, "PI_SUBAGENT_AGENT");
 
 	// ── liveness reporting ─────────────────────────────────────────────────
 	// The v2 recorder (activity.ts) overwrites one small snapshot file on

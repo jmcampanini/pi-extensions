@@ -29,6 +29,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { activityFilePath, clearActivityFile } from "./activity.ts";
+import { assertValidAgentIdentifier } from "./agent-identifier.ts";
 import { agentDefsDir, loadAgentDefinition, projectDefsDir } from "./agents.ts";
 import {
 	AbandonLaunch,
@@ -74,7 +75,7 @@ const SubagentSpawnParams = Type.Object({
 	agent: Type.Optional(
 		Type.String({
 			description:
-				"Agent definition to load defaults from (a <name>.md file in <cwd>/.pi/subagents/ or the global subagents dir; project shadows global — see subagent_list). Default: 'worker'",
+				"Agent definition identifier to load defaults from (a <name>.md file in <cwd>/.pi/subagents/ or the global subagents dir; no whitespace, at most 20 display columns; project shadows global — see subagent_list). Default: 'worker'",
 		}),
 	),
 	context: Type.Optional(
@@ -183,6 +184,9 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			);
 		},
 		async execute(_toolCallId, params: SubagentSpawnParamsType, _signal, _onUpdate, ctx) {
+			const agentName = params.agent ?? "worker";
+			assertValidAgentIdentifier(agentName);
+
 			// Guards: we need tmux and a persistent parent session.
 			if (!isTmuxAvailable()) {
 				throw new Error(
@@ -199,7 +203,6 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			// agent — same definition machinery, same file, same rules. If
 			// worker.md is missing that's a loud error telling you to create
 			// it, not a silently different kind of child.
-			const agentName = params.agent ?? "worker";
 			const agentDef = loadAgentDefinition(agentName, ctx.cwd);
 			if (!agentDef) {
 				throw new Error(

@@ -14,6 +14,13 @@ function eq(label: string, got: unknown, want: unknown): void {
 	if (g === w) { pass++; console.log(`  ok  ${label}`); }
 	else { fail++; console.log(`  FAIL ${label}:\n    got  ${g}\n    want ${w}`); }
 }
+async function rejects(label: string, fn: () => Promise<unknown>, contains: string): Promise<void> {
+	try { await fn(); fail++; console.log(`  FAIL ${label}: expected rejection`); }
+	catch (error) {
+		if (String(error).includes(contains)) { pass++; console.log(`  ok  ${label}`); }
+		else { fail++; console.log(`  FAIL ${label}: ${String(error)}`); }
+	}
+}
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const wide = /^(?:\p{Extended_Pictographic}|\p{Script_Extensions=Han}|\p{Script_Extensions=Hiragana}|\p{Script_Extensions=Katakana}|\p{Script_Extensions=Hangul})$/u;
@@ -277,8 +284,6 @@ eq(
 	["subagent spawn · worker · N", "", "Trace auth. Return file: line pointers."],
 );
 eq("an omitted agent displays worker without brackets", plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, 3, metrics))[0], "subagent spawn · worker · Tests");
-eq("an explicit blank agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: "", task: "Run" }, 100, 3, metrics))[0], "subagent spawn · worker · Tests");
-eq("an explicit whitespace agent falls back to worker", plainLines(formatCollapsedSubagentCall({ name: "Tests", agent: " \t ", task: "Run" }, 100, 3, metrics))[0], "subagent spawn · worker · Tests");
 eq(
 	"collapsed call advertises expansion when task detail is hidden",
 	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "first\nsecond" }, 100, 3, metrics, {}, "Ctrl+O to expand"))[0],
@@ -344,6 +349,25 @@ registerSubagentSpawnTool({
 	},
 } as unknown as ExtensionAPI);
 eq("registered spawn tool uses the canonical name", registeredSpawnTool?.name, "subagent_spawn");
+if (registeredSpawnTool) {
+	const spawnTool = registeredSpawnTool;
+	await rejects("spawn rejects whitespace in an explicit agent before launch guards", () =>
+		spawnTool.execute(
+			"invalid-agent",
+			{ name: "Invalid", task: "Never launches", agent: "code reviewer" },
+			new AbortController().signal,
+			() => {},
+			{} as never,
+		), "whitespace");
+	await rejects("spawn rejects an explicit agent over 20 display columns", () =>
+		spawnTool.execute(
+			"overlong-agent",
+			{ name: "Invalid", task: "Never launches", agent: "abcdefghijklmnopqrstu" },
+			new AbortController().signal,
+			() => {},
+			{} as never,
+		), "20 display columns");
+}
 // The advertised limit must be the ENFORCED limit: the description is built
 // from the same config singleton capacity.ts counts against, so it cannot
 // drift — this assertion pins that derivation.

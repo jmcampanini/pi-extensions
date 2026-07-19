@@ -20,6 +20,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { assertValidAgentIdentifier, isValidAgentIdentifier } from "./agent-identifier.ts";
 import { agentConfigDir } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { harnessProfile, validHarnessValues } from "./harnesses.ts";
@@ -164,6 +165,7 @@ function parseAgentMarkdown(
 }
 
 export function loadAgentDefinition(name: string, cwd: string): AgentDefinition | null {
+	assertValidAgentIdentifier(name);
 	// Project first, then global — most specific wins, so a repo can
 	// specialize scout/worker for its own conventions.
 	const projectPath = join(projectDefsDir(cwd), `${name}.md`);
@@ -180,7 +182,8 @@ function agentNamesIn(dir: string): string[] {
 	try {
 		return readdirSync(dir)
 			.filter((file) => file.endsWith(".md"))
-			.map((file) => file.slice(0, -3));
+			.map((file) => file.slice(0, -3))
+			.filter(isValidAgentIdentifier);
 	} catch {
 		return [];
 	}
