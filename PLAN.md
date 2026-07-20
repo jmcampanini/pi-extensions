@@ -113,9 +113,10 @@ What changes, and the contract each surface must uphold:
   "Pane is dead" banner appears in captured content but cannot match `SENTINEL_REGEX`.
 - This machine's tmux server PATH already carries `~/.local/bin` (pi, claude) and
   `/opt/homebrew/bin` (node, tmux).
-- A pane whose script never emits the sentinel (e.g. bash missing) parks as a dead pane
-  and hits the existing stall-steer machinery — the same class as today's lost-typing
-  failure, not a new hang.
+- A pane whose script starts but never emits the sentinel parks as a dead pane and hits
+  the existing stall-steer machinery — the same class as today's lost-typing failure,
+  not a new hang. If bash itself never starts, the pane closes and the existing generic
+  pane-closed error is accurate.
 
 ## Verification (the plan must end agent-verified)
 

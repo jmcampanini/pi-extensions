@@ -13,7 +13,9 @@ The parent assigns work, the child owns its conversation and pane, and the resul
 
 ## First run
 
-Requirements are Node.js 22.19 or newer, Pi, and tmux. The parent must run inside tmux with a persistent session. Installation alone is insufficient, and spawning fails without a parent session file.
+Requirements are Node.js 22.19 or newer, Pi, and tmux 3.0a or newer. The parent must run inside tmux with a persistent session. Installation alone is insufficient, and spawning fails without a parent session file.
+
+Child panes inherit the tmux server's environment directly; they do not run interactive shell startup files. Ensure `pi` and every configured external harness binary are on the tmux server's `PATH`, restarting the server after PATH changes when necessary.
 
 Install the package, create the default agent definition in Pi's config root, and start Pi:
 
@@ -141,7 +143,6 @@ Settings resolve from built-in defaults, then `$PI_CODING_AGENT_DIR/subagents.js
 |---|---|
 | `layout` | `window` (`main` and `off` are also valid) |
 | `mainWidth` | `60%` |
-| `shellReadyDelayMs` | `500` |
 | `maxConcurrentSubagents` | `9` (`1` through `9`; further launches queue) |
 | `callPreviewLines` | `3` (start and resume calls, `0` through `20`) |
 | `resultPreviewLines` | `5` (completed, failed, and stopped results, `0` through `20`) |

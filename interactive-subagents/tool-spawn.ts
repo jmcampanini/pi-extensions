@@ -58,7 +58,7 @@ import { moduleGeneration } from "./state.ts";
 import { formatCollapsedSubagentCall, formatExpandedSubagentCall } from "./subagent-call.ts";
 import { renderSubagentLaunchResult } from "./subagent-result.ts";
 import { updateRunningWidget } from "./running-widget.ts";
-import { closePane, createPane, isTmuxAvailable, sendLongCommand, shellQuote, sleep } from "./tmux.ts";
+import { closePane, createPane, isTmuxAvailable, shellQuote, stageLaunchScript } from "./tmux.ts";
 import { trackChild } from "./watcher.ts";
 import { createWorktree, removeWorktree, type WorktreeInfo } from "./worktree.ts";
 
@@ -190,7 +190,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			// Guards: we need tmux and a persistent parent session.
 			if (!isTmuxAvailable()) {
 				throw new Error(
-					"Subagents need tmux: start pi inside a tmux session (e.g. `tmux new -A -s pi 'pi'`).",
+					"Subagents need tmux 3.0a+ with pi running inside a session (e.g. `tmux new -A -s pi 'pi'`).",
 				);
 			}
 			const parentSessionFile = ctx.sessionManager.getSessionFile();
@@ -487,12 +487,12 @@ async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<Launch
 		}
 
 		// The child session file now exists on disk, so from here until the
-		// launch command is actually sent, a failure (tmux gone, pane limits,
-		// disk errors) must delete the seed again — otherwise every failed
-		// spawn leaves a phantom named session in pi's picker. Once
-		// sendLongCommand succeeds the child owns the file, and deleting it
-		// would corrupt a live session — hence this exact try range. (The
-		// outer catch then rolls back the worktree, if any.)
+		// pane is created, a failure (tmux gone, pane limits, disk errors)
+		// must delete the seed again — otherwise every failed spawn leaves a
+		// phantom named session in pi's picker. Pane creation starts the child
+		// immediately, so once createPane succeeds the child owns the file and
+		// deleting it would corrupt a live session — hence this exact try range.
+		// (The outer catch then rolls back the worktree, if any.)
 		const scriptPath = join(spec.base, "scripts", `${spec.slug}-${spec.id}.sh`);
 		let paneId: string | undefined;
 		try {
@@ -587,18 +587,14 @@ async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<Launch
 				cwd: profile ? cwd : undefined,
 			});
 
-			// Create the pane, give its shell a moment, then run the launch
-			// script (written to artifacts for debuggability). The sleep above
-			// the send is the LAST interleave point: the boundary guard runs
-			// after it, and everything from the guard through trackChild below
-			// is synchronous — a reload or /new observed here cannot slip in
-			// between passing the guard and registering the child. The guard
-			// sits BEFORE the send on purpose: after the send the child owns
-			// its session file, and this catch's rollback would corrupt it.
-			paneId = createPane(spec.name);
-			await sleep(config.shellReadyDelayMs);
+			// Stage the debuggable script, then assert at the pane-creation
+			// boundary. Nothing can currently interleave here; the guard is a
+			// defensive assertion against a future await added upstream. After
+			// createPane starts the child, it owns the session file and this
+			// catch must not roll it back.
+			stageLaunchScript(command, scriptPath);
 			assertLaunchStillWanted(launchGeneration);
-			sendLongCommand(paneId, command, scriptPath);
+			paneId = createPane(spec.name, scriptPath);
 		} catch (error) {
 			rmSync(childSessionFile, { force: true });
 			rmSync(`${childSessionFile}.meta`, { force: true });
