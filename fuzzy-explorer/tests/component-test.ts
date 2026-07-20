@@ -152,6 +152,9 @@ await new Promise<void>((resolve) => setImmediate(resolve));
 eq("o smart-opens the selected block", opened, [detailSelected]);
 component.handleInput("\x1b");
 eq("Escape returns from detail with selection synced", [state.mode, state.selected?.block.id], ["list", detailSelected]);
+component.handleInput("\r");
+component.handleInput("q");
+eq("q also returns from detail to the list without closing", [state.mode, doneCalls], ["list", 0]);
 
 // Live data, resize, and shutdown
 

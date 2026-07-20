@@ -145,7 +145,7 @@ export class ExplorerComponent implements Component, Focusable {
 				"j/k scroll",
 				"u/d page",
 				"J/K blocks",
-				"esc list",
+				"q/esc list",
 				"y copy",
 				`o ${openHint(this.state.selected?.block)}`,
 			];
@@ -327,7 +327,7 @@ export class ExplorerComponent implements Component, Focusable {
 
 	private handleDetailInput(data: string): void {
 		const detailLineCount = this.detailLines().length;
-		if (matchesKey(data, "escape")) this.state.escape();
+		if (matchesKey(data, "escape") || matchesKey(data, "q")) this.state.escape();
 		else if (matchesKey(data, "up") || matchesKey(data, "k")) this.state.scrollDetail(-1, detailLineCount);
 		else if (matchesKey(data, "down") || matchesKey(data, "j")) this.state.scrollDetail(1, detailLineCount);
 		else if (matchesKey(data, "u")) this.state.pageDetail(-1, detailLineCount);

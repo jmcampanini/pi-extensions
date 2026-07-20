@@ -20,7 +20,7 @@ While a query is active, results are ordered by relevance (best first; newest fi
 
 List mode uses arrows or `j`/`k`, `u`/`d` to page, `g`/`G` for first/last, `/` to filter, Enter for detail, `y` to copy, `o` to open, and `q` or Escape to close. In filter mode, printable keys edit the query while arrows still navigate; `Ctrl+U` clears it and Escape returns to list mode without clearing it.
 
-Detail mode uses arrows or `j`/`k` to scroll, `u`/`d` to page, `J`/`K` to visit adjacent filtered blocks, `y`/`o` for actions, and Escape to return to the list.
+Detail mode uses arrows or `j`/`k` to scroll, `u`/`d` to page, `J`/`K` to visit adjacent filtered blocks, `y`/`o` for actions, and `q` or Escape to return to the list.
 
 ## Configuration
 
