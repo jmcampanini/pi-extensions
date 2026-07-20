@@ -131,6 +131,25 @@ function sanitizedSpans(
 	return { text, spans: merged };
 }
 
+function applySpanStyles(
+	text: string,
+	spans: readonly TextSpan[],
+	baseStyle: (text: string) => string,
+	highlightStyle: (text: string) => string,
+): string {
+	if (spans.length === 0) return baseStyle(text);
+
+	const parts: string[] = [];
+	let cursor = 0;
+	for (const span of spans) {
+		if (span.start > cursor) parts.push(baseStyle(text.slice(cursor, span.start)));
+		parts.push(highlightStyle(text.slice(span.start, span.end)));
+		cursor = span.end;
+	}
+	if (cursor < text.length) parts.push(baseStyle(text.slice(cursor)));
+	return parts.join("");
+}
+
 function styledHighlightedText(
 	rawText: string,
 	spans: readonly TextSpan[],
@@ -138,17 +157,7 @@ function styledHighlightedText(
 	highlightStyle: (text: string) => string,
 ): string {
 	const safe = sanitizedSpans(rawText, spans);
-	if (safe.spans.length === 0) return baseStyle(safe.text);
-
-	const parts: string[] = [];
-	let cursor = 0;
-	for (const span of safe.spans) {
-		if (span.start > cursor) parts.push(baseStyle(safe.text.slice(cursor, span.start)));
-		parts.push(highlightStyle(safe.text.slice(span.start, span.end)));
-		cursor = span.end;
-	}
-	if (cursor < safe.text.length) parts.push(baseStyle(safe.text.slice(cursor)));
-	return parts.join("");
+	return applySpanStyles(safe.text, safe.spans, baseStyle, highlightStyle);
 }
 
 function styledMatchExcerpt(
@@ -169,7 +178,7 @@ function styledMatchExcerpt(
 	const excerptSpans = safe.spans
 		.filter((span) => span.end > start && span.start < end)
 		.map((span) => ({ start: Math.max(0, span.start - start), end: Math.min(end - start, span.end - start) }));
-	const excerpt = styledHighlightedText(
+	const excerpt = applySpanStyles(
 		safe.text.slice(start, end),
 		excerptSpans,
 		baseStyle,
@@ -195,12 +204,11 @@ function bodyHighlightSpans(
 	for (const token of tokens) {
 		const tokenLower = token.toLowerCase();
 		if (tokenLower === "") continue;
-		for (
-			let start = bodyLower.indexOf(tokenLower);
-			start !== -1;
-			start = allOccurrences ? bodyLower.indexOf(tokenLower, start + 1) : -1
-		) {
+		let start = bodyLower.indexOf(tokenLower);
+		while (start !== -1) {
 			matches.push({ start, end: start + token.length });
+			if (!allOccurrences) break;
+			start = bodyLower.indexOf(tokenLower, start + 1);
 		}
 	}
 	return matches;
