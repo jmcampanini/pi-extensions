@@ -17,11 +17,13 @@ const usage = {
 
 /** Build a deterministic branched transcript used by unit and tmux smoke tests. */
 export function buildFixtureSession(directory: string, additionalMessages = 0): FixtureSession {
-	rmSync(directory, { recursive: true, force: true });
 	mkdirSync(directory, { recursive: true });
 	const sessionFile = join(directory, "fuzzy-explorer-fixture.jsonl");
 	const fullOutputPath = join(directory, "surviving-full-output.txt");
 	const missingFullOutputPath = join(directory, "missing-full-output.txt");
+	for (const generatedPath of [sessionFile, fullOutputPath, missingFullOutputPath]) {
+		rmSync(generatedPath, { force: true });
+	}
 	writeFileSync(fullOutputPath, "full output that is deliberately not searchable\n", "utf8");
 
 	const entries: Record<string, unknown>[] = [{

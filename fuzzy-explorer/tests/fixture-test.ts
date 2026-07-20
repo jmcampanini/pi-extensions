@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { extractBlocks } from "../extract.ts";
@@ -16,12 +16,17 @@ function ok(label: string, value: boolean): void {
 	else { fail++; console.log(`  FAIL ${label}`); }
 }
 
-const fixture = buildFixtureSession(resolve(".sandbox/fuzzy-explorer-fixture-test"));
+const fixtureDirectory = resolve(".sandbox/fuzzy-explorer-fixture-test");
+mkdirSync(fixtureDirectory, { recursive: true });
+const sentinelPath = resolve(fixtureDirectory, "caller-owned.txt");
+writeFileSync(sentinelPath, "keep me", "utf8");
+const fixture = buildFixtureSession(fixtureDirectory);
 const session = SessionManager.open(fixture.sessionFile);
 const branch = session.getBranch();
 const blocks = extractBlocks(branch, (id) => session.getLabel(id));
 const indexed = blocks.map((block) => `${block.fields}\n${block.body}`).join("\n");
 
+eq("fixture generation preserves unrelated caller-owned files", readFileSync(sentinelPath, "utf8"), "keep me");
 ok("fixture full-output survivor exists", existsSync(fixture.fullOutputPath));
 ok("fixture missing full-output path is absent", !existsSync(fixture.missingFullOutputPath));
 eq("active branch excludes both abandoned entry ids",
