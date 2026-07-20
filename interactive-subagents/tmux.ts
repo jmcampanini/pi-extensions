@@ -444,6 +444,6 @@ function readSidecar(sidecarPath: string): ExitResult | null {
 }
 
 /** Promise-flavored setTimeout used by the poller. */
-export function sleep(ms: number): Promise<void> {
+function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
