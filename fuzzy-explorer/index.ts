@@ -1,5 +1,6 @@
 import {
 	getAgentDir,
+	getMarkdownTheme,
 	SettingsManager,
 	type ExtensionAPI,
 	type ExtensionContext,
@@ -24,7 +25,7 @@ export function registerFuzzyExplorer(pi: ExtensionAPI): void {
 
 		try {
 			const branchIndex = new BranchBlockIndex();
-			const state = new ExplorerState(config.openMode, config.listOrder);
+			const state = new ExplorerState(config.openMode);
 			const settingsManager = SettingsManager.create(ctx.cwd, getAgentDir(), {
 				projectTrusted: ctx.isProjectTrusted(),
 			});
@@ -50,6 +51,7 @@ export function registerFuzzyExplorer(pi: ExtensionAPI): void {
 					},
 					notify: (message, level) => ctx.ui.notify(message, level),
 					done,
+					markdownTheme: getMarkdownTheme(),
 				}),
 				{
 					overlay: true,

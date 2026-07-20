@@ -9,7 +9,7 @@ export function parseQuery(query: string): ParsedQuery {
 	for (const part of query.trim().split(/\s+/)) {
 		if (!part) continue;
 
-		const operator = /^(is|tool):(.+)$/i.exec(part);
+		const operator = /^(is|tool|any):(.+)$/i.exec(part);
 		if (operator) {
 			operators.push({
 				key: operator[1]!.toLowerCase() as QueryOperator["key"],
@@ -21,4 +21,8 @@ export function parseQuery(query: string): ParsedQuery {
 	}
 
 	return { tokens, operators };
+}
+
+export function isEmptyQuery(query: ParsedQuery): boolean {
+	return query.tokens.length === 0 && query.operators.length === 0;
 }

@@ -1,11 +1,8 @@
 import { stripVTControlCharacters } from "node:util";
-import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type {
-	Block,
-	BlockTruncation,
-	HighlightSpan,
-	SearchResult,
-} from "./types.ts";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi, type MarkdownTheme } from "@earendil-works/pi-tui";
+import { SEPARATOR_CLASS, stripSeparators } from "./search.ts";
+import { subagentView, type SubagentView } from "./subagent.ts";
+import type { Block, BlockTruncation, SearchResult } from "./types.ts";
 
 export interface RenderStyles {
 	title: (text: string) => string;
@@ -13,7 +10,6 @@ export interface RenderStyles {
 	muted: (text: string) => string;
 	dim: (text: string) => string;
 	body: (text: string) => string;
-	selected: (text: string) => string;
 	highlight: (text: string) => string;
 	border: (text: string) => string;
 }
@@ -30,13 +26,42 @@ export const PLAIN_RENDER_STYLES: Readonly<RenderStyles> = Object.freeze({
 	muted: identity,
 	dim: identity,
 	body: identity,
-	selected: identity,
 	highlight: identity,
 	border: identity,
 });
 
 function renderStyles(overrides: RenderStyleOverrides): RenderStyles {
 	return { ...PLAIN_RENDER_STYLES, ...overrides };
+}
+
+export const PLAIN_MARKDOWN_THEME: Readonly<MarkdownTheme> = Object.freeze({
+	heading: identity,
+	link: identity,
+	linkUrl: identity,
+	code: identity,
+	codeBlock: identity,
+	codeBlockBorder: identity,
+	quote: identity,
+	quoteBorder: identity,
+	hr: identity,
+	listBullet: identity,
+	bold: identity,
+	italic: identity,
+	strikethrough: identity,
+	underline: identity,
+});
+
+/**
+ * Blocks whose detail view renders as markdown by default: the kinds Pi's own
+ * transcript renders through its markdown theme, plus subagent tool traffic,
+ * whose bodies are prose reports. Tool output, bash output, and canonical
+ * invocation text stay raw.
+ */
+export function rendersMarkdownByDefault(block: Block): boolean {
+	if (block.kind === "assistant" || block.kind === "user" || block.kind === "summary" || block.kind === "custom") {
+		return true;
+	}
+	return block.kind === "tool" && (block.toolName?.startsWith("subagent_") ?? false);
 }
 
 function safeWidth(width: number): number {
@@ -65,22 +90,140 @@ function singleLine(text: string): string {
 
 function unpack(value: RenderBlock): {
 	block: Block;
-	spans: readonly HighlightSpan[];
+	keyTokens: readonly string[];
 	bodyTokens: readonly string[];
 } {
 	if ("block" in value && "match" in value) {
 		return {
 			block: value.block,
-			spans: value.match.highlightSpans,
-			bodyTokens: value.match.bodyHighlightTokens ?? [],
+			keyTokens: value.match.keyTokens,
+			bodyTokens: value.match.bodyTokens,
 		};
 	}
-	return { block: value, spans: [], bodyTokens: [] };
+	return { block: value, keyTokens: [], bodyTokens: [] };
 }
+
+// Highlight span derivation
+//
+// Search reports only which token forms matched; spans are greedily re-derived
+// here against whatever text is actually displayed, so stripped-token matches
+// highlight the original separator-bearing text.
 
 interface TextSpan {
 	start: number;
 	end: number;
+}
+
+/** Lowercase without shifting indices: characters whose lowercase form grows stay as-is. */
+function lowerPreservingLength(text: string): string {
+	let folded = "";
+	for (let index = 0; index < text.length; index++) {
+		const lower = text[index]!.toLowerCase();
+		folded += lower.length === 1 ? lower : text[index]!;
+	}
+	return folded;
+}
+
+function substringSpans(text: string, token: string, firstOnly: boolean): TextSpan[] {
+	const spans: TextSpan[] = [];
+	if (token === "") return spans;
+	const haystack = lowerPreservingLength(text);
+	const needle = token.toLowerCase();
+	for (let start = haystack.indexOf(needle); start !== -1; start = haystack.indexOf(needle, start + 1)) {
+		spans.push({ start, end: start + needle.length });
+		if (firstOnly) break;
+	}
+	return spans;
+}
+
+function strippedSubstringSpans(text: string, token: string, firstOnly: boolean): TextSpan[] {
+	const needle = stripSeparators(token).toLowerCase();
+	if (needle === "") return [];
+
+	const offsets: number[] = [];
+	const kept: string[] = [];
+	for (let index = 0; index < text.length; index++) {
+		const character = text[index]!;
+		if (SEPARATOR_CLASS.test(character)) continue;
+		offsets.push(index);
+		kept.push(character);
+	}
+	const haystack = lowerPreservingLength(kept.join(""));
+
+	const spans: TextSpan[] = [];
+	for (let start = haystack.indexOf(needle); start !== -1; start = haystack.indexOf(needle, start + 1)) {
+		const first = offsets[start];
+		const last = offsets[start + needle.length - 1];
+		if (first === undefined || last === undefined) break;
+		spans.push({ start: first, end: last + 1 });
+		if (firstOnly) break;
+	}
+	return spans;
+}
+
+function swappedAlphaNumericToken(token: string): string | undefined {
+	const alphaNumeric = /^(?<letters>[a-z]+)(?<digits>[0-9]+)$/i.exec(token);
+	if (alphaNumeric?.groups) return `${alphaNumeric.groups.digits}${alphaNumeric.groups.letters}`;
+
+	const numericAlpha = /^(?<digits>[0-9]+)(?<letters>[a-z]+)$/i.exec(token);
+	if (numericAlpha?.groups) return `${numericAlpha.groups.letters}${numericAlpha.groups.digits}`;
+
+	return undefined;
+}
+
+function greedySubsequenceSpans(token: string, text: string): TextSpan[] {
+	const query = token.toLowerCase();
+	const haystack = text.toLowerCase();
+	const positions: number[] = [];
+	let from = 0;
+
+	for (const character of query) {
+		const position = haystack.indexOf(character, from);
+		if (position === -1) return [];
+		positions.push(position);
+		from = position + 1;
+	}
+
+	const spans: TextSpan[] = [];
+	for (const position of positions) {
+		const previous = spans.at(-1);
+		if (previous && previous.end === position) previous.end++;
+		else spans.push({ start: position, end: position + 1 });
+	}
+	return spans;
+}
+
+/** Spans for a key-matched token inside a displayed text segment (tag or detail). */
+function keyTokenSpans(token: string, text: string): TextSpan[] {
+	const substrings = substringSpans(text, token, false);
+	if (substrings.length > 0) return substrings;
+
+	const stripped = strippedSubstringSpans(text, token, false);
+	if (stripped.length > 0) return stripped;
+
+	const direct = greedySubsequenceSpans(token, text);
+	if (direct.length > 0) return direct;
+
+	const swapped = swappedAlphaNumericToken(token);
+	return swapped === undefined ? [] : greedySubsequenceSpans(swapped, text);
+}
+
+/** Spans for a body-matched token: exact substring first, stripped mapping second. */
+function bodyTokenSpans(text: string, token: string, firstOnly: boolean): TextSpan[] {
+	const substrings = substringSpans(text, token, firstOnly);
+	if (substrings.length > 0) return substrings;
+	return strippedSubstringSpans(text, token, firstOnly);
+}
+
+function mergeSpans(spans: readonly TextSpan[]): TextSpan[] {
+	const sorted = [...spans].sort((left, right) => left.start - right.start || left.end - right.end);
+	const merged: TextSpan[] = [];
+	for (const span of sorted) {
+		const previous = merged.at(-1);
+		if (previous && span.start <= previous.end) previous.end = Math.max(previous.end, span.end);
+		else merged.push({ ...span });
+	}
+	return merged;
 }
 
 function sanitizedSpans(
@@ -115,20 +258,9 @@ function sanitizedSpans(
 			end: sanitizedOffsets.get(span.end) ?? text.length,
 		}));
 	}
-	normalized = normalized
-		.filter((span) => span.end > span.start)
-		.sort((left, right) => left.start - right.start || left.end - right.end);
+	normalized = normalized.filter((span) => span.end > span.start);
 
-	const merged: TextSpan[] = [];
-	for (const span of normalized) {
-		const previous = merged.at(-1);
-		if (previous !== undefined && span.start <= previous.end) {
-			previous.end = Math.max(previous.end, span.end);
-		} else {
-			merged.push({ ...span });
-		}
-	}
-	return { text, spans: merged };
+	return { text, spans: mergeSpans(normalized) };
 }
 
 function applySpanStyles(
@@ -160,6 +292,7 @@ function styledHighlightedText(
 	return applySpanStyles(safe.text, safe.spans, baseStyle, highlightStyle);
 }
 
+/** Grep-style excerpt around the first match, marked with ⋯ at clipped ends. */
 function styledMatchExcerpt(
 	rawText: string,
 	spans: readonly TextSpan[],
@@ -169,11 +302,13 @@ function styledMatchExcerpt(
 ): string {
 	const safe = sanitizedSpans(rawText, spans);
 	const focus = safe.spans[0];
-	let start = focus === undefined ? 0 : Math.max(0, focus.start - Math.floor(maximumCharacters / 3));
-	let end = Math.min(safe.text.length, start + maximumCharacters);
+	// Reserve room for the ⋯ markers so the clamped row never cuts them off.
+	const budget = Math.max(1, safe.text.length > maximumCharacters ? maximumCharacters - 4 : maximumCharacters);
+	let start = focus === undefined ? 0 : Math.max(0, focus.start - Math.floor(budget / 3));
+	let end = Math.min(safe.text.length, start + budget);
 	if (focus && focus.end > end) {
-		end = Math.min(safe.text.length, focus.end + Math.floor(maximumCharacters / 3));
-		start = Math.max(0, end - maximumCharacters);
+		end = Math.min(safe.text.length, focus.end + Math.floor(budget / 3));
+		start = Math.max(0, end - budget);
 	}
 	const excerptSpans = safe.spans
 		.filter((span) => span.end > start && span.start < end)
@@ -184,34 +319,7 @@ function styledMatchExcerpt(
 		baseStyle,
 		highlightStyle,
 	).replace(/\s+/gu, " ").trim();
-	return `${start > 0 ? baseStyle("…") : ""}${excerpt}${end < safe.text.length ? baseStyle("…") : ""}`;
-}
-
-function spansForZone(spans: readonly HighlightSpan[], zone: HighlightSpan["zone"]): TextSpan[] {
-	return spans
-		.filter((span) => span.zone === zone)
-		.map(({ start, end }) => ({ start, end }));
-}
-
-function bodyHighlightSpans(
-	body: string,
-	spans: readonly HighlightSpan[],
-	tokens: readonly string[],
-	allOccurrences: boolean,
-): TextSpan[] {
-	const matches = spansForZone(spans, "body");
-	const bodyLower = body.toLowerCase();
-	for (const token of tokens) {
-		const tokenLower = token.toLowerCase();
-		if (tokenLower === "") continue;
-		let start = bodyLower.indexOf(tokenLower);
-		while (start !== -1) {
-			matches.push({ start, end: start + token.length });
-			if (!allOccurrences) break;
-			start = bodyLower.indexOf(tokenLower, start + 1);
-		}
-	}
-	return matches;
+	return `${start > 0 ? baseStyle("⋯ ") : ""}${excerpt}${end < safe.text.length ? baseStyle(" ⋯") : ""}`;
 }
 
 function canonicalBodySpans(block: Block, bodySpans: readonly TextSpan[], content: string): TextSpan[] {
@@ -234,26 +342,122 @@ function wrapStyledText(text: string, width: number): string[] {
 	return wrapTextWithAnsi(text, width).map((line) => clampLine(line, width));
 }
 
-function compactTimestamp(timestamp: string): string {
-	const safe = singleLine(timestamp);
-	const isoMatch = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}(?::\d{2})?)/u.exec(safe);
-	return isoMatch === null ? safe : `${isoMatch[1]} ${isoMatch[2]}`;
+// Block identity
+
+function shortTime(timestamp: string): string {
+	const match = /T(\d{2}:\d{2})/u.exec(timestamp);
+	return match === null ? singleLine(timestamp) : match[1]!;
 }
 
-function blockHeader(block: Block, styles: RenderStyles, compactWidth?: number): string {
-	const title = singleLine(block.title) || singleLine(block.toolName ?? "") || block.kind;
-	const primary = singleLine(block.fileReference?.path ?? block.subtitle ?? "");
-	const compact = (text: string): string => compactWidth === undefined
-		? text
-		: truncateToWidth(text, compactWidth, "…");
-	const pieces = [styles.title(compact(title))];
-	if (primary !== "" && primary !== title) pieces.push(styles.muted(" "), styles.accent(compact(primary)));
-	pieces.push(styles.muted(` · ${block.kind}`));
-	if (block.isError === true) pieces.push(styles.muted(" · error"));
-	if (block.label !== undefined && singleLine(block.label) !== "") {
-		pieces.push(styles.muted(" · label "), styles.accent(compact(singleLine(block.label))));
+/** Aligned tag-column text: tool name for tool blocks, a short role label otherwise. */
+export function formatBlockTag(block: Block): string {
+	if (block.kind === "tool") return singleLine(block.toolName ?? "") || singleLine(block.title) || "tool";
+	if (block.kind === "assistant") return "Assistant";
+	if (block.kind === "user") return "User";
+	return singleLine(block.title) || block.kind;
+}
+
+/** Identity for the titled preview rule: tag · HH:MM. */
+export function formatPreviewIdentity(block: Block): string {
+	return `${formatBlockTag(block)} · ${shortTime(block.timestamp)}`;
+}
+
+/** Identity for the detail-mode top border: kind[/tool] · HH:MM · distinct title. */
+export function formatDetailIdentity(block: Block): string {
+	const toolName = singleLine(block.toolName ?? "");
+	const kindPart = block.kind === "tool" && toolName !== "" ? `tool/${toolName}` : block.kind;
+	const pieces = [kindPart, shortTime(block.timestamp)];
+	const title = singleLine(block.title);
+	if (
+		title !== ""
+		&& title.toLowerCase() !== block.kind.toLowerCase()
+		&& kindPart.toLowerCase() !== `tool/${title.toLowerCase()}`
+	) {
+		pieces.push(title);
 	}
-	return pieces.join("");
+	return pieces.join(" · ");
+}
+
+// Row detail text
+
+const TAG_WIDTH_LIMIT = 16;
+
+export function computeTagWidth(values: readonly RenderBlock[]): number {
+	let width = 4;
+	for (const value of values) {
+		const { block } = unpack(value);
+		width = Math.max(width, Math.min(TAG_WIDTH_LIMIT, visibleWidth(singleLine(formatBlockTag(block)))));
+	}
+	return width;
+}
+
+function firstBodyLine(body: string): string {
+	for (const line of sanitizeTerminalText(body).split("\n")) {
+		const compact = line.replace(/\s+/gu, " ").trim();
+		if (compact !== "") return compact;
+	}
+	return "";
+}
+
+export function formatSubagentFields(view: SubagentView): string {
+	return view.fields.map((field) => `${field.key}=${field.value}`).join(" ");
+}
+
+/** Displayed preview/detail text: subagent blocks show fields + parsed content. */
+export function displayContent(block: Block): string {
+	const view = subagentView(block);
+	if (view !== undefined) {
+		return [formatSubagentFields(view), view.content].filter((text) => text !== "").join("\n\n");
+	}
+	return block.body !== "" ? block.body : block.canonicalText;
+}
+
+function rowDetailText(block: Block): string {
+	const view = subagentView(block);
+	if (view !== undefined && view.fields.length > 0) return formatSubagentFields(view);
+	if (block.kind === "tool" || block.kind === "bash") {
+		const subtitle = singleLine(block.subtitle ?? "");
+		if (subtitle !== "") return subtitle;
+	}
+	return firstBodyLine(block.body);
+}
+
+function shrinkPathValue(value: string): string | undefined {
+	let remainder = value.startsWith("…/") ? value.slice(2) : value;
+	if (remainder.startsWith("/")) remainder = remainder.slice(1);
+	const slash = remainder.indexOf("/");
+	if (slash === -1) return undefined;
+	const tail = remainder.slice(slash + 1);
+	return tail === "" ? undefined : `…/${tail}`;
+}
+
+function shrinkPathWord(word: string): string | undefined {
+	const separator = word.indexOf("=");
+	const prefix = separator === -1 ? "" : word.slice(0, separator + 1);
+	const value = separator === -1 ? word : word.slice(separator + 1);
+	const shrunk = shrinkPathValue(value);
+	return shrunk === undefined ? undefined : `${prefix}${shrunk}`;
+}
+
+/** Fit text into width, collapsing path prefixes so their tails survive. */
+export function tailAwareTruncate(text: string, width: number): string {
+	const maxWidth = safeWidth(width);
+	if (maxWidth === 0) return "";
+	let compact = singleLine(text);
+	if (visibleWidth(compact) <= maxWidth) return compact;
+
+	const words = compact.split(" ");
+	while (visibleWidth(compact) > maxWidth) {
+		let longestIndex = -1;
+		for (let index = 0; index < words.length; index++) {
+			if (shrinkPathWord(words[index]!) === undefined) continue;
+			if (longestIndex === -1 || words[index]!.length > words[longestIndex]!.length) longestIndex = index;
+		}
+		if (longestIndex === -1) break;
+		words[longestIndex] = shrinkPathWord(words[longestIndex]!)!;
+		compact = words.join(" ");
+	}
+	return truncateToWidth(compact, maxWidth, "…");
 }
 
 /** Build the explicit status shown whenever the stored session output was truncated. */
@@ -294,44 +498,54 @@ export function formatTruncationMarker(
 		: `[stored output truncated: ${kept}; full-output file missing: ${path}]`;
 }
 
-/** Format one chronological result row with a match-centered compact preview. */
+// Rows
+
+/**
+ * Format one list row: selection marker, aligned bold tag column, then detail
+ * text — or a grep-style body excerpt when only the body matched.
+ */
 export function formatResultRow(
 	value: RenderBlock,
 	selected: boolean,
 	width: number,
+	tagWidth: number,
 	styleOverrides: RenderStyleOverrides = {},
 ): string {
 	const maxWidth = safeWidth(width);
 	if (maxWidth === 0) return "";
-	const { block, spans, bodyTokens } = unpack(value);
+	const { block, keyTokens, bodyTokens } = unpack(value);
 	const styles = renderStyles(styleOverrides);
-	const bodySpans = bodyHighlightSpans(block.body, spans, bodyTokens, false);
-	const fieldSpans = spansForZone(spans, "fields");
-	const headerPartWidth = Math.max(10, Math.floor(maxWidth / (bodySpans.length > 0 ? 8 : 4)));
-	const pieces = [
-		selected ? "› " : "  ",
-		blockHeader(block, styles, headerPartWidth),
-	];
-	const showBody = bodySpans.length > 0 || (fieldSpans.length === 0 && block.body !== "");
-	const previewText = showBody ? block.body : block.fields;
-	const previewSpans = showBody ? bodySpans : fieldSpans;
-	if (singleLine(previewText) !== "") {
-		pieces.push(
-			styles.muted(" · "),
-			styledMatchExcerpt(previewText, previewSpans, Math.max(24, maxWidth), styles.dim, styles.highlight),
-		);
+
+	const marker = selected ? styles.accent("▸ ") : "  ";
+	const column = Math.max(1, Math.min(tagWidth, maxWidth - 2));
+	const tagText = truncateToWidth(singleLine(formatBlockTag(block)), column, "…");
+	const tagSpans = mergeSpans(keyTokens.flatMap((token) => keyTokenSpans(token, tagText)));
+	const tag = applySpanStyles(tagText, tagSpans, (text) => styles.title(text), styles.highlight)
+		+ " ".repeat(Math.max(0, column - visibleWidth(tagText)));
+
+	const detailWidth = maxWidth - 2 - column - 2;
+	if (detailWidth <= 0) return clampLine(`${marker}${tag}`, maxWidth);
+
+	// A row whose only hit is in the body swaps its detail for the match excerpt.
+	let detail: string;
+	if (keyTokens.length === 0 && bodyTokens.length > 0) {
+		const spans = mergeSpans(bodyTokens.flatMap((token) => bodyTokenSpans(block.body, token, true)));
+		detail = styledMatchExcerpt(block.body, spans, detailWidth, styles.dim, styles.highlight);
+	} else {
+		const detailText = tailAwareTruncate(rowDetailText(block), detailWidth);
+		const detailSpans = mergeSpans(keyTokens.flatMap((token) => keyTokenSpans(token, detailText)));
+		detail = styledHighlightedText(detailText, detailSpans, styles.muted, styles.highlight);
 	}
-	const timestamp = compactTimestamp(block.timestamp);
-	if (timestamp !== "") pieces.push(styles.muted(` · ${timestamp}`));
-	const row = clampLine(pieces.join(""), maxWidth);
-	return clampLine(selected ? styles.selected(row) : row, maxWidth);
+	return clampLine(`${marker}${tag}  ${detail}`, maxWidth);
 }
+
+// Preview and detail content
 
 function previewClippedMarker(styles: RenderStyles): string {
 	return styles.dim("[preview clipped; enter opens the complete detail]");
 }
 
-/** Format the bounded bottom preview pane. */
+/** Format the bounded preview pane body: wrapped block content with body-match highlights. */
 export function formatPreviewLines(
 	value: RenderBlock,
 	width: number,
@@ -342,45 +556,34 @@ export function formatPreviewLines(
 	const maxWidth = safeWidth(width);
 	const lineLimit = Number.isFinite(maxLines) && maxLines > 0 ? Math.floor(maxLines) : 0;
 	if (maxWidth === 0 || lineLimit === 0) return [];
-	const { block, spans, bodyTokens } = unpack(value);
+	const { block, bodyTokens } = unpack(value);
 	const styles = renderStyles(styleOverrides);
-	const content = block.canonicalText !== "" ? block.canonicalText : block.body;
-	const bodySpans = bodyHighlightSpans(block.body, spans, bodyTokens, true);
-	const contentSpans = canonicalBodySpans(block, bodySpans, content);
-	const styledContent = styledHighlightedText(content, contentSpans, styles.body, styles.highlight);
+
+	// Matched tokens are re-derived against whatever text is displayed, so the
+	// subagent field/content transformation keeps its highlights.
+	const content = displayContent(block);
+	const spans = mergeSpans(bodyTokens.flatMap((token) => bodyTokenSpans(content, token, false)));
+	const styledContent = styledHighlightedText(content, spans, styles.body, styles.highlight);
 	const contentLines = wrapStyledText(styledContent, maxWidth);
 	if (contentLines.length === 0) contentLines.push(styles.dim("(empty block)"));
 
-	const header = clampLine(`${styles.border("Preview")} ${styles.muted("·")} ${blockHeader(block, styles)}`, maxWidth);
-	const fieldSpans = spansForZone(spans, "fields");
-	const fieldMatchLine = fieldSpans.length === 0
-		? undefined
-		: clampLine(
-			`${styles.muted("match · ")}${styledMatchExcerpt(block.fields, fieldSpans, Math.max(24, maxWidth), styles.muted, styles.highlight)}`,
-			maxWidth,
-		);
 	const rawTruncationMarker = formatTruncationMarker(block.truncation, pathExists);
-	const sourceMarker = rawTruncationMarker === undefined
-		? undefined
-		: clampLine(styles.dim(rawTruncationMarker), maxWidth);
-	const fixedTail = sourceMarker === undefined ? [] : [sourceMarker];
+	const fixedTail = rawTruncationMarker === undefined
+		? []
+		: [clampLine(styles.dim(rawTruncationMarker), maxWidth)];
 	if (fixedTail.length >= lineLimit) return fixedTail.slice(-lineLimit);
 
-	const headCandidates = fieldMatchLine === undefined ? [header] : [header, fieldMatchLine];
-	const roomBeforeTail = lineLimit - fixedTail.length;
-	const headLines = headCandidates.slice(0, Math.max(0, roomBeforeTail - 1));
-	let availableContent = Math.max(1, roomBeforeTail - headLines.length);
-	const clipped = contentLines.length > availableContent;
-	if (clipped && availableContent > 1) availableContent--;
-	const lines = [...headLines, ...contentLines.slice(0, availableContent)];
-	if (clipped && lines.length < roomBeforeTail) {
-		lines.push(clampLine(previewClippedMarker(styles), maxWidth));
-	}
+	const room = lineLimit - fixedTail.length;
+	let available = room;
+	const clipped = contentLines.length > available;
+	if (clipped && available > 1) available--;
+	const lines = contentLines.slice(0, available);
+	if (clipped && lines.length < room) lines.push(clampLine(previewClippedMarker(styles), maxWidth));
 	lines.push(...fixedTail);
 	return lines.slice(0, lineLimit).map((line) => clampLine(line, maxWidth));
 }
 
-/** Format every line in the full detail view; the controller owns scrolling. */
+/** Format every content line in the full detail view; the controller owns scrolling. */
 export function formatDetailLines(
 	value: RenderBlock,
 	width: number,
@@ -389,82 +592,97 @@ export function formatDetailLines(
 ): string[] {
 	const maxWidth = safeWidth(width);
 	if (maxWidth === 0) return [];
-	const { block, spans, bodyTokens } = unpack(value);
+	const { block, bodyTokens } = unpack(value);
 	const styles = renderStyles(styleOverrides);
-	const lines: string[] = [clampLine(blockHeader(block, styles), maxWidth)];
-	const fields = singleLine(block.fields);
-	if (fields !== "") {
-		lines.push(clampLine(
-			styledMatchExcerpt(
-				block.fields,
-				spansForZone(spans, "fields"),
-				Math.max(24, maxWidth),
-				styles.muted,
-				styles.highlight,
-			),
-			maxWidth,
-		));
-	}
-	lines.push(clampLine(styles.border("─".repeat(maxWidth)), maxWidth));
 
 	const content = block.canonicalText !== "" ? block.canonicalText : block.body;
+	const bodySpans = mergeSpans(bodyTokens.flatMap((token) => bodyTokenSpans(block.body, token, false)));
 	const styledContent = styledHighlightedText(
 		content,
-		canonicalBodySpans(block, bodyHighlightSpans(block.body, spans, bodyTokens, true), content),
+		canonicalBodySpans(block, bodySpans, content),
 		styles.body,
 		styles.highlight,
 	);
-	const contentLines = wrapStyledText(styledContent, maxWidth);
-	lines.push(...(contentLines.length === 0 ? [styles.dim("(empty block)")] : contentLines));
+	const lines = wrapStyledText(styledContent, maxWidth);
+	if (lines.length === 0) lines.push(styles.dim("(empty block)"));
 
 	const truncationMarker = formatTruncationMarker(block.truncation, pathExists);
 	if (truncationMarker !== undefined) lines.push(clampLine(styles.dim(truncationMarker), maxWidth));
 	return lines.map((line) => clampLine(line, maxWidth));
 }
 
-/** Format width-safe footer hints for list, filter, and detail actions. */
-export function formatHelpFooter(
+// Border chrome
+//
+// All chrome lives in the border: titles and counts sit inside the top border,
+// section rules carry the preview identity, and keybind hints fill the bottom
+// border, degrading to the highest-priority keys when narrow.
+
+const BORDER_HORIZONTAL = "─";
+
+export function formatBorderLine(
 	width: number,
-	smartOpenHint: string,
-	styleOverrides: RenderStyleOverrides = {},
-	mode: "list" | "filter" | "detail" = "list",
-): string[] {
+	corners: readonly [string, string],
+	leftText = "",
+	rightText = "",
+	borderStyle: (text: string) => string = identity,
+): string {
 	const maxWidth = safeWidth(width);
-	if (maxWidth === 0) return [];
+	if (maxWidth === 0) return "";
+	if (maxWidth === 1) return borderStyle(corners[0]);
+	const inner = maxWidth - 2;
+
+	let right = rightText === "" ? "" : ` ${rightText} `;
+	if (visibleWidth(right) > inner) right = "";
+	const leftBudget = inner - visibleWidth(right);
+	const leftInner = leftText === "" ? "" : truncateToWidth(leftText, Math.max(0, leftBudget - 2), "…");
+	const left = visibleWidth(leftInner) === 0 ? "" : ` ${leftInner} `;
+
+	const fill = inner - visibleWidth(left) - visibleWidth(right);
+	return borderStyle(corners[0])
+		+ left
+		+ borderStyle(BORDER_HORIZONTAL.repeat(Math.max(0, fill)))
+		+ right
+		+ borderStyle(corners[1]);
+}
+
+/** Bottom border filled with hints in priority order; later hints drop first. */
+export function formatHintBorder(
+	width: number,
+	hints: readonly string[],
+	styleOverrides: RenderStyleOverrides = {},
+): string {
 	const styles = renderStyles(styleOverrides);
-	const rawOpenHint = singleLine(smartOpenHint) || "smart open";
-	const openHint = truncateToWidth(rawOpenHint, Math.max(12, Math.floor(maxWidth / 2)), "…");
-	const separator = styles.dim(" · ");
-	const actionParts = mode === "filter"
-		? [
-			styles.muted("type query"), separator,
-			styles.accent("↑/↓"), styles.dim(" move"), separator,
-			styles.accent("ctrl+u"), styles.dim(" clear"), separator,
-			styles.accent("enter"), styles.dim(" detail"), separator,
-			styles.accent("esc"), styles.dim(" list"), separator,
-		]
-		: mode === "detail"
-			? [
-				styles.accent("j/k ↑/↓"), styles.dim(" scroll"), separator,
-				styles.accent("u/d"), styles.dim(" page"), separator,
-				styles.accent("J/K"), styles.dim(" blocks"), separator,
-				styles.accent("y"), styles.dim(" copy"), separator,
-				styles.accent("o"), styles.dim(` ${openHint}`), separator,
-				styles.accent("esc"), styles.dim(" list"), separator,
-			]
-			: [
-				styles.accent("j/k ↑/↓"), styles.dim(" move"), separator,
-				styles.accent("u/d"), styles.dim(" page"), separator,
-				styles.accent("g/G"), styles.dim(" ends"), separator,
-				styles.accent("/"), styles.dim(" filter"), separator,
-				styles.accent("enter"), styles.dim(" detail"), separator,
-				styles.accent("y"), styles.dim(" copy"), separator,
-				styles.accent("o"), styles.dim(` ${openHint}`), separator,
-				styles.accent("esc"), styles.dim(" close"), separator,
-			];
-	const hint = [
-		...actionParts,
-		styles.muted("query "), styles.highlight("is:<type>"), styles.muted(" "), styles.highlight("tool:<name>"),
-	].join("");
-	return wrapStyledText(hint, maxWidth);
+	const maxWidth = safeWidth(width);
+	const inner = Math.max(0, maxWidth - 2);
+
+	let chosen = "";
+	for (const hint of hints) {
+		const candidate = chosen === "" ? hint : `${chosen} · ${hint}`;
+		if (visibleWidth(candidate) + 2 > inner) break;
+		chosen = candidate;
+	}
+	if (chosen === "" && hints.length > 0) {
+		chosen = truncateToWidth(hints[0]!, Math.max(0, inner - 2), "…");
+	}
+	return formatBorderLine(
+		maxWidth,
+		["└", "┘"],
+		chosen === "" ? "" : styles.muted(chosen),
+		"",
+		styles.border,
+	);
+}
+
+/** Wrap one interior content line in side borders with one cell of padding. */
+export function formatFrameLine(
+	width: number,
+	content: string,
+	borderStyle: (text: string) => string = identity,
+): string {
+	const maxWidth = safeWidth(width);
+	if (maxWidth === 0) return "";
+	const innerWidth = Math.max(0, maxWidth - 4);
+	const clamped = clampLine(content, innerWidth);
+	const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(clamped)));
+	return clampLine(`${borderStyle("│")} ${clamped}${padding} ${borderStyle("│")}`, maxWidth);
 }

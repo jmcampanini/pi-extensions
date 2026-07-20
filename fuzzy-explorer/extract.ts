@@ -4,6 +4,7 @@ import type {
 	SessionMessageEntry,
 	TruncationResult,
 } from "@earendil-works/pi-coding-agent";
+import { stripSeparators } from "./search.ts";
 import type {
 	Block,
 	BlockKind,
@@ -310,6 +311,23 @@ function makeCanonicalBashText(command: string, output: string, status: string |
 	return sections.join("\n\n");
 }
 
+/** Short curated identity that free tokens fuzzy-match: kind + tool name + title/subtitle. */
+function makeSearchKey(options: MakeBlockOptions): string {
+	const parts: string[] = [options.kind];
+	for (const candidate of [options.toolName, options.title, options.subtitle]) {
+		if (candidate === undefined) continue;
+		const compact = compactWhitespace(redactEmbeddedImageData(candidate));
+		if (compact === "") continue;
+		if (parts.some((part) => part.toLowerCase() === compact.toLowerCase())) continue;
+		parts.push(compact);
+	}
+	return parts.join(" ");
+}
+
+function makeAnyText(fields: string, canonicalText: string): string {
+	return canonicalText === "" ? fields : `${fields}\n${canonicalText}`;
+}
+
 function createBlock(entry: SessionEntry, options: MakeBlockOptions): Block {
 	const entryIds = [...new Set([entry.id, ...(options.entryIds ?? [])])];
 	const body = redactEmbeddedImageData(options.body);
@@ -328,6 +346,7 @@ function createBlock(entry: SessionEntry, options: MakeBlockOptions): Block {
 		.map((part) => compactWhitespace(redactEmbeddedImageData(part)))
 		.filter((part) => part.length > 0)
 		.join(" ");
+	const anyText = makeAnyText(fields, canonicalText);
 
 	return {
 		id: `${entry.id}:part:${options.idPart}`,
@@ -336,7 +355,11 @@ function createBlock(entry: SessionEntry, options: MakeBlockOptions): Block {
 		entryIds,
 		timestamp: entry.timestamp,
 		fields,
+		searchKey: makeSearchKey(options),
 		body,
+		strippedBody: stripSeparators(body),
+		anyText,
+		strippedAnyText: stripSeparators(anyText),
 		title: redactEmbeddedImageData(options.title),
 		subtitle: options.subtitle === undefined ? undefined : redactEmbeddedImageData(options.subtitle),
 		canonicalText,
@@ -650,10 +673,14 @@ export function extractBlocks(entries: readonly SessionEntry[], getLabel?: Label
 		const label = resolvedLabel(block.entryIds, labels, getLabel) ?? block.label;
 		if (!label) return block;
 		const safeLabel = redactEmbeddedImageData(label);
+		const fields = `${block.fields} label:${compactWhitespace(safeLabel)}`;
+		const anyText = makeAnyText(fields, block.canonicalText);
 		return {
 			...block,
 			label: safeLabel,
-			fields: `${block.fields} label:${compactWhitespace(safeLabel)}`,
+			fields,
+			anyText,
+			strippedAnyText: stripSeparators(anyText),
 		};
 	});
 }

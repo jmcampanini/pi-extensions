@@ -1,149 +1,123 @@
 import { fuzzyMatch } from "@earendil-works/pi-tui";
-import { parseQuery } from "./query.ts";
-import type {
-	Block,
-	BlockMatch,
-	HighlightSpan,
-	ListOrder,
-	ParsedQuery,
-	SearchResult,
-} from "./types.ts";
+import { isEmptyQuery, parseQuery } from "./query.ts";
+import type { Block, BlockMatch, ParsedQuery, QueryOperator, SearchResult } from "./types.ts";
 
-// Highlight helpers
+// Separator normalization
+//
+// The separator class mirrors the fuzzy matcher's word-boundary class. Every
+// match site tries the raw token first and retries with separators stripped at
+// a small penalty, so `sub-agent` finds `subagent` and vice versa.
 
-function substringSpans(text: string, token: string, zone: HighlightSpan["zone"]): HighlightSpan[] {
-	const spans: HighlightSpan[] = [];
-	if (!token) return spans;
+export const SEPARATOR_CLASS = /[-_./:]/;
+const STRIPPED_TOKEN_PENALTY = 5;
 
-	const haystack = text.toLowerCase();
-	const needle = token.toLowerCase();
-
-	for (let start = haystack.indexOf(needle); start !== -1; start = haystack.indexOf(needle, start + 1)) {
-		spans.push({ zone, start, end: start + token.length });
-	}
-
-	return spans;
+export function stripSeparators(text: string): string {
+	return text.replace(/[-_./:]/gu, "");
 }
 
-function swappedAlphaNumericToken(token: string): string | undefined {
-	const alphaNumeric = /^(?<letters>[a-z]+)(?<digits>[0-9]+)$/i.exec(token);
-	if (alphaNumeric?.groups) return `${alphaNumeric.groups.digits}${alphaNumeric.groups.letters}`;
-
-	const numericAlpha = /^(?<digits>[0-9]+)(?<letters>[a-z]+)$/i.exec(token);
-	if (numericAlpha?.groups) return `${numericAlpha.groups.letters}${numericAlpha.groups.digits}`;
-
-	return undefined;
+interface TokenHit {
+	score: number;
+	/** The token form that actually matched; renderers re-derive highlights from it. */
+	matchedToken: string;
 }
 
-function greedySubsequenceSpans(token: string, text: string): HighlightSpan[] {
-	const query = token.toLowerCase();
-	const haystack = text.toLowerCase();
-	const positions: number[] = [];
-	let from = 0;
+function keyTokenHit(token: string, searchKey: string): TokenHit | undefined {
+	const raw = fuzzyMatch(token, searchKey);
+	if (raw.matches) return { score: raw.score, matchedToken: token };
 
-	for (const character of query) {
-		const position = haystack.indexOf(character, from);
-		if (position === -1) return [];
-		positions.push(position);
-		from = position + 1;
-	}
-
-	const spans: HighlightSpan[] = [];
-	for (const position of positions) {
-		const previous = spans.at(-1);
-		if (previous && previous.end === position) previous.end++;
-		else spans.push({ zone: "fields", start: position, end: position + 1 });
-	}
-	return spans;
+	// Fuzzy subsequences already skip separators in the key, so the fallback
+	// only needs to strip the token itself.
+	const stripped = stripSeparators(token);
+	if (stripped === token || stripped === "") return undefined;
+	const fallback = fuzzyMatch(stripped, searchKey);
+	return fallback.matches
+		? { score: fallback.score + STRIPPED_TOKEN_PENALTY, matchedToken: stripped }
+		: undefined;
 }
 
-function fuzzyFieldSpans(token: string, fields: string): HighlightSpan[] {
-	const substrings = substringSpans(fields, token, "fields");
-	if (substrings.length > 0) return substrings;
+function substringTokenHit(
+	token: string,
+	haystackLower: string,
+	strippedHaystackLower: string,
+): TokenHit | undefined {
+	if (haystackLower.includes(token.toLowerCase())) return { score: 0, matchedToken: token };
 
-	const direct = greedySubsequenceSpans(token, fields);
-	if (direct.length > 0) return direct;
-
-	const swapped = swappedAlphaNumericToken(token);
-	return swapped ? greedySubsequenceSpans(swapped, fields) : [];
-}
-
-function mergeSpans(spans: HighlightSpan[]): HighlightSpan[] {
-	const zoneOrder = { fields: 0, body: 1 } as const;
-	const sorted = [...spans].sort((left, right) =>
-		zoneOrder[left.zone] - zoneOrder[right.zone] || left.start - right.start || left.end - right.end,
-	);
-	const merged: HighlightSpan[] = [];
-
-	for (const span of sorted) {
-		const previous = merged.at(-1);
-		if (previous && previous.zone === span.zone && span.start <= previous.end) {
-			previous.end = Math.max(previous.end, span.end);
-		} else {
-			merged.push({ ...span });
-		}
-	}
-
-	return merged;
+	const stripped = stripSeparators(token);
+	if (stripped === "") return undefined;
+	return strippedHaystackLower.includes(stripped.toLowerCase())
+		? { score: STRIPPED_TOKEN_PENALTY, matchedToken: stripped }
+		: undefined;
 }
 
 // Block matching
 
-function operatorsMatch(query: ParsedQuery, block: Block): boolean {
-	return query.operators.every((operator) => {
-		const value = operator.value.toLowerCase();
-		if (operator.key === "is") return block.kind.toLowerCase() === value;
-		return block.toolName?.toLowerCase() === value;
-	});
+function operatorScore(operator: QueryOperator, block: Block): number | undefined {
+	if (operator.key === "is") {
+		const kind = fuzzyMatch(operator.value, block.kind);
+		return kind.matches ? kind.score : undefined;
+	}
+	if (operator.key === "tool") {
+		if (block.toolName === undefined) return undefined;
+		const tool = fuzzyMatch(operator.value, block.toolName);
+		return tool.matches ? tool.score : undefined;
+	}
+	// `any:` hunts concrete needles across the full haystack: substring, never fuzzy.
+	return substringTokenHit(
+		operator.value,
+		block.anyText.toLowerCase(),
+		block.strippedAnyText.toLowerCase(),
+	)?.score;
 }
 
 export function matchBlock(query: ParsedQuery, block: Block): BlockMatch {
-	if (!operatorsMatch(query, block)) return { matches: false, score: 0, highlightSpans: [] };
-
+	const noMatch: BlockMatch = { matches: false, score: 0, keyTokens: [], bodyTokens: [] };
 	let score = 0;
-	const highlightSpans: HighlightSpan[] = [];
-	const bodyHighlightTokens: string[] = [];
-	const bodyLower = block.body.toLowerCase();
 
-	for (const token of query.tokens) {
-		const fieldMatch = fuzzyMatch(token, block.fields);
-		const bodyMatches = bodyLower.includes(token.toLowerCase());
-		if (!fieldMatch.matches && !bodyMatches) {
-			return { matches: false, score: 0, highlightSpans: [] };
-		}
-
-		if (fieldMatch.matches) {
-			score += fieldMatch.score;
-			highlightSpans.push(...fuzzyFieldSpans(token, block.fields));
-		}
-		if (bodyMatches) bodyHighlightTokens.push(token);
+	for (const operator of query.operators) {
+		const contribution = operatorScore(operator, block);
+		if (contribution === undefined) return noMatch;
+		score += contribution;
 	}
 
-	return {
-		matches: true,
-		score,
-		highlightSpans: mergeSpans(highlightSpans),
-		bodyHighlightTokens,
-	};
+	const keyTokens: string[] = [];
+	const bodyTokens: string[] = [];
+	const bodyLower = block.body.toLowerCase();
+	const strippedBodyLower = block.strippedBody.toLowerCase();
+
+	for (const token of query.tokens) {
+		const keyHit = keyTokenHit(token, block.searchKey);
+		const bodyHit = substringTokenHit(token, bodyLower, strippedBodyLower);
+		if (!keyHit && !bodyHit) return noMatch;
+
+		// The better (lower) contribution wins: crisp key hits outrank the body
+		// tier, but incidental subsequence noise in a long key must not bury an
+		// exact body hit (body matches contribute 0, stripped fallbacks +5).
+		const keyWins = keyHit !== undefined && (bodyHit === undefined || keyHit.score <= bodyHit.score);
+		if (keyWins) {
+			score += keyHit.score;
+			keyTokens.push(keyHit.matchedToken);
+		} else {
+			score += bodyHit!.score;
+		}
+		if (bodyHit) bodyTokens.push(bodyHit.matchedToken);
+	}
+
+	return { matches: true, score, keyTokens, bodyTokens };
 }
 
-// Result ordering
+// Result ordering: relevance while a query is active, chronological otherwise.
 
-export function searchBlocks(
-	blocks: readonly Block[],
-	query: string | ParsedQuery,
-	listOrder: ListOrder = "chronological",
-): SearchResult[] {
+export function searchBlocks(blocks: readonly Block[], query: string | ParsedQuery): SearchResult[] {
 	const parsed = typeof query === "string" ? parseQuery(query) : query;
 	const matches = blocks.flatMap((block, chronologicalIndex) => {
 		const match = matchBlock(parsed, block);
 		return match.matches ? [{ block, match, chronologicalIndex }] : [];
 	});
 
-	if (listOrder === "reverse-chronological") matches.reverse();
-	if (listOrder === "relevance") {
+	if (!isEmptyQuery(parsed)) {
 		matches.sort((left, right) =>
-			left.match.score - right.match.score || left.chronologicalIndex - right.chronologicalIndex,
+			left.match.score - right.match.score
+			|| right.chronologicalIndex - left.chronologicalIndex,
 		);
 	}
 

@@ -19,8 +19,17 @@ export interface Block {
 	entryId: string;
 	entryIds: string[];
 	timestamp: string;
+	/** Structured metadata blob (ids, timestamps, args); searched only through `any:`. */
 	fields: string;
+	/** Short curated identity (kind + tool name + title/subtitle) that free tokens fuzzy-match. */
+	searchKey: string;
 	body: string;
+	/** Separator-stripped body copy backing the substring-match fallback. */
+	strippedBody: string;
+	/** Complete `any:` haystack: fields blob plus canonical text. */
+	anyText: string;
+	/** Separator-stripped `any:` haystack copy. */
+	strippedAnyText: string;
 	title: string;
 	subtitle?: string;
 	canonicalText: string;
@@ -34,7 +43,7 @@ export interface Block {
 }
 
 export interface QueryOperator {
-	key: "is" | "tool";
+	key: "is" | "tool" | "any";
 	value: string;
 }
 
@@ -43,20 +52,14 @@ export interface ParsedQuery {
 	operators: QueryOperator[];
 }
 
-export interface HighlightSpan {
-	zone: "fields" | "body";
-	start: number;
-	end: number;
-}
-
 export interface BlockMatch {
 	matches: boolean;
 	score: number;
-	highlightSpans: HighlightSpan[];
-	bodyHighlightTokens?: string[];
+	/** Token forms (raw or separator-stripped) that matched the search key. */
+	keyTokens: string[];
+	/** Token forms (raw or separator-stripped) that matched the body. */
+	bodyTokens: string[];
 }
-
-export type ListOrder = "chronological" | "reverse-chronological" | "relevance";
 
 export interface SearchResult {
 	block: Block;

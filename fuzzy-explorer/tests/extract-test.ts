@@ -8,6 +8,7 @@ import {
 	formatTimestamp,
 	formatToolArguments,
 } from "../extract.ts";
+import { stripSeparators } from "../search.ts";
 
 let pass = 0;
 let fail = 0;
@@ -275,6 +276,26 @@ ok("tool fields include role, type, name, id, args, paths, line, time, entries, 
 	"label:result checkpoint",
 ].every((field) => readBlock?.fields.includes(field)));
 eq("file reference strips @ and uses read offset", readBlock?.fileReference, { path: "src/config.ts", line: 42 });
+
+// The curated search key is kind + tool name + title/subtitle with duplicates folded.
+eq("tool search key is kind, tool, and argument subtitle", readBlock?.searchKey,
+	"tool read path=@src/config.ts offset=42 options.image=[image]");
+eq("prose search keys fold duplicate titles", [
+	byEntry("user0001")[0]?.searchKey,
+	byEntry("asst0001")[0]?.searchKey,
+], ["user", "assistant"]);
+eq("bash search key carries the command subtitle", bashBlock?.searchKey, "bash printf 'hello'");
+eq("custom search key carries the custom type", byEntry("cust0001")[0]?.searchKey, "custom visible-role");
+
+// Search-text copies are precomputed and stay consistent with their sources.
+ok("any haystack is the fields blob plus canonical text",
+	readBlock?.anyText === `${readBlock?.fields}\n${readBlock?.canonicalText}`);
+ok("label decoration keeps the any haystack in sync",
+	readBlock?.anyText.includes("label:result checkpoint") === true);
+ok("stripped body mirrors the body without separators", readBlock?.strippedBody === stripSeparators(readBlock?.body ?? ""));
+ok("stripped any haystack mirrors the any haystack", readBlock?.strippedAnyText === stripSeparators(readBlock?.anyText ?? ""));
+ok("blocks without bodies still index their invocation through any",
+	writeBlock?.anyText.includes("complete argument content") === true);
 eq("path suffix supplies a line", writeBlock?.fileReference, { path: "src/other.ts", line: 9 });
 eq("label getter decorates target block", [byEntry("user0001")[0]?.label, byEntry("user0001")[0]?.fields.includes("label:getter bookmark")], ["getter bookmark", true]);
 eq("label on folded result decorates tool block", readBlock?.label, "result checkpoint");
