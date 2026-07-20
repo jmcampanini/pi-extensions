@@ -165,6 +165,19 @@ inFlight.state.usage = { tokens: 142_000, contextWindow: 200_000, percent: 71 };
 inFlight.settle();
 eq("a later completed run with fresh high usage can compact", inFlight.compactions.length, 2);
 
+for (const mode of ["tui", "rpc"] as const) {
+	const interactiveMode = harness({ mode });
+	let laterSettlementHandlerRan = false;
+	interactiveMode.pi.on("agent_settled", () => {
+		laterSettlementHandlerRan = true;
+	});
+	const settlement = interactiveMode.settleAsync();
+	eq(`${mode} mode holds later settlement handlers during compaction`, laterSettlementHandlerRan, false);
+	interactiveMode.compactions[0]?.onComplete?.({} as never);
+	await settlement;
+	eq(`${mode} mode releases later settlement handlers after compaction`, laterSettlementHandlerRan, true);
+}
+
 const printMode = harness({ mode: "print" });
 let printModeCanTearDown = false;
 const printModeSettlement = printMode.settleAsync().then(() => {

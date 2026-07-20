@@ -33,16 +33,13 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 
 		if (!ctx.isIdle() || ctx.hasPendingMessages()) return;
 
-		let resolveCompaction: (() => void) | undefined;
-		const waitForCompaction =
-			ctx.mode === "print" || ctx.mode === "json"
-				? new Promise<void>((resolve) => {
-						resolveCompaction = resolve;
-					})
-				: undefined;
+		let resolveCompaction: () => void;
+		const waitForCompaction = new Promise<void>((resolve) => {
+			resolveCompaction = resolve;
+		});
 		const finishCompaction = () => {
 			inFlight = false;
-			resolveCompaction?.();
+			resolveCompaction();
 		};
 
 		inFlight = true;
