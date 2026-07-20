@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access, mkdir, unlink, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { copyToClipboard } from "@earendil-works/pi-coding-agent";
 import type { Block } from "./types.ts";
@@ -142,10 +142,10 @@ export async function resolveSmartOpenTarget(
 ): Promise<SmartOpenTarget> {
 	const description = await describeSmartOpen(block, fileSystem);
 	if (description.kind === "file-reference") {
-		return { ...description, temporary: false };
+		return { ...description, path: resolve(repositoryRoot, description.path), temporary: false };
 	}
 	if (description.kind === "full-output") {
-		return { ...description, temporary: false };
+		return { ...description, path: resolve(repositoryRoot, description.path), temporary: false };
 	}
 
 	const path = await fileSystem.createCanonicalTextFile(repositoryRoot, blockCanonicalText(block));
@@ -241,9 +241,16 @@ const PLUS_LINE_EDITORS = new Set([
 	"vimdiff",
 ]);
 
+const END_OF_OPTIONS_EDITORS = new Set([
+	"ex", "gvim", "mvim", "nvim", "nvimdiff", "vi", "view", "vim", "vimdiff",
+]);
+
+function editorExecutableName(command: string): string {
+	return basename(command).toLowerCase().replace(/\.(?:bat|cmd|exe)$/i, "");
+}
+
 export function editorSupportsPlusLine(command: string): boolean {
-	const executable = basename(command).toLowerCase().replace(/\.(?:bat|cmd|exe)$/i, "");
-	return PLUS_LINE_EDITORS.has(executable);
+	return PLUS_LINE_EDITORS.has(editorExecutableName(command));
 }
 
 export function buildEditorInvocation(editorCommand: string, target: SmartOpenTarget): EditorInvocation {
@@ -256,6 +263,7 @@ export function buildEditorInvocation(editorCommand: string, target: SmartOpenTa
 	) {
 		args.push(`+${target.line}`);
 	}
+	if (END_OF_OPTIONS_EDITORS.has(editorExecutableName(command!))) args.push("--");
 	args.push(target.path);
 	return { command: command!, args };
 }
@@ -318,7 +326,7 @@ export const nodeSmartOpenFileSystem: SmartOpenFileSystem = {
 export const nodeEditorProcessRunner: EditorProcessRunner = {
 	run(command, args): Promise<number | null> {
 		return new Promise((resolve, reject) => {
-			const child = spawn(command, args, { stdio: "inherit", shell: process.platform === "win32" });
+			const child = spawn(command, args, { stdio: "inherit", shell: false });
 			child.once("error", reject);
 			child.once("close", resolve);
 		});

@@ -110,6 +110,13 @@ eq(
 	{ kind: "file-reference", path: "/repo/path with spaces/file.ts", line: 17, temporary: false },
 );
 eq("precedence does not create a canonical temp", precedenceFs.created.length, 0);
+const optionLikeTarget = await resolveSmartOpenTarget(
+	block({ fileReference: { path: "+!touch injected" } }),
+	"/repo",
+	precedenceFs,
+);
+eq("option-like relative references resolve beneath the repository root", optionLikeTarget,
+	{ kind: "file-reference", path: "/repo/+!touch injected", temporary: false });
 eq("selection hint names referenced file and line",
 	formatSmartOpenHint(describeSmartOpenSync(precedenceBlock, (path) => precedenceFs.existing.has(path))),
 	"open /repo/path with spaces/file.ts:17");
@@ -164,8 +171,11 @@ const fileTarget: SmartOpenTarget = {
 	line: 42,
 	temporary: false,
 };
-eq("known editor receives +line before one safe path argument", buildEditorInvocation("vim -f", fileTarget),
-	{ command: "vim", args: ["-f", "+42", "/repo/path with spaces/file.ts"] });
+eq("known editor receives +line and an option terminator before the safe path", buildEditorInvocation("vim -f", fileTarget),
+	{ command: "vim", args: ["-f", "+42", "--", "/repo/path with spaces/file.ts"] });
+eq("Vim cannot interpret an option-like target as an Ex command", buildEditorInvocation("vim", {
+	kind: "file-reference", path: "+!touch injected", temporary: false,
+}), { command: "vim", args: ["--", "+!touch injected"] });
 eq("unknown editor does not receive unsupported +line", buildEditorInvocation("code --wait", fileTarget),
 	{ command: "code", args: ["--wait", "/repo/path with spaces/file.ts"] });
 const nonReferenceWithLine = {
@@ -175,7 +185,7 @@ const nonReferenceWithLine = {
 	temporary: false,
 } as unknown as SmartOpenTarget;
 eq("line argument is limited to file-reference targets", buildEditorInvocation("nvim", nonReferenceWithLine),
-	{ command: "nvim", args: ["/saved/full output.log"] });
+	{ command: "nvim", args: ["--", "/saved/full output.log"] });
 
 eq("configured editor wins resolution", resolveExternalEditor({ externalEditor: "code --wait" }, { VISUAL: "nvim", EDITOR: "vim" }, "linux"),
 	"code --wait");
