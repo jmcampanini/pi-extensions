@@ -55,8 +55,7 @@ export function supportsRequiredTmuxVersion(version: string): boolean {
 export function isTmuxAvailable(): boolean {
 	if (!process.env.TMUX) return false;
 	try {
-		const version = execFileSync("tmux", ["display-message", "-p", "#{version}"], { encoding: "utf8" });
-		return supportsRequiredTmuxVersion(version);
+		return supportsRequiredTmuxVersion(tmux(["display-message", "-p", "#{version}"]));
 	} catch {
 		return false;
 	}
@@ -84,15 +83,23 @@ export function shellQuote(value: string): string {
 //   window  Put every subagent in a dedicated sibling window named
 //           "<parent window>-subagents", kept tiled.
 
-/**
- * Every pane-creating tmux command is run with `-P -F "#{pane_id}"` so it
- * prints the new pane's id. Validate that we really got one ("%12"-style)
- * before trusting it as a target for later commands.
- */
-function paneIdFrom(raw: string, tmuxCommand: string): string {
-	const paneId = raw.trim();
+/** Create a pane with direct `bash <scriptPath>` argv and return its tmux id. */
+function createTmuxPane(
+	command: "new-window" | "split-window",
+	args: string[],
+	launchScriptPath: string,
+): string {
+	const paneId = tmux([
+		command,
+		...args,
+		"-e",
+		"PI_SUBAGENT_LAUNCH=1",
+		"--",
+		"bash",
+		launchScriptPath,
+	]).trim();
 	if (!paneId.startsWith("%")) {
-		throw new Error(`tmux ${tmuxCommand} returned an unexpected pane id: "${paneId}"`);
+		throw new Error(`tmux ${command} returned an unexpected pane id: "${paneId}"`);
 	}
 	return paneId;
 }
@@ -179,11 +186,11 @@ function createAgentsWindow(title: string, launchScriptPath: string): string {
 	}
 
 	// -d = don't switch to it; -a -t <window> = insert right after the parent.
-	const args = ["new-window", "-d", "-P", "-F", "#{pane_id}"];
+	const args = ["-d", "-P", "-F", "#{pane_id}"];
 	if (parentWindow) args.push("-a", "-t", parentWindow);
-	args.push("-n", `${base}-subagents`, ...paneLaunchArgs(launchScriptPath));
+	args.push("-n", `${base}-subagents`);
 
-	const paneId = paneIdFrom(tmux(args), "new-window");
+	const paneId = createTmuxPane("new-window", args, launchScriptPath);
 
 	try {
 		const windowId = tmux(["display-message", "-p", "-t", paneId, "#{window_id}"]).trim();
@@ -209,13 +216,6 @@ function tileAgentsWindow(windowId: string): void {
 
 // ── panes ────────────────────────────────────────────────────────────────
 
-const PANE_LAUNCH_MARKER = "PI_SUBAGENT_LAUNCH=1";
-
-/** Keep the pane command argv-shaped so tmux execs bash directly. */
-function paneLaunchArgs(launchScriptPath: string): string[] {
-	return ["-e", PANE_LAUNCH_MARKER, "--", "bash", launchScriptPath];
-}
-
 /**
  * Create a new pane for a subagent and return its tmux pane id (e.g. "%12").
  * Never steals the user's focus (`-d`).
@@ -229,18 +229,10 @@ export function createPane(title: string, launchScriptPath: string): string {
 			return createAgentsWindow(title, launchScriptPath);
 		}
 		// Subsequent: add a pane to that window and re-tile.
-		const paneId = paneIdFrom(
-			tmux([
-				"split-window",
-				"-d",
-				"-t",
-				existing,
-				"-P",
-				"-F",
-				"#{pane_id}",
-				...paneLaunchArgs(launchScriptPath),
-			]),
+		const paneId = createTmuxPane(
 			"split-window",
+			["-d", "-t", existing, "-P", "-F", "#{pane_id}"],
+			launchScriptPath,
 		);
 		tileAgentsWindow(existing);
 		titlePane(paneId, title);
@@ -248,13 +240,13 @@ export function createPane(title: string, launchScriptPath: string): string {
 	}
 
 	// "off" and "main" split a new pane off the parent pi's pane, in place.
-	const args = ["split-window", "-d", "-h"];
+	const args = ["-d", "-h"];
 	if (process.env.TMUX_PANE) {
 		args.push("-t", process.env.TMUX_PANE);
 	}
-	args.push("-P", "-F", "#{pane_id}", ...paneLaunchArgs(launchScriptPath));
+	args.push("-P", "-F", "#{pane_id}");
 
-	const paneId = paneIdFrom(tmux(args), "split-window");
+	const paneId = createTmuxPane("split-window", args, launchScriptPath);
 
 	// "main" re-flows into main-vertical; "off" leaves the raw split alone.
 	if (config.layout === "main") applyMainVertical(paneId);
