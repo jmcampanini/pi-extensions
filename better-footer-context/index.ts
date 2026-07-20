@@ -1,6 +1,31 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { config, type AutoCompactConfig } from "../auto-compact/config.ts";
+
+type ContextColorBand = "error" | "warning";
+type FooterAutoCompactConfig = Pick<AutoCompactConfig, "enabled" | "thresholdPercent">;
+
+export function compactTargetSuffix(autoCompactConfig: FooterAutoCompactConfig): string {
+	return autoCompactConfig.enabled ? ` · compact @${autoCompactConfig.thresholdPercent}%` : "";
+}
+
+export function selectContextColorBand(
+	percent: number | null | undefined,
+	autoCompactConfig: FooterAutoCompactConfig,
+): ContextColorBand | undefined {
+	if (percent == null) return undefined;
+
+	if (!autoCompactConfig.enabled) {
+		if (percent > 90) return "error";
+		if (percent > 70) return "warning";
+		return undefined;
+	}
+
+	if (percent >= autoCompactConfig.thresholdPercent) return "error";
+	if (percent >= autoCompactConfig.thresholdPercent - 10) return "warning";
+	return undefined;
+}
 
 function sanitizeStatusText(text: string): string {
 	return text
@@ -56,8 +81,8 @@ export default function (pi: ExtensionAPI) {
 					const contextUsage = ctx.getContextUsage();
 					const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
 					const contextTokens = contextUsage?.tokens;
-					const contextPercentValue = contextUsage?.percent ?? 0;
-					const contextPercent = contextUsage?.percent == null ? "?" : `${Math.round(contextUsage.percent)}%`;
+					const contextPercentValue = contextUsage?.percent;
+					const contextPercent = contextPercentValue == null ? "?" : `${Math.round(contextPercentValue)}%`;
 					const contextTokensDisplay =
 						contextTokens === null ? "?" : formatTokens(contextTokens ?? 0);
 
@@ -95,13 +120,11 @@ export default function (pi: ExtensionAPI) {
 						statsParts.push(cost);
 					}
 
-					const contextDisplay = `${contextPercent} ${contextTokensDisplay}/${formatTokens(contextWindow)}`;
-					let contextDisplayStyled = contextDisplay;
-					if (contextPercentValue > 90) {
-						contextDisplayStyled = theme.fg("error", contextDisplay);
-					} else if (contextPercentValue > 70) {
-						contextDisplayStyled = theme.fg("warning", contextDisplay);
-					}
+					const contextDisplay = `${contextPercent} ${contextTokensDisplay}/${formatTokens(contextWindow)}${compactTargetSuffix(config)}`;
+					const contextColorBand = selectContextColorBand(contextPercentValue, config);
+					const contextDisplayStyled = contextColorBand
+						? theme.fg(contextColorBand, contextDisplay)
+						: contextDisplay;
 					let statsLeft =
 						statsParts.length > 0
 							? `${statsParts.join(" ")}${metricSeparator}${contextDisplayStyled}`

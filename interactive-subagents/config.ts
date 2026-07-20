@@ -27,8 +27,6 @@ export interface SubagentsConfig {
 	layout: "main" | "window" | "off";
 	/** Parent pane width in the "main" layout: "60%" or absolute columns like "120". */
 	mainWidth: string;
-	/** Pause between opening a pane and typing the launch command. */
-	shellReadyDelayMs: number;
 	/** How many sub-agents may run at once; further launches queue (1–9). */
 	maxConcurrentSubagents: number;
 	/** Wrapped task or follow-up lines shown while a call is collapsed. */
@@ -63,7 +61,6 @@ export const DEFAULT_WORKTREE_CLEANUP_COMMAND = `git worktree remove "$PI_SUBAGE
 const DEFAULTS: SubagentsConfig = {
 	layout: "window",
 	mainWidth: "60%",
-	shellReadyDelayMs: 500,
 	maxConcurrentSubagents: 9,
 	callPreviewLines: 3,
 	resultPreviewLines: 5,
@@ -98,11 +95,6 @@ function requireMainWidth(value: unknown, source: string): string {
 	throw new Error(
 		`${source}: invalid mainWidth ${JSON.stringify(value)} — use a percentage like "60%" or columns like "120"`,
 	);
-}
-
-function requireDelayMs(value: unknown, source: string): number {
-	if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
-	throw new Error(`${source}: invalid shellReadyDelayMs ${JSON.stringify(value)} — use a non-negative integer`);
 }
 
 // 9 is the most panes the dedicated tmux window tiles legibly; raising the
@@ -171,9 +163,6 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 
 		if (file.layout !== undefined) result.layout = requireLayout(file.layout, `${filePath}: layout`);
 		if (file.mainWidth !== undefined) result.mainWidth = requireMainWidth(file.mainWidth, `${filePath}: mainWidth`);
-		if (file.shellReadyDelayMs !== undefined) {
-			result.shellReadyDelayMs = requireDelayMs(file.shellReadyDelayMs, `${filePath}: shellReadyDelayMs`);
-		}
 		if (file.maxConcurrentSubagents !== undefined) {
 			result.maxConcurrentSubagents = requireMaxConcurrent(
 				file.maxConcurrentSubagents,
@@ -217,15 +206,6 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 	}
 	if (env.PI_SUBAGENT_MAIN_WIDTH) {
 		result.mainWidth = requireMainWidth(env.PI_SUBAGENT_MAIN_WIDTH, "PI_SUBAGENT_MAIN_WIDTH");
-	}
-	if (env.PI_SUBAGENT_SHELL_READY_DELAY_MS) {
-		// Env values arrive as strings; convert before validating. A
-		// non-numeric string becomes NaN, so we hand the validator the
-		// original text and let it reject with a readable message.
-		result.shellReadyDelayMs = requireDelayMs(
-			coerceNumericEnvValue(env.PI_SUBAGENT_SHELL_READY_DELAY_MS),
-			"PI_SUBAGENT_SHELL_READY_DELAY_MS",
-		);
 	}
 	if (env.PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS) {
 		result.maxConcurrentSubagents = requireMaxConcurrent(

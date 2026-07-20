@@ -253,12 +253,12 @@ export function clearQueueForShutdown(): void {
 }
 
 // ── the mid-launch boundary guards ───────────────────────────────────────
-// A drain launch runs OUTSIDE any tool call, so a /reload or /new can land
-// between its awaits. The pipeline calls assertLaunchStillWanted() in the
-// same synchronous block that registers the child: after it passes, nothing
-// can interleave before trackChild, so the child is either registered while
-// this generation still owns the session (and is adopted normally on
-// reload), or the launch is unwound.
+// A drain launch runs OUTSIDE any tool call, so the pane-creation boundary
+// verifies that its generation still owns the session. Resume currently has
+// no awaits and spawn awaits only worktree creation, but keeping the assertion
+// at each boundary catches a future refactor that adds an interleave point.
+// After it passes, pane creation and trackChild are synchronous, so the child
+// is registered in the same generation or the launch is unwound.
 
 /** Reload in progress: side effects are rolled back and the entry returns to
  * the FRONT of the queue — the replacement generation relaunches it. */

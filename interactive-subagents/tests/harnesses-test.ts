@@ -122,7 +122,7 @@ eq(
 		`"$(cat '/task.md')"` +
 		SENTINEL_ECHO_SUFFIX,
 );
-ok("typed command does NOT match the poller regex (quote-split)", !SENTINEL_REGEX.test(full));
+ok("launch command does NOT match the poller regex (quote-split)", !SENTINEL_REGEX.test(full));
 ok("launch ends with the sentinel suffix", full.endsWith(SENTINEL_ECHO_SUFFIX));
 
 const minimalLaunch = claudeCodeProfile.buildLaunchCommand({

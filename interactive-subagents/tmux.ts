@@ -1,22 +1,21 @@
 /**
  * tmux.ts — the terminal layer.
  *
- * Everything the orchestrator needs from tmux: create a pane, type a command
- * into it, read its screen, close it, and poll for the child's exit.
+ * Everything the orchestrator needs from tmux: stage a launch script, create
+ * a pane that runs it, read its screen, close it, and poll for the child's exit.
  *
  * Design notes:
- * - Long commands are NEVER typed directly into a pane. Typing text that is
- *   wider than the pane wraps and corrupts the command, and the user's login
- *   shell (fish/zsh/bash) has different quoting rules. Instead we write a
- *   `#!/bin/bash` script to disk and type only `bash '<path>'`.
+ * - Launch commands are staged as bash scripts under the session artifacts,
+ *   then passed to tmux as the two arguments `bash <path>`. They are never
+ *   typed into a shell or handed to tmux as a single shell-parsed string.
  * - Panes are created with `-d` so tmux never steals the user's focus, and
  *   they are anchored to the parent pi's own pane (`$TMUX_PANE`) so splits
  *   appear next to the agent rather than wherever the user happens to be.
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { delimiter, dirname, resolve } from "node:path";
 import { config } from "./config.ts";
 import { SENTINEL_REGEX } from "./protocol.ts";
 
@@ -27,16 +26,36 @@ function tmux(args: string[]): string {
 	return execFileSync("tmux", args, { encoding: "utf8" });
 }
 
+/** Resolve the same tmux executable the parent reaches through PATH. */
+function tmuxBinaryPath(): string {
+	for (const entry of (process.env.PATH ?? "").split(delimiter)) {
+		const candidate = resolve(entry || ".", "tmux");
+		try {
+			if (!statSync(candidate).isFile()) continue;
+			accessSync(candidate, constants.X_OK);
+			return candidate;
+		} catch {}
+	}
+	throw new Error("tmux is not on PATH");
+}
+
 /**
  * We can only create panes if the parent pi is itself running inside tmux
- * ($TMUX is set) AND the tmux binary is on PATH. Having tmux installed but
- * running pi outside of it is not enough — there is no session to split.
+ * ($TMUX is set), tmux is on PATH, and it supports pane environments/options
+ * (3.0a+). Having tmux installed outside a session is not enough.
  */
+export function supportsRequiredTmuxVersion(version: string): boolean {
+	const match = /^(\d+)\.(\d+)([a-z])?/.exec(version.trim());
+	if (!match) return false;
+	const major = Number.parseInt(match[1], 10);
+	const minor = Number.parseInt(match[2], 10);
+	return major > 3 || (major === 3 && (minor > 0 || (minor === 0 && match[3] !== undefined)));
+}
+
 export function isTmuxAvailable(): boolean {
 	if (!process.env.TMUX) return false;
 	try {
-		execFileSync("tmux", ["-V"], { stdio: "ignore" });
-		return true;
+		return supportsRequiredTmuxVersion(tmux(["display-message", "-p", "#{version}"]));
 	} catch {
 		return false;
 	}
@@ -64,15 +83,23 @@ export function shellQuote(value: string): string {
 //   window  Put every subagent in a dedicated sibling window named
 //           "<parent window>-subagents", kept tiled.
 
-/**
- * Every pane-creating tmux command is run with `-P -F "#{pane_id}"` so it
- * prints the new pane's id. Validate that we really got one ("%12"-style)
- * before trusting it as a target for later commands.
- */
-function paneIdFrom(raw: string, tmuxCommand: string): string {
-	const paneId = raw.trim();
+/** Create a pane with direct `bash <scriptPath>` argv and return its tmux id. */
+function createTmuxPane(
+	command: "new-window" | "split-window",
+	args: string[],
+	launchScriptPath: string,
+): string {
+	const paneId = tmux([
+		command,
+		...args,
+		"-e",
+		"PI_SUBAGENT_LAUNCH=1",
+		"--",
+		"bash",
+		launchScriptPath,
+	]).trim();
 	if (!paneId.startsWith("%")) {
-		throw new Error(`tmux ${tmuxCommand} returned an unexpected pane id: "${paneId}"`);
+		throw new Error(`tmux ${command} returned an unexpected pane id: "${paneId}"`);
 	}
 	return paneId;
 }
@@ -143,7 +170,7 @@ function agentsWindow(): string | null {
  * its initial pane (which the first subagent uses). Auto-rename is disabled so
  * the running subagents can't rename the window away from "-subagents".
  */
-function createAgentsWindow(title: string): string {
+function createAgentsWindow(title: string, launchScriptPath: string): string {
 	const parentPane = process.env.TMUX_PANE;
 
 	// Base the name on the parent pi's window; fall back to "pi".
@@ -159,19 +186,19 @@ function createAgentsWindow(title: string): string {
 	}
 
 	// -d = don't switch to it; -a -t <window> = insert right after the parent.
-	const args = ["new-window", "-d", "-P", "-F", "#{pane_id}"];
+	const args = ["-d", "-P", "-F", "#{pane_id}"];
 	if (parentWindow) args.push("-a", "-t", parentWindow);
 	args.push("-n", `${base}-subagents`);
 
-	const paneId = paneIdFrom(tmux(args), "new-window");
+	const paneId = createTmuxPane("new-window", args, launchScriptPath);
 
-	const windowId = tmux(["display-message", "-p", "-t", paneId, "#{window_id}"]).trim();
-	rememberAgentsWindow(windowId);
 	try {
+		const windowId = tmux(["display-message", "-p", "-t", paneId, "#{window_id}"]).trim();
+		rememberAgentsWindow(windowId);
 		tmux(["set-window-option", "-t", windowId, "automatic-rename", "off"]);
 		tmux(["set-window-option", "-t", windowId, "allow-rename", "off"]);
 	} catch {
-		// cosmetic
+		// Window bookkeeping is cosmetic; the child pane already exists.
 	}
 
 	titlePane(paneId, title);
@@ -193,29 +220,33 @@ function tileAgentsWindow(windowId: string): void {
  * Create a new pane for a subagent and return its tmux pane id (e.g. "%12").
  * Never steals the user's focus (`-d`).
  */
-export function createPane(title: string): string {
+export function createPane(title: string, launchScriptPath: string): string {
 	// "window": all subagents live in one dedicated, tiled sibling window.
 	if (config.layout === "window") {
 		const existing = agentsWindow();
 		if (!existing) {
 			// First subagent: create the window and use its initial pane.
-			return createAgentsWindow(title);
+			return createAgentsWindow(title, launchScriptPath);
 		}
 		// Subsequent: add a pane to that window and re-tile.
-		const paneId = paneIdFrom(tmux(["split-window", "-d", "-t", existing, "-P", "-F", "#{pane_id}"]), "split-window");
+		const paneId = createTmuxPane(
+			"split-window",
+			["-d", "-t", existing, "-P", "-F", "#{pane_id}"],
+			launchScriptPath,
+		);
 		tileAgentsWindow(existing);
 		titlePane(paneId, title);
 		return paneId;
 	}
 
 	// "off" and "main" split a new pane off the parent pi's pane, in place.
-	const args = ["split-window", "-d", "-h"];
+	const args = ["-d", "-h"];
 	if (process.env.TMUX_PANE) {
 		args.push("-t", process.env.TMUX_PANE);
 	}
 	args.push("-P", "-F", "#{pane_id}");
 
-	const paneId = paneIdFrom(tmux(args), "split-window");
+	const paneId = createTmuxPane("split-window", args, launchScriptPath);
 
 	// "main" re-flows into main-vertical; "off" leaves the raw split alone.
 	if (config.layout === "main") applyMainVertical(paneId);
@@ -265,27 +296,19 @@ export function refreshLayout(): void {
 	if (anchor) applyMainVertical(anchor);
 }
 
-// ── typing into panes ────────────────────────────────────────────────────
+// ── staging launch scripts ───────────────────────────────────────────────
 
 /**
- * Type a (short!) command into a pane and press Enter.
- * `-l` sends the text literally so tmux doesn't interpret key names in it.
+ * Stage a bash launch script under the session artifacts for inspection and
+ * hand re-runs. The guarded first line parks a launch-created pane even when
+ * the child command fails immediately, without changing a developer's pane.
  */
-export function sendCommand(paneId: string, command: string): void {
-	tmux(["send-keys", "-t", paneId, "-l", command]);
-	tmux(["send-keys", "-t", paneId, "Enter"]);
-}
-
-/**
- * Run a long/multi-line command in a pane by staging it as a bash script.
- *
- * The script is kept on disk (under the session's artifacts) so you can
- * inspect exactly what was launched, or re-run it by hand when debugging.
- */
-export function sendLongCommand(paneId: string, command: string, scriptPath: string): void {
+export function stageLaunchScript(command: string, scriptPath: string): void {
 	mkdirSync(dirname(scriptPath), { recursive: true });
-	writeFileSync(scriptPath, "#!/bin/bash\n" + command + "\n", { mode: 0o755 });
-	sendCommand(paneId, `bash ${shellQuote(scriptPath)}`);
+	const remainOnExit =
+		`if [ "$PI_SUBAGENT_LAUNCH" = "1" ]; then ${shellQuote(tmuxBinaryPath())} ` +
+		`set-option -p -t "$TMUX_PANE" remain-on-exit on; fi`;
+	writeFileSync(scriptPath, `${remainOnExit}\n${command}\n`, { mode: 0o755 });
 }
 
 // ── reading screens ──────────────────────────────────────────────────────
@@ -412,7 +435,7 @@ function readSidecar(sidecarPath: string): ExitResult | null {
 	}
 }
 
-/** Promise-flavored setTimeout, shared by the poller and the launch flow. */
-export function sleep(ms: number): Promise<void> {
+/** Promise-flavored setTimeout used by the poller. */
+function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
