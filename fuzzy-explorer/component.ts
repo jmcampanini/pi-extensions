@@ -1,10 +1,14 @@
 import { existsSync } from "node:fs";
+import { stripVTControlCharacters } from "node:util";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
 	Input,
+	Markdown,
 	matchesKey,
+	truncateToWidth,
 	type Component,
 	type Focusable,
+	type MarkdownTheme,
 	type TUI,
 } from "@earendil-works/pi-tui";
 import { describeSmartOpenSync, formatSmartOpenHint } from "./actions.ts";
@@ -18,10 +22,15 @@ import {
 	formatPreviewIdentity,
 	formatPreviewLines,
 	formatResultRow,
+	formatTruncationMarker,
+	PLAIN_MARKDOWN_THEME,
+	rendersMarkdownByDefault,
 	sanitizeTerminalText,
+	tailAwareTruncate,
 	type RenderStyles,
 } from "./render.ts";
 import { ExplorerState } from "./state.ts";
+import { subagentView } from "./subagent.ts";
 import type { Block } from "./types.ts";
 
 export interface ExplorerActionHandlers {
@@ -42,10 +51,13 @@ export interface ExplorerComponentOptions {
 	notify: ExplorerNotifications;
 	done: () => void;
 	refreshIntervalMs?: number;
+	markdownTheme?: MarkdownTheme;
 }
 
 function openHint(block: Block | undefined): string {
-	return block ? formatSmartOpenHint(describeSmartOpenSync(block, existsSync)) : "smart open";
+	const hint = block ? formatSmartOpenHint(describeSmartOpenSync(block, existsSync)) : "smart open";
+	// Keep the hint short so it survives the bottom border's width degradation.
+	return stripVTControlCharacters(tailAwareTruncate(hint, 32));
 }
 
 /**
@@ -62,8 +74,10 @@ export class ExplorerComponent implements Component, Focusable {
 	private readonly notify: ExplorerNotifications;
 	private readonly done: () => void;
 	private readonly input = new Input();
+	private readonly markdown: Markdown;
 	private readonly refreshTimer: ReturnType<typeof setInterval>;
 	private lastBlocks: readonly Block[] | undefined;
+	private lastMarkdownText: string | undefined;
 	private lastWidth = 80;
 	private actionRunning = false;
 	private _focused = false;
@@ -76,6 +90,7 @@ export class ExplorerComponent implements Component, Focusable {
 		this.actions = options.actions;
 		this.notify = options.notify;
 		this.done = options.done;
+		this.markdown = new Markdown("", 0, 0, options.markdownTheme ?? PLAIN_MARKDOWN_THEME);
 		this.input.setValue(this.state.query);
 		this.refreshTimer = setInterval(() => {
 			if (!this.syncBlocks()) return;
@@ -145,13 +160,14 @@ export class ExplorerComponent implements Component, Focusable {
 				"j/k scroll",
 				"u/d page",
 				"J/K blocks",
-				"q/esc list",
+				"h/q/esc list",
+				`m ${this.detailMarkdown() ? "raw" : "md"}`,
 				"y copy",
 				`o ${openHint(this.state.selected?.block)}`,
 			];
 		}
 		return [
-			"enter detail",
+			"l/enter detail",
 			"/ filter",
 			"q/esc quit",
 			"j/k move",
@@ -251,10 +267,42 @@ export class ExplorerComponent implements Component, Focusable {
 		return lines;
 	}
 
+	/** Whether the current detail view shows rendered markdown (`m` overrides the policy). */
+	private detailMarkdown(): boolean {
+		const block = this.state.selected?.block;
+		if (!block) return false;
+		if (block.body === "" && subagentView(block) === undefined) return false;
+		return this.state.detailMarkdownOverride ?? rendersMarkdownByDefault(block);
+	}
+
 	private detailLines(width = this.lastWidth): string[] {
 		const selected = this.state.selected;
 		if (!selected) return [];
-		return formatDetailLines(selected, Math.max(1, width - 4), this.styles(), existsSync);
+		const innerWidth = Math.max(1, width - 4);
+		if (!this.detailMarkdown()) {
+			return formatDetailLines(selected, innerWidth, this.styles(), existsSync);
+		}
+
+		// Rendered markdown shows parsed content only; copy and open keep the raw
+		// text. Subagent blocks lead with their metadata fields.
+		const styles = this.styles();
+		const view = subagentView(selected.block);
+		const text = sanitizeTerminalText(view === undefined ? selected.block.body : view.content);
+		const lines: string[] = [];
+		for (const field of view?.fields ?? []) {
+			lines.push(truncateToWidth(styles.muted(sanitizeTerminalText(`${field.key}=${field.value}`)), innerWidth, ""));
+		}
+		if (lines.length > 0 && text !== "") lines.push("");
+		if (text !== "") {
+			if (text !== this.lastMarkdownText) {
+				this.markdown.setText(text);
+				this.lastMarkdownText = text;
+			}
+			lines.push(...this.markdown.render(innerWidth).map((line) => truncateToWidth(line, innerWidth, "")));
+		}
+		const marker = formatTruncationMarker(selected.block.truncation, existsSync);
+		if (marker !== undefined) lines.push(truncateToWidth(styles.dim(marker), innerWidth, ""));
+		return lines;
 	}
 
 	private renderDetail(width: number, height: number): string[] {
@@ -297,7 +345,7 @@ export class ExplorerComponent implements Component, Focusable {
 		else if (matchesKey(data, "g")) this.state.selectFirst();
 		else if (matchesKey(data, "shift+g")) this.state.selectLast();
 		else if (matchesKey(data, "/")) this.state.enterFilter();
-		else if (matchesKey(data, "enter") || matchesKey(data, "return")) this.state.enterDetail();
+		else if (matchesKey(data, "enter") || matchesKey(data, "return") || matchesKey(data, "l")) this.state.enterDetail();
 		else if (matchesKey(data, "y")) this.runCopy();
 		else if (matchesKey(data, "o")) this.runOpen();
 		else return;
@@ -327,17 +375,24 @@ export class ExplorerComponent implements Component, Focusable {
 
 	private handleDetailInput(data: string): void {
 		const detailLineCount = this.detailLines().length;
-		if (matchesKey(data, "escape") || matchesKey(data, "q")) this.state.escape();
+		if (matchesKey(data, "escape") || matchesKey(data, "q") || matchesKey(data, "h")) this.state.escape();
 		else if (matchesKey(data, "up") || matchesKey(data, "k")) this.state.scrollDetail(-1, detailLineCount);
 		else if (matchesKey(data, "down") || matchesKey(data, "j")) this.state.scrollDetail(1, detailLineCount);
 		else if (matchesKey(data, "u")) this.state.pageDetail(-1, detailLineCount);
 		else if (matchesKey(data, "d")) this.state.pageDetail(1, detailLineCount);
 		else if (matchesKey(data, "shift+j")) this.state.jumpDetail(1);
 		else if (matchesKey(data, "shift+k")) this.state.jumpDetail(-1);
+		else if (matchesKey(data, "m")) this.toggleDetailMarkdown();
 		else if (matchesKey(data, "y")) this.runCopy();
 		else if (matchesKey(data, "o")) this.runOpen();
 		else return;
 		this.tui.requestRender();
+	}
+
+	private toggleDetailMarkdown(): void {
+		const block = this.state.selected?.block;
+		if (!block) return;
+		this.state.toggleDetailMarkdown(rendersMarkdownByDefault(block));
 	}
 
 	private runCopy(): void {

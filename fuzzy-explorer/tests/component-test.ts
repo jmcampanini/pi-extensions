@@ -73,7 +73,7 @@ ok("selected row carries the marker", initialFrame.includes("▸ Assistant"));
 ok("a titled rule introduces the preview", initialLines.some((line) => line.startsWith("├ Assistant · ")));
 ok("a blank interior line precedes the preview rule",
 	initialLines[initialLines.findIndex((line) => line.startsWith("├ Assistant · ")) - 1] === `│ ${" ".repeat(66)} │`);
-ok("hints live in the bottom border", initialLines.at(-1)?.startsWith("└ enter detail · / filter · q/esc quit") === true);
+ok("hints live in the bottom border", initialLines.at(-1)?.startsWith("└ l/enter detail · / filter · q/esc quit") === true);
 ok("no interior help footer lines remain", initialLines.filter((line) => line.includes("enter detail")).length === 1);
 ok("rows carry no timestamps", !initialFrame.includes("1970-01-01"));
 eq("frame uses the default background with no fill", backgroundFills, 0);
@@ -106,7 +106,10 @@ eq("slash enters filter mode", state.mode, "filter");
 component.handleInput("u");
 component.handleInput("d");
 component.handleInput("q");
-eq("u, d, and q type while filtering instead of acting", state.query, "udq");
+component.handleInput("h");
+component.handleInput("l");
+component.handleInput("m");
+eq("u, d, q, h, l, and m type while filtering instead of acting", state.query, "udqhlm");
 component.handleInput("\x15");
 eq("ctrl+u clears the filter query", state.query, "");
 component.handleInput("body");
@@ -136,6 +139,12 @@ ok("detail top border shows the block identity", detailLines[0]?.startsWith("┌
 ok("detail top border shows the position", detailLines[0]?.includes(`2/${state.results.length} ┐`) === true);
 ok("detail content starts on the first interior line", detailLines[1]?.startsWith("│ body 10") === true);
 ok("detail hints live in the bottom border", detailLines.at(-1)?.startsWith("└ j/k scroll") === true);
+ok("rendered detail offers the raw toggle when hints fit", component.render(110).at(-1)?.includes("m raw") === true);
+component.handleInput("m");
+const rawDetail = component.render(110);
+ok("m switches the current block to the raw stored text", rawDetail[1]?.startsWith("│ body 10 ") === true);
+ok("raw detail offers the markdown toggle", rawDetail.at(-1)?.includes("m md") === true);
+component.render(50);
 const beforeDetailPage = state.detailOffset;
 component.handleInput("d");
 ok("d pages detail content", state.detailOffset > beforeDetailPage);
@@ -155,6 +164,12 @@ eq("Escape returns from detail with selection synced", [state.mode, state.select
 component.handleInput("\r");
 component.handleInput("q");
 eq("q also returns from detail to the list without closing", [state.mode, doneCalls], ["list", 0]);
+component.handleInput("l");
+eq("l moves forward from a list item into its detail", state.mode, "detail");
+const wideDetail = component.render(110);
+ok("detail hints include the smart-open action", wideDetail.at(-1)?.includes("o open block text") === true);
+component.handleInput("h");
+eq("h moves backward out of detail to the list", [state.mode, doneCalls], ["list", 0]);
 
 // Live data, resize, and shutdown
 
@@ -182,6 +197,36 @@ eq("q in list also closes the explorer", doneCalls, 2);
 ok("state changes request TUI renders", renders > 0);
 ok("copy completion is notified", notifications.some((message) => message.includes("Copied")));
 component.dispose();
+
+// Markdown detail: rendered by default for prose kinds, raw behind the toggle.
+
+const markdownState = new ExplorerState("list");
+const markdownBlocks = [makeBlock({ id: "md-1", kind: "assistant", body: "Intro **bold** text" })];
+const markdownComponent = new ExplorerComponent({
+	tui,
+	theme,
+	state: markdownState,
+	getBlocks: () => markdownBlocks,
+	actions: {
+		async copy(): Promise<void> {},
+		async open(): Promise<number | null> { return 0; },
+	},
+	notify: () => {},
+	done: () => {},
+	refreshIntervalMs: 60_000,
+});
+markdownComponent.focused = true;
+markdownComponent.render(80);
+markdownComponent.handleInput("\r");
+const renderedDetail = markdownComponent.render(80);
+ok("markdown-default detail renders markup instead of showing it",
+	renderedDetail[1]?.includes("Intro bold text") === true);
+markdownComponent.handleInput("m");
+const rawMarkdownDetail = markdownComponent.render(80);
+ok("m reveals the raw markup", rawMarkdownDetail[1]?.includes("Intro **bold** text") === true);
+ok("hints flip between raw and md",
+	renderedDetail.at(-1)?.includes("m raw") === true && rawMarkdownDetail.at(-1)?.includes("m md") === true);
+markdownComponent.dispose();
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

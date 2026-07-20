@@ -76,7 +76,7 @@ for (const width of [120, 100]) {
 		lines.some((line) => line.includes("read") && line.includes("path=gone.log")));
 	ok(`list@${width}: preview rule carries the block identity`, lines.some((line) => line.startsWith("├ User · 00:00 ")));
 	ok(`list@${width}: preview shows the selected body`, lines.some((line) => line.startsWith("│ latest active user block")));
-	ok(`list@${width}: hints render in the bottom border`, lines.at(-1)?.startsWith("└ enter detail · / filter · q/esc quit") === true);
+	ok(`list@${width}: hints render in the bottom border`, lines.at(-1)?.startsWith("└ l/enter detail · / filter · q/esc quit") === true);
 }
 
 // Rows: filter down to the merged read tool block.
@@ -115,6 +115,8 @@ for (const width of [120, 100]) {
 	ok(`detail@${width}: canonical content includes the stored result`,
 		lines.some((line) => line.includes("STORED_RESULT_ONLY_NEEDLE")));
 	ok(`detail@${width}: hints render in the bottom border`, lines.at(-1)?.startsWith("└ j/k scroll") === true);
+	ok(`detail@${width}: hints include the smart-open target`, lines.at(-1)?.includes("o open src/config.ts:12") === true);
+	ok(`detail@${width}: raw-by-default tool detail offers the markdown toggle`, lines.at(-1)?.includes("m md") === true);
 }
 
 // Round trip back to the list frame.

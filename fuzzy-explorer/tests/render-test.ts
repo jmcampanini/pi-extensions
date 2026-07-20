@@ -12,6 +12,7 @@ import {
 	formatPreviewLines,
 	formatResultRow,
 	formatTruncationMarker,
+	rendersMarkdownByDefault,
 	sanitizeTerminalText,
 	tailAwareTruncate,
 	type RenderStyles,
@@ -100,6 +101,20 @@ eq("tag column width follows the widest visible tag", computeTagWidth([
 eq("tag column width is capped", computeTagWidth([
 	makeBlock({ kind: "summary", title: "An extremely long summary title" }),
 ]), 16);
+
+// Markdown policy mirrors what Pi's transcript renders as markdown.
+
+eq("markdown-by-default covers prose kinds and subagent tool traffic", [
+	rendersMarkdownByDefault(makeBlock({ kind: "assistant" })),
+	rendersMarkdownByDefault(makeBlock({ kind: "user" })),
+	rendersMarkdownByDefault(makeBlock({ kind: "summary", title: "Branch summary" })),
+	rendersMarkdownByDefault(makeBlock({ kind: "custom", title: "subagent_result" })),
+	rendersMarkdownByDefault(makeBlock({ kind: "tool", toolName: "subagent_spawn", title: "subagent_spawn" })),
+], [true, true, true, true, true]);
+eq("ordinary tool and bash output stays raw", [
+	rendersMarkdownByDefault(makeBlock({ kind: "tool", toolName: "read", title: "read" })),
+	rendersMarkdownByDefault(makeBlock({ kind: "bash", title: "Bash" })),
+], [false, false]);
 
 // Row anatomy
 

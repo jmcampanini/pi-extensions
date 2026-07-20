@@ -1,4 +1,4 @@
-import { buildSubagentResultEnvelope } from "../result-content.ts";
+import { buildSubagentResultEnvelope, parseSubagentResultEnvelope } from "../result-content.ts";
 
 let pass = 0, fail = 0;
 function eq(label: string, got: unknown, want: unknown): void {
@@ -134,6 +134,29 @@ eq("external session line reads as a resume reference",
 	), true);
 eq("external envelope drops the plain session line", external.content.includes("\nSession: "), false);
 eq("pi envelopes carry no harness line", completed.content.includes("Harness:"), false);
+
+// The parser inverts the builder, so the envelope format cannot drift.
+
+const roundTrip = parseSubagentResultEnvelope(completed.content);
+eq("round trip recovers the response without its markers",
+	roundTrip?.response, "The command completed successfully.\n\nNo further action was needed.");
+eq("round trip recovers head metadata as lowercase fields",
+	roundTrip?.fields.slice(0, 8), [
+		{ key: "status", value: "completed" },
+		{ key: "name", value: "expanded result check" },
+		{ key: "agent", value: "worker" },
+		{ key: "id", value: "15c3f450" },
+		{ key: "elapsed", value: "7s" },
+		{ key: "context", value: "1.8k tokens" },
+		{ key: "result", value: "~13 tokens" },
+		{ key: "cost", value: "$0.01" },
+	]);
+eq("round trip captures the action and session tail as fields",
+	roundTrip?.fields.slice(8).map((field) => field.key), ["resume", "session", "worktree"]);
+const failedRoundTrip = parseSubagentResultEnvelope(failed.content);
+eq("resultless envelopes parse with an empty response",
+	[failedRoundTrip?.response, failedRoundTrip?.fields.some((field) => field.key === "failure")], ["", true]);
+eq("non-envelope content is rejected", parseSubagentResultEnvelope("ordinary custom message body"), undefined);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -87,6 +87,18 @@ eq("d pages detail content", state.detailOffset, 4);
 eq("Escape returns from detail with selection synced", [state.escape(), state.mode, state.selected?.block.id],
 	[false, "list", "entry-7:user"]);
 
+state.enterDetail();
+eq("detail opens with the policy-default view", state.detailMarkdownOverride, undefined);
+state.setDetailPageSize(4);
+state.scrollDetail(2, 20);
+state.toggleDetailMarkdown(true);
+eq("m overrides the default and rescrolls", [state.detailMarkdownOverride, state.detailOffset], [false, 0]);
+state.toggleDetailMarkdown(true);
+eq("m toggles back to rendered", state.detailMarkdownOverride, true);
+state.jumpDetail(-1);
+eq("visiting another block returns to its policy default", state.detailMarkdownOverride, undefined);
+state.escape();
+
 const filterOpen = new ExplorerState("filter");
 filterOpen.syncBlocks(blocks);
 eq("filter open mode anchors on the newest block",

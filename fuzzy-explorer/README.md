@@ -18,9 +18,13 @@ While a query is active, results are ordered by relevance (best first; newest fi
 
 ## Keys
 
-List mode uses arrows or `j`/`k`, `u`/`d` to page, `g`/`G` for first/last, `/` to filter, Enter for detail, `y` to copy, `o` to open, and `q` or Escape to close. In filter mode, printable keys edit the query while arrows still navigate; `Ctrl+U` clears it and Escape returns to list mode without clearing it.
+List mode uses arrows or `j`/`k`, `u`/`d` to page, `g`/`G` for first/last, `/` to filter, Enter or `l` for detail, `y` to copy, `o` to open, and `q` or Escape to close. In filter mode, printable keys edit the query while arrows still navigate; `Ctrl+U` clears it and Escape returns to list mode without clearing it.
 
-Detail mode uses arrows or `j`/`k` to scroll, `u`/`d` to page, `J`/`K` to visit adjacent filtered blocks, `y`/`o` for actions, and `q` or Escape to return to the list.
+Detail mode uses arrows or `j`/`k` to scroll, `u`/`d` to page, `J`/`K` to visit adjacent filtered blocks, `y`/`o` for actions, and `h`, `q`, or Escape to return to the list.
+
+Detail content renders as markdown for the block kinds Pi's transcript renders that way — assistant text, user text, summaries, custom messages — plus `subagent_*` tool blocks; other tool and bash output stays raw. `m` toggles rendered/raw for the current block. `y` copy and `o` open always use the raw stored text.
+
+Subagent traffic gets structured treatment (via the format contract exported by the interactive-subagents extension): spawn/resume rows show `name=… agent=…` metadata while the preview and detail show the full task prompt; result envelopes split into metadata fields plus the delivered response, unwrapped from its `<result>` markers so it renders as markdown.
 
 ## Configuration
 

@@ -1,6 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi, type MarkdownTheme } from "@earendil-works/pi-tui";
 import { SEPARATOR_CLASS, stripSeparators } from "./search.ts";
+import { subagentView, type SubagentView } from "./subagent.ts";
 import type { Block, BlockTruncation, SearchResult } from "./types.ts";
 
 export interface RenderStyles {
@@ -31,6 +32,36 @@ export const PLAIN_RENDER_STYLES: Readonly<RenderStyles> = Object.freeze({
 
 function renderStyles(overrides: RenderStyleOverrides): RenderStyles {
 	return { ...PLAIN_RENDER_STYLES, ...overrides };
+}
+
+export const PLAIN_MARKDOWN_THEME: Readonly<MarkdownTheme> = Object.freeze({
+	heading: identity,
+	link: identity,
+	linkUrl: identity,
+	code: identity,
+	codeBlock: identity,
+	codeBlockBorder: identity,
+	quote: identity,
+	quoteBorder: identity,
+	hr: identity,
+	listBullet: identity,
+	bold: identity,
+	italic: identity,
+	strikethrough: identity,
+	underline: identity,
+});
+
+/**
+ * Blocks whose detail view renders as markdown by default: the kinds Pi's own
+ * transcript renders through its markdown theme, plus subagent tool traffic,
+ * whose bodies are prose reports. Tool output, bash output, and canonical
+ * invocation text stay raw.
+ */
+export function rendersMarkdownByDefault(block: Block): boolean {
+	if (block.kind === "assistant" || block.kind === "user" || block.kind === "summary" || block.kind === "custom") {
+		return true;
+	}
+	return block.kind === "tool" && (block.toolName?.startsWith("subagent_") ?? false);
 }
 
 function safeWidth(width: number): number {
@@ -368,7 +399,22 @@ function firstBodyLine(body: string): string {
 	return "";
 }
 
+export function formatSubagentFields(view: SubagentView): string {
+	return view.fields.map((field) => `${field.key}=${field.value}`).join(" ");
+}
+
+/** Displayed preview/detail text: subagent blocks show fields + parsed content. */
+export function displayContent(block: Block): string {
+	const view = subagentView(block);
+	if (view !== undefined) {
+		return [formatSubagentFields(view), view.content].filter((text) => text !== "").join("\n\n");
+	}
+	return block.body !== "" ? block.body : block.canonicalText;
+}
+
 function rowDetailText(block: Block): string {
+	const view = subagentView(block);
+	if (view !== undefined && view.fields.length > 0) return formatSubagentFields(view);
 	if (block.kind === "tool" || block.kind === "bash") {
 		const subtitle = singleLine(block.subtitle ?? "");
 		if (subtitle !== "") return subtitle;
@@ -513,10 +559,10 @@ export function formatPreviewLines(
 	const { block, bodyTokens } = unpack(value);
 	const styles = renderStyles(styleOverrides);
 
-	const content = block.body !== "" ? block.body : block.canonicalText;
-	const spans = block.body === ""
-		? []
-		: mergeSpans(bodyTokens.flatMap((token) => bodyTokenSpans(block.body, token, false)));
+	// Matched tokens are re-derived against whatever text is displayed, so the
+	// subagent field/content transformation keeps its highlights.
+	const content = displayContent(block);
+	const spans = mergeSpans(bodyTokens.flatMap((token) => bodyTokenSpans(content, token, false)));
 	const styledContent = styledHighlightedText(content, spans, styles.body, styles.highlight);
 	const contentLines = wrapStyledText(styledContent, maxWidth);
 	if (contentLines.length === 0) contentLines.push(styles.dim("(empty block)"));

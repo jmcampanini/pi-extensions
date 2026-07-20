@@ -18,6 +18,8 @@ export class ExplorerState {
 	detailOffset = 0;
 	listPageSize = 1;
 	detailPageSize = 1;
+	/** Explicit rendered/raw choice for the current detail view; undefined = policy default. */
+	detailMarkdownOverride: boolean | undefined;
 
 	private blocks: readonly Block[] = [];
 	private fallbackIndex = 0;
@@ -99,6 +101,7 @@ export class ExplorerState {
 		if (!this.selected) return;
 		this.mode = "detail";
 		this.detailOffset = 0;
+		this.detailMarkdownOverride = undefined;
 	}
 
 	jumpDetail(direction: -1 | 1): void {
@@ -106,6 +109,12 @@ export class ExplorerState {
 		const target = Math.max(0, Math.min(this.results.length - 1, this.selectedIndex + direction));
 		if (target === this.selectedIndex) return;
 		this.selectIndex(target);
+		this.detailOffset = 0;
+		this.detailMarkdownOverride = undefined;
+	}
+
+	toggleDetailMarkdown(defaultRendered: boolean): void {
+		this.detailMarkdownOverride = !(this.detailMarkdownOverride ?? defaultRendered);
 		this.detailOffset = 0;
 	}
 
