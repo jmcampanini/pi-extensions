@@ -37,19 +37,18 @@ const worktreeDefaults = {
 
 // defaults when no file and no env
 eq("defaults", loadConfig({ PI_CODING_AGENT_DIR: dirWith(null) }),
-	{ layout: "window", mainWidth: "60%", shellReadyDelayMs: 500, ...previewDefaults, ...worktreeDefaults });
+	{ layout: "window", mainWidth: "60%", ...previewDefaults, ...worktreeDefaults });
 
 // full file applies
-eq("file applies", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window","mainWidth":"120","shellReadyDelayMs":250,"maxConcurrentSubagents":4,"callPreviewLines":4,"resultPreviewLines":8,"widgetMaxRows":7}') }),
-	{ layout: "window", mainWidth: "120", shellReadyDelayMs: 250, maxConcurrentSubagents: 4, callPreviewLines: 4, resultPreviewLines: 8, widgetMaxRows: 7, ...worktreeDefaults });
+eq("file applies", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window","mainWidth":"120","maxConcurrentSubagents":4,"callPreviewLines":4,"resultPreviewLines":8,"widgetMaxRows":7}') }),
+	{ layout: "window", mainWidth: "120", maxConcurrentSubagents: 4, callPreviewLines: 4, resultPreviewLines: 8, widgetMaxRows: 7, ...worktreeDefaults });
 
 // partial file merges with defaults
 eq("partial file", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"off"}') }),
-	{ layout: "off", mainWidth: "60%", shellReadyDelayMs: 500, ...previewDefaults, ...worktreeDefaults });
+	{ layout: "off", mainWidth: "60%", ...previewDefaults, ...worktreeDefaults });
 
 // env beats file
 eq("env beats file", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window"}'), PI_SUBAGENT_LAYOUT: "main" }).layout, "main");
-eq("env delay parses", loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_SHELL_READY_DELAY_MS: "2500" }).shellReadyDelayMs, 2500);
 eq("file accepts header-only call previews",
 	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":0}') }).callPreviewLines, 0);
 eq("file accepts the maximum result preview",
@@ -113,11 +112,6 @@ throws("array root", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith("[1]") }), 
 throws("bad layout in file", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"grid"}') }), "valid values: main, window, off");
 throws("bad layout in env", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_LAYOUT: "windw" }), "PI_SUBAGENT_LAYOUT");
 throws("bad width", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"mainWidth":"12px"}') }), "mainWidth");
-throws("negative delay", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"shellReadyDelayMs":-5}') }), "non-negative");
-// exactly one accepted shape per layer: the file takes a NUMBER (a numeric
-// string is rejected), and a non-numeric env value reports the original text
-throws("string delay in file", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"shellReadyDelayMs":"500"}') }), '"500"');
-throws("junk delay in env", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_SHELL_READY_DELAY_MS: "fast" }), '"fast"');
 throws("uppercase layout in env is rejected", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_LAYOUT: "MAIN" }), "PI_SUBAGENT_LAYOUT");
 throws("negative call preview lines are rejected",
 	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":-1}') }),

@@ -11,9 +11,10 @@ import {
 	writeLaunchMeta,
 } from "../launch.ts";
 import { SENTINEL_ECHO_SUFFIX, SENTINEL_REGEX } from "../protocol.ts";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { stageLaunchScript, supportsRequiredTmuxVersion } from "../tmux.ts";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 
 let pass = 0, fail = 0;
 function eq(label: string, got: unknown, want: unknown) {
@@ -101,7 +102,7 @@ ok("has --append-system-prompt", full.includes("--append-system-prompt '/sp.md'"
 ok("control tools are unioned into --tools", full.includes("--tools 'read,bash,subagent_done,caller_ping'"));
 ok("prompt arg before sentinel", full.includes("'@/task.md' ; echo"));
 ok("ends with the sentinel suffix", full.endsWith(SENTINEL_ECHO_SUFFIX));
-ok("typed command does NOT match the poller regex (quote-split)", !SENTINEL_REGEX.test(full));
+ok("launch command does NOT match the poller regex (quote-split)", !SENTINEL_REGEX.test(full));
 
 // harness-pass-through applies to pi children too: appended VERBATIM (no
 // quoting) between the named flags and the prompt argument.
@@ -130,9 +131,38 @@ eq(
 	"E='1' pi --session '/s.jsonl' -e '" + full.split("-e '")[1].split("'")[0] + "'" + SENTINEL_ECHO_SUFFIX,
 );
 
-// ── .meta round trip ─────────────────────────────────────────────────────
+// ── tmux version boundary ────────────────────────────────────────────────
+
+eq("tmux 3.0 lacks per-pane options", supportsRequiredTmuxVersion("3.0"), false);
+eq("tmux 3.0a is the minimum", supportsRequiredTmuxVersion("3.0a"), true);
+eq("later tmux minor versions are accepted", supportsRequiredTmuxVersion("3.1"), true);
+eq("later tmux major versions are accepted", supportsRequiredTmuxVersion("4.0"), true);
+eq("unrecognized tmux versions are rejected", supportsRequiredTmuxVersion("master"), false);
+
+// ── staged launch script ─────────────────────────────────────────────────
 
 const dir = mkdtempSync(join(tmpdir(), "subagents-launch-"));
+const fakeBinDir = join(dir, "bin");
+const fakeTmux = join(fakeBinDir, "tmux");
+const scriptPath = join(dir, "launch.sh");
+mkdirSync(fakeBinDir);
+writeFileSync(fakeTmux, "#!/bin/bash\nexit 0\n", { mode: 0o755 });
+const savedPath = process.env.PATH;
+try {
+	process.env.PATH = `${fakeBinDir}${delimiter}${savedPath ?? ""}`;
+	stageLaunchScript(full, scriptPath);
+} finally {
+	if (savedPath === undefined) delete process.env.PATH;
+	else process.env.PATH = savedPath;
+}
+eq(
+	"staged script starts with guarded remain-on-exit then the exact command",
+	readFileSync(scriptPath, "utf8"),
+	`if [ "$PI_SUBAGENT_LAUNCH" = "1" ]; then '${fakeTmux}' set-option -p -t "$TMUX_PANE" remain-on-exit on; fi\n${full}\n`,
+);
+
+// ── .meta round trip ─────────────────────────────────────────────────────
+
 const sessionFile = join(dir, "child.jsonl");
 const meta: LaunchMeta = { name: "Worker", agent: "worker", tools: "read", model: "p/m", thinking: "low", systemPromptFile: "/sp.md", autoExit: true, context: "forked" };
 writeLaunchMeta(sessionFile, meta);

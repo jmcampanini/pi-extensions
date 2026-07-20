@@ -6,8 +6,8 @@
  * and this file defines the shape of each one:
  *
  *   1. ENV VARS (parent → child, at launch): `ChildEnvVars`, prefixed onto
- *      the launch command line because tmux panes run a fresh shell that
- *      inherits nothing from the parent process.
+ *      the launch command line because a pane inherits the tmux server's
+ *      environment rather than the parent process's current environment.
  *   2. THE `.exit` SIDECAR (child → parent, at exit): `ExitSidecar`, a tiny
  *      JSON file the child's implant writes next to its session file. It is
  *      the child's typed last word — done / ping / error — and the parent's
@@ -59,12 +59,12 @@ export type ExitSidecar =
 // The launch command ends with this suffix, so the shell echoes
 // `__SUBAGENT_DONE_<exit code>__` after pi exits — whatever the reason.
 //
-// The echo is written QUOTE-SPLIT on purpose: the command line the shell
-// displays while typing shows `'__SUBAGENT_DONE_'$?'__'` with `$?`
-// unexpanded, so the poller's digits-only regex can never match the typed
-// command itself — only the real output that appears AFTER pi exits.
-// The suffix and the regex are two halves of one protocol; they live side
-// by side here so they can never drift apart.
+// The echo is written QUOTE-SPLIT on purpose. During a debugging hand re-run
+// typed into a shell, the displayed command contains
+// `'__SUBAGENT_DONE_'$?'__'` with `$?` unexpanded, so the poller's digits-only
+// regex cannot match it — only the real output that appears AFTER pi exits.
+// The suffix and the regex are two halves of one protocol; they live side by
+// side here so they can never drift apart.
 
 export const SENTINEL_ECHO_SUFFIX = ` ; echo '__SUBAGENT_DONE_'$?'__'`;
 

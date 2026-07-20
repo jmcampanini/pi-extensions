@@ -49,7 +49,7 @@ import {
 } from "./subagent-call.ts";
 import { renderSubagentLaunchResult } from "./subagent-result.ts";
 import { updateRunningWidget } from "./running-widget.ts";
-import { closePane, createPane, isTmuxAvailable, sendLongCommand, shellQuote, sleep } from "./tmux.ts";
+import { closePane, createPane, isTmuxAvailable, shellQuote, stageLaunchScript } from "./tmux.ts";
 import { ledger, moduleGeneration, running } from "./state.ts";
 import { trackChild } from "./watcher.ts";
 
@@ -139,7 +139,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 		},
 		async execute(_toolCallId, params: ResumeParamsType, _signal, _onUpdate, ctx) {
 			if (!isTmuxAvailable()) {
-				throw new Error("Subagents need tmux: start pi inside a tmux session.");
+				throw new Error("Subagents need tmux 3.0a+ with pi running inside a session.");
 			}
 
 			// A queued or just-dequeued child has never run (it is not in the
@@ -494,14 +494,12 @@ async function runResumeLaunch(pi: ExtensionAPI, spec: ResumeSpec): Promise<{ pa
 	const scriptPath = join(spec.base, "scripts", `${spec.slug}-${spec.id}-resume.sh`);
 	let paneId: string | undefined;
 	try {
-		// Same interleave discipline as the spawn pipeline: the sleep is the
-		// last await, the boundary guard runs after it, and everything from
-		// the guard through trackChild is synchronous. Guard before send —
-		// after the send the child owns its session.
-		paneId = createPane(spec.name);
-		await sleep(config.shellReadyDelayMs);
+		// Same boundary discipline as spawn: there is currently no await in
+		// this pipeline, so the guard is a defensive assertion against a
+		// future refactor. Pane creation starts the child immediately.
+		stageLaunchScript(command, scriptPath);
 		assertLaunchStillWanted(launchGeneration);
-		sendLongCommand(paneId, command, scriptPath);
+		paneId = createPane(spec.name, scriptPath);
 	} catch (error) {
 		if (paneId !== undefined) closePane(paneId);
 		throw error;

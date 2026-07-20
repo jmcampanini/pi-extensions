@@ -64,10 +64,10 @@ export function generateChildSessionFile(childCwd: string): string {
 // ── the launch command ───────────────────────────────────────────────────
 
 /**
- * Build the `KEY='value'` env prefix for the child's launch command.
- * tmux panes run a fresh shell that inherits NOTHING from the parent pi
- * process, so every variable the child needs must ride on the command line.
- * All child env vars flow through here — v2 adds its liveness vars here too.
+ * Build the `KEY='value'` env prefix for the child's launch command. Panes
+ * inherit the tmux server's environment rather than the parent pi process's
+ * current environment, so every child-specific variable rides on the command
+ * line. All child env vars flow through here.
  */
 export function buildChildEnv(vars: ChildEnvVars): string {
 	if (vars.PI_SUBAGENT_AGENT !== undefined) assertValidAgentIdentifier(vars.PI_SUBAGENT_AGENT);
