@@ -1,19 +1,21 @@
 import { existsSync } from "node:fs";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
-	Box,
 	Input,
 	matchesKey,
-	truncateToWidth,
-	visibleWidth,
 	type Component,
 	type Focusable,
 	type TUI,
 } from "@earendil-works/pi-tui";
 import { describeSmartOpenSync, formatSmartOpenHint } from "./actions.ts";
 import {
+	computeTagWidth,
+	formatBorderLine,
+	formatDetailIdentity,
 	formatDetailLines,
-	formatHelpFooter,
+	formatFrameLine,
+	formatHintBorder,
+	formatPreviewIdentity,
 	formatPreviewLines,
 	formatResultRow,
 	sanitizeTerminalText,
@@ -46,14 +48,9 @@ function openHint(block: Block | undefined): string {
 	return block ? formatSmartOpenHint(describeSmartOpenSync(block, existsSync)) : "smart open";
 }
 
-function boundHelpLines(lines: string[], maximum: number): string[] {
-	if (lines.length <= maximum) return lines;
-	if (maximum <= 1) return lines.slice(-1);
-	return [...lines.slice(0, maximum - 1), ...lines.slice(-1)];
-}
-
 /**
- * Stateful keyboard controller wrapped in Pi's standard one-cell Box. All
+ * Stateful keyboard controller that renders the whole overlay as one bordered
+ * frame: all chrome lives in the border, interior lines are content only. All
  * transcript formatting stays in the pure render module.
  */
 export class ExplorerComponent implements Component, Focusable {
@@ -65,8 +62,6 @@ export class ExplorerComponent implements Component, Focusable {
 	private readonly notify: ExplorerNotifications;
 	private readonly done: () => void;
 	private readonly input = new Input();
-	private readonly box: Box;
-	private readonly contentComponent: Component;
 	private readonly refreshTimer: ReturnType<typeof setInterval>;
 	private lastBlocks: readonly Block[] | undefined;
 	private lastWidth = 80;
@@ -82,16 +77,8 @@ export class ExplorerComponent implements Component, Focusable {
 		this.notify = options.notify;
 		this.done = options.done;
 		this.input.setValue(this.state.query);
-		this.contentComponent = {
-			render: (width) => this.renderContent(width),
-			handleInput: (data) => this.handleInput(data),
-			invalidate: () => {},
-		};
-		this.box = new Box(1, 1, (text) => this.theme.bg("toolPendingBg", text));
-		this.box.addChild(this.contentComponent);
 		this.refreshTimer = setInterval(() => {
 			if (!this.syncBlocks()) return;
-			this.box.invalidate();
 			this.tui.requestRender();
 		}, options.refreshIntervalMs ?? 200);
 	}
@@ -107,7 +94,11 @@ export class ExplorerComponent implements Component, Focusable {
 
 	render(width: number): string[] {
 		this.syncBlocks();
-		return this.box.render(Math.max(1, Math.floor(width)));
+		this.lastWidth = Math.max(1, Math.floor(width));
+		const maxHeight = Math.max(3, Math.floor(this.tui.terminal.rows * 0.9));
+		return this.state.mode === "detail"
+			? this.renderDetail(this.lastWidth, maxHeight)
+			: this.renderList(this.lastWidth, maxHeight);
 	}
 
 	handleInput(data: string): void {
@@ -118,7 +109,7 @@ export class ExplorerComponent implements Component, Focusable {
 	}
 
 	invalidate(): void {
-		this.box.invalidate();
+		this.input.invalidate();
 	}
 
 	dispose(): void {
@@ -132,7 +123,6 @@ export class ExplorerComponent implements Component, Focusable {
 			muted: (text) => this.theme.fg("muted", text),
 			dim: (text) => this.theme.fg("dim", text),
 			body: (text) => this.theme.fg("toolOutput", text),
-			selected: (text) => this.theme.bg("selectedBg", text),
 			highlight: (text) => this.theme.fg("accent", this.theme.bold(text)),
 			border: (text) => this.theme.fg("borderMuted", text),
 		};
@@ -146,104 +136,157 @@ export class ExplorerComponent implements Component, Focusable {
 		return true;
 	}
 
-	private renderContent(width: number): string[] {
-		this.syncBlocks();
-		this.lastWidth = Math.max(1, Math.floor(width));
-		const maxHeight = Math.max(1, Math.floor(this.tui.terminal.rows * 0.9) - 2);
-		return this.state.mode === "detail"
-			? this.renderDetail(this.lastWidth, maxHeight)
-			: this.renderList(this.lastWidth, maxHeight);
+	private hints(): string[] {
+		if (this.state.mode === "filter") {
+			return ["enter detail", "esc list", "↑/↓ move", "ctrl+u clear", "is: tool: any:"];
+		}
+		if (this.state.mode === "detail") {
+			return [
+				"j/k scroll",
+				"u/d page",
+				"J/K blocks",
+				"esc list",
+				"y copy",
+				`o ${openHint(this.state.selected?.block)}`,
+			];
+		}
+		return [
+			"enter detail",
+			"/ filter",
+			"q/esc quit",
+			"j/k move",
+			"u/d page",
+			"g/G ends",
+			"y copy",
+			`o ${openHint(this.state.selected?.block)}`,
+			"is: tool: any:",
+		];
 	}
 
-	private titleLine(width: number): string {
-		const title = this.theme.fg("toolTitle", this.theme.bold("fuzzy-explorer"));
-		const metadata = this.theme.fg("muted", ` · ${this.state.results.length} blocks · ${this.state.mode}`);
-		return truncateToWidth(`${title}${metadata}`, width, "");
-	}
-
-	private queryLine(width: number): string {
-		const label = this.theme.fg("toolTitle", this.theme.bold(this.state.mode === "filter" ? "filter" : "query"));
-		const prefix = `${label}${this.theme.fg("muted", " › ")}`;
+	private inputLine(innerWidth: number): string {
+		const prefix = this.theme.fg("muted", "› ");
 		if (this.state.mode === "filter") {
 			this.input.focused = this.focused;
-			const [line = ""] = this.input.render(Math.max(1, width - visibleWidth(prefix)));
-			return truncateToWidth(`${prefix}${line}`, width, "");
+			// Input renders its own hardcoded "> " prompt; swap it for our prefix.
+			const [line = ""] = this.input.render(Math.max(3, innerWidth));
+			return `${prefix}${line.startsWith("> ") ? line.slice(2) : line}`;
 		}
-		const query = this.state.query === "" ? this.theme.fg("dim", "(none; / to filter)") : this.theme.fg("accent", sanitizeTerminalText(this.state.query));
-		return truncateToWidth(`${prefix}${query}`, width, "");
+		const query = this.state.query === ""
+			? this.theme.fg("dim", "/ to filter")
+			: this.theme.fg("accent", sanitizeTerminalText(this.state.query));
+		return `${prefix}${query}`;
 	}
 
-	private renderList(width: number, maxHeight: number): string[] {
+	private renderList(width: number, height: number): string[] {
 		const styles = this.styles();
-		const allHelp = formatHelpFooter(width, openHint(this.state.selected?.block), styles, this.state.mode);
-		if (maxHeight < 5) return boundHelpLines(allHelp, maxHeight);
-		const help = boundHelpLines(allHelp, Math.max(1, maxHeight - 4));
-		let available = maxHeight - help.length - 2;
-		const showTitle = available >= 3;
-		if (showTitle) available--;
-		const showRange = available >= 3;
-		if (showRange) available--;
-		const listRows = Math.max(1, Math.floor(available * 0.55));
-		const previewRows = Math.max(1, available - listRows);
-		this.state.setListPageSize(listRows);
+		const border = styles.border;
+		const innerWidth = Math.max(1, width - 4);
 
-		const lines: string[] = [];
-		if (showTitle) lines.push(this.titleLine(width));
-		lines.push(this.queryLine(width));
-		if (showRange) {
-			lines.push(truncateToWidth(this.theme.fg("muted", ` ${this.state.listViewport + (this.state.results.length === 0 ? 0 : 1)}–${Math.min(this.state.results.length, this.state.listViewport + listRows)} of ${this.state.results.length}`), width, ""));
+		// 35/65 list/preview split around six fixed chrome lines; tight heights
+		// drop the preview section first, then the rule and rows, so the frame
+		// always closes with its bottom border.
+		const showRule = height >= 4;
+		let listRows: number;
+		let previewRows: number;
+		if (height >= 8) {
+			const available = height - 6;
+			listRows = Math.max(1, Math.floor(available * 0.35));
+			previewRows = Math.max(1, available - listRows);
+		} else {
+			listRows = Math.max(0, height - 3 - (showRule ? 1 : 0));
+			previewRows = 0;
 		}
+		this.state.setListPageSize(Math.max(1, listRows));
+
+		const lines: string[] = [
+			formatBorderLine(
+				width,
+				["┌", "┐"],
+				styles.title("fuzzy"),
+				styles.muted(`${this.state.results.length}/${this.state.totalBlocks}`),
+				border,
+			),
+			formatFrameLine(width, this.inputLine(innerWidth), border),
+		];
+		if (showRule) lines.push(formatBorderLine(width, ["├", "┤"], "", "", border));
+
 		const visible = this.state.results.slice(this.state.listViewport, this.state.listViewport + listRows);
+		const tagWidth = computeTagWidth(visible);
 		for (let index = 0; index < listRows; index++) {
 			const result = visible[index];
-			lines.push(result
-				? formatResultRow(result, result.block.id === this.state.selectedId, width, styles)
-				: "");
+			lines.push(formatFrameLine(
+				width,
+				result === undefined
+					? ""
+					: formatResultRow(
+						result,
+						this.state.listViewport + index === this.state.selectedIndex,
+						innerWidth,
+						tagWidth,
+						styles,
+					),
+				border,
+			));
 		}
-		lines.push(truncateToWidth(this.theme.fg("borderMuted", "─".repeat(width)), width, ""));
 
-		const selected = this.state.selected;
-		const preview = selected
-			? formatPreviewLines(selected, width, previewRows, styles, existsSync)
-			: [truncateToWidth(this.theme.fg("dim", "No matching transcript blocks"), width, "")];
-		lines.push(...preview.slice(0, previewRows));
-		const contentLineTarget = (showTitle ? 1 : 0) + 1 + (showRange ? 1 : 0) + listRows + 1 + previewRows;
-		while (lines.length < contentLineTarget) lines.push("");
-		lines.push(...help);
-		return lines.slice(0, maxHeight).map((line) => truncateToWidth(line, width, ""));
+		if (previewRows > 0) {
+			const selected = this.state.selected;
+			lines.push(formatFrameLine(width, "", border));
+			lines.push(formatBorderLine(
+				width,
+				["├", "┤"],
+				selected === undefined ? "" : styles.accent(formatPreviewIdentity(selected.block)),
+				"",
+				border,
+			));
+			const preview = selected === undefined
+				? [styles.dim("no matching transcript blocks")]
+				: formatPreviewLines(selected, innerWidth, previewRows, styles, existsSync);
+			for (let index = 0; index < previewRows; index++) {
+				lines.push(formatFrameLine(width, preview[index] ?? "", border));
+			}
+		}
+
+		lines.push(formatHintBorder(width, this.hints(), styles));
+		return lines;
 	}
 
 	private detailLines(width = this.lastWidth): string[] {
 		const selected = this.state.selected;
-		return selected ? formatDetailLines(selected, width, this.styles(), existsSync) : [];
+		if (!selected) return [];
+		return formatDetailLines(selected, Math.max(1, width - 4), this.styles(), existsSync);
 	}
 
-	private renderDetail(width: number, maxHeight: number): string[] {
+	private renderDetail(width: number, height: number): string[] {
 		const styles = this.styles();
-		const allHelp = formatHelpFooter(width, openHint(this.state.selected?.block), styles, this.state.mode);
-		if (maxHeight < 3) return boundHelpLines(allHelp, maxHeight);
-		const help = boundHelpLines(allHelp, Math.max(1, maxHeight - 2));
-		let detailRows = Math.max(1, maxHeight - help.length - 1);
-		const showTitle = detailRows >= 2;
-		if (showTitle) detailRows--;
-		this.state.setDetailPageSize(detailRows);
-		const allDetailLines = this.detailLines(width);
-		this.state.scrollDetail(0, allDetailLines.length);
-		const selectedIndex = this.state.results.length === 0 ? 0 : this.state.selectedIndex + 1;
-		const status = truncateToWidth(
-			this.theme.fg("muted", `Detail ${selectedIndex}/${this.state.results.length} · Esc returns to list`),
-			width,
-			"",
-		);
-		const shown = allDetailLines.slice(this.state.detailOffset, this.state.detailOffset + detailRows);
-		while (shown.length < detailRows) shown.push("");
-		return [...(showTitle ? [this.titleLine(width)] : []), status, ...shown, ...help]
-			.slice(0, maxHeight)
-			.map((line) => truncateToWidth(line, width, ""));
+		const contentRows = Math.max(1, height - 2);
+		this.state.setDetailPageSize(contentRows);
+		const selected = this.state.selected;
+		const allLines = this.detailLines(width);
+		this.state.scrollDetail(0, allLines.length);
+		const position = this.state.results.length === 0
+			? "0/0"
+			: `${this.state.selectedIndex + 1}/${this.state.results.length}`;
+
+		const lines: string[] = [
+			formatBorderLine(
+				width,
+				["┌", "┐"],
+				selected === undefined ? styles.title("fuzzy") : styles.accent(formatDetailIdentity(selected.block)),
+				styles.muted(position),
+				styles.border,
+			),
+		];
+		const shown = allLines.slice(this.state.detailOffset, this.state.detailOffset + contentRows);
+		for (let index = 0; index < contentRows; index++) {
+			lines.push(formatFrameLine(width, shown[index] ?? "", styles.border));
+		}
+		lines.push(formatHintBorder(width, this.hints(), styles));
+		return lines;
 	}
 
 	private handleListInput(data: string): void {
-		if (matchesKey(data, "escape")) {
+		if (matchesKey(data, "escape") || matchesKey(data, "q")) {
 			this.done();
 			return;
 		}

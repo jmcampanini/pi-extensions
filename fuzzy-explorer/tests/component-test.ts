@@ -3,6 +3,7 @@ import { visibleWidth, type TUI } from "@earendil-works/pi-tui";
 import { ExplorerComponent } from "../component.ts";
 import { ExplorerState } from "../state.ts";
 import type { Block } from "../types.ts";
+import { makeBlock } from "./block-factory.ts";
 
 let pass = 0, fail = 0;
 function eq(label: string, got: unknown, want: unknown): void {
@@ -17,12 +18,14 @@ function ok(label: string, value: boolean): void {
 
 function block(index: number): Block {
 	const body = `body ${index}\n${Array.from({ length: 20 }, (_, line) => `line-${index}-${line}`).join("\n")}`;
-	return {
-		id: `block-${index}`, kind: index % 2 === 0 ? "user" : "assistant", entryId: `entry-${index}`,
-		entryIds: [`entry-${index}`], timestamp: new Date(index * 1000).toISOString(),
-		fields: `${index % 2 === 0 ? "user" : "assistant"} entry-${index}`,
-		body, title: index % 2 === 0 ? "user" : "assistant", canonicalText: body,
-	};
+	return makeBlock({
+		id: `block-${index}`,
+		kind: index % 2 === 0 ? "user" : "assistant",
+		entryId: `entry-${index}`,
+		entryIds: [`entry-${index}`],
+		timestamp: new Date(index * 1000).toISOString(),
+		body,
+	});
 }
 
 let blocks: readonly Block[] = Array.from({ length: 12 }, (_, index) => block(index));
@@ -31,12 +34,13 @@ const tui = {
 	terminal: { rows: 24 },
 	requestRender(): void { renders++; },
 } as unknown as TUI;
+let backgroundFills = 0;
 const theme = {
 	fg: (_token: string, text: string) => text,
-	bg: (_token: string, text: string) => text,
+	bg: (_token: string, text: string) => { backgroundFills++; return text; },
 	bold: (text: string) => text,
 } as unknown as Theme;
-const state = new ExplorerState("list", "chronological");
+const state = new ExplorerState("list");
 const copied: string[] = [];
 const opened: string[] = [];
 const notifications: string[] = [];
@@ -56,12 +60,30 @@ const component = new ExplorerComponent({
 });
 component.focused = true;
 
+// Bordered frame anatomy
+
 const initialLines = component.render(70);
+const initialFrame = initialLines.join("\n");
 eq("initial selection is the newest block", state.selected?.block.id, "block-11");
-ok("list always renders a bottom preview", initialLines.some((line) => line.includes("Preview")));
-ok("footer exposes both query operators", initialLines.join("\n").includes("is:<type>") && initialLines.join("\n").includes("tool:<name>"));
-ok("boxed overlay remains width safe", initialLines.every((line) => visibleWidth(line) <= 70));
-ok("component respects the overlay-height budget", initialLines.length <= Math.floor(24 * 0.9));
+ok("top border embeds the fuzzy title", initialLines[0]?.startsWith("┌ fuzzy ") === true);
+ok("top border embeds the match counts", initialLines[0]?.includes("12/12 ┐") === true);
+ok("input line shows the filter affordance", initialLines[1]?.startsWith("│ › ") === true);
+ok("a plain rule separates input from rows", initialLines[2]?.startsWith("├─") === true && initialLines[2]?.endsWith("┤") === true);
+ok("selected row carries the marker", initialFrame.includes("▸ Assistant"));
+ok("a titled rule introduces the preview", initialLines.some((line) => line.startsWith("├ Assistant · ")));
+ok("a blank interior line precedes the preview rule",
+	initialLines[initialLines.findIndex((line) => line.startsWith("├ Assistant · ")) - 1] === `│ ${" ".repeat(66)} │`);
+ok("hints live in the bottom border", initialLines.at(-1)?.startsWith("└ enter detail · / filter · q/esc quit") === true);
+ok("no interior help footer lines remain", initialLines.filter((line) => line.includes("enter detail")).length === 1);
+ok("rows carry no timestamps", !initialFrame.includes("1970-01-01"));
+eq("frame uses the default background with no fill", backgroundFills, 0);
+ok("every line is exactly frame-width", initialLines.every((line) => visibleWidth(line) === 70));
+eq("frame consumes exactly the height budget", initialLines.length, Math.floor(24 * 0.9));
+eq("list and preview keep the 35/65 split",
+	[initialLines[8], initialLines[9]?.startsWith("├ Assistant · ")],
+	[`│ ${" ".repeat(66)} │`, true]);
+
+// List navigation
 
 component.handleInput("k");
 eq("k moves to an earlier row", state.selected?.block.id, "block-10");
@@ -77,24 +99,43 @@ eq("G selects the displayed last row", state.selectedIndex, state.results.length
 component.handleInput("g");
 eq("g selects the displayed first row", state.selectedIndex, 0);
 
+// Filter mode
+
 component.handleInput("/");
 eq("slash enters filter mode", state.mode, "filter");
 component.handleInput("u");
 component.handleInput("d");
-eq("u and d type while filtering", state.query, "ud");
+component.handleInput("q");
+eq("u, d, and q type while filtering instead of acting", state.query, "udq");
 component.handleInput("\x15");
 eq("ctrl+u clears the filter query", state.query, "");
 component.handleInput("body");
 eq("printable filter text is applied live", state.query, "body");
-const selectedBeforeArrow = state.selected?.block.id;
-component.handleInput("\x1b[A");
-ok("arrow keys navigate while the query remains active", state.query === "body" && state.selected?.block.id !== selectedBeforeArrow);
+eq("typing re-selects the top-ranked result", [state.selectedIndex, state.selected?.block.id], [0, "block-11"]);
+const filterLines = component.render(70);
+ok("filter hints replace list hints", filterLines.at(-1)?.includes("ctrl+u clear") === true);
+ok("filter counts reflect the narrowed results", filterLines[0]?.includes(`${state.results.length}/12`) === true);
+component.handleInput("\x1b[B");
+ok("arrow keys navigate while the query remains active", state.query === "body" && state.selected?.block.id === "block-10");
+component.handleInput("\x1b[D");
+eq("cursor movement keys are not typing and keep the selection",
+	[state.query, state.selected?.block.id], ["body", "block-10"]);
+ok("the input line carries one prompt, not Input's doubled one",
+	component.render(70)[1]?.startsWith("│ › ") === true && !component.render(70)[1]?.includes("› > "));
 component.handleInput("\x1b");
 eq("Escape leaves filter mode without clearing query", [state.mode, state.query], ["list", "body"]);
+const staticQueryLines = component.render(70);
+ok("list mode shows the static query text", staticQueryLines[1]?.startsWith("│ › body") === true);
+
+// Detail mode
 
 component.handleInput("\r");
 eq("Enter opens full detail from list mode", state.mode, "detail");
-component.render(50);
+const detailLines = component.render(50);
+ok("detail top border shows the block identity", detailLines[0]?.startsWith("┌ user · ") === true);
+ok("detail top border shows the position", detailLines[0]?.includes(`2/${state.results.length} ┐`) === true);
+ok("detail content starts on the first interior line", detailLines[1]?.startsWith("│ body 10") === true);
+ok("detail hints live in the bottom border", detailLines.at(-1)?.startsWith("└ j/k scroll") === true);
 const beforeDetailPage = state.detailOffset;
 component.handleInput("d");
 ok("d pages detail content", state.detailOffset > beforeDetailPage);
@@ -112,17 +153,29 @@ eq("o smart-opens the selected block", opened, [detailSelected]);
 component.handleInput("\x1b");
 eq("Escape returns from detail with selection synced", [state.mode, state.selected?.block.id], ["list", detailSelected]);
 
+// Live data, resize, and shutdown
+
 const pinned = state.selected?.block.id;
 blocks = [...blocks, block(12)];
 const resized = component.render(31);
 eq("live appends and resize keep selection pinned by id", state.selected?.block.id, pinned);
 ok("narrow rerender remains width safe", resized.every((line) => visibleWidth(line) <= 31));
+ok("narrow hints degrade to top-priority keys", resized.at(-1)?.includes("enter detail") === true);
 (tui.terminal as { rows: number }).rows = 10;
 const shortTerminal = component.render(31);
 ok("short-terminal render stays inside Pi's 90% height cap", shortTerminal.length <= Math.floor(10 * 0.9));
-ok("short-terminal footer retains query operators", shortTerminal.join("\n").includes("is:<type>") && shortTerminal.join("\n").includes("tool:<name>"));
+ok("short-terminal frame keeps its borders",
+	shortTerminal[0]?.startsWith("┌") === true && shortTerminal.at(-1)?.startsWith("└") === true);
+(tui.terminal as { rows: number }).rows = 4;
+const tinyTerminal = component.render(31);
+eq("tiny terminals still close the frame",
+	[tinyTerminal.length, tinyTerminal[0]?.startsWith("┌"), tinyTerminal.at(-1)?.startsWith("└")],
+	[3, true, true]);
+(tui.terminal as { rows: number }).rows = 10;
 component.handleInput("\x1b");
 eq("Escape in list closes the explorer", doneCalls, 1);
+component.handleInput("q");
+eq("q in list also closes the explorer", doneCalls, 2);
 ok("state changes request TUI renders", renders > 0);
 ok("copy completion is notified", notifications.some((message) => message.includes("Copied")));
 component.dispose();

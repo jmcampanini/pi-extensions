@@ -1,12 +1,13 @@
+import { isEmptyQuery, parseQuery } from "./query.ts";
 import { searchBlocks } from "./search.ts";
-import type { Block, ListOrder, SearchResult } from "./types.ts";
+import type { Block, SearchResult } from "./types.ts";
 
 export type ExplorerMode = "list" | "filter" | "detail";
 
 /**
  * UI state is independent from terminal rendering. Selection is stored as a
- * block id so re-filtering, live appends, and resize do not move a surviving
- * selection.
+ * block id so live appends and resize do not move a surviving selection;
+ * typing is the one action that re-selects the best result.
  */
 export class ExplorerState {
 	mode: ExplorerMode;
@@ -21,11 +22,13 @@ export class ExplorerState {
 	private blocks: readonly Block[] = [];
 	private fallbackIndex = 0;
 	private initialized = false;
-	private readonly listOrder: ListOrder;
 
-	constructor(openMode: "list" | "filter", listOrder: ListOrder) {
+	constructor(openMode: "list" | "filter") {
 		this.mode = openMode;
-		this.listOrder = listOrder;
+	}
+
+	get totalBlocks(): number {
+		return this.blocks.length;
 	}
 
 	get selectedIndex(): number {
@@ -40,15 +43,26 @@ export class ExplorerState {
 		return this.results[this.selectedIndex];
 	}
 
+	/** Sticky sync: a surviving selection stays pinned by id across live appends. */
 	syncBlocks(blocks: readonly Block[]): void {
 		this.blocks = blocks;
 		this.refreshResults(!this.initialized);
 		this.initialized = true;
 	}
 
+	/** Typing resets selection: best result while querying, newest block when empty. */
 	setQuery(query: string): void {
+		// Cursor movement and other value-preserving keys are not a query change.
+		if (query === this.query) return;
 		this.query = query;
-		this.refreshResults(false);
+		this.results = searchBlocks(this.blocks, this.query);
+		if (this.results.length === 0) {
+			this.selectedId = undefined;
+			this.fallbackIndex = 0;
+			this.listViewport = 0;
+			return;
+		}
+		this.selectIndex(isEmptyQuery(parseQuery(query)) ? this.results.length - 1 : 0);
 	}
 
 	setListPageSize(size: number): void {
@@ -129,7 +143,7 @@ export class ExplorerState {
 	private refreshResults(firstLoad: boolean): void {
 		const previousId = this.selectedId;
 		const previousIndex = this.selectedIndex;
-		this.results = searchBlocks(this.blocks, this.query, this.listOrder);
+		this.results = searchBlocks(this.blocks, this.query);
 
 		if (this.results.length === 0) {
 			this.selectedId = undefined;

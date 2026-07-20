@@ -52,7 +52,6 @@ function dirWith(content: string | null): string {
 const defaults = {
 	openShortcut: "ctrl+r",
 	openMode: "list",
-	listOrder: "chronological",
 };
 
 // Paths and the built-in defaults follow Pi's config-root convention.
@@ -69,11 +68,9 @@ eq("missing file uses defaults", loadConfig({ PI_CODING_AGENT_DIR: dirWith(null)
 eq(
 	"full file applies",
 	loadConfig({
-		PI_CODING_AGENT_DIR: dirWith(
-			'{"openShortcut":"alt+x","openMode":"filter","listOrder":"reverse-chronological"}',
-		),
+		PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"alt+x","openMode":"filter"}'),
 	}),
-	{ openShortcut: "alt+x", openMode: "filter", listOrder: "reverse-chronological" },
+	{ openShortcut: "alt+x", openMode: "filter" },
 );
 eq(
 	"partial file keeps defaults",
@@ -83,14 +80,11 @@ eq(
 eq(
 	"environment beats file",
 	loadConfig({
-		PI_CODING_AGENT_DIR: dirWith(
-			'{"openShortcut":"alt+x","openMode":"list","listOrder":"reverse-chronological"}',
-		),
+		PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"alt+x","openMode":"list"}'),
 		PI_FUZZY_EXPLORER_OPEN_SHORTCUT: "ctrl+shift+f12",
 		PI_FUZZY_EXPLORER_OPEN_MODE: "filter",
-		PI_FUZZY_EXPLORER_LIST_ORDER: "relevance",
 	}),
-	{ openShortcut: "ctrl+shift+f12", openMode: "filter", listOrder: "relevance" },
+	{ openShortcut: "ctrl+shift+f12", openMode: "filter" },
 );
 eq(
 	"only the documented environment names apply",
@@ -98,7 +92,7 @@ eq(
 		PI_CODING_AGENT_DIR: dirWith(null),
 		PI_FUZZY_EXPLORER_SHORTCUT: "alt+x",
 		PI_FUZZY_EXPLORER_MODE: "filter",
-		PI_FUZZY_EXPLORER_ORDER: "relevance",
+		PI_FUZZY_EXPLORER_LIST_ORDER: "relevance",
 	}),
 	defaults,
 );
@@ -188,18 +182,9 @@ throws(
 	'openMode ""',
 );
 throws(
-	"invalid file list order",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"listOrder":"newest"}') }),
-	"valid values: chronological, reverse-chronological, relevance",
-);
-throws(
-	"invalid environment list order",
-	() =>
-		loadConfig({
-			PI_CODING_AGENT_DIR: dirWith(null),
-			PI_FUZZY_EXPLORER_LIST_ORDER: "reverse_chronological",
-		}),
-	"PI_FUZZY_EXPLORER_LIST_ORDER",
+	"the removed listOrder key is unknown",
+	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"listOrder":"chronological"}') }),
+	"unknown key(s) listOrder",
 );
 
 // Structural and syntax errors fail before environment overrides are considered.

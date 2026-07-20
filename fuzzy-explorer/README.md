@@ -6,16 +6,19 @@ Open it with `/fuzzy-explorer` or `Ctrl+R`. It only reads `sessionManager.getBra
 
 ## Search
 
-Plain terms are ANDed. Each term fuzzy-matches compact fields such as tool names, arguments, paths, labels, timestamps, and entry IDs, or substring-matches the complete text stored in a message/result body.
+Plain terms are ANDed. Each term fuzzy-matches a block's short search key (kind, tool name, title, and argument subtitle), or substring-matches the complete text stored in a message/result body. Separators (`- _ . / :`) are normalized with a small ranking penalty, so `sub-agent` finds `subagent` and vice versa.
 
-- `is:user`, `is:assistant`, `is:tool`, `is:bash`, `is:custom`, `is:summary`
-- `tool:read`, `tool:bash`, or another exact tool name
+- `is:user`, `is:assistant`, `is:tool`, `is:bash`, `is:custom`, `is:summary` — fuzzy patterns, so `is:s` keeps summaries and assistants
+- `tool:read`, `tool:bash`, or a fuzzy fragment of another tool name
+- `any:toolu_01` — substring search across everything indexed (arguments, tool call ids, entry ids, timestamps, full body) for hunting concrete needles
 
 Paths stay intact, so `src/config.ts` is one term. Unknown operators are treated as plain terms.
 
+While a query is active, results are ordered by relevance (best first; newest first among ties) and typing re-selects the top result. With an empty query the list is chronological and anchored on the newest block.
+
 ## Keys
 
-List mode uses arrows or `j`/`k`, `u`/`d` to page, `g`/`G` for first/last, `/` to filter, Enter for detail, `y` to copy, `o` to open, and Escape to close. In filter mode, printable keys edit the query while arrows still navigate; `Ctrl+U` clears it and Escape returns to list mode without clearing it.
+List mode uses arrows or `j`/`k`, `u`/`d` to page, `g`/`G` for first/last, `/` to filter, Enter for detail, `y` to copy, `o` to open, and `q` or Escape to close. In filter mode, printable keys edit the query while arrows still navigate; `Ctrl+U` clears it and Escape returns to list mode without clearing it.
 
 Detail mode uses arrows or `j`/`k` to scroll, `u`/`d` to page, `J`/`K` to visit adjacent filtered blocks, `y`/`o` for actions, and Escape to return to the list.
 
@@ -26,8 +29,7 @@ Create `$PI_CODING_AGENT_DIR/fuzzy-explorer.json` (normally `~/.pi/agent/fuzzy-e
 ```json
 {
   "openShortcut": "ctrl+r",
-  "openMode": "list",
-  "listOrder": "chronological"
+  "openMode": "list"
 }
 ```
 
@@ -35,7 +37,6 @@ Environment variables override the file:
 
 - `PI_FUZZY_EXPLORER_OPEN_SHORTCUT`
 - `PI_FUZZY_EXPLORER_OPEN_MODE`
-- `PI_FUZZY_EXPLORER_LIST_ORDER`
 
 Unknown keys, invalid values, and shortcuts reserved by Pi's main editor fail when the extension loads.
 

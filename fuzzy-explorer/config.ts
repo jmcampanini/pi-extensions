@@ -6,7 +6,6 @@ import { join } from "node:path";
 export interface FuzzyExplorerConfig {
 	openShortcut: KeyId;
 	openMode: "list" | "filter";
-	listOrder: "chronological" | "reverse-chronological" | "relevance";
 }
 
 type Env = Record<string, string | undefined>;
@@ -15,7 +14,6 @@ type Env = Record<string, string | undefined>;
 const DEFAULTS: FuzzyExplorerConfig = {
 	openShortcut: "ctrl+r",
 	openMode: "list",
-	listOrder: "chronological",
 };
 
 const VALID_KEYS = Object.keys(DEFAULTS);
@@ -116,13 +114,6 @@ function requireOpenMode(value: unknown, source: string): FuzzyExplorerConfig["o
 	throw new Error(`${source}: invalid openMode ${JSON.stringify(value)} — valid values: list, filter`);
 }
 
-function requireListOrder(value: unknown, source: string): FuzzyExplorerConfig["listOrder"] {
-	if (value === "chronological" || value === "reverse-chronological" || value === "relevance") return value;
-	throw new Error(
-		`${source}: invalid listOrder ${JSON.stringify(value)} — valid values: chronological, reverse-chronological, relevance`,
-	);
-}
-
 export function loadConfig(env: Env = process.env): FuzzyExplorerConfig {
 	const result: FuzzyExplorerConfig = { ...DEFAULTS };
 	const filePath = configFilePath(env);
@@ -154,9 +145,6 @@ export function loadConfig(env: Env = process.env): FuzzyExplorerConfig {
 		if (file.openMode !== undefined) {
 			result.openMode = requireOpenMode(file.openMode, `${filePath}: openMode`);
 		}
-		if (file.listOrder !== undefined) {
-			result.listOrder = requireListOrder(file.listOrder, `${filePath}: listOrder`);
-		}
 	}
 
 	// Environment values use the same validators and override the file one key at a time.
@@ -168,9 +156,6 @@ export function loadConfig(env: Env = process.env): FuzzyExplorerConfig {
 	}
 	if (env.PI_FUZZY_EXPLORER_OPEN_MODE !== undefined) {
 		result.openMode = requireOpenMode(env.PI_FUZZY_EXPLORER_OPEN_MODE, "PI_FUZZY_EXPLORER_OPEN_MODE");
-	}
-	if (env.PI_FUZZY_EXPLORER_LIST_ORDER !== undefined) {
-		result.listOrder = requireListOrder(env.PI_FUZZY_EXPLORER_LIST_ORDER, "PI_FUZZY_EXPLORER_LIST_ORDER");
 	}
 
 	return result;

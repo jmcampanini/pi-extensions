@@ -14,6 +14,7 @@ import {
 	type SmartOpenFileSystem,
 	type SmartOpenTarget,
 } from "../actions.ts";
+import { makeBlock } from "./block-factory.ts";
 
 let pass = 0;
 let fail = 0;
@@ -41,7 +42,7 @@ function ok(label: string, condition: boolean): void {
 }
 
 function block(overrides: Partial<Block> = {}): Block {
-	return {
+	return makeBlock({
 		id: "block-1",
 		kind: "assistant",
 		entryId: "entry-1",
@@ -52,7 +53,7 @@ function block(overrides: Partial<Block> = {}): Block {
 		title: "Assistant",
 		canonicalText: "canonical body",
 		...overrides,
-	};
+	});
 }
 
 class FakeFileSystem implements SmartOpenFileSystem {
