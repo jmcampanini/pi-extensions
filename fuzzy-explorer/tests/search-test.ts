@@ -130,11 +130,16 @@ eq("field substring highlights cover every occurrence", repeatedMatch.highlightS
 	{ zone: "fields", start: 0, end: 4 },
 	{ zone: "fields", start: 5, end: 9 },
 ]);
-eq("body substring highlights cover every case-insensitive occurrence", repeatedMatch.highlightSpans.filter((span) => span.zone === "body"), [
-	{ zone: "body", start: 0, end: 6 },
-	{ zone: "body", start: 11, end: 17 },
-	{ zone: "body", start: 19, end: 25 },
-]);
+eq("body substring highlighting is deferred by token", repeatedMatch.bodyHighlightTokens, ["needle"]);
+eq("search does not materialize body occurrence spans", repeatedMatch.highlightSpans.filter((span) => span.zone === "body"), []);
+const repeatedLargeBody = "a ".repeat(5_000);
+const largeBodyResults = searchBlocks(
+	Array.from({ length: 20 }, (_, index) => makeBlock({ id: `large-${index}`, fields: "zz", body: repeatedLargeBody })),
+	"a",
+);
+eq("common-token search stores one lazy body token per result",
+	largeBodyResults.map((result) => [result.match.highlightSpans.length, result.match.bodyHighlightTokens]),
+	Array.from({ length: 20 }, () => [0, ["a"]]));
 
 // Ordering
 

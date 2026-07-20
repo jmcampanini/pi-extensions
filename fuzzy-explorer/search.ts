@@ -102,11 +102,13 @@ export function matchBlock(query: ParsedQuery, block: Block): BlockMatch {
 
 	let score = 0;
 	const highlightSpans: HighlightSpan[] = [];
+	const bodyHighlightTokens: string[] = [];
+	const bodyLower = block.body.toLowerCase();
 
 	for (const token of query.tokens) {
 		const fieldMatch = fuzzyMatch(token, block.fields);
-		const bodySpans = substringSpans(block.body, token, "body");
-		if (!fieldMatch.matches && bodySpans.length === 0) {
+		const bodyMatches = bodyLower.includes(token.toLowerCase());
+		if (!fieldMatch.matches && !bodyMatches) {
 			return { matches: false, score: 0, highlightSpans: [] };
 		}
 
@@ -114,10 +116,15 @@ export function matchBlock(query: ParsedQuery, block: Block): BlockMatch {
 			score += fieldMatch.score;
 			highlightSpans.push(...fuzzyFieldSpans(token, block.fields));
 		}
-		highlightSpans.push(...bodySpans);
+		if (bodyMatches) bodyHighlightTokens.push(token);
 	}
 
-	return { matches: true, score, highlightSpans: mergeSpans(highlightSpans) };
+	return {
+		matches: true,
+		score,
+		highlightSpans: mergeSpans(highlightSpans),
+		bodyHighlightTokens,
+	};
 }
 
 // Result ordering

@@ -53,6 +53,7 @@ export interface BlockMatch {
 	matches: boolean;
 	score: number;
 	highlightSpans: HighlightSpan[];
+	bodyHighlightTokens?: string[];
 }
 
 export type ListOrder = "chronological" | "reverse-chronological" | "relevance";

@@ -148,6 +148,12 @@ ok("body-only highlight survives long row metadata",
 	formatResultRow(longHeaderResult, false, 100, markedStyles).includes("⟦needle⟧"));
 ok("fuzzy field highlight is exposed in preview metadata", highlightedPreview.includes("⟦config⟧"));
 ok("body highlight is mapped into canonical preview content", highlightedPreview.includes("⟦needle⟧"));
+const lazyBodyResult: SearchResult = {
+	block: { ...block, body: "Needle and needle; needleness", canonicalText: "Needle and needle; needleness", canonicalBodyOffset: 0 },
+	match: { matches: true, score: 0, highlightSpans: [], bodyHighlightTokens: ["needle"] },
+};
+const lazyBodyPreview = formatPreviewLines(lazyBodyResult, 200, 8, markedStyles).join("\n");
+eq("preview materializes every deferred body occurrence", lazyBodyPreview.match(/⟦Needle⟧|⟦needle⟧/g)?.length, 3);
 const repeatedCanonicalBlock: Block = {
 	...block,
 	kind: "bash",

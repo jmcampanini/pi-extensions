@@ -63,11 +63,19 @@ function singleLine(text: string): string {
 	return sanitizeTerminalText(text).replace(/\s+/gu, " ").trim();
 }
 
-function unpack(value: RenderBlock): { block: Block; spans: readonly HighlightSpan[] } {
+function unpack(value: RenderBlock): {
+	block: Block;
+	spans: readonly HighlightSpan[];
+	bodyTokens: readonly string[];
+} {
 	if ("block" in value && "match" in value) {
-		return { block: value.block, spans: value.match.highlightSpans };
+		return {
+			block: value.block,
+			spans: value.match.highlightSpans,
+			bodyTokens: value.match.bodyHighlightTokens ?? [],
+		};
 	}
-	return { block: value, spans: [] };
+	return { block: value, spans: [], bodyTokens: [] };
 }
 
 interface TextSpan {
@@ -176,10 +184,31 @@ function spansForZone(spans: readonly HighlightSpan[], zone: HighlightSpan["zone
 		.map(({ start, end }) => ({ start, end }));
 }
 
-function canonicalBodySpans(block: Block, spans: readonly HighlightSpan[], content: string): TextSpan[] {
-	const bodySpans = spansForZone(spans, "body");
+function bodyHighlightSpans(
+	body: string,
+	spans: readonly HighlightSpan[],
+	tokens: readonly string[],
+	allOccurrences: boolean,
+): TextSpan[] {
+	const matches = spansForZone(spans, "body");
+	const bodyLower = body.toLowerCase();
+	for (const token of tokens) {
+		const tokenLower = token.toLowerCase();
+		if (tokenLower === "") continue;
+		for (
+			let start = bodyLower.indexOf(tokenLower);
+			start !== -1;
+			start = allOccurrences ? bodyLower.indexOf(tokenLower, start + 1) : -1
+		) {
+			matches.push({ start, end: start + token.length });
+		}
+	}
+	return matches;
+}
+
+function canonicalBodySpans(block: Block, bodySpans: readonly TextSpan[], content: string): TextSpan[] {
 	if (bodySpans.length === 0) return [];
-	if (content === block.body) return bodySpans;
+	if (content === block.body) return [...bodySpans];
 	const bodyOffset = block.canonicalBodyOffset;
 	if (content !== block.canonicalText || bodyOffset === undefined) return [];
 	return bodySpans.map((span) => ({
@@ -266,9 +295,9 @@ export function formatResultRow(
 ): string {
 	const maxWidth = safeWidth(width);
 	if (maxWidth === 0) return "";
-	const { block, spans } = unpack(value);
+	const { block, spans, bodyTokens } = unpack(value);
 	const styles = renderStyles(styleOverrides);
-	const bodySpans = spansForZone(spans, "body");
+	const bodySpans = bodyHighlightSpans(block.body, spans, bodyTokens, false);
 	const fieldSpans = spansForZone(spans, "fields");
 	const headerPartWidth = Math.max(10, Math.floor(maxWidth / (bodySpans.length > 0 ? 8 : 4)));
 	const pieces = [
@@ -305,10 +334,11 @@ export function formatPreviewLines(
 	const maxWidth = safeWidth(width);
 	const lineLimit = Number.isFinite(maxLines) && maxLines > 0 ? Math.floor(maxLines) : 0;
 	if (maxWidth === 0 || lineLimit === 0) return [];
-	const { block, spans } = unpack(value);
+	const { block, spans, bodyTokens } = unpack(value);
 	const styles = renderStyles(styleOverrides);
 	const content = block.canonicalText !== "" ? block.canonicalText : block.body;
-	const contentSpans = canonicalBodySpans(block, spans, content);
+	const bodySpans = bodyHighlightSpans(block.body, spans, bodyTokens, true);
+	const contentSpans = canonicalBodySpans(block, bodySpans, content);
 	const styledContent = styledHighlightedText(content, contentSpans, styles.body, styles.highlight);
 	const contentLines = wrapStyledText(styledContent, maxWidth);
 	if (contentLines.length === 0) contentLines.push(styles.dim("(empty block)"));
@@ -351,7 +381,7 @@ export function formatDetailLines(
 ): string[] {
 	const maxWidth = safeWidth(width);
 	if (maxWidth === 0) return [];
-	const { block, spans } = unpack(value);
+	const { block, spans, bodyTokens } = unpack(value);
 	const styles = renderStyles(styleOverrides);
 	const lines: string[] = [clampLine(blockHeader(block, styles), maxWidth)];
 	const fields = singleLine(block.fields);
@@ -372,7 +402,7 @@ export function formatDetailLines(
 	const content = block.canonicalText !== "" ? block.canonicalText : block.body;
 	const styledContent = styledHighlightedText(
 		content,
-		canonicalBodySpans(block, spans, content),
+		canonicalBodySpans(block, bodyHighlightSpans(block.body, spans, bodyTokens, true), content),
 		styles.body,
 		styles.highlight,
 	);
