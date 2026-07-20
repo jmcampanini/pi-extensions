@@ -1,10 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { config, type AutoCompactConfig } from "./config.ts";
 
-function displayPercent(percent: number): string {
-	return `${Math.round(percent)}%`;
-}
-
 export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompactConfig): void {
 	let inFlight = false;
 	let failed = false;
@@ -22,7 +18,7 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 		const usage = ctx.getContextUsage();
 		if (usage?.percent == null || usage.percent < resolvedConfig.thresholdPercent) return;
 
-		const percent = displayPercent(usage.percent);
+		const percent = `${Math.round(usage.percent)}%`;
 		if (lastRunAborted) {
 			ctx.ui.notify(
 				`Context at ${percent} — auto-compaction deferred after the aborted run; it will run after the next completed run.`,
@@ -33,31 +29,27 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 
 		if (!ctx.isIdle() || ctx.hasPendingMessages()) return;
 
-		let resolveCompaction: () => void;
-		const waitForCompaction = new Promise<void>((resolve) => {
-			resolveCompaction = resolve;
-		});
-		const finishCompaction = () => {
-			inFlight = false;
-			resolveCompaction();
-		};
-
 		inFlight = true;
 		ctx.ui.notify(`Context at ${percent} — auto-compacting.`, "info");
-		ctx.compact({
-			onComplete: finishCompaction,
-			onError: (error) => {
-				failed = true;
-				finishCompaction();
-				if (active) {
-					ctx.ui.notify(
-						`Auto-compaction failed: ${error.message}. Percentage auto-compaction is disabled until the next successful compaction or model switch.`,
-						"error",
-					);
-				}
-			},
+		return new Promise<void>((resolve) => {
+			const finishCompaction = () => {
+				inFlight = false;
+				resolve();
+			};
+			ctx.compact({
+				onComplete: finishCompaction,
+				onError: (error) => {
+					failed = true;
+					finishCompaction();
+					if (active) {
+						ctx.ui.notify(
+							`Auto-compaction failed: ${error.message}. Percentage auto-compaction is disabled until the next successful compaction or model switch.`,
+							"error",
+						);
+					}
+				},
+			});
 		});
-		return waitForCompaction;
 	});
 
 	pi.on("session_compact", () => {
