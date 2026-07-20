@@ -24,7 +24,7 @@
  *   agents.ts            agent definition files + the inventory built from them
  *   catalogue.ts         the bounded agent catalogue in the parent's system prompt
  *   session.ts           reading/seeding pi session .jsonl files (fork, summaries)
- *   tmux.ts              panes: create/type/read/close + the exit poller
+ *   tmux.ts              panes: stage/create/read/close + the exit poller
  *   launch.ts            building a child's launch command + the .meta sidecar
  *   state.ts             shared runtime state (running children, ledger, /reload)
  *   widget.ts            pure renderer for the running-children widget
