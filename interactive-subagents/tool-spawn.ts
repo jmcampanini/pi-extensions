@@ -30,7 +30,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { activityFilePath, clearActivityFile } from "./activity.ts";
 import { assertValidAgentIdentifier } from "./agent-identifier.ts";
-import { agentDefsDir, loadAgentDefinition, projectDefsDir } from "./agents.ts";
+import { agentDefsDir, loadAgentDefinition, projectDefsDir, type AgentDefinition } from "./agents.ts";
 import {
 	AbandonLaunch,
 	admitLaunch,
@@ -75,7 +75,7 @@ const SubagentSpawnParams = Type.Object({
 	agent: Type.Optional(
 		Type.String({
 			description:
-				"Agent definition identifier to load defaults from (a <name>.md file in <cwd>/.pi/subagents/ or the global subagents dir; no whitespace, at most 20 display columns; project shadows global — see subagent_list). Default: 'worker'",
+				"Agent definition identifier to load defaults from (a <name>.md file in <cwd>/.pi/subagents/ or the global subagents dir; no whitespace, at most 20 display columns; project shadows global — see subagent_available). Default: 'worker'",
 		}),
 	),
 	context: Type.Optional(
@@ -124,6 +124,60 @@ const SubagentSpawnParams = Type.Object({
 });
 type SubagentSpawnParamsType = Static<typeof SubagentSpawnParams>;
 
+interface EffectiveSpawnBehavior {
+	context: "fresh" | "forked";
+	autoExit: boolean;
+	useWorktree: boolean;
+	harness: string;
+}
+
+interface SpawnBehaviorPresentation {
+	version: 1;
+	behavior: EffectiveSpawnBehavior;
+}
+
+interface SpawnRenderState {
+	effectiveBehavior?: EffectiveSpawnBehavior;
+}
+
+function spawnBehaviorPresentation(behavior: EffectiveSpawnBehavior): SpawnBehaviorPresentation {
+	return { version: 1, behavior: { ...behavior } };
+}
+
+function parseSpawnBehavior(details: unknown): EffectiveSpawnBehavior | undefined {
+	if (!details || typeof details !== "object") return undefined;
+	const presentation = (details as { presentation?: unknown }).presentation;
+	if (!presentation || typeof presentation !== "object") return undefined;
+	const candidate = presentation as Partial<SpawnBehaviorPresentation>;
+	if (candidate.version !== 1 || !candidate.behavior || typeof candidate.behavior !== "object") return undefined;
+	const behavior = candidate.behavior as Partial<EffectiveSpawnBehavior>;
+	if ((behavior.context !== "fresh" && behavior.context !== "forked")
+		|| typeof behavior.autoExit !== "boolean"
+		|| typeof behavior.useWorktree !== "boolean"
+		|| typeof behavior.harness !== "string") return undefined;
+	return behavior as EffectiveSpawnBehavior;
+}
+
+function effectiveSpawnBehavior(
+	params: Pick<SubagentSpawnParamsType, "context" | "autoExit" | "worktree" | "cwd">,
+	agentDef: AgentDefinition | null,
+): EffectiveSpawnBehavior {
+	return {
+		context: params.context ?? agentDef?.context ?? "fresh",
+		autoExit: params.autoExit ?? agentDef?.autoExit ?? true,
+		useWorktree: params.worktree ?? (params.cwd ? false : (agentDef?.worktree ?? false)),
+		harness: agentDef?.harness ?? "pi",
+	};
+}
+
+function spawnCallPresentation(params: SubagentSpawnParamsType, cwd: string): SubagentSpawnParamsType & EffectiveSpawnBehavior {
+	let agentDef: AgentDefinition | null = null;
+	try {
+		agentDef = loadAgentDefinition(params.agent ?? "worker", cwd);
+	} catch {}
+	return { ...params, ...effectiveSpawnBehavior(params, agentDef) };
+}
+
 const CALL_TEXT_METRICS = {
 	visibleWidth,
 	truncateToWidth,
@@ -152,23 +206,29 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 		],
 		parameters: SubagentSpawnParams,
 		renderCall(args, theme, context) {
+			const fallbackPresentation = spawnCallPresentation(args, context.cwd);
+			const state = context.state as SpawnRenderState;
 			const style = {
 				title: (text: string) => theme.fg("toolTitle", theme.bold(text)),
 				name: (text: string) => theme.fg("accent", text),
 				agent: (text: string) => theme.fg("muted", text),
 				hint: (text: string) => theme.fg("dim", text),
 				preview: (text: string) => theme.fg("dim", text),
+				metadata: (text: string) => theme.fg("muted", text),
 				body: (text: string) => theme.fg("toolOutput", text),
 			};
 			const expandHint = keyHint("app.tools.expand", "to expand");
 			return {
 				invalidate(): void {},
 				render(width: number): string[] {
+					const presentation = state.effectiveBehavior
+						? { ...args, ...state.effectiveBehavior }
+						: fallbackPresentation;
 					if (context.expanded) {
-						return formatExpandedSubagentCall(args, width, CALL_TEXT_METRICS, style);
+						return formatExpandedSubagentCall(presentation, width, CALL_TEXT_METRICS, style);
 					}
 					return formatCollapsedSubagentCall(
-						args,
+						presentation,
 						width,
 						config.callPreviewLines,
 						CALL_TEXT_METRICS,
@@ -179,6 +239,8 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			};
 		},
 		renderResult(result, _options, theme, context) {
+			const behavior = context.isError ? undefined : parseSpawnBehavior(result.details);
+			if (behavior) (context.state as SpawnRenderState).effectiveBehavior = behavior;
 			return renderSubagentLaunchResult(result, context.isError, (text) =>
 				new Text(theme.fg("error", text), 0, 0),
 			);
@@ -207,7 +269,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			if (!agentDef) {
 				throw new Error(
 					params.agent
-						? `Unknown agent "${agentName}" — no ${agentName}.md in ${projectDefsDir(ctx.cwd)} or ${agentDefsDir()}. Use subagent_list to see available agents.`
+						? `Unknown agent "${agentName}" — no ${agentName}.md in ${projectDefsDir(ctx.cwd)} or ${agentDefsDir()}. Use subagent_available to see available agents.`
 						: `No agent given, so this spawn defaults to "worker" — but ${join(agentDefsDir(), "worker.md")} does not exist. Create it (it defines the default sub-agent), or pass an agent explicitly.`,
 				);
 			}
@@ -219,10 +281,10 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			// Which tool runs the child. Frontmatter validation already flagged
 			// unknown names as problems above, so this lookup can only fail on
 			// an internal inconsistency - and then it fails loud.
-			const harness = agentDef.harness ?? "pi";
+			const behavior = effectiveSpawnBehavior(params, agentDef);
+			const presentation = spawnBehaviorPresentation(behavior);
+			const { harness, context, autoExit, useWorktree } = behavior;
 			const profile = harness === "pi" ? undefined : requireHarnessProfile(harness);
-
-			const context = params.context ?? agentDef.context ?? "fresh";
 			// The frontmatter combination is already a problem (checked above);
 			// this catches an explicit context param against an external agent.
 			if (profile && context === "forked") {
@@ -256,7 +318,6 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 				else assertValidThinkingLevel(thinking);
 			}
 			const tools = params.tools ?? agentDef.tools;
-			const autoExit = params.autoExit ?? agentDef.autoExit ?? true;
 			// Worktree isolation: param beats frontmatter, default off. An
 			// explicit cwd contradicts "run in a fresh worktree" (the worktree
 			// IS the child's cwd) — but only when BOTH were explicitly passed
@@ -268,7 +329,6 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 					"The `worktree` and `cwd` parameters cannot be combined — the worktree becomes the sub-agent's working directory.",
 				);
 			}
-			const useWorktree = params.worktree ?? (params.cwd ? false : (agentDef.worktree ?? false));
 
 			// Fork needs the parent's session file on disk. pi buffers a brand-new
 			// session in memory until the first assistant reply, so a fork on the
@@ -342,7 +402,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 								`any other sub-agent's — do not poll, and do not re-issue this spawn.${forkNote}`,
 						},
 					],
-					details: { id, status: "queued", ahead: admission.ahead },
+					details: { id, status: "queued", ahead: admission.ahead, presentation },
 				};
 			}
 
@@ -385,6 +445,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 				],
 				details: {
 					id,
+					presentation,
 					sessionFile: launched.childSessionFile,
 					paneId: launched.paneId,
 					launchScript: launched.scriptPath,

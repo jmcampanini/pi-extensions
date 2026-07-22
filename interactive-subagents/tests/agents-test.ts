@@ -10,6 +10,7 @@ import {
 	loadAgentDefinition,
 	type AgentInfo,
 } from "../agents.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -151,12 +152,12 @@ const WIDTH = 78;
 const emptyLines = formatAgentOverviewLines([], WIDTH, { global: "/g/subagents", project: "/p/.pi/subagents" });
 const emptyFlat = emptyLines.join("\n");
 ok("empty state names both dirs", emptyFlat.includes("/g/subagents") && emptyFlat.includes("/p/.pi/subagents"));
-ok("empty state fits the width", formatAgentOverviewLines([], 40, dirs).every((l) => l.length <= 40));
+ok("empty state fits the width", formatAgentOverviewLines([], 40, dirs).every((l) => visibleWidth(l) <= 40));
 
 // `inventory` predates broken.md: badcontext, bare, crlf, scout, worker.
 const lines = formatAgentOverviewLines(inventory, WIDTH, dirs);
 const flat = lines.join("\n");
-ok("top rule carries the count", lines[0].startsWith("── Sub-agents · 5 ─") && lines[0].length === WIDTH);
+ok("top rule carries the count", lines[0].startsWith("── Sub-agents · 5 ─") && visibleWidth(lines[0]) === WIDTH);
 ok("names render as tags", flat.includes("[scout]") && flat.includes("[worker]"));
 ok("resolved model on the header row", lines.some((l) => l.includes("[scout]") && l.includes("openai-codex/gpt-5.5")));
 ok("no models listed reads as inherits", lines.some((l) => l.includes("[worker]") && l.includes("inherits parent model")));
@@ -174,13 +175,13 @@ ok(
 	lines.some((l) => l.includes("thinking low") && l.includes("tools: read, bash") && l.includes("forked · interactive")),
 );
 ok("frontmatter problems render as ⚠ blocks", lines.some((l) => l.trim().startsWith("⚠ invalid context")));
-ok("every line fits the width", lines.every((l) => l.length <= WIDTH));
+ok("every line fits the width", lines.every((l) => visibleWidth(l) <= WIDTH));
 ok("dismiss hint present", flat.includes("/subagent-available again"));
 
 // Narrow terminals: everything (incl. the model slot and dismiss hint) must
 // still give way instead of overflowing.
 const narrowLines = formatAgentOverviewLines(inventory, 50, dirs);
-ok("narrow width still fits", narrowLines.every((l) => l.length <= 50));
+ok("narrow width still fits", narrowLines.every((l) => visibleWidth(l) <= 50));
 ok("narrow model slot ellipsizes", narrowLines.some((l) => l.includes("…")));
 
 // Hostile shapes: a long agent name (eats the tag column), a long tools
@@ -197,7 +198,7 @@ writeFileSync(
 );
 const hostile = collectAgentInventory(registry, cwd);
 for (const w of [100, 78, 50, 34, 21]) {
-	ok(`hostile inventory fits width ${w}`, formatAgentOverviewLines(hostile, w, dirs).every((l) => l.length <= w));
+	ok(`hostile inventory fits width ${w}`, formatAgentOverviewLines(hostile, w, dirs).every((l) => visibleWidth(l) <= w));
 }
 const hostileFlat = formatAgentOverviewLines(hostile, 78, dirs).join("\n");
 ok("long tools list wraps instead of truncating", hostileFlat.includes("notebook, todo"));
@@ -208,7 +209,7 @@ ok("broken agent flagged in its header", brokenLines.some((l) => l.includes("[br
 ok("problem headline starts the block", brokenLines.some((l) => l.trim().startsWith("⚠ No usable model.")));
 ok("problem bullets keep their shape", brokenLines.some((l) => l.trim().startsWith("- anthropic/claude-x")));
 ok("second problem gets its own block", brokenLines.some((l) => l.includes("⚠ Invalid thinking level")));
-ok("broken view still fits the width", brokenLines.every((l) => l.length <= WIDTH));
+ok("broken view still fits the width", brokenLines.every((l) => visibleWidth(l) <= WIDTH));
 
 // ── worktree frontmatter (tri-state, mirrors auto-exit) ──────────────────
 // Placed after the overview-rendering tests: writing these agent files
@@ -294,7 +295,7 @@ const extLines = formatAgentOverviewLines([extInfo], WIDTH, dirs);
 const extFlat = extLines.join("\n");
 ok("overview meta row names the harness", extFlat.includes("claude-code"));
 ok("overview shows the pass-through", extFlat.includes("pass-through: --permission-mode acceptEdits"));
-ok("external overview still fits the width", extLines.every((l) => l.length <= WIDTH));
+ok("external overview still fits the width", extLines.every((l) => visibleWidth(l) <= WIDTH));
 
 // ── description vs details ───────────────────────────────────────────────
 // Placed after the count-sensitive overview tests, like the sections above.
@@ -314,7 +315,7 @@ const detailLines = formatAgentOverviewLines([detailedInfo], WIDTH, dirs);
 const detailFlat = detailLines.join("\n");
 ok("overview keeps the description headline", detailFlat.includes("Compact routing line."));
 ok("overview shows the details", detailFlat.includes("A much longer explanation"));
-ok("details overview still fits the width", detailLines.every((l) => l.length <= WIDTH));
+ok("details overview still fits the width", detailLines.every((l) => visibleWidth(l) <= WIDTH));
 
 // ── the model-facing catalogue ───────────────────────────────────────────
 // Pure over AgentInfo[], so these build inventories directly - no files, no
@@ -349,14 +350,14 @@ ok("plain agent renders name: description", catalogue.includes("- scout: Fast re
 ok("worker is marked default", catalogue.includes("- worker (default): General-purpose implementation."));
 ok("external harness is marked", catalogue.includes("- cc-worker (harness claude-code): Bounded edit tasks."));
 ok("interactive agent is marked", catalogue.includes("- pair (interactive): Live pairing session."));
-ok("broken agent points at subagent_list", catalogue.includes("- broken (not spawnable - see subagent_list)"));
+ok("broken agent points at subagent_available", catalogue.includes("- broken (not spawnable - see subagent_available)"));
 ok("broken agent's description is suppressed", !catalogue.includes("Secretly fine."));
 ok("missing description reads as such", catalogue.includes("- undescribed: (no description)"));
 ok("details never enter the catalogue", !catalogue.includes("Only for humans."));
 ok(
 	"catalogue explains how to expand abbreviated descriptions",
 	catalogue.includes(
-		"Descriptions above are abbreviated. Call subagent_list for expanded descriptions and configuration details.",
+		"Descriptions above are abbreviated. Call subagent_available for expanded descriptions and configuration details.",
 	),
 );
 
@@ -393,9 +394,8 @@ const controlCatalogue = formatAgentCatalogue([
 ok("ANSI, bell, and bare ESC are stripped", controlCatalogue.includes("- sneakier: xy z w"));
 ok("no escape byte survives into the catalogue", !controlCatalogue.includes("\u001b") && !controlCatalogue.includes("\u0007"));
 
-// The overview must survive the same input: clampVisible cannot measure a
-// raw ESC, so unsanitized description/details could render an overwide
-// line - fatal under the width contract.
+// The overview must sanitize repository-controlled text and measure final
+// output in terminal columns so hostile controls and wide glyphs stay safe.
 const hostileOverview = formatAgentOverviewLines(
 	[
 		info({
@@ -407,7 +407,7 @@ const hostileOverview = formatAgentOverviewLines(
 	50,
 	dirs,
 );
-ok("hostile overview text fits the width", hostileOverview.every((l) => l.length <= 50));
+ok("hostile overview text fits the width", hostileOverview.every((l) => visibleWidth(l) <= 50));
 ok("no escape byte survives into the overview", !hostileOverview.join("\n").includes("\u001b"));
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -157,7 +157,7 @@ export function formatTokens(count: number): string {
 	return `${Math.round(count / 1000000)}M`;
 }
 
-/** Dollar prose for result envelopes and subagent_list. Sub-cent spend
+/** Dollar prose for result envelopes and subagent_status. Sub-cent spend
  * shows as a floor rather than rounding to $0.00, so a cheap-but-real run
  * never looks free. */
 export function formatCost(costUsd: number): string {
@@ -229,7 +229,7 @@ function stripTrailingLoneSurrogate(text: string): string {
 /** Tool names come out of the child's own activity writes — hostile by
  * definition — so they are sanitized AGAIN here regardless of what the
  * controller did, and clamped so one long MCP tool name cannot eat the row.
- * Exported for subagent_list, which shows the same clamped name in prose. */
+ * Exported for subagent_status, which shows the same clamped name in prose. */
 export function clampToolName(rawName: string): string {
 	const safe = singleLine(sanitizeDisplayText(rawName));
 	return safe.length > 12 ? stripTrailingLoneSurrogate(safe.slice(0, 12)) + "…" : safe;
@@ -371,7 +371,7 @@ export function formatRunningWidgetLines(
 		if (options.summary.stalledRows > 0) summaryParts.push(`${options.summary.stalledRows} stalled`);
 		if (options.summary.waitingRows > 0) summaryParts.push(`${options.summary.waitingRows} waiting`);
 		if (options.summary.queuedRows > 0) summaryParts.push(`${options.summary.queuedRows} queued`);
-		summaryParts.push("/subagent-running");
+		summaryParts.push("/subagent-status");
 		lines.push(dim(truncateToColumns(` ${summaryParts.join(" · ")}`, safeWidth)));
 	}
 	return lines;

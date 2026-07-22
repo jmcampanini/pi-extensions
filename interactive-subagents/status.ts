@@ -4,7 +4,7 @@
  * One function turns a single tick's observations into one of four words:
  * starting, active, waiting, stalled. It is deliberately a pure function of
  * its inputs — no Date.now(), no fs, no caching — so the watcher, the
- * widget, and subagent_list all call it from the same observation fields
+ * widget, and subagent_status all call it from the same observation fields
  * and can never disagree. Stalled is computed, never latched: any later
  * tick where a valid snapshot advances reads as recovered, and
  * edge-triggering (steer once per episode) is the watcher's job.

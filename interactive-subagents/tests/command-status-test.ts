@@ -8,7 +8,7 @@ process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "subagents-running-
 
 const state = await import("../state.ts");
 const capacity = await import("../capacity.ts");
-const command = await import("../command-running.ts");
+const command = await import("../command-status.ts");
 type LifecycleWidgetRow = import("../running-widget.ts").LifecycleWidgetRow;
 type RunningSubagent = import("../state.ts").RunningSubagent;
 type SpawnSpec = import("../capacity.ts").SpawnSpec;
@@ -38,7 +38,7 @@ const formatterRows: LifecycleWidgetRow[] = Array.from({ length: 12 }, (_, index
 	external: index === 0,
 	status: index === 10 ? "delivering" : index === 11 ? "queued" : "active",
 }));
-const formatted = command.formatRunningPickerLines(formatterRows, 0, 0, 120, {
+const formatted = command.formatStatusPickerLines(formatterRows, 0, 0, 120, {
 	agent: (text) => `<D>${text}</D>`,
 	marker: (text) => `<M>${text}</M>`,
 });
@@ -49,13 +49,13 @@ ok("picker never wraps agent identifiers in square brackets", !formatted.some((l
 ok("first viewport includes row 10 but not row 11",
 	formatted.some((line) => line.includes("task 10")) && !formatted.some((line) => line.includes("task 11")));
 eq("picker reports its first scroll window", formatted[12], " 1–10 of 12");
-const scrolled = command.formatRunningPickerLines(formatterRows, 11, 2, 100);
+const scrolled = command.formatStatusPickerLines(formatterRows, 11, 2, 100);
 ok("later viewport reaches every hidden lifecycle row",
 	scrolled.some((line) => line.includes("task 11 · delivering")) && scrolled.some((line) => line.includes("task 12 · queued")));
 eq("picker reports its last scroll window", scrolled[12], " 3–12 of 12");
 ok("queued selection advertises only its valid cancel action",
 	scrolled[13].includes("x: cancel queued launch") && !scrolled[13].includes("enter: visit"));
-const startingLines = command.formatRunningPickerLines([{
+const startingLines = command.formatStatusPickerLines([{
 	id: "setup",
 	lifecycle: "pending",
 	startedAt: 0,
@@ -69,12 +69,12 @@ ok("pending launch uses only the user-facing starting term",
 		&& !startingLines.join("\n").includes("launching"));
 let pickerWidthViolations = 0;
 for (let width = -2; width <= 90; width++) {
-	for (const line of command.formatRunningPickerLines(formatterRows, 11, 2, width)) {
+	for (const line of command.formatStatusPickerLines(formatterRows, 11, 2, width)) {
 		if (visibleWidth(line) > Math.max(0, width)) pickerWidthViolations++;
 	}
 }
 eq("picker never exceeds terminal width", pickerWidthViolations, 0);
-const mixedElapsed = command.formatRunningPickerLines([
+const mixedElapsed = command.formatStatusPickerLines([
 	{ ...formatterRows[0], id: "under-hour", elapsedSeconds: 3_599 },
 	{ ...formatterRows[0], id: "over-hour", elapsedSeconds: 3_600 },
 ], 0, 0, 100);
@@ -83,9 +83,11 @@ eq("mixed elapsed widths keep agent and marker columns aligned",
 	[10, 10, 17, 17]);
 
 let handler: ((args: string, ctx: ExtensionContext) => Promise<void>) | undefined;
+let registeredCommand = "";
 const sent: Array<{ customType?: string }> = [];
 const fakePi = {
-	registerCommand(_name: string, options: { handler: typeof handler }): void {
+	registerCommand(name: string, options: { handler: typeof handler }): void {
+		registeredCommand = name;
 		handler = options.handler;
 	},
 	sendMessage(message: { customType?: string }): void {
@@ -93,9 +95,10 @@ const fakePi = {
 	},
 } as unknown as ExtensionAPI;
 const focusCalls: Array<{ paneId: string; zoom: boolean }> = [];
-command.registerSubagentRunningCommand(fakePi, (paneId, options) => {
+command.registerSubagentStatusCommand(fakePi, (paneId, options) => {
 	focusCalls.push({ paneId, zoom: options?.zoom ?? false });
 });
+eq("command registers the clean-break status name", registeredCommand, "subagent-status");
 
 const notifications: Array<{ message: string; level: string }> = [];
 let renderedDuringStep: string[] = [];

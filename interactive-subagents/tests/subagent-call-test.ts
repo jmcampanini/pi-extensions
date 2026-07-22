@@ -382,6 +382,21 @@ const callRenderer = registeredSpawnTool?.renderCall;
 if (callRenderer === undefined) {
 	eq("registered subagent_spawn tool has a call renderer", false, true);
 } else {
+	const sandboxRoot = join(process.cwd(), ".sandbox");
+	mkdirSync(sandboxRoot, { recursive: true });
+	const rendererCwd = mkdtempSync(join(sandboxRoot, "spawn-call-test-"));
+	const rendererDefs = join(rendererCwd, ".pi", "subagents");
+	mkdirSync(rendererDefs, { recursive: true });
+	writeFileSync(
+		join(rendererDefs, "worker.md"),
+		"---\ncontext: forked\nauto-exit: false\nworktree: true\n---\nWorker.\n",
+		"utf8",
+	);
+	writeFileSync(
+		join(rendererDefs, "external.md"),
+		"---\nharness: claude-code\n---\nExternal.\n",
+		"utf8",
+	);
 	const colorCode: Record<string, number> = {
 		toolTitle: 31,
 		accent: 32,
@@ -393,13 +408,13 @@ if (callRenderer === undefined) {
 		fg: (color: string, text: string) => `\x1b[${colorCode[color] ?? 37}m${text}\x1b[0m`,
 		bold: (text: string) => `\x1b[1m${text}\x1b[0m`,
 	} as unknown as Theme;
-	const renderContext = (expanded: boolean) => ({
+	const renderContext = (expanded: boolean, state: Record<string, unknown> = {}) => ({
 		args: {},
 		toolCallId: "call-1",
 		invalidate(): void {},
 		lastComponent: undefined,
-		state: {},
-		cwd: process.cwd(),
+		state,
+		cwd: rendererCwd,
 		executionStarted: true,
 		argsComplete: true,
 		isPartial: false,
@@ -416,10 +431,64 @@ if (callRenderer === undefined) {
 	eq("registered renderer styles the unbracketed agent as muted metadata", collapsedOutput.includes("\x1b[33mworker\x1b[0m"), true);
 	eq("registered renderer displays an expansion hint", collapsedPlain.includes("to expand"), true);
 	eq("registered renderer styles the task preview as dim", collapsedOutput.includes("\x1b[2mfirst second\x1b[0m"), true);
+	eq(
+		"registered renderer shows effective inherited spawn modes on a separate metadata line",
+		collapsedPlain.includes("context forked · interactive · worktree"),
+		true,
+	);
+	const externalOutput = stripVTControlCharacters(callRenderer(
+		{ name: "External", agent: "external", task: "Run" } as Parameters<typeof callRenderer>[0],
+		markedTheme,
+		renderContext(false),
+	).render(120).join("\n"));
+	eq("registered renderer names an effective external harness", externalOutput.includes("context fresh · harness claude-code"), true);
+	const overriddenOutput = stripVTControlCharacters(callRenderer(
+		{
+			name: "Overrides",
+			agent: "worker",
+			task: "Run",
+			context: "fresh",
+			autoExit: true,
+			worktree: false,
+		} as Parameters<typeof callRenderer>[0],
+		markedTheme,
+		renderContext(false),
+	).render(120).join("\n"));
+	eq("explicit call values override inherited spawn modes", overriddenOutput.split("\n")[1].trimEnd(), "context fresh");
+	const cwdOverrideOutput = stripVTControlCharacters(callRenderer(
+		{ name: "Cwd override", agent: "worker", task: "Run", cwd: "nested" } as Parameters<typeof callRenderer>[0],
+		markedTheme,
+		renderContext(false),
+	).render(120).join("\n"));
+	eq("an explicit cwd disables an inherited worktree mode", cwdOverrideOutput.split("\n")[1].trimEnd(), "context forked · interactive");
 	const toolSource = readFileSync(new URL("../tool-spawn.ts", import.meta.url), "utf8");
 	eq("registered renderer resolves the configured expansion binding", toolSource.includes('keyHint("app.tools.expand", "to expand")'), true);
 	const expandedOutput = callRenderer(renderArgs, markedTheme, renderContext(true)).render(120).join("\n");
 	eq("registered renderer styles the expanded task body as tool output", expandedOutput.includes("\x1b[36mfirst"), true);
+	eq("expanded renderer retains effective modes", stripVTControlCharacters(expandedOutput).includes("context forked · interactive · worktree"), true);
+	const sharedState: Record<string, unknown> = {};
+	writeFileSync(join(rendererDefs, "worker.md"), "---\ncontext: fresh\nauto-exit: true\nworktree: false\n---\nChanged.\n", "utf8");
+	const reopenedComponent = callRenderer(renderArgs, markedTheme, renderContext(false, sharedState));
+	eq("a reopened call initially falls back to current definition defaults",
+		stripVTControlCharacters(reopenedComponent.render(120).join("\n")).split("\n")[1].trimEnd(), "context fresh");
+	registeredSpawnTool?.renderResult?.(
+		{
+			content: [{ type: "text", text: "started" }],
+			details: {
+				presentation: {
+					version: 1,
+					behavior: { context: "forked", autoExit: false, useWorktree: true, harness: "pi" },
+				},
+			},
+		},
+		{ expanded: false, isPartial: false },
+		markedTheme,
+		renderContext(false, sharedState),
+	);
+	eq("persisted execution-time behavior replaces changed definition defaults",
+		stripVTControlCharacters(reopenedComponent.render(120).join("\n")).split("\n")[1].trimEnd(),
+		"context forked · interactive · worktree");
+	rmSync(rendererCwd, { recursive: true, force: true });
 }
 
 let registeredResumeTool: ToolDefinition | undefined;
