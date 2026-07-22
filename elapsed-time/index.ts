@@ -35,9 +35,7 @@ export function registerElapsedTime(pi: ExtensionAPI, clock: ElapsedTimeClock = 
 	}
 
 	function showRunning(ctx: ExtensionContext): void {
-		const marker = ctx.ui.theme.fg("accent", "◷");
-		const text = ctx.ui.theme.fg("dim", ` Responding ${elapsed()}`);
-		ctx.ui.setStatus(ELAPSED_TIME_STATUS_KEY, marker + text);
+		ctx.ui.setStatus(ELAPSED_TIME_STATUS_KEY, `◷ ${elapsed()}`);
 	}
 
 	function stopTimer(): void {
@@ -62,11 +60,7 @@ export function registerElapsedTime(pi: ExtensionAPI, clock: ElapsedTimeClock = 
 		if (startedAt === undefined) return;
 
 		stopTimer();
-		if (ctx.hasUI) {
-			const marker = ctx.ui.theme.fg("success", "✓");
-			const text = ctx.ui.theme.fg("dim", ` Last response ${elapsed()}`);
-			ctx.ui.setStatus(ELAPSED_TIME_STATUS_KEY, marker + text);
-		}
+		if (ctx.hasUI) ctx.ui.setStatus(ELAPSED_TIME_STATUS_KEY, `✓ ${elapsed()}`);
 		startedAt = undefined;
 		activeContext = undefined;
 	});

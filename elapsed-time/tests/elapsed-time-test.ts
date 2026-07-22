@@ -77,19 +77,26 @@ function harness(hasUI = true): {
 	clock: FakeClock;
 	ctx: unknown;
 	statuses: Array<[string, string | undefined]>;
+	themeTokens: string[];
 } {
 	const pi = fakePi();
 	const clock = new FakeClock();
 	const statuses: Array<[string, string | undefined]> = [];
+	const themeTokens: string[] = [];
 	const ctx = {
 		hasUI,
 		ui: {
-			theme: { fg: (_token: string, text: string) => text },
+			theme: {
+				fg: (token: string, text: string) => {
+					themeTokens.push(token);
+					return text;
+				},
+			},
 			setStatus: (key: string, text: string | undefined) => statuses.push([key, text]),
 		},
 	};
 	registerElapsedTime(pi.api, clock);
-	return { pi, clock, ctx, statuses };
+	return { pi, clock, ctx, statuses, themeTokens };
 }
 
 for (const [label, milliseconds, expected] of [
@@ -109,7 +116,7 @@ const run = harness();
 run.clock.nowMs = 1_000;
 run.pi.emit("agent_start", { type: "agent_start" }, run.ctx);
 eq("run starts with an immediate zero status", run.statuses, [
-	[ELAPSED_TIME_STATUS_KEY, "◷ Responding 00:00"],
+	[ELAPSED_TIME_STATUS_KEY, "◷ 00:00"],
 ]);
 eq("run starts one refresh timer", run.clock.activeTimerCount(), 1);
 
@@ -117,7 +124,7 @@ run.clock.nowMs = 62_500;
 run.clock.fireTimers();
 eq("tick derives elapsed time from the start timestamp", run.statuses.at(-1), [
 	ELAPSED_TIME_STATUS_KEY,
-	"◷ Responding 01:01",
+	"◷ 01:01",
 ]);
 
 run.pi.emit("agent_start", { type: "agent_start" }, run.ctx);
@@ -126,9 +133,10 @@ run.clock.nowMs = 66_000;
 run.pi.emit("agent_settled", { type: "agent_settled" }, run.ctx);
 eq("settlement freezes the complete busy period", run.statuses.at(-1), [
 	ELAPSED_TIME_STATUS_KEY,
-	"✓ Last response 01:05",
+	"✓ 01:05",
 ]);
 eq("settlement stops refreshing", run.clock.activeTimerCount(), 0);
+eq("elapsed status applies no dedicated color", run.themeTokens, []);
 
 const statusCountAfterSettlement = run.statuses.length;
 run.clock.nowMs = 90_000;
@@ -141,7 +149,7 @@ run.clock.nowMs = 102_100;
 run.pi.emit("agent_settled", { type: "agent_settled" }, run.ctx);
 eq("a later interaction starts a fresh measurement", run.statuses.at(-1), [
 	ELAPSED_TIME_STATUS_KEY,
-	"✓ Last response 00:02",
+	"✓ 00:02",
 ]);
 
 run.pi.emit("session_shutdown", { type: "session_shutdown", reason: "reload" }, run.ctx);
