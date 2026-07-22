@@ -3,7 +3,7 @@
  *
  * widget.ts is the pure renderer. This file snapshots every lifecycle
  * registry, orders rows by attention priority then launch time, caps the
- * compact rows, and owns the 1-second UI refresh timer. /subagent-running
+ * compact rows, and owns the 1-second UI refresh timer. /subagent-status
  * consumes the uncapped projection.
  */
 

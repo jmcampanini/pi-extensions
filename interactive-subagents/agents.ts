@@ -12,11 +12,11 @@
  * A project file SHADOWS a global one with the same name, so a repo can
  * specialize `worker.md` or `scout.md` for its own conventions.
  *
- * This module is a pure leaf: it reads files and pi's model registry (through
- * the minimal ModelLookup interface) and renders plain strings — no pi
- * imports at runtime, so it unit-tests under plain node.
+ * This module reads files and pi's model registry through the minimal
+ * ModelLookup interface; its only UI dependency is pi-tui's text metrics.
  */
 
+import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -50,7 +50,7 @@ export interface AgentDefinition {
 	 * catalogue; see formatAgentCatalogue). */
 	description?: string;
 	/** Optional expanded explanation for humans and explicit model discovery
-	 * (subagent_list, /subagent-available). Never injected into the catalogue;
+	 * (subagent_available, /subagent-available). Never injected into the catalogue;
 	 * those surfaces fall back to the full description when absent. */
 	details?: string;
 	/**
@@ -203,7 +203,7 @@ export function listAgentDefinitions(cwd: string): AgentDefinition[] {
 // ── the agent inventory: one loader, many presenters ─────────────────────
 // Everything a consumer could want to know about each agent, loaded once:
 // identity, source file, what would actually run on THIS machine, and any
-// problems that would break a spawn. The model-facing subagent_list tool
+// problems that would break a spawn. The model-facing subagent_available tool
 // and the human-facing /subagent-available command are both views over this —
 // they differ only in how much of it they show.
 
@@ -238,7 +238,7 @@ export interface AgentInfo {
 
 /** A thrown Error's message, trimmed. Line breaks are KEPT — each view
  * decides for itself: the overview widget indents them, the terse
- * subagent_list tool flattens them. */
+ * subagent_available tool flattens them. */
 function problemText(error: unknown): string {
 	const message = error instanceof Error ? error.message : String(error);
 	return message.trim();
@@ -296,10 +296,10 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 
 // ── the model-facing catalogue (injected into the system prompt) ─────────
 // A compact routing list - one line per agent - so the parent can match work
-// to an agent without a subagent_list round trip (catalogue.ts owns when it
+// to an agent without a subagent_available round trip (catalogue.ts owns when it
 // is computed and injected). Descriptions are HARD-BOUNDED here: an agent
 // file cannot grow every parent request, no matter what its author writes.
-// The full text stays reachable through subagent_list and the overview.
+// The full text stays reachable through subagent_available and the overview.
 
 /** Per-agent cap on catalogue description text, in visible characters. */
 export const CATALOGUE_DESCRIPTION_MAX_CHARS = 200;
@@ -320,7 +320,7 @@ function boundedDescription(description: string | undefined): string {
  * The injectable catalogue block, or undefined when there are no agents (an
  * empty "Available sub-agents:" header would only invite doomed spawns).
  * Markers appear only on agents that deviate from a plain spawnable default:
- * routing facts only - everything else is subagent_list territory. A broken
+ * routing facts only - everything else is subagent_available territory. A broken
  * agent shows no description at all: advertising its purpose would invite
  * calls that can only fail, while the name + pointer still explains where
  * the details live.
@@ -329,7 +329,7 @@ export function formatAgentCatalogue(inventory: AgentInfo[]): string | undefined
 	if (inventory.length === 0) return undefined;
 	const lines = inventory.map((agent) => {
 		if (agent.problems.length > 0) {
-			return `- ${agent.name} (not spawnable - see subagent_list)`;
+			return `- ${agent.name} (not spawnable - see subagent_available)`;
 		}
 		const markers: string[] = [];
 		if (agent.name === "worker") markers.push("default");
@@ -341,7 +341,7 @@ export function formatAgentCatalogue(inventory: AgentInfo[]): string | undefined
 	return (
 		"Available sub-agents (values for the `agent` parameter of subagent_spawn):\n" +
 		`${lines.join("\n")}\n\n` +
-		"Descriptions above are abbreviated. Call subagent_list for expanded descriptions and configuration details."
+		"Descriptions above are abbreviated. Call subagent_available for expanded descriptions and configuration details."
 	);
 }
 
@@ -362,6 +362,8 @@ export interface OverviewStyle {
 	muted?: (text: string) => string;
 	/** Agent names and the "default" marker. */
 	accent?: (text: string) => string;
+	/** Primary description text when the overview renders inside a tool body. */
+	output?: (text: string) => string;
 	/** Problem blocks and the "✗ no usable model" slot. */
 	error?: (text: string) => string;
 	/** Non-default run behavior ("forked", "interactive"). */
@@ -372,61 +374,29 @@ export interface OverviewStyle {
 	italic?: (text: string) => string;
 }
 
-/** Greedy word wrap. A single overlong word overflows on its own line. */
+function sanitizedInline(text: string): string {
+	return sanitizeDisplayText(text).replace(/\s+/g, " ").trim();
+}
+
+/** ANSI-free text wrapping measured in terminal columns. */
 function wrapText(text: string, width: number): string[] {
-	const lines: string[] = [];
-	let line = "";
-	for (const word of text.split(/\s+/)) {
-		if (line === "") line = word;
-		else if (line.length + 1 + word.length <= width) line += ` ${word}`;
-		else {
-			lines.push(line);
-			line = word;
-		}
-	}
-	if (line !== "") lines.push(line);
-	return lines;
+	const safeWidth = Math.max(1, Math.floor(width));
+	return new Text(sanitizeDisplayText(text), 0, 0).render(safeWidth).map((line) => line.trimEnd());
 }
 
 /** Wrap one line, keeping its leading indent; continuations tuck 2 deeper. */
 function wrapIndented(line: string, width: number): string[] {
-	const lead = line.length - line.trimStart().length;
-	const parts = wrapText(line.trim(), Math.max(1, width - lead - 2));
+	const sanitized = sanitizeDisplayText(line);
+	const leadText = sanitized.match(/^ */)?.[0] ?? "";
+	const lead = visibleWidth(leadText);
+	const parts = wrapText(sanitized.trim(), Math.max(1, width - lead - 2));
 	return parts.map((part, i) => " ".repeat(i === 0 ? lead : lead + 2) + part);
 }
 
 /** Absolute paths read shorter with the home dir as ~. */
 function tildify(path: string): string {
 	const home = homedir();
-	return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
-}
-
-/**
- * Last-resort truncation by VISIBLE characters (ANSI sequences pass through
- * for free). The width contract is HARD: pi-tui treats a rendered line wider
- * than the terminal as fatal and kills the whole session, so every line the
- * overview returns goes through this — the layout math above it only has to
- * be right for realistic inputs, not pathological ones.
- */
-function clampVisible(line: string, width: number): string {
-	let visible = 0;
-	let i = 0;
-	while (i < line.length) {
-		if (line[i] === "\u001b") {
-			const end = line.indexOf("m", i);
-			if (end === -1) break;
-			i = end + 1;
-			continue;
-		}
-		if (visible === width) {
-			const cut = line.slice(0, i);
-			// Close any open styling so the truncation can't bleed color.
-			return cut.includes("\u001b") ? `${cut}\u001b[0m` : cut;
-		}
-		visible++;
-		i++;
-	}
-	return line;
+	return sanitizedInline(path.startsWith(home) ? `~${path.slice(home.length)}` : path);
 }
 
 /**
@@ -434,7 +404,7 @@ function clampVisible(line: string, width: number): string {
  * " — " or first sentence end, whichever comes first. Definitions follow a
  * "headline — spawn-time guidance" shape, and the guidance is for the model
  * choosing an agent; the human overview only needs the headline (the
- * subagent_list tool keeps the full text). The headline is never truncated,
+ * subagent_available tool keeps the full text). The headline is never truncated,
  * only wrapped.
  */
 export function descriptionHeadline(description: string): string {
@@ -449,53 +419,80 @@ export function descriptionHeadline(description: string): string {
 	return description.slice(0, Math.min(...boundaries)).trim();
 }
 
-/** The human-facing rendering of the inventory (used by /subagent-available). */
+export interface AgentOverviewOptions {
+	header?: boolean;
+	footer?: string | false;
+	fullDescriptionFallback?: boolean;
+}
+
+/** The detailed inventory rendering shared by /subagent-available and the
+ * expanded subagent_available tool card. */
 export function formatAgentOverviewLines(
 	inventory: AgentInfo[],
 	width: number,
 	dirs: { global: string; project: string },
 	style: OverviewStyle = {},
+	options: AgentOverviewOptions = {},
 ): string[] {
+	const safeWidth = Math.max(0, Math.floor(width));
+	if (safeWidth === 0) return [];
 	const identity = (text: string) => text;
 	const dim = style.dim ?? identity;
 	const muted = style.muted ?? identity;
 	const accent = style.accent ?? identity;
+	const output = style.output ?? identity;
 	const error = style.error ?? identity;
 	const warning = style.warning ?? identity;
 	const border = style.border ?? identity;
 	const bold = style.bold ?? identity;
 	const italic = style.italic ?? identity;
+	const agents = inventory.map((agent) => ({
+		...agent,
+		name: sanitizedInline(agent.name),
+		description: agent.description === undefined ? undefined : sanitizeDisplayText(agent.description),
+		details: agent.details === undefined ? undefined : sanitizeDisplayText(agent.details),
+		resolvedModel: agent.resolvedModel === undefined ? undefined : sanitizedInline(agent.resolvedModel),
+		thinking: agent.thinking === undefined ? undefined : sanitizedInline(agent.thinking),
+		tools: agent.tools === undefined ? undefined : sanitizedInline(agent.tools),
+		harness: sanitizedInline(agent.harness),
+		harnessPassThrough: agent.harnessPassThrough === undefined
+			? undefined
+			: sanitizedInline(agent.harnessPassThrough),
+		problems: agent.problems.map(sanitizeDisplayText),
+	}));
 
-	if (inventory.length === 0) {
+	if (agents.length === 0) {
 		return [
 			"Sub-agents · none found",
 			` global:  ${tildify(dirs.global)}`,
 			` project: ${tildify(dirs.project)}`,
 			...wrapText(
 				"Create <name>.md files there (frontmatter: description, details, models, thinking, tools, context, auto-exit, worktree, harness, harness-pass-through; body = system prompt).",
-				Math.max(1, width - 1),
+				Math.max(1, safeWidth - 1),
 			).map((wrapped) => ` ${wrapped}`),
-		].map((line) => clampVisible(line, width));
+		].map((line) => truncateToWidth(line, safeWidth, ""));
 	}
 
 	// Tag column: "[scout]" padded so every card's body starts at the same
 	// column (the same tag-column idea as the running widget).
-	const tags = inventory.map((agent) => `[${agent.name}]`);
-	const tagWidth = Math.max(...tags.map((tag) => tag.length));
+	const tags = agents.map((agent) => `[${agent.name}]`);
+	const tagWidth = Math.max(...tags.map(visibleWidth));
 	const indent = 1 + tagWidth + 2;
 	const pad = " ".repeat(indent);
-	const body = Math.max(1, width - indent);
+	const body = Math.max(1, safeWidth - indent);
 
-	const head = `── Sub-agents · ${inventory.length} `;
-	const lines: string[] = [
-		border("── ") +
-			bold("Sub-agents") +
-			muted(` · ${inventory.length} `) +
-			border("─".repeat(Math.max(0, width - head.length))),
-	];
+	const head = `── Sub-agents · ${agents.length} `;
+	const lines: string[] = options.header === false
+		? []
+		: [
+			border("── ") +
+				bold("Sub-agents") +
+				muted(` · ${agents.length} `) +
+				border("─".repeat(Math.max(0, safeWidth - visibleWidth(head)))),
+		];
 
-	for (let i = 0; i < inventory.length; i++) {
-		const agent = inventory[i];
+	for (let i = 0; i < agents.length; i++) {
+		const agent = agents[i];
 		if (i > 0) lines.push("");
 
 		// Header row: [name]  model ······· source (· default). The model slot
@@ -507,23 +504,20 @@ export function formatAgentOverviewLines(
 			: agent.requestedModels.length > 0
 				? { text: "✗ no usable model", paint: (text: string) => bold(error(text)) }
 				: { text: "inherits parent model", paint: (text: string) => italic(muted(text)) };
-		const isDefault = agent.name === "worker";
+		const isDefault = inventory[i].name === "worker";
 		const right = agent.source + (isDefault ? " · default" : "");
 		// The dots absorb the leftover width (min 3); a too-long model slot
 		// gives way with an ellipsis — or vanishes entirely on an absurdly
 		// narrow pane — so the source column stays anchored.
-		let slotText = slot.text;
-		const maxSlot = width - indent - right.length - 2 - 3;
-		if (slotText.length > maxSlot) {
-			slotText = maxSlot >= 2 ? `${slotText.slice(0, maxSlot - 1)}…` : maxSlot === 1 ? "…" : "";
-		}
-		const dots = Math.max(3, width - indent - slotText.length - right.length - 2);
+		const maxSlot = Math.max(0, safeWidth - indent - visibleWidth(right) - 2 - 3);
+		const slotText = truncateToWidth(slot.text, maxSlot, maxSlot > 0 ? "…" : "");
+		const dots = Math.max(3, safeWidth - indent - visibleWidth(slotText) - visibleWidth(right) - 2);
 		lines.push(
 			" " +
 				dim("[") +
 				accent(agent.name) +
 				dim("]") +
-				" ".repeat(indent - 1 - tags[i].length) +
+				" ".repeat(Math.max(0, indent - 1 - visibleWidth(tags[i]))) +
 				slot.paint(slotText) +
 				" " +
 				dim(".".repeat(dots)) +
@@ -545,20 +539,22 @@ export function formatAgentOverviewLines(
 			});
 		}
 
-		// Description and details render sanitized: clampVisible treats a raw
-		// ESC as ANSI it cannot measure, so an unsanitized frontmatter value
-		// could yield an overwide line - which the width contract makes fatal.
-		// Description: the headline only, wrapped in full (never truncated).
+		// Description text is sanitized before styling and measured in terminal
+		// columns. The command uses its headline; explicit tool discovery can
+		// request the full description when no separate details text exists.
 		if (agent.description) {
-			for (const wrapped of wrapText(descriptionHeadline(sanitizeDisplayText(agent.description)), body)) {
-				lines.push(pad + wrapped);
+			const description = options.fullDescriptionFallback && !agent.details
+				? agent.description
+				: descriptionHeadline(agent.description);
+			for (const wrapped of wrapText(description, body)) {
+				lines.push(pad + output(wrapped));
 			}
 		}
 
 		// Details: the expanded human explanation, in full but visually
 		// tertiary so the cards still scan by headline.
 		if (agent.details) {
-			for (const wrapped of wrapText(sanitizeDisplayText(agent.details), body)) {
+			for (const wrapped of wrapText(agent.details, body)) {
 				lines.push(pad + dim(wrapped));
 			}
 		}
@@ -578,30 +574,36 @@ export function formatAgentOverviewLines(
 		// deviation, so it renders loud like forked/interactive.
 		if (agent.worktree) parts.push({ text: "worktree", paint: warning });
 		let row = "";
-		let rowLength = 0;
+		let rowWidth = 0;
 		const flushRow = () => {
-			if (rowLength > 0) lines.push(pad + row);
+			if (rowWidth > 0) lines.push(pad + row);
 			row = "";
-			rowLength = 0;
+			rowWidth = 0;
 		};
 		for (const part of parts) {
+			const partWidth = visibleWidth(part.text);
 			// A part that alone exceeds the body (a big tools allowlist) wraps
 			// onto its own rows instead of overflowing the line.
-			if (part.text.length > body) {
+			if (partWidth > body) {
 				flushRow();
 				for (const wrapped of wrapText(part.text, body)) lines.push(pad + part.paint(wrapped));
 				continue;
 			}
-			if (rowLength > 0 && rowLength + 3 + part.text.length > body) flushRow();
-			row += (rowLength > 0 ? dim(" · ") : "") + part.paint(part.text);
-			rowLength += (rowLength > 0 ? 3 : 0) + part.text.length;
+			if (rowWidth > 0 && rowWidth + 3 + partWidth > body) flushRow();
+			row += (rowWidth > 0 ? dim(" · ") : "") + part.paint(part.text);
+			rowWidth += (rowWidth > 0 ? 3 : 0) + partWidth;
 		}
 		flushRow();
 	}
 
-	lines.push("");
-	for (const wrapped of wrapText("run /subagent-available again or send a message to dismiss", Math.max(1, width - 1))) {
-		lines.push(dim(` ${wrapped}`));
+	const footer = options.footer === undefined
+		? "run /subagent-available again or send a message to dismiss"
+		: options.footer;
+	if (footer !== false) {
+		lines.push("");
+		for (const wrapped of wrapText(footer, Math.max(1, safeWidth - 1))) {
+			lines.push(dim(` ${wrapped}`));
+		}
 	}
-	return lines.map((line) => clampVisible(line, width));
+	return lines.map((line) => truncateToWidth(line, safeWidth, ""));
 }

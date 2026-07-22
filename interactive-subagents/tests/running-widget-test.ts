@@ -205,7 +205,7 @@ ok("compact agent identifiers use the muted semantic token",
 ok("compact marker letters use the muted semantic token",
 	semanticRendered.some((line) => line.includes("<muted>efi </muted> delivery task")));
 eq("summary reports hidden and hidden-queued counts only",
-	rendered.at(-1), " +2 more · 1 queued · /subagent-running");
+	rendered.at(-1), " +2 more · 1 queued · /subagent-status");
 ok("every controller-rendered line is terminal-width safe", rendered.every((line) => visibleWidth(line) <= 100));
 
 // Drop below the cap: the summary line must disappear entirely.
@@ -214,7 +214,7 @@ capacity.cancelQueued("queued");
 controller.updateRunningWidget();
 const belowCap = widgetFactory?.({}, identityTheme).render(100) ?? [];
 eq("summary disappears when no rows are hidden", belowCap.length, 6);
-ok("no command hint remains without overflow", !belowCap.some((line) => line.includes("/subagent-running")));
+ok("no command hint remains without overflow", !belowCap.some((line) => line.includes("/subagent-status")));
 
 state.running.clear();
 state.delivering.clear();

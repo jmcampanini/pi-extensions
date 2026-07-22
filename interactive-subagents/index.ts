@@ -33,8 +33,8 @@
  *   result-message.ts    compact/expanded renderer for delivered results
  *   delivery.ts          message_end listener that clears "delivering" widget rows
  *   implant.ts           loaded INSIDE each child: done/ping tools, auto-exit
- *   tool-*.ts            one file per model-facing tool (spawn, resume, list)
- *   command-*.ts         one file per human command (available, running)
+ *   tool-*.ts            one file per model-facing tool (spawn, resume, available, status)
+ *   command-*.ts         one file per human command (available, status)
  *
  * This file only WIRES those pieces into pi: lifecycle events plus one
  * registration call per tool/command.
@@ -44,12 +44,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { armDrainHook, clearQueueForShutdown, drainQueue, pendingLaunchCount, queuedCount } from "./capacity.ts";
 import { registerCatalogue } from "./catalogue.ts";
 import { resetOverview, registerSubagentAvailableCommand } from "./command-available.ts";
-import { registerSubagentRunningCommand } from "./command-running.ts";
+import { registerSubagentStatusCommand } from "./command-status.ts";
 import { registerDeliveryListener } from "./delivery.ts";
 import { registerSubagentResultRenderer } from "./result-message.ts";
 import { activateRunningWidgetGeneration, stopWidgetTimer, updateRunningWidget } from "./running-widget.ts";
 import { completeReloadHandoff, moduleGeneration, prepareForReload, resetForShutdown, setLatestCtx } from "./state.ts";
-import { registerSubagentListTool } from "./tool-list.ts";
+import { registerSubagentAvailableTool } from "./tool-available.ts";
+import { registerSubagentStatusTool } from "./tool-status.ts";
 import { registerSubagentResumeTool } from "./tool-resume.ts";
 import { registerSubagentSpawnTool } from "./tool-spawn.ts";
 import { closePane } from "./tmux.ts";
@@ -115,8 +116,9 @@ export default function (pi: ExtensionAPI) {
 
 	registerSubagentSpawnTool(pi);
 	registerSubagentAvailableCommand(pi);
-	registerSubagentRunningCommand(pi);
-	registerSubagentListTool(pi);
+	registerSubagentStatusCommand(pi);
+	registerSubagentAvailableTool(pi);
+	registerSubagentStatusTool(pi);
 	registerSubagentResumeTool(pi);
 	registerCatalogue(pi);
 }

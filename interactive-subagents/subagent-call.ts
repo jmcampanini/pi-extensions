@@ -4,6 +4,10 @@ interface SubagentCallArgs {
 	name?: string;
 	task?: string;
 	agent?: string;
+	context?: "fresh" | "forked";
+	autoExit?: boolean;
+	useWorktree?: boolean;
+	harness?: string;
 }
 
 interface SubagentResumeCallArgs {
@@ -18,6 +22,7 @@ interface SubagentActionArgs {
 	agent?: string;
 	body?: string;
 	emptyBody?: string;
+	metadata?: string;
 }
 
 interface SubagentCallStyle {
@@ -26,6 +31,7 @@ interface SubagentCallStyle {
 	agent?: (text: string) => string;
 	hint?: (text: string) => string;
 	preview?: (text: string) => string;
+	metadata?: (text: string) => string;
 	body?: (text: string) => string;
 }
 
@@ -39,7 +45,18 @@ const EMPTY_RESUME_MESSAGE = "No follow-up message.";
 const plainText = (text: string): string => text;
 
 function spawnActionArgs(args: SubagentCallArgs): SubagentActionArgs {
-	return { action: "spawn", name: args.name, agent: args.agent, body: args.task };
+	const modes: string[] = [];
+	if (args.context) modes.push(`context ${args.context}`);
+	if (args.autoExit === false) modes.push("interactive");
+	if (args.useWorktree) modes.push("worktree");
+	if (args.harness && args.harness !== "pi") modes.push(`harness ${normalizedInline(args.harness)}`);
+	return {
+		action: "spawn",
+		name: args.name,
+		agent: args.agent,
+		body: args.task,
+		metadata: modes.length > 0 ? modes.join(" · ") : undefined,
+	};
 }
 
 function resumeActionArgs(args: SubagentResumeCallArgs): SubagentActionArgs {
@@ -148,7 +165,8 @@ function bodyHasHiddenDetail(
 
 function expandedContent(args: SubagentActionArgs, style: SubagentCallStyle): string {
 	const body = style.body ?? plainText;
-	return `${formatHeading(args, style)}\n\n${body(displayedBody(args))}`;
+	const metadata = args.metadata ? `\n${(style.metadata ?? plainText)(args.metadata)}` : "";
+	return `${formatHeading(args, style)}${metadata}\n\n${body(displayedBody(args))}`;
 }
 
 function formatCollapsedSubagentAction(
@@ -167,20 +185,26 @@ function formatCollapsedSubagentAction(
 		maxWidth,
 		"",
 	);
-	if (previewLineLimit === 0) return [heading];
+	const metadataLines = args.metadata
+		? metrics.renderText((style.metadata ?? plainText)(args.metadata), maxWidth)
+			.map((line) => metrics.truncateToWidth(line, maxWidth, ""))
+		: [];
+	if (previewLineLimit === 0) return [heading, ...metadataLines];
 	const preview = (style.preview ?? plainText)(normalizedInline(args.body) || args.emptyBody || "");
 	const previewLines = metrics
 		.renderText(preview, maxWidth)
 		.slice(0, previewLineLimit)
 		.map((line) => metrics.truncateToWidth(line, maxWidth, ""));
-	return previewLines.length > 0 ? [heading, "", ...previewLines] : [heading];
+	return previewLines.length > 0
+		? [heading, ...metadataLines, "", ...previewLines]
+		: [heading, ...metadataLines];
 }
 
 function formatExpandedSubagentAction(
 	args: SubagentActionArgs,
 	width: number,
 	metrics: SubagentCallTextMetrics,
-	style: Pick<SubagentCallStyle, "title" | "name" | "agent" | "body">,
+	style: Pick<SubagentCallStyle, "title" | "name" | "agent" | "metadata" | "body">,
 ): string[] {
 	const maxWidth = availableWidth(width);
 	if (maxWidth === 0) return [];
@@ -204,7 +228,7 @@ export function formatExpandedSubagentCall(
 	args: SubagentCallArgs,
 	width: number,
 	metrics: SubagentCallTextMetrics,
-	style: Pick<SubagentCallStyle, "title" | "name" | "agent" | "body"> = {},
+	style: Pick<SubagentCallStyle, "title" | "name" | "agent" | "metadata" | "body"> = {},
 ): string[] {
 	return formatExpandedSubagentAction(spawnActionArgs(args), width, metrics, style);
 }
@@ -224,7 +248,7 @@ export function formatExpandedSubagentResumeCall(
 	args: SubagentResumeCallArgs,
 	width: number,
 	metrics: SubagentCallTextMetrics,
-	style: Pick<SubagentCallStyle, "title" | "name" | "agent" | "body"> = {},
+	style: Pick<SubagentCallStyle, "title" | "name" | "agent" | "metadata" | "body"> = {},
 ): string[] {
 	return formatExpandedSubagentAction(resumeActionArgs(args), width, metrics, style);
 }

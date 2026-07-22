@@ -174,7 +174,7 @@ export function findQueued(id: string): QueuedLaunch | undefined {
 }
 
 /** In-flight launches: slot claimed, child not yet registered in `running`.
- * The widget and subagent_list show these so a child dequeued for launch
+ * The widget and subagent_status show these so a child dequeued for launch
  * never vanishes from every surface during its pipeline. Invalid claims
  * retained across reload stay capacity-counted until their old launcher
  * unwinds, but are quarantined from lifecycle projections. */
@@ -463,7 +463,7 @@ function notifyLaunchFailure(pi: ExtensionAPI, spec: LaunchSpec, error: unknown)
 		);
 	} catch {
 		// A failed notice must not kill the drain; the queue keeps moving and
-		// subagent_list still shows the truth.
+		// subagent_status still shows the truth.
 	}
 }
 

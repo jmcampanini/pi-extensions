@@ -162,7 +162,7 @@ const summaryLines = formatRunningWidgetLines(
 	{ summary: { hiddenRows: 5, stalledRows: 1, waitingRows: 2, queuedRows: 1 } },
 );
 eq("compact summary reports nonzero hidden categories in attention order",
-	summaryLines[2], " +5 more · 1 stalled · 2 waiting · 1 queued · /subagent-running");
+	summaryLines[2], " +5 more · 1 stalled · 2 waiting · 1 queued · /subagent-status");
 eq("hidden summary adds exactly one line", summaryLines.length, 3);
 const zeroSummary = formatRunningWidgetLines(
 	[{ name: "only", agent: "worker", elapsedSeconds: 1 }],

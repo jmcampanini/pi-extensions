@@ -1,5 +1,5 @@
 /**
- * command-running.ts — /subagent-running live lifecycle picker.
+ * command-status.ts — /subagent-status live lifecycle picker.
  *
  * The compact widget is capped; this bounded-height view refreshes the full
  * delivering, running-state, starting, and queued projection while open. It
@@ -22,7 +22,7 @@ import { running } from "./state.ts";
 import { focusPane } from "./tmux.ts";
 import { formatLifecycleRowLines } from "./widget.ts";
 
-export const RUNNING_PICKER_MAX_ROWS = 10;
+export const STATUS_PICKER_MAX_ROWS = 10;
 
 type PickerAction = "goto" | "zoom" | "stop";
 
@@ -30,7 +30,7 @@ type PickerChoice = { row: LifecycleWidgetRow; action: PickerAction };
 
 const plainText = (text: string): string => text;
 
-export interface RunningPickerStyle {
+export interface StatusPickerStyle {
 	border?: (text: string) => string;
 	selected?: (text: string) => string;
 	name?: (text: string) => string;
@@ -48,13 +48,13 @@ function actionHint(row: LifecycleWidgetRow): string {
 	return "finished; result is on its way";
 }
 
-export function formatRunningPickerLines(
+export function formatStatusPickerLines(
 	rows: readonly LifecycleWidgetRow[],
 	cursor: number,
 	viewportStart: number,
 	width: number,
-	style: RunningPickerStyle = {},
-	maxRows = RUNNING_PICKER_MAX_ROWS,
+	style: StatusPickerStyle = {},
+	maxRows = STATUS_PICKER_MAX_ROWS,
 ): string[] {
 	const safeWidth = Math.max(0, width);
 	const border = style.border ?? plainText;
@@ -79,7 +79,7 @@ export function formatRunningPickerLines(
 		warn,
 	}, { selectedIndex: cursor - start }));
 
-	if (rows.length === 0) lines.push(truncateToWidth(dim(" No active sub-agents"), safeWidth));
+	if (rows.length === 0) lines.push(truncateToWidth(dim(" No unresolved sub-agents"), safeWidth));
 	if (rows.length > limit) {
 		lines.push(truncateToWidth(dim(` ${start + 1}–${end} of ${rows.length}`), safeWidth));
 	}
@@ -105,16 +105,16 @@ function nextViewport(cursor: number, viewportStart: number, rowCount: number, m
 	return Math.min(viewportStart, maxStart);
 }
 
-export function registerSubagentRunningCommand(
+export function registerSubagentStatusCommand(
 	pi: ExtensionAPI,
 	focus: typeof focusPane = focusPane,
 ): void {
-	pi.registerCommand("subagent-running", {
+	pi.registerCommand("subagent-status", {
 		description: "Show every sub-agent lifecycle state and visit, zoom, stop, or cancel where available",
 		handler: async (_args, ctx) => {
 			const initialRows = collectLifecycleWidgetRows();
 			if (initialRows.length === 0) {
-				ctx.ui.notify("No active sub-agents.", "info");
+				ctx.ui.notify("No unresolved sub-agents.", "info");
 				return;
 			}
 
@@ -148,13 +148,13 @@ export function registerSubagentRunningCommand(
 							selectedId = rows[cursor].id;
 						}
 						fallbackIndex = cursor;
-						viewportStart = nextViewport(cursor, viewportStart, rows.length, RUNNING_PICKER_MAX_ROWS);
+						viewportStart = nextViewport(cursor, viewportStart, rows.length, STATUS_PICKER_MAX_ROWS);
 						return { rows, cursor };
 					};
 					const selectRow = (rows: LifecycleWidgetRow[], cursor: number): void => {
 						selectedId = rows[cursor].id;
 						fallbackIndex = cursor;
-						viewportStart = nextViewport(cursor, viewportStart, rows.length, RUNNING_PICKER_MAX_ROWS);
+						viewportStart = nextViewport(cursor, viewportStart, rows.length, STATUS_PICKER_MAX_ROWS);
 						tui.requestRender();
 					};
 
@@ -186,7 +186,7 @@ export function registerSubagentRunningCommand(
 						invalidate(): void {},
 						render(width: number): string[] {
 							const current = currentSelection();
-							return formatRunningPickerLines(current.rows, current.cursor, viewportStart, width, {
+							return formatStatusPickerLines(current.rows, current.cursor, viewportStart, width, {
 								border: (text) => theme.fg("borderMuted", text),
 								selected: (text) => theme.fg("accent", text),
 								agent: (text) => theme.fg("muted", text),
