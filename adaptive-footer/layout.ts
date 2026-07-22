@@ -34,15 +34,7 @@ export interface FittedFooterLayout {
 	states: Record<FooterComponentId, FooterComponentState>;
 }
 
-export const DISPLAY_ORDER: readonly FooterComponentId[] = [
-	"token-flow",
-	"cache",
-	"cost",
-	"context",
-	"compact-target",
-	"elapsed",
-	"runtime-identity",
-];
+export const DISPLAY_ORDER: readonly FooterComponentId[] = [...COMPONENT_IDS];
 
 export const REDUCTION_ORDER: readonly FooterComponentId[] = [
 	"cost",
