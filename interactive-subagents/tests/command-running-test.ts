@@ -9,6 +9,7 @@ process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "subagents-running-
 const state = await import("../state.ts");
 const capacity = await import("../capacity.ts");
 const command = await import("../command-running.ts");
+const runningWidget = await import("../running-widget.ts");
 type LifecycleWidgetRow = import("../running-widget.ts").LifecycleWidgetRow;
 type RunningSubagent = import("../state.ts").RunningSubagent;
 type SpawnSpec = import("../capacity.ts").SpawnSpec;
@@ -37,22 +38,39 @@ const formatterRows: LifecycleWidgetRow[] = Array.from({ length: 12 }, (_, index
 	worktree: index === 1,
 	external: index === 0,
 	status: index === 10 ? "delivering" : index === 11 ? "queued" : "active",
+	toolName: index === 0 ? "bash" : undefined,
+	toolElapsedSeconds: index === 0 ? 29 : undefined,
+	contextTokens: index === 0 ? 84_000 : undefined,
 }));
 const formatted = command.formatRunningPickerLines(formatterRows, 0, 0, 120, {
-	agent: (text) => `<D>${text}</D>`,
+	agent: (text) => `<A>${text}</A>`,
 	marker: (text) => `<M>${text}</M>`,
 });
 eq("picker height is bounded to ten detailed rows", formatted.length, 15);
-ok("picker shows unbracketed dim identifiers, brighter markers, and exact harness",
-	formatted.some((line) => line.includes("<D>worker</D>        <M>i x</M> task 1 · active · harness claude-code")));
+ok("picker omits the redundant row-count heading", !formatted.some((line) => line.includes("Sub-agents (")));
+eq("picker leaves a blank line before its controls", formatted[12], "");
+ok("picker shows unbracketed styled identifiers and alphabetic markers",
+	formatted.some((line) => line.includes("<A>worker</A>        <M>ei </M> task 1")));
+ok("picker reuses the compact widget's right-aligned activity telemetry",
+	formatted.some((line) => line.includes("bash 29s · active ·  84k · 00:00 ")));
+ok("picker moves the selected exact harness into the action footer",
+	formatted[13].includes("harness claude-code")
+		&& !formatted.slice(2, 12).some((line) => line.includes("harness claude-code")));
+ok("picker puts direct actions before navigation help",
+	formatted[13].indexOf("enter: visit") < formatted[13].indexOf("↑/↓"));
+const narrowExternal = command.formatRunningPickerLines([formatterRows[0]], 0, 0, 60);
+ok("picker drops selected harness detail before direct actions at narrow widths",
+	narrowExternal.at(-2)?.includes("enter: visit") === true
+		&& narrowExternal.at(-2)?.includes("harness claude-code") === false);
 ok("picker never wraps agent identifiers in square brackets", !formatted.some((line) => line.includes("[worker]")));
 ok("first viewport includes row 10 but not row 11",
 	formatted.some((line) => line.includes("task 10")) && !formatted.some((line) => line.includes("task 11")));
-eq("picker reports its first scroll window", formatted[12], " 1–10 of 12");
+eq("picker reports its first scroll window", formatted[11], " 1–10 of 12");
 const scrolled = command.formatRunningPickerLines(formatterRows, 11, 2, 100);
 ok("later viewport reaches every hidden lifecycle row",
-	scrolled.some((line) => line.includes("task 11 · delivering")) && scrolled.some((line) => line.includes("task 12 · queued")));
-eq("picker reports its last scroll window", scrolled[12], " 3–12 of 12");
+	scrolled.some((line) => line.includes("task 11") && line.includes("delivering"))
+		&& scrolled.some((line) => line.includes("task 12") && line.includes("queued")));
+eq("picker reports its last scroll window", scrolled[11], " 3–12 of 12");
 ok("queued selection advertises only its valid cancel action",
 	scrolled[13].includes("x: cancel queued launch") && !scrolled[13].includes("enter: visit"));
 const startingLines = command.formatRunningPickerLines([{
@@ -78,9 +96,11 @@ const mixedElapsed = command.formatRunningPickerLines([
 	{ ...formatterRows[0], id: "under-hour", elapsedSeconds: 3_599 },
 	{ ...formatterRows[0], id: "over-hour", elapsedSeconds: 3_600 },
 ], 0, 0, 100);
-eq("mixed elapsed widths keep agent and marker columns aligned",
-	[mixedElapsed[2].indexOf("worker"), mixedElapsed[3].indexOf("worker"), mixedElapsed[2].indexOf("ix"), mixedElapsed[3].indexOf("ix")],
-	[10, 10, 17, 17]);
+eq("mixed elapsed widths keep agent and marker columns aligned while clocks stay right",
+	[mixedElapsed[1].indexOf("worker"), mixedElapsed[2].indexOf("worker"), mixedElapsed[1].indexOf("ei"), mixedElapsed[2].indexOf("ei")],
+	[2, 2, 9, 9]);
+ok("mixed elapsed clocks stay on the far-right edge",
+	mixedElapsed[1].endsWith("  59:59 ") && mixedElapsed[2].endsWith("1:00:00 "));
 
 let handler: ((args: string, ctx: ExtensionContext) => Promise<void>) | undefined;
 const sent: Array<{ customType?: string }> = [];
@@ -98,21 +118,31 @@ command.registerSubagentRunningCommand(fakePi, (paneId, options) => {
 });
 
 const notifications: Array<{ message: string; level: string }> = [];
+const widgetTransitions: Array<{ key: string; content: unknown }> = [];
+let widgetTransitionCountDuringPicker = 0;
 let renderedDuringStep: string[] = [];
 type Step = string | ((component: PickerComponent) => void);
-function contextForSteps(steps: Step[]): ExtensionContext {
-	return {
+type TestTheme = { fg: (token: string, text: string) => string; bold: (text: string) => string };
+const identityTheme: TestTheme = {
+	fg: (_token, text) => text,
+	bold: (text) => text,
+};
+function contextForSteps(steps: Step[], theme: TestTheme = identityTheme): ExtensionContext {
+	const context = {
 		hasUI: true,
 		ui: {
 			notify(message: string, level: string): void {
 				notifications.push({ message, level });
+			},
+			setWidget(key: string, content: unknown): void {
+				widgetTransitions.push({ key, content });
 			},
 			async custom(factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (value: unknown) => void) => PickerComponent): Promise<unknown> {
 				let result: unknown;
 				let doneCalls = 0;
 				const component = factory(
 					{ requestRender(): void {} },
-					{ fg: (_token: string, text: string) => text, bold: (text: string) => text },
+					theme,
 					{},
 					(value) => { result = value; doneCalls++; },
 				);
@@ -125,6 +155,8 @@ function contextForSteps(steps: Step[]): ExtensionContext {
 			},
 		},
 	} as unknown as ExtensionContext;
+	state.setLatestCtx(context);
+	return context;
 }
 
 function runningChild(id: string): RunningSubagent {
@@ -172,8 +204,64 @@ function reset(): void {
 	notifications.length = 0;
 	focusCalls.length = 0;
 	sent.length = 0;
+	widgetTransitions.length = 0;
+	widgetTransitionCountDuringPicker = 0;
 	renderedDuringStep = [];
 }
+
+reset();
+const styled = runningChild("styled");
+styled.harness = "claude-code";
+const stalledAt = Date.now() - 60_001;
+styled.activity = { watchdogStartMs: stalledAt, problemSinceMs: stalledAt };
+state.running.set(styled.id, styled);
+await handler?.("", contextForSteps([
+	(component) => {
+		runningWidget.updateRunningWidget();
+		widgetTransitionCountDuringPicker = widgetTransitions.length;
+		renderedDuringStep = component.render(100);
+	},
+	"\x1b",
+], {
+	fg: (token, text) => `<${token}>${text}</${token}>`,
+	bold: (text) => text,
+}));
+eq("picker clears the compact widget, suppresses live repaints, then restores it",
+	[
+		widgetTransitionCountDuringPicker,
+		...widgetTransitions.map(({ key, content }) => [key, content === undefined ? "clear" : typeof content]),
+	],
+	[1, ["interactive-subagents", "clear"], ["interactive-subagents", "function"]]);
+ok("picker task text matches the compact widget instead of using accent styling",
+	renderedDuringStep.some((line) => line.includes("styled task") && !line.includes("<accent>styled task</accent>")));
+ok("picker agent identifiers use the muted semantic token",
+	renderedDuringStep.some((line) => line.includes("<muted>worker</muted>")));
+ok("picker external marker uses e with the muted semantic token",
+	renderedDuringStep.some((line) => line.includes("<muted>e</muted>")));
+ok("picker stalled state uses the warning semantic token",
+	renderedDuringStep.some((line) => line.includes("<warning>stalled")));
+ok("picker selected harness detail uses the muted semantic token",
+	renderedDuringStep.some((line) => line.includes("<muted> harness claude-code</muted>")));
+
+reset();
+const pickerFailure = runningChild("picker-failure");
+state.running.set(pickerFailure.id, pickerFailure);
+const failingContext = contextForSteps([]);
+(failingContext.ui as unknown as { custom: () => Promise<never> }).custom = async () => {
+	throw new Error("picker failed");
+};
+let pickerFailureSurfaced = false;
+try {
+	await handler?.("", failingContext);
+} catch {
+	pickerFailureSurfaced = true;
+}
+eq("picker restores the compact widget when the custom UI throws",
+	[
+		pickerFailureSurfaced,
+		...widgetTransitions.map(({ content }) => content === undefined ? "clear" : typeof content),
+	],
+	[true, "clear", "function"]);
 
 reset();
 const first = runningChild("first");

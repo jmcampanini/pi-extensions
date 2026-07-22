@@ -75,10 +75,12 @@ export function registerFuzzyExplorer(pi: ExtensionAPI): void {
 		description: "Search and inspect blocks on the active transcript branch",
 		handler: async (_args, ctx) => { await open(ctx); },
 	});
-	pi.registerShortcut(config.openShortcut, {
-		description: "Open fuzzy explorer for the active transcript branch",
-		handler: open,
-	});
+	if (config.openShortcut !== undefined) {
+		pi.registerShortcut(config.openShortcut, {
+			description: "Open fuzzy explorer for the active transcript branch",
+			handler: open,
+		});
+	}
 }
 
 export default registerFuzzyExplorer;
