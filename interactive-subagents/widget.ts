@@ -45,7 +45,7 @@ export interface WidgetStyle {
 	dim?: (text: string) => string;
 	/** Applied to the top rule (pi passes the theme's muted border color). */
 	border?: (text: string) => string;
-	/** Applied to task names; the picker passes the theme's accent color. */
+	/** Applied to task names when a specialized surface needs emphasis. */
 	name?: (text: string) => string;
 	/** Applied to the selected-row arrow; the picker passes the accent color. */
 	selected?: (text: string) => string;

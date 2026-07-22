@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { registerDeliveryListener } from "../delivery.ts";
+import * as runningWidget from "../running-widget.ts";
 import * as initial from "../state.ts";
 import type { DeliveryRecord, RunningSubagent } from "../state.ts";
 
@@ -34,6 +35,19 @@ const firstGeneration = initial.moduleGeneration();
 const firstSignal = initial.moduleSignal();
 initial.running.set(child.id, child);
 initial.ledger.set(child.id, { sessionFile: child.sessionFile, name: child.name });
+const widgetWrites: Array<{ key: string; content: unknown }> = [];
+const firstContext = {
+	hasUI: true,
+	ui: {
+		setWidget(key: string, content: unknown): void {
+			widgetWrites.push({ key, content });
+		},
+	},
+} as unknown as ExtensionContext;
+initial.setLatestCtx(firstContext);
+runningWidget.activateRunningWidgetGeneration(firstGeneration);
+const releaseOldWidgetSuspension = runningWidget.suspendRunningWidget(firstContext);
+eq("open picker clears the old generation widget", widgetWrites[0]?.content, undefined);
 initial.prepareForReload(() => {});
 
 eq("reload aborts the old generation", firstSignal.aborted, true);
@@ -46,9 +60,22 @@ eq("replacement import shares the running map", replacement.running, initial.run
 eq("replacement import shares the ledger", replacement.ledger, initial.ledger);
 replacement.completeReloadHandoff();
 
-const context = { hasUI: true } as ExtensionContext;
+const context = {
+	hasUI: true,
+	ui: {
+		setWidget(key: string, content: unknown): void {
+			widgetWrites.push({ key, content });
+		},
+	},
+} as unknown as ExtensionContext;
 replacement.setLatestCtx(context);
 eq("replacement context is published through stable state", initial.getLatestCtx(), context);
+runningWidget.activateRunningWidgetGeneration(replacement.moduleGeneration());
+runningWidget.updateRunningWidget();
+eq("replacement generation discards the stale picker suspension", typeof widgetWrites.at(-1)?.content, "function");
+const replacementWidgetWrites = widgetWrites.length;
+releaseOldWidgetSuspension();
+eq("late old-generation picker release cannot repaint the replacement", widgetWrites.length, replacementWidgetWrites);
 
 const replacementSignal = replacement.moduleSignal();
 const replacementGeneration = replacement.moduleGeneration();

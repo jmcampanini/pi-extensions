@@ -15,6 +15,7 @@ import { sanitizeDisplayText } from "./display-text.ts";
 import {
 	collectLifecycleWidgetRows,
 	type LifecycleWidgetRow,
+	suspendRunningWidget,
 	updateRunningWidget,
 } from "./running-widget.ts";
 import { running } from "./state.ts";
@@ -31,7 +32,6 @@ const plainText = (text: string): string => text;
 
 export interface RunningPickerStyle {
 	border?: (text: string) => string;
-	title?: (text: string) => string;
 	selected?: (text: string) => string;
 	name?: (text: string) => string;
 	agent?: (text: string) => string;
@@ -68,7 +68,6 @@ export function formatRunningPickerLines(
 ): string[] {
 	const safeWidth = Math.max(0, width);
 	const border = style.border ?? plainText;
-	const title = style.title ?? plainText;
 	const selected = style.selected ?? plainText;
 	const nameStyle = style.name ?? plainText;
 	const agentStyle = style.agent ?? plainText;
@@ -81,7 +80,6 @@ export function formatRunningPickerLines(
 	const end = Math.min(rows.length, start + limit);
 	const visibleRows = rows.slice(start, end);
 	const lines = [border("─".repeat(safeWidth))];
-	lines.push(truncateToWidth(title(` Sub-agents (${rows.length})`), safeWidth));
 	lines.push(...formatLifecycleRowLines(visibleRows, width, {
 		dim,
 		name: nameStyle,
@@ -97,6 +95,7 @@ export function formatRunningPickerLines(
 	}
 	const selectedRow = rows[Math.max(0, Math.min(cursor, rows.length - 1))];
 	if (selectedRow) {
+		lines.push("");
 		const controls = `${actionHint(selectedRow)} · ↑/↓ or j/k: select · esc: close`;
 		const harnessName = selectedRow.harness ? sanitizeDisplayText(selectedRow.harness) : undefined;
 		const showHarness = harnessName !== undefined
@@ -131,6 +130,7 @@ export function registerSubagentRunningCommand(
 
 			let refreshTimer: ReturnType<typeof setInterval> | undefined;
 			let choice: PickerChoice | undefined;
+			const restoreRunningWidget = suspendRunningWidget(ctx);
 			try {
 				choice = await ctx.ui.custom<PickerChoice | undefined>(
 					(tui, theme, _keybindings, done) => {
@@ -198,9 +198,7 @@ export function registerSubagentRunningCommand(
 							const current = currentSelection();
 							return formatRunningPickerLines(current.rows, current.cursor, viewportStart, width, {
 								border: (text) => theme.fg("borderMuted", text),
-								title: (text) => theme.fg("toolTitle", theme.bold(text)),
 								selected: (text) => theme.fg("accent", text),
-								name: (text) => theme.fg("accent", text),
 								agent: (text) => theme.fg("muted", text),
 								marker: (text) => theme.fg("muted", text),
 								meta: (text) => theme.fg("muted", text),
@@ -213,6 +211,7 @@ export function registerSubagentRunningCommand(
 				);
 			} finally {
 				if (refreshTimer) clearInterval(refreshTimer);
+				restoreRunningWidget();
 			}
 
 			if (!choice) return;

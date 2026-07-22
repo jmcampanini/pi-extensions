@@ -7,6 +7,7 @@
  * consumes the uncapped projection.
  */
 
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { oldestActiveTool, toolElapsedSeconds } from "./activity.ts";
 import { pendingLaunchCount, pendingLaunches, queuedCount, queuedEntries, specDisplay, type LaunchSpec } from "./capacity.ts";
 import { config } from "./config.ts";
@@ -35,7 +36,13 @@ export interface CompactWidgetSnapshot {
 
 const WIDGET_KEY = "interactive-subagents";
 const TIMER_KEY = Symbol.for("interactive-subagents/widget-timer");
+const SUSPENSIONS_KEY = Symbol.for("interactive-subagents/widget-suspensions");
 const slots = globalThis as Record<symbol, unknown>;
+
+interface WidgetSuspensionState {
+	generation: number;
+	count: number;
+}
 
 function currentTimer(): ReturnType<typeof setInterval> | null {
 	return (slots[TIMER_KEY] as ReturnType<typeof setInterval> | undefined) ?? null;
@@ -43,6 +50,19 @@ function currentTimer(): ReturnType<typeof setInterval> | null {
 
 function rememberTimer(timer: ReturnType<typeof setInterval> | null): void {
 	slots[TIMER_KEY] = timer;
+}
+
+function widgetSuspensionState(): WidgetSuspensionState {
+	return (slots[SUSPENSIONS_KEY] as WidgetSuspensionState | undefined) ?? { generation: 0, count: 0 };
+}
+
+function rememberWidgetSuspensions(state: WidgetSuspensionState): void {
+	slots[SUSPENSIONS_KEY] = state;
+}
+
+export function activateRunningWidgetGeneration(generation: number): void {
+	const current = widgetSuspensionState();
+	if (generation > current.generation) rememberWidgetSuspensions({ generation, count: 0 });
 }
 
 {
@@ -176,6 +196,7 @@ export function compactWidgetSnapshot(
 }
 
 export function updateRunningWidget(): void {
+	if (widgetSuspensionState().count > 0) return;
 	const ctx = getLatestCtx();
 	if (!ctx || !ctx.hasUI) return;
 
@@ -212,6 +233,24 @@ export function updateRunningWidget(): void {
 		}),
 		{ placement: "aboveEditor" },
 	);
+}
+
+export function suspendRunningWidget(ctx: ExtensionContext): () => void {
+	if (!ctx.hasUI) return () => {};
+	const state = widgetSuspensionState();
+	const generation = state.generation;
+	rememberWidgetSuspensions({ generation, count: state.count + 1 });
+	ctx.ui.setWidget(WIDGET_KEY, undefined);
+	let restored = false;
+	return () => {
+		if (restored) return;
+		restored = true;
+		const current = widgetSuspensionState();
+		if (current.generation !== generation) return;
+		const count = Math.max(0, current.count - 1);
+		rememberWidgetSuspensions({ generation, count });
+		if (count === 0) updateRunningWidget();
+	};
 }
 
 export function ensureWidgetTimer(): void {
