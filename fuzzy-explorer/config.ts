@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export interface FuzzyExplorerConfig {
-	openShortcut: KeyId;
+	openShortcut?: KeyId;
 	openMode: "list" | "filter";
 }
 
@@ -12,11 +12,10 @@ type Env = Record<string, string | undefined>;
 
 // Configuration resolves in three layers: defaults, config file, then environment.
 const DEFAULTS: FuzzyExplorerConfig = {
-	openShortcut: "ctrl+r",
 	openMode: "list",
 };
 
-const VALID_KEYS = Object.keys(DEFAULTS);
+const VALID_KEYS = ["openShortcut", "openMode"];
 
 export function agentConfigDir(env: Env = process.env): string {
 	return env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");

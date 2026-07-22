@@ -33,8 +33,8 @@
  *   result-message.ts    compact/expanded renderer for delivered results
  *   delivery.ts          message_end listener that clears "delivering" widget rows
  *   implant.ts           loaded INSIDE each child: done/ping tools, auto-exit
- *   tool-*.ts            one file per model-facing tool (spawn, resume, list)
- *   command-*.ts         one file per human command (available, running)
+ *   tool-*.ts            one file per model-facing tool (spawn, resume, available, status)
+ *   command-*.ts         one file per human command (available, status)
  *
  * This file only WIRES those pieces into pi: lifecycle events plus one
  * registration call per tool/command.
@@ -47,8 +47,8 @@ import { resetOverview, registerSubagentAvailableCommand } from "./command-avail
 import { registerSubagentStatusCommand } from "./command-status.ts";
 import { registerDeliveryListener } from "./delivery.ts";
 import { registerSubagentResultRenderer } from "./result-message.ts";
-import { stopWidgetTimer, updateRunningWidget } from "./running-widget.ts";
-import { completeReloadHandoff, prepareForReload, resetForShutdown, setLatestCtx } from "./state.ts";
+import { activateRunningWidgetGeneration, stopWidgetTimer, updateRunningWidget } from "./running-widget.ts";
+import { completeReloadHandoff, moduleGeneration, prepareForReload, resetForShutdown, setLatestCtx } from "./state.ts";
 import { registerSubagentAvailableTool } from "./tool-available.ts";
 import { registerSubagentStatusTool } from "./tool-status.ts";
 import { registerSubagentResumeTool } from "./tool-resume.ts";
@@ -69,6 +69,7 @@ export default function (pi: ExtensionAPI) {
 	// the session ends or is replaced (/new, /resume, quit, reload).
 	pi.on("session_start", (event, ctx) => {
 		setLatestCtx(ctx);
+		activateRunningWidgetGeneration(moduleGeneration());
 		// This generation now owns queue draining and repaints, even for
 		// slot releases a dying generation unwinds later (see capacity.ts).
 		armDrainHook(pi, updateRunningWidget);

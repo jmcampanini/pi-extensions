@@ -2,23 +2,25 @@
  * command-status.ts — /subagent-status live lifecycle picker.
  *
  * The compact widget is capped; this bounded-height view refreshes the full
- * delivering, running-state, starting, and queued projection while open.
- * Selection follows a child id as priority changes move rows.
+ * delivering, running-state, starting, and queued projection while open. It
+ * reuses the widget's row geometry and adds selection, viewport, exact harness
+ * detail, and lifecycle-specific actions. Selection follows a child id as
+ * priority changes move rows.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { AGENT_IDENTIFIER_MAX_COLUMNS } from "./agent-identifier.ts";
 import { cancelQueued, notifyQueueCancelled } from "./capacity.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import {
 	collectLifecycleWidgetRows,
 	type LifecycleWidgetRow,
+	suspendRunningWidget,
 	updateRunningWidget,
 } from "./running-widget.ts";
 import { running } from "./state.ts";
 import { focusPane } from "./tmux.ts";
-import { activeMarkerColumns, formatElapsed, formatMarkerCells } from "./widget.ts";
+import { formatLifecycleRowLines } from "./widget.ts";
 
 export const STATUS_PICKER_MAX_ROWS = 10;
 
@@ -30,13 +32,13 @@ const plainText = (text: string): string => text;
 
 export interface StatusPickerStyle {
 	border?: (text: string) => string;
-	title?: (text: string) => string;
 	selected?: (text: string) => string;
 	name?: (text: string) => string;
 	agent?: (text: string) => string;
 	marker?: (text: string) => string;
 	meta?: (text: string) => string;
 	dim?: (text: string) => string;
+	warn?: (text: string) => string;
 }
 
 function actionHint(row: LifecycleWidgetRow): string {
@@ -44,14 +46,6 @@ function actionHint(row: LifecycleWidgetRow): string {
 	if (row.lifecycle === "queued") return "x: cancel queued launch";
 	if (row.lifecycle === "pending") return "starting; controls available after start";
 	return "finished; result is on its way";
-}
-
-function clampAgentIdentifier(agent: string): string {
-	return truncateToWidth(agent, AGENT_IDENTIFIER_MAX_COLUMNS, "…");
-}
-
-function padToWidth(text: string, width: number): string {
-	return text + " ".repeat(Math.max(0, width - visibleWidth(text)));
 }
 
 export function formatStatusPickerLines(
@@ -64,45 +58,26 @@ export function formatStatusPickerLines(
 ): string[] {
 	const safeWidth = Math.max(0, width);
 	const border = style.border ?? plainText;
-	const title = style.title ?? plainText;
 	const selected = style.selected ?? plainText;
 	const nameStyle = style.name ?? plainText;
 	const agentStyle = style.agent ?? plainText;
 	const markerStyle = style.marker ?? plainText;
 	const meta = style.meta ?? plainText;
 	const dim = style.dim ?? plainText;
+	const warn = style.warn ?? dim;
 	const limit = Math.max(1, Math.floor(maxRows));
 	const start = Math.max(0, Math.min(viewportStart, Math.max(0, rows.length - limit)));
 	const end = Math.min(rows.length, start + limit);
 	const visibleRows = rows.slice(start, end);
-	const safeAgents = visibleRows.map((row) =>
-		row.agent ? clampAgentIdentifier(sanitizeDisplayText(row.agent)) : "",
-	);
-	const agentWidth = Math.max(...safeAgents.map(visibleWidth), 0);
-	const elapsedValues = visibleRows.map((row) => formatElapsed(row.elapsedSeconds));
-	const elapsedWidth = Math.max(...elapsedValues.map(visibleWidth), 0);
-	const markerColumns = activeMarkerColumns(visibleRows);
 	const lines = [border("─".repeat(safeWidth))];
-	lines.push(truncateToWidth(title(` Subagent status (${rows.length})`), safeWidth));
-
-	for (let visibleIndex = 0; visibleIndex < visibleRows.length; visibleIndex++) {
-		const index = start + visibleIndex;
-		const row = visibleRows[visibleIndex];
-		const isSelected = index === cursor;
-		const pointer = isSelected ? selected("→") : " ";
-		const elapsed = meta(padToWidth(elapsedValues[visibleIndex], elapsedWidth));
-		const agentText = safeAgents[visibleIndex];
-		const agentPadding = " ".repeat(Math.max(0, agentWidth - visibleWidth(agentText)));
-		const agent = agentWidth > 0
-			? ` ${agentText === "" ? " ".repeat(agentWidth) : agentStyle(agentText) + agentPadding}`
-			: "";
-		const markerCells = formatMarkerCells(row, markerColumns);
-		const markers = markerCells === "" ? "" : ` ${markerStyle(markerCells)}`;
-		const name = nameStyle(` ${sanitizeDisplayText(row.name)}`);
-		const status = meta(` · ${row.status ?? "starting"}`);
-		const harness = row.harness ? meta(` · harness ${sanitizeDisplayText(row.harness)}`) : "";
-		lines.push(truncateToWidth(`${pointer} ${elapsed}${agent}${markers}${name}${status}${harness}`, safeWidth));
-	}
+	lines.push(...formatLifecycleRowLines(visibleRows, width, {
+		dim,
+		name: nameStyle,
+		selected,
+		agent: agentStyle,
+		slot: markerStyle,
+		warn,
+	}, { selectedIndex: cursor - start }));
 
 	if (rows.length === 0) lines.push(truncateToWidth(dim(" No unresolved sub-agents"), safeWidth));
 	if (rows.length > limit) {
@@ -110,12 +85,13 @@ export function formatStatusPickerLines(
 	}
 	const selectedRow = rows[Math.max(0, Math.min(cursor, rows.length - 1))];
 	if (selectedRow) {
-		lines.push(
-			truncateToWidth(
-				dim(` ↑/↓ or j/k · ${actionHint(selectedRow)} · esc: close`),
-				safeWidth,
-			),
-		);
+		lines.push("");
+		const controls = `${actionHint(selectedRow)} · ↑/↓ or j/k: select · esc: close`;
+		const harnessName = selectedRow.harness ? sanitizeDisplayText(selectedRow.harness) : undefined;
+		const showHarness = harnessName !== undefined
+			&& visibleWidth(` harness ${harnessName} · ${controls}`) <= safeWidth;
+		const harness = showHarness ? meta(` harness ${harnessName}`) + dim(" · ") : "";
+		lines.push(truncateToWidth(harness + dim(`${showHarness ? "" : " "}${controls}`), safeWidth));
 	}
 	lines.push(border("─".repeat(safeWidth)));
 	return lines;
@@ -144,6 +120,7 @@ export function registerSubagentStatusCommand(
 
 			let refreshTimer: ReturnType<typeof setInterval> | undefined;
 			let choice: PickerChoice | undefined;
+			const restoreRunningWidget = suspendRunningWidget(ctx);
 			try {
 				choice = await ctx.ui.custom<PickerChoice | undefined>(
 					(tui, theme, _keybindings, done) => {
@@ -211,13 +188,12 @@ export function registerSubagentStatusCommand(
 							const current = currentSelection();
 							return formatStatusPickerLines(current.rows, current.cursor, viewportStart, width, {
 								border: (text) => theme.fg("borderMuted", text),
-								title: (text) => theme.fg("toolTitle", theme.bold(text)),
 								selected: (text) => theme.fg("accent", text),
-								name: (text) => theme.fg("accent", text),
-								agent: (text) => theme.fg("dim", text),
+								agent: (text) => theme.fg("muted", text),
 								marker: (text) => theme.fg("muted", text),
 								meta: (text) => theme.fg("muted", text),
 								dim: (text) => theme.fg("dim", text),
+								warn: (text) => theme.fg("warning", text),
 							});
 						},
 					};
@@ -225,6 +201,7 @@ export function registerSubagentStatusCommand(
 				);
 			} finally {
 				if (refreshTimer) clearInterval(refreshTimer);
+				restoreRunningWidget();
 			}
 
 			if (!choice) return;

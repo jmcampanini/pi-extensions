@@ -50,7 +50,6 @@ function dirWith(content: string | null): string {
 }
 
 const defaults = {
-	openShortcut: "ctrl+r",
 	openMode: "list",
 };
 
@@ -70,12 +69,12 @@ eq(
 	loadConfig({
 		PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"alt+x","openMode":"filter"}'),
 	}),
-	{ openShortcut: "alt+x", openMode: "filter" },
+	{ openMode: "filter", openShortcut: "alt+x" },
 );
 eq(
 	"partial file keeps defaults",
-	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openMode":"filter"}') }),
-	{ ...defaults, openMode: "filter" },
+	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"alt+x"}') }),
+	{ openMode: "list", openShortcut: "alt+x" },
 );
 eq(
 	"environment beats file",
@@ -84,7 +83,7 @@ eq(
 		PI_FUZZY_EXPLORER_OPEN_SHORTCUT: "ctrl+shift+f12",
 		PI_FUZZY_EXPLORER_OPEN_MODE: "filter",
 	}),
-	{ openShortcut: "ctrl+shift+f12", openMode: "filter" },
+	{ openMode: "filter", openShortcut: "ctrl+shift+f12" },
 );
 eq(
 	"only the documented environment names apply",

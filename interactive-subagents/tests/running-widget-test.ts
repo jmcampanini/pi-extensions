@@ -196,8 +196,14 @@ const identityTheme = { fg: (_token: string, text: string) => text };
 const rendered = widgetFactory?.({}, identityTheme).render(100) ?? [];
 eq("widget renders five detailed rows plus rule and conditional summary", rendered.length, 7);
 ok("compact identifiers are unbracketed and full", rendered.some((line) => line.includes("worker") && !line.includes("[worker]")));
-ok("compact external rows use x instead of exact harness suffixes",
-	rendered.some((line) => line.includes("x delivery task")) && !rendered.some((line) => line.includes("claude-code")));
+ok("compact external rows use e instead of exact harness suffixes",
+	rendered.some((line) => line.includes("efi  delivery task")) && !rendered.some((line) => line.includes("claude-code")));
+const semanticTheme = { fg: (token: string, text: string) => `<${token}>${text}</${token}>` };
+const semanticRendered = widgetFactory?.({}, semanticTheme).render(100) ?? [];
+ok("compact agent identifiers use the muted semantic token",
+	semanticRendered.some((line) => line.includes("<muted>worker</muted>")));
+ok("compact marker letters use the muted semantic token",
+	semanticRendered.some((line) => line.includes("<muted>efi </muted> delivery task")));
 eq("summary reports hidden and hidden-queued counts only",
 	rendered.at(-1), " +2 more · 1 queued · /subagent-status");
 ok("every controller-rendered line is terminal-width safe", rendered.every((line) => visibleWidth(line) <= 100));
