@@ -1,0 +1,238 @@
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
+import { config, type AutoCompactConfig } from "../auto-compact/config.ts";
+import { ELAPSED_TIME_STATUS_KEY } from "../elapsed-time/index.ts";
+import { fitFooterLayout, styleFooterSpans, type FooterComponent } from "./layout.ts";
+
+type ContextColorBand = "error" | "warning";
+type FooterAutoCompactConfig = Pick<AutoCompactConfig, "enabled" | "thresholdPercent">;
+
+export interface ComponentVariants {
+	full: string;
+	compact: string;
+}
+
+export function compactTargetVariants(autoCompactConfig: FooterAutoCompactConfig): ComponentVariants | undefined {
+	if (!autoCompactConfig.enabled) return undefined;
+	return {
+		full: `compact @${autoCompactConfig.thresholdPercent}%`,
+		compact: `C@${autoCompactConfig.thresholdPercent}%`,
+	};
+}
+
+export function selectContextColorBand(
+	percent: number | null | undefined,
+	autoCompactConfig: FooterAutoCompactConfig,
+): ContextColorBand | undefined {
+	if (percent == null) return undefined;
+
+	if (!autoCompactConfig.enabled) {
+		if (percent > 90) return "error";
+		if (percent > 70) return "warning";
+		return undefined;
+	}
+
+	if (percent >= autoCompactConfig.thresholdPercent) return "error";
+	if (percent >= autoCompactConfig.thresholdPercent - 10) return "warning";
+	return undefined;
+}
+
+function sanitizeStatusText(text: string): string {
+	return text
+		.replace(/[\r\n\t]/g, " ")
+		.replace(/ +/g, " ")
+		.trim();
+}
+
+export function partitionFooterStatuses(statuses: ReadonlyMap<string, string>): {
+	elapsedTime: string | undefined;
+	statusLine: string | undefined;
+} {
+	const elapsedTime = statuses.get(ELAPSED_TIME_STATUS_KEY);
+	const statusLine = Array.from(statuses.entries())
+		.filter(([key]) => key !== ELAPSED_TIME_STATUS_KEY)
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([, text]) => sanitizeStatusText(text))
+		.join(" ");
+	return {
+		elapsedTime: elapsedTime === undefined ? undefined : sanitizeStatusText(elapsedTime),
+		statusLine: statusLine || undefined,
+	};
+}
+
+function formatTokens(count: number): string {
+	if (count < 1000) return count.toString();
+	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+	if (count < 1000000) return `${Math.round(count / 1000)}k`;
+	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
+	return `${Math.round(count / 1000000)}M`;
+}
+
+export function tokenFlowVariants(input: number, output: number): ComponentVariants | undefined {
+	const parts: string[] = [];
+	if (input) parts.push(`↑${formatTokens(input)}`);
+	if (output) parts.push(`↓${formatTokens(output)}`);
+	if (parts.length === 0) return undefined;
+	const text = parts.join(" ");
+	return { full: text, compact: text };
+}
+
+export function cacheVariants(
+	read: number,
+	write: number,
+	latestHitRate: number | undefined,
+): ComponentVariants | undefined {
+	const totals: string[] = [];
+	if (read) totals.push(`R${formatTokens(read)}`);
+	if (write) totals.push(`W${formatTokens(write)}`);
+	if (totals.length === 0) return undefined;
+	const compact = totals.join(" ");
+	const full = latestHitRate === undefined ? compact : `${compact} CH${Math.round(latestHitRate)}%`;
+	return { full, compact };
+}
+
+export function costVariants(total: number, usingSubscription: boolean): ComponentVariants | undefined {
+	if (!total && !usingSubscription) return undefined;
+	return usingSubscription
+		? { full: `$${total.toFixed(3)} (sub)`, compact: "(sub)" }
+		: { full: `$${total.toFixed(3)}`, compact: `$${total.toFixed(2)}` };
+}
+
+export function contextVariants(
+	percent: number | null | undefined,
+	tokens: number | null | undefined,
+	window: number,
+): ComponentVariants {
+	const percentDisplay = percent == null ? "?" : `${Math.round(percent)}%`;
+	const tokensDisplay = tokens === null ? "?" : formatTokens(tokens ?? 0);
+	const ratio = `${tokensDisplay}/${formatTokens(window)}`;
+	return { full: `${percentDisplay} ${ratio}`, compact: ratio };
+}
+
+export function runtimeIdentityVariants(
+	modelName: string,
+	thinking: string | undefined,
+	provider: string | undefined,
+): ComponentVariants {
+	const compact = thinking ? `${modelName} • ${thinking}` : modelName;
+	return {
+		full: provider ? `(${provider}) ${compact}` : compact,
+		compact,
+	};
+}
+
+export default function adaptiveFooter(pi: ExtensionAPI): void {
+	pi.on("session_start", (_event, ctx) => {
+		if (!ctx.hasUI) return;
+
+		ctx.ui.setFooter((tui, theme, footerData) => {
+			const unsubscribeBranch = footerData.onBranchChange(() => tui.requestRender());
+
+			return {
+				dispose: unsubscribeBranch,
+				invalidate() {},
+				render(width: number): string[] {
+					let totalInput = 0;
+					let totalOutput = 0;
+					let totalCacheRead = 0;
+					let totalCacheWrite = 0;
+					let totalCost = 0;
+					let latestCacheHitRate: number | undefined;
+
+					for (const entry of ctx.sessionManager.getEntries()) {
+						if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+
+						const message = entry.message as AssistantMessage;
+						totalInput += message.usage.input;
+						totalOutput += message.usage.output;
+						totalCacheRead += message.usage.cacheRead;
+						totalCacheWrite += message.usage.cacheWrite;
+						totalCost += message.usage.cost.total;
+
+						const latestPromptTokens =
+							message.usage.input + message.usage.cacheRead + message.usage.cacheWrite;
+						latestCacheHitRate =
+							latestPromptTokens > 0 ? (message.usage.cacheRead / latestPromptTokens) * 100 : undefined;
+					}
+
+					const contextUsage = ctx.getContextUsage();
+					const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
+					const contextPercent = contextUsage?.percent;
+					const contextColorBand = selectContextColorBand(contextPercent, config);
+					const footerStatuses = partitionFooterStatuses(footerData.getExtensionStatuses());
+					const components: FooterComponent[] = [];
+
+					const tokenFlow = tokenFlowVariants(totalInput, totalOutput);
+					if (tokenFlow) components.push({ id: "token-flow", alignment: "left", ...tokenFlow });
+
+					const cache = cacheVariants(totalCacheRead, totalCacheWrite, latestCacheHitRate);
+					if (cache) components.push({ id: "cache", alignment: "left", ...cache });
+
+					const usingSubscription = ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false;
+					const cost = costVariants(totalCost, usingSubscription);
+					if (cost) components.push({ id: "cost", alignment: "left", ...cost });
+
+					const context = contextVariants(contextPercent, contextUsage?.tokens, contextWindow);
+					components.push({ id: "context", alignment: "left", ...context });
+
+					const compactTarget = compactTargetVariants(config);
+					if (compactTarget) {
+						components.push({ id: "compact-target", alignment: "left", ...compactTarget });
+					}
+
+					if (footerStatuses.elapsedTime) {
+						components.push({
+							id: "elapsed",
+							alignment: "right",
+							full: footerStatuses.elapsedTime,
+							compact: footerStatuses.elapsedTime,
+						});
+					}
+
+					const modelName = ctx.model?.id || "no-model";
+					let thinking: string | undefined;
+					if (ctx.model?.reasoning) {
+						const thinkingLevel = pi.getThinkingLevel() || "off";
+						thinking = thinkingLevel === "off" ? "thinking off" : thinkingLevel;
+					}
+					const provider =
+						footerData.getAvailableProviderCount() > 1 && ctx.model ? ctx.model.provider : undefined;
+					components.push({
+						id: "runtime-identity",
+						alignment: "right",
+						...runtimeIdentityVariants(modelName, thinking, provider),
+					});
+
+					let pwd = ctx.sessionManager.getCwd();
+					const home = process.env.HOME || process.env.USERPROFILE;
+					if (home && pwd.startsWith(home)) pwd = `~${pwd.slice(home.length)}`;
+
+					const branch = footerData.getGitBranch();
+					if (branch) pwd = `${pwd} (${branch})`;
+
+					const sessionName = ctx.sessionManager.getSessionName();
+					if (sessionName) pwd = `${pwd} • ${sessionName}`;
+
+					const fitted = fitFooterLayout(components, width);
+					const statsLine = styleFooterSpans(
+						fitted.spans,
+						(text) => theme.fg("dim", text),
+						(id, text) =>
+							contextColorBand && (id === "context" || id === "compact-target")
+								? theme.fg(contextColorBand, text)
+								: theme.fg("dim", text),
+					);
+					const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
+					const lines = [pwdLine, statsLine];
+
+					if (footerStatuses.statusLine) {
+						lines.push(truncateToWidth(footerStatuses.statusLine, width, theme.fg("dim", "...")));
+					}
+
+					return lines;
+				},
+			};
+		});
+	});
+}
