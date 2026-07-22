@@ -6,7 +6,7 @@ import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { oldestActiveTool, toolElapsedSeconds, type ActivityObservation } from "./activity.ts";
-import { pendingLaunches, queuedEntries, specDisplay } from "./capacity.ts";
+import { pendingLaunches, queuedEntries, specDisplay, type LaunchSpec } from "./capacity.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { humanElapsed } from "./result-message.ts";
 import { collectLifecycleWidgetRows } from "./running-widget.ts";
@@ -131,6 +131,32 @@ function runningEntry(id: string, state: SubagentRuntimeState, nowMs: number): S
 	};
 }
 
+function launchEntry(
+	spec: LaunchSpec,
+	elapsedSeconds: number,
+	queue?: { position: number; total: number },
+): StatusPresentationEntry {
+	const display = specDisplay(spec);
+	const harness = spec.harness === "pi" ? null : spec.harness;
+	const harnessPrefix = harness === null ? "" : `harness ${sanitizeDisplayText(harness)} · `;
+	const description = queue
+		? `position ${queue.position} of ${queue.total}; starts automatically when capacity frees; do not poll or reissue`
+		: `launch is underway; no activity report yet · elapsed ${humanElapsed(elapsedSeconds)}; do not poll or reissue`;
+	return {
+		id: spec.id,
+		agent: display.agent ?? "unknown",
+		name: display.name,
+		state: queue ? "queued" : "starting",
+		description: `${harnessPrefix}${description}`,
+		harness,
+		elapsedSeconds,
+		contextTokens: null,
+		contextWindow: null,
+		costUsd: null,
+		queuePosition: queue?.position ?? null,
+	};
+}
+
 export function collectStatusEntries(nowMs = Date.now()): StatusPresentationEntry[] {
 	const pendingById = new Map(pendingLaunches().map((pending) => [pending.spec.id, pending]));
 	const queue = queuedEntries();
@@ -166,42 +192,17 @@ export function collectStatusEntries(nowMs = Date.now()): StatusPresentationEntr
 		if (row.lifecycle === "pending") {
 			const pending = pendingById.get(row.id);
 			if (!pending) continue;
-			const display = specDisplay(pending.spec);
 			const elapsedSeconds = Math.max(0, Math.round((nowMs - pending.claimedAt) / 1000));
-			const harness = pending.spec.harness === "pi" ? "" : `harness ${sanitizeDisplayText(pending.spec.harness)} · `;
-			entries.push({
-				id: pending.spec.id,
-				agent: display.agent ?? "unknown",
-				name: display.name,
-				state: "starting",
-				description: `${harness}launch is underway; no activity report yet · elapsed ${humanElapsed(elapsedSeconds)}; do not poll or reissue`,
-				harness: pending.spec.harness === "pi" ? null : pending.spec.harness,
-				elapsedSeconds,
-				contextTokens: null,
-				contextWindow: null,
-				costUsd: null,
-				queuePosition: null,
-			});
+			entries.push(launchEntry(pending.spec, elapsedSeconds));
 			continue;
 		}
 		const queued = queuedById.get(row.id);
 		if (!queued) continue;
-		const display = specDisplay(queued.entry.spec);
 		const elapsedSeconds = Math.max(0, Math.round((nowMs - queued.entry.queuedAt) / 1000));
-		const harness = queued.entry.spec.harness === "pi" ? "" : `harness ${sanitizeDisplayText(queued.entry.spec.harness)} · `;
-		entries.push({
-			id: queued.entry.spec.id,
-			agent: display.agent ?? "unknown",
-			name: display.name,
-			state: "queued",
-			description: `${harness}position ${queued.position} of ${queue.length}; starts automatically when capacity frees; do not poll or reissue`,
-			harness: queued.entry.spec.harness === "pi" ? null : queued.entry.spec.harness,
-			elapsedSeconds,
-			contextTokens: null,
-			contextWindow: null,
-			costUsd: null,
-			queuePosition: queued.position,
-		});
+		entries.push(launchEntry(queued.entry.spec, elapsedSeconds, {
+			position: queued.position,
+			total: queue.length,
+		}));
 	}
 	return entries;
 }
