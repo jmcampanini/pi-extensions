@@ -165,18 +165,13 @@ export function fitFooterLayout(componentsInput: readonly FooterComponent[], wid
 	const full = resultIfFit();
 	if (full) return full;
 
-	for (const id of REDUCTION_ORDER) {
-		if (!components.has(id)) continue;
-		states[id] = "compact";
-		const compacted = resultIfFit();
-		if (compacted) return compacted;
-	}
-
-	for (const id of REDUCTION_ORDER) {
-		if (!components.has(id)) continue;
-		states[id] = "hidden";
-		const reduced = resultIfFit();
-		if (reduced) return reduced;
+	for (const nextState of ["compact", "hidden"] as const) {
+		for (const id of REDUCTION_ORDER) {
+			if (!components.has(id)) continue;
+			states[id] = nextState;
+			const fitted = resultIfFit();
+			if (fitted) return fitted;
+		}
 	}
 
 	return {
