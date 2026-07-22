@@ -7,6 +7,7 @@
  * consumes the uncapped projection.
  */
 
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { oldestActiveTool, toolElapsedSeconds } from "./activity.ts";
 import { pendingLaunchCount, pendingLaunches, queuedCount, queuedEntries, specDisplay, type LaunchSpec } from "./capacity.ts";
 import { config } from "./config.ts";
@@ -35,7 +36,19 @@ export interface CompactWidgetSnapshot {
 
 const WIDGET_KEY = "interactive-subagents";
 const TIMER_KEY = Symbol.for("interactive-subagents/widget-timer");
+const SUSPENSIONS_KEY = Symbol.for("interactive-subagents/widget-suspensions");
 const slots = globalThis as Record<symbol, unknown>;
+
+interface WidgetSuspensionState {
+	generation: number;
+	count: number;
+}
+
+const widgetSuspensions = (slots[SUSPENSIONS_KEY] as WidgetSuspensionState | undefined) ?? {
+	generation: 0,
+	count: 0,
+};
+slots[SUSPENSIONS_KEY] = widgetSuspensions;
 
 function currentTimer(): ReturnType<typeof setInterval> | null {
 	return (slots[TIMER_KEY] as ReturnType<typeof setInterval> | undefined) ?? null;
@@ -43,6 +56,12 @@ function currentTimer(): ReturnType<typeof setInterval> | null {
 
 function rememberTimer(timer: ReturnType<typeof setInterval> | null): void {
 	slots[TIMER_KEY] = timer;
+}
+
+export function activateRunningWidgetGeneration(generation: number): void {
+	if (generation <= widgetSuspensions.generation) return;
+	widgetSuspensions.generation = generation;
+	widgetSuspensions.count = 0;
 }
 
 {
@@ -176,6 +195,7 @@ export function compactWidgetSnapshot(
 }
 
 export function updateRunningWidget(): void {
+	if (widgetSuspensions.count > 0) return;
 	const ctx = getLatestCtx();
 	if (!ctx || !ctx.hasUI) return;
 
@@ -195,7 +215,7 @@ export function updateRunningWidget(): void {
 				return formatRunningWidgetLines(snapshot.rows, width, {
 					dim: (text) => theme.fg("dim", text),
 					border: (text) => theme.fg("borderMuted", text),
-					agent: (text) => theme.fg("dim", text),
+					agent: (text) => theme.fg("muted", text),
 					slot: (text) => theme.fg("muted", text),
 					warn: (text) => theme.fg("warning", text),
 				}, {
@@ -212,6 +232,21 @@ export function updateRunningWidget(): void {
 		}),
 		{ placement: "aboveEditor" },
 	);
+}
+
+export function suspendRunningWidget(ctx: ExtensionContext): () => void {
+	if (!ctx.hasUI) return () => {};
+	const generation = widgetSuspensions.generation;
+	widgetSuspensions.count++;
+	ctx.ui.setWidget(WIDGET_KEY, undefined);
+	let restored = false;
+	return () => {
+		if (restored) return;
+		restored = true;
+		if (widgetSuspensions.generation !== generation) return;
+		widgetSuspensions.count = Math.max(0, widgetSuspensions.count - 1);
+		if (widgetSuspensions.count === 0) updateRunningWidget();
+	};
 }
 
 export function ensureWidgetTimer(): void {

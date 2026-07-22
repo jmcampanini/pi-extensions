@@ -47,8 +47,8 @@ import { resetOverview, registerSubagentAvailableCommand } from "./command-avail
 import { registerSubagentRunningCommand } from "./command-running.ts";
 import { registerDeliveryListener } from "./delivery.ts";
 import { registerSubagentResultRenderer } from "./result-message.ts";
-import { stopWidgetTimer, updateRunningWidget } from "./running-widget.ts";
-import { completeReloadHandoff, prepareForReload, resetForShutdown, setLatestCtx } from "./state.ts";
+import { activateRunningWidgetGeneration, stopWidgetTimer, updateRunningWidget } from "./running-widget.ts";
+import { completeReloadHandoff, moduleGeneration, prepareForReload, resetForShutdown, setLatestCtx } from "./state.ts";
 import { registerSubagentListTool } from "./tool-list.ts";
 import { registerSubagentResumeTool } from "./tool-resume.ts";
 import { registerSubagentSpawnTool } from "./tool-spawn.ts";
@@ -68,6 +68,7 @@ export default function (pi: ExtensionAPI) {
 	// the session ends or is replaced (/new, /resume, quit, reload).
 	pi.on("session_start", (event, ctx) => {
 		setLatestCtx(ctx);
+		activateRunningWidgetGeneration(moduleGeneration());
 		// This generation now owns queue draining and repaints, even for
 		// slot releases a dying generation unwinds later (see capacity.ts).
 		armDrainHook(pi, updateRunningWidget);
