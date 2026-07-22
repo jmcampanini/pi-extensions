@@ -36,14 +36,17 @@ const firstSignal = initial.moduleSignal();
 initial.running.set(child.id, child);
 initial.ledger.set(child.id, { sessionFile: child.sessionFile, name: child.name });
 const widgetWrites: Array<{ key: string; content: unknown }> = [];
-const firstContext = {
-	hasUI: true,
-	ui: {
-		setWidget(key: string, content: unknown): void {
-			widgetWrites.push({ key, content });
+function createWidgetContext(): ExtensionContext {
+	return {
+		hasUI: true,
+		ui: {
+			setWidget(key: string, content: unknown): void {
+				widgetWrites.push({ key, content });
+			},
 		},
-	},
-} as unknown as ExtensionContext;
+	} as unknown as ExtensionContext;
+}
+const firstContext = createWidgetContext();
 initial.setLatestCtx(firstContext);
 runningWidget.activateRunningWidgetGeneration(firstGeneration);
 const releaseOldWidgetSuspension = runningWidget.suspendRunningWidget(firstContext);
@@ -60,14 +63,7 @@ eq("replacement import shares the running map", replacement.running, initial.run
 eq("replacement import shares the ledger", replacement.ledger, initial.ledger);
 replacement.completeReloadHandoff();
 
-const context = {
-	hasUI: true,
-	ui: {
-		setWidget(key: string, content: unknown): void {
-			widgetWrites.push({ key, content });
-		},
-	},
-} as unknown as ExtensionContext;
+const context = createWidgetContext();
 replacement.setLatestCtx(context);
 eq("replacement context is published through stable state", initial.getLatestCtx(), context);
 runningWidget.activateRunningWidgetGeneration(replacement.moduleGeneration());

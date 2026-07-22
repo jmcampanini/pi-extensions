@@ -44,6 +44,12 @@ interface WidgetSuspensionState {
 	count: number;
 }
 
+const widgetSuspensions = (slots[SUSPENSIONS_KEY] as WidgetSuspensionState | undefined) ?? {
+	generation: 0,
+	count: 0,
+};
+slots[SUSPENSIONS_KEY] = widgetSuspensions;
+
 function currentTimer(): ReturnType<typeof setInterval> | null {
 	return (slots[TIMER_KEY] as ReturnType<typeof setInterval> | undefined) ?? null;
 }
@@ -52,17 +58,10 @@ function rememberTimer(timer: ReturnType<typeof setInterval> | null): void {
 	slots[TIMER_KEY] = timer;
 }
 
-function widgetSuspensionState(): WidgetSuspensionState {
-	return (slots[SUSPENSIONS_KEY] as WidgetSuspensionState | undefined) ?? { generation: 0, count: 0 };
-}
-
-function rememberWidgetSuspensions(state: WidgetSuspensionState): void {
-	slots[SUSPENSIONS_KEY] = state;
-}
-
 export function activateRunningWidgetGeneration(generation: number): void {
-	const current = widgetSuspensionState();
-	if (generation > current.generation) rememberWidgetSuspensions({ generation, count: 0 });
+	if (generation <= widgetSuspensions.generation) return;
+	widgetSuspensions.generation = generation;
+	widgetSuspensions.count = 0;
 }
 
 {
@@ -196,7 +195,7 @@ export function compactWidgetSnapshot(
 }
 
 export function updateRunningWidget(): void {
-	if (widgetSuspensionState().count > 0) return;
+	if (widgetSuspensions.count > 0) return;
 	const ctx = getLatestCtx();
 	if (!ctx || !ctx.hasUI) return;
 
@@ -237,19 +236,16 @@ export function updateRunningWidget(): void {
 
 export function suspendRunningWidget(ctx: ExtensionContext): () => void {
 	if (!ctx.hasUI) return () => {};
-	const state = widgetSuspensionState();
-	const generation = state.generation;
-	rememberWidgetSuspensions({ generation, count: state.count + 1 });
+	const generation = widgetSuspensions.generation;
+	widgetSuspensions.count++;
 	ctx.ui.setWidget(WIDGET_KEY, undefined);
 	let restored = false;
 	return () => {
 		if (restored) return;
 		restored = true;
-		const current = widgetSuspensionState();
-		if (current.generation !== generation) return;
-		const count = Math.max(0, current.count - 1);
-		rememberWidgetSuspensions({ generation, count });
-		if (count === 0) updateRunningWidget();
+		if (widgetSuspensions.generation !== generation) return;
+		widgetSuspensions.count = Math.max(0, widgetSuspensions.count - 1);
+		if (widgetSuspensions.count === 0) updateRunningWidget();
 	};
 }
 
