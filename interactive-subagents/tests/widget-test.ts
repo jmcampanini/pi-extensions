@@ -139,10 +139,10 @@ const allMarkerRows = formatRunningWidgetLines([
 	{ name: "worktree", agent: "worker", elapsedSeconds: 3, worktree: true },
 	{ name: "none", agent: "worker", elapsedSeconds: 4 },
 ], 60);
-eq("markers use canonical f,i,w,x order", allMarkerRows[1],
-	` worker ${FORK_MARK}${INTERACTIVE_MARK}${WORKTREE_MARK}${EXTERNAL_MARK} all` + " ".repeat(38) + "00:01 ");
+eq("markers use canonical e,f,i,w order", allMarkerRows[1],
+	` worker ${EXTERNAL_MARK}${FORK_MARK}${INTERACTIVE_MARK}${WORKTREE_MARK} all` + " ".repeat(38) + "00:01 ");
 eq("used marker columns stay aligned with blank cells", allMarkerRows[2],
-	` worker  ${INTERACTIVE_MARK} ${EXTERNAL_MARK} interactive external` + " ".repeat(21) + "00:02 ");
+	` worker ${EXTERNAL_MARK} ${INTERACTIVE_MARK}  interactive external` + " ".repeat(21) + "00:02 ");
 eq("rows without flags retain blanks for every used marker", allMarkerRows[4],
 	" worker      none" + " ".repeat(37) + "00:04 ");
 
@@ -150,9 +150,9 @@ const subsetMarkers = formatRunningWidgetLines([
 	{ name: "external", agent: "worker", elapsedSeconds: 1, external: true },
 	{ name: "worktree", agent: "worker", elapsedSeconds: 2, worktree: true },
 ], 50);
-eq("unused f and i columns disappear while w,x remain aligned", subsetMarkers.slice(1), [
-	` worker  ${EXTERNAL_MARK} external` + " ".repeat(25) + "00:01 ",
-	` worker ${WORKTREE_MARK}  worktree` + " ".repeat(25) + "00:02 ",
+eq("unused f and i columns disappear while e,w remain aligned", subsetMarkers.slice(1), [
+	` worker ${EXTERNAL_MARK}  external` + " ".repeat(25) + "00:01 ",
+	` worker  ${WORKTREE_MARK} worktree` + " ".repeat(25) + "00:02 ",
 ]);
 
 const summaryLines = formatRunningWidgetLines(
@@ -187,14 +187,14 @@ eq("mark slot falls back to dim", stateStyled[1].includes(`<D>${FORK_MARK}${WORK
 eq("styled state row plain-length preserved",
 	stateStyled[1].replaceAll("<D>", "").replaceAll("</D>", "").length, 60);
 
-// Dedicated hooks keep identifiers darker than marker letters.
+// Dedicated hooks style identifiers and marker letters as secondary metadata.
 const slotStyled = formatRunningWidgetLines(stateRows, 60, {
 	dim: (t) => `<D>${t}</D>`,
 	agent: (t) => `<A>${t}</A>`,
 	slot: (t) => `<M>${t}</M>`,
 });
 eq("agent hook styles the unbracketed identifier", slotStyled[1].includes(`<A>scout</A>  `), true);
-eq("marker hook styles the brighter letters", slotStyled[1].includes(`<M>${FORK_MARK}${WORKTREE_MARK}</M> Auth`), true);
+eq("marker hook styles the secondary metadata letters", slotStyled[1].includes(`<M>${FORK_MARK}${WORKTREE_MARK}</M> Auth`), true);
 eq("widget styles add no SGR faint sequence", slotStyled.join("\n").includes("\x1b[2m"), false);
 eq("clock still uses dim", slotStyled[1].endsWith("<D>00:23</D> "), true);
 

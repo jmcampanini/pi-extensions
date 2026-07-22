@@ -195,7 +195,7 @@ export function updateRunningWidget(): void {
 				return formatRunningWidgetLines(snapshot.rows, width, {
 					dim: (text) => theme.fg("dim", text),
 					border: (text) => theme.fg("borderMuted", text),
-					agent: (text) => theme.fg("dim", text),
+					agent: (text) => theme.fg("muted", text),
 					slot: (text) => theme.fg("muted", text),
 					warn: (text) => theme.fg("warning", text),
 				}, {

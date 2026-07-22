@@ -3,8 +3,8 @@
  *
  * Each row starts with an unbracketed agent identifier, padded to the widest
  * visible identifier, followed by only the marker columns used by visible
- * rows. Markers are `f` forked, `i` interactive, `w` worktree, and `x`
- * external harness. Blank cells preserve alignment within active columns;
+ * rows. Markers are `e` external harness, `f` forked, `i` interactive, and
+ * `w` worktree. Blank cells preserve alignment within active columns;
  * when none apply, the marker group and its separator disappear. The
  * task-focused display name follows, while status telemetry and elapsed time
  * stay anchored at the right edge.
@@ -37,7 +37,7 @@ export const INTERACTIVE_MARK = "i";
 /** Marks a child running in its own git worktree. */
 export const WORKTREE_MARK = "w";
 /** Marks a child running through an external harness. */
-export const EXTERNAL_MARK = "x";
+export const EXTERNAL_MARK = "e";
 
 /** Optional styling hooks; identity (no styling) when omitted. */
 export interface WidgetStyle {
@@ -45,9 +45,13 @@ export interface WidgetStyle {
 	dim?: (text: string) => string;
 	/** Applied to the top rule (pi passes the theme's muted border color). */
 	border?: (text: string) => string;
-	/** Applied to agent identifiers; pi passes the theme's dim color. */
+	/** Applied to task names; the picker passes the theme's accent color. */
+	name?: (text: string) => string;
+	/** Applied to the selected-row arrow; the picker passes the accent color. */
+	selected?: (text: string) => string;
+	/** Applied to agent identifiers; pi passes the theme's muted color. */
 	agent?: (text: string) => string;
-	/** Applied to marker letters; pi passes the brighter muted color. */
+	/** Applied to marker letters; pi passes the theme's muted color. */
 	slot?: (text: string) => string;
 	/** Applied to the status segment when status is "stalled" (pi passes the
 	 * theme's warning color, same precedent as the implant banner). Falls
@@ -97,10 +101,10 @@ export interface MarkerColumn {
 }
 
 const MARKER_COLUMNS: readonly MarkerColumn[] = [
+	{ mark: EXTERNAL_MARK, applies: (row) => Boolean(row.external) },
 	{ mark: FORK_MARK, applies: (row) => Boolean(row.forked) },
 	{ mark: INTERACTIVE_MARK, applies: (row) => Boolean(row.interactive) },
 	{ mark: WORKTREE_MARK, applies: (row) => Boolean(row.worktree) },
-	{ mark: EXTERNAL_MARK, applies: (row) => Boolean(row.external) },
 ];
 
 export function activeMarkerColumns(rows: readonly WidgetRow[]): MarkerColumn[] {
@@ -116,6 +120,11 @@ export interface WidgetSummary {
 	stalledRows: number;
 	waitingRows: number;
 	queuedRows: number;
+}
+
+export interface LifecycleRowRenderOptions {
+	/** Adds a native selection gutter and points at this row when present. */
+	selectedIndex?: number;
 }
 
 export interface WidgetRenderOptions {
@@ -277,14 +286,16 @@ function chooseSegment(row: WidgetRow, availableWidth: number, nameWidth: number
 	return displayColumns(segments.core) + CLOCK_SEPARATOR_WIDTH <= availableWidth ? segments.core : "";
 }
 
-export function formatRunningWidgetLines(
-	rows: WidgetRow[],
+export function formatLifecycleRowLines(
+	rows: readonly WidgetRow[],
 	width: number,
 	style: WidgetStyle = {},
-	options: WidgetRenderOptions = {},
+	options: LifecycleRowRenderOptions = {},
 ): string[] {
-	const dim = style.dim ?? ((text: string) => text);
-	const border = style.border ?? ((text: string) => text);
+	const plain = (text: string): string => text;
+	const dim = style.dim ?? plain;
+	const nameStyle = style.name ?? plain;
+	const selectedStyle = style.selected ?? plain;
 	const agentStyle = style.agent ?? dim;
 	const slotStyle = style.slot ?? dim;
 	const warn = style.warn ?? dim;
@@ -294,7 +305,6 @@ export function formatRunningWidgetLines(
 		name: singleLine(sanitizeDisplayText(row.name)),
 		agent: row.agent === undefined ? undefined : singleLine(sanitizeDisplayText(row.agent)),
 	}));
-
 	const agents = safeRows.map((row) =>
 		row.agent ? truncateToColumns(row.agent, AGENT_IDENTIFIER_MAX_COLUMNS) : "",
 	);
@@ -302,70 +312,63 @@ export function formatRunningWidgetLines(
 	const elapsedValues = safeRows.map((row) => formatElapsed(row.elapsedSeconds));
 	const elapsedWidth = Math.max(...elapsedValues.map(displayColumns), 0);
 	const markerColumns = activeMarkerColumns(safeRows);
-
-	// Guard the two places that would misbehave on a negative width
-	// (repeat throws, slice counts from the end).
 	const safeWidth = Math.max(0, width);
-
-	// A single faded rule separates the widget from the transcript above it.
-	const lines = [border("─".repeat(safeWidth))];
+	const lines: string[] = [];
 
 	for (let i = 0; i < safeRows.length; i++) {
 		const row = safeRows[i];
 		const agent = padToColumns(agents[i], agentWidth);
 		const elapsed = elapsedValues[i].padStart(elapsedWidth, " ");
-		const prefix = ` ${agentWidth > 0 ? `${agent} ` : ""}`;
+		const selected = options.selectedIndex === i;
+		const leading = options.selectedIndex === undefined ? " " : selected ? "→ " : "  ";
+		const styledLeading = options.selectedIndex === undefined
+			? " "
+			: selected
+				? selectedStyle("→") + " "
+				: "  ";
+		const prefix = `${leading}${agentWidth > 0 ? `${agent} ` : ""}`;
 		const styledAgent = agents[i] === ""
 			? agent
 			: agentStyle(agents[i]) + " ".repeat(Math.max(0, agentWidth - displayColumns(agents[i])));
-		const styledPrefix = ` ${agentWidth > 0 ? `${styledAgent} ` : ""}`;
+		const styledPrefix = `${styledLeading}${agentWidth > 0 ? `${styledAgent} ` : ""}`;
 		const markerCells = formatMarkerCells(row, markerColumns);
 		const markerPadding = markerColumns.length > 0 ? " " : "";
 		const name = stripAgentPrefix(row.name, row.agent);
 
-		// Right-anchor the clock one space off the edge. The flex gap absorbs
-		// the width; when space runs out the optional tool gives way first,
-		// then the NAME truncates (ellipsis, then nothing). The identifier, marker group,
-		// telemetry core, and clock are the identity and anchors; prose is
-		// sacrificial. Layout is computed on plain text; the dim wrappers are
-		// applied last so ANSI codes never enter
-		// the width math.
-		// The segment is chosen BEFORE the width math so its display width
-		// participates in fixedWidth. A line wider than the terminal is
-		// FATAL upstream, so the segment can never be bolted on afterwards.
-		// Everything except the name and the flex gap has a fixed width: the
-		// prefix, the marker group and its optional padding, the segment plus
-		// its separator, the clock, and its trailing space.
+		// Right-anchor the clock one space off the edge. The optional tool gives
+		// way first, then the task name truncates around the required telemetry.
 		const baseWidth = displayColumns(prefix) + displayColumns(markerCells) + displayColumns(markerPadding)
 			+ displayColumns(elapsed) + 1;
 		const segment = chooseSegment(row, width - baseWidth, displayColumns(name));
 		const segmentWidth = segment === "" ? 0 : displayColumns(segment) + CLOCK_SEPARATOR_WIDTH;
 		const fixedWidth = baseWidth + segmentWidth;
-		const maxName = width - fixedWidth - 2; // reserve a 2-column minimum gap
+		const maxName = width - fixedWidth - 2;
 		const clippedName = truncateToColumns(name, maxName);
 		const gap = Math.max(0, width - fixedWidth - displayColumns(clippedName));
-
-		// A line wider than the terminal is FATAL upstream: pi's TUI treats an
-		// overflowing widget line as a crash. At every width the grid fits
-		// in, the styled line below is exact; at widths narrower than the
-		// fixed grid, clamp the plain text instead and skip styling the row.
-		// The segment renders dim in every state except stalled, which gets
-		// the warn hook.
-		//
-		// The final clamp handles terminals narrower than the immutable identity
-		// and clock fields. Under normal widths the column-aware budget keeps the
-		// styled line exact without sacrificing the right-side suffix.
 		const segmentStyle = row.status === "stalled" ? warn : dim;
 		const plainLine = prefix + markerCells + markerPadding + clippedName + " ".repeat(gap)
 			+ (segment !== "" ? segment + CLOCK_SEPARATOR : "") + elapsed + " ";
 		lines.push(
 			displayColumns(plainLine) <= width
 				? styledPrefix + (markerCells === "" ? "" : slotStyle(markerCells)) + markerPadding
-					+ clippedName + " ".repeat(gap)
+					+ nameStyle(clippedName) + " ".repeat(gap)
 					+ (segment !== "" ? segmentStyle(segment) + dim(CLOCK_SEPARATOR) : "") + dim(elapsed) + " "
 				: clampToColumns(plainLine, safeWidth),
 		);
 	}
+	return lines;
+}
+
+export function formatRunningWidgetLines(
+	rows: WidgetRow[],
+	width: number,
+	style: WidgetStyle = {},
+	options: WidgetRenderOptions = {},
+): string[] {
+	const dim = style.dim ?? ((text: string) => text);
+	const border = style.border ?? ((text: string) => text);
+	const safeWidth = Math.max(0, width);
+	const lines = [border("─".repeat(safeWidth)), ...formatLifecycleRowLines(rows, width, style)];
 	if (options.summary && options.summary.hiddenRows > 0) {
 		const summaryParts = [`+${options.summary.hiddenRows} more`];
 		if (options.summary.stalledRows > 0) summaryParts.push(`${options.summary.stalledRows} stalled`);
