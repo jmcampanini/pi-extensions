@@ -140,10 +140,6 @@ interface SpawnRenderState {
 	effectiveBehavior?: EffectiveSpawnBehavior;
 }
 
-function spawnBehaviorPresentation(behavior: EffectiveSpawnBehavior): SpawnBehaviorPresentation {
-	return { version: 1, behavior: { ...behavior } };
-}
-
 function parseSpawnBehavior(details: unknown): EffectiveSpawnBehavior | undefined {
 	if (!details || typeof details !== "object") return undefined;
 	const presentation = (details as { presentation?: unknown }).presentation;
@@ -282,7 +278,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			// unknown names as problems above, so this lookup can only fail on
 			// an internal inconsistency - and then it fails loud.
 			const behavior = effectiveSpawnBehavior(params, agentDef);
-			const presentation = spawnBehaviorPresentation(behavior);
+			const presentation: SpawnBehaviorPresentation = { version: 1, behavior: { ...behavior } };
 			const { harness, context, autoExit, useWorktree } = behavior;
 			const profile = harness === "pi" ? undefined : requireHarnessProfile(harness);
 			// The frontmatter combination is already a problem (checked above);

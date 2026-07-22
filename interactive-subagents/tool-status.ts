@@ -87,12 +87,6 @@ function economics(child: { harness?: string; activity?: ActivityObservation }):
 	};
 }
 
-function lastReportedEconomics(child: { harness?: string; activity?: ActivityObservation }): string[] {
-	if (child.harness) return [`harness ${sanitizeDisplayText(child.harness)}`];
-	if (child.activity?.snapshot === undefined) return [];
-	return economics(child).text.map((clause) => `last reported ${clause}`);
-}
-
 function runningEntry(id: string, state: SubagentRuntimeState, nowMs: number): StatusPresentationEntry | undefined {
 	const child = running.get(id);
 	if (!child) return undefined;
@@ -110,8 +104,10 @@ function runningEntry(id: string, state: SubagentRuntimeState, nowMs: number): S
 	} else if (state === "waiting") {
 		description = `healthy but idle and may be waiting for human input in its pane · ${clauses.join(" · ")}`;
 	} else if (state === "stalled") {
-		const lastReported = lastReportedEconomics(child);
-		const telemetry = lastReported.length > 0 ? ` · ${lastReported.join(" · ")}` : "";
+		const hasReportedEconomics = Boolean(child.harness) || child.activity?.snapshot !== undefined;
+		const telemetry = hasReportedEconomics
+			? ` · ${runEconomics.text.map((clause) => `last reported ${clause}`).join(" · ")}`
+			: "";
 		description = `${stalledCondition(child.activity, nowMs)}; this is a warning, not a failure; wait or inspect its pane through /subagent-status${telemetry} · elapsed ${humanElapsed(elapsedSeconds)}`;
 	} else {
 		description = `launch is underway; no active run has been observed · elapsed ${humanElapsed(elapsedSeconds)}; do not poll or reissue`;
