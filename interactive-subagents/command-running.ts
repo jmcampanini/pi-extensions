@@ -41,16 +41,6 @@ export interface RunningPickerStyle {
 	warn?: (text: string) => string;
 }
 
-function availableActions(row: LifecycleWidgetRow): readonly PickerAction[] {
-	if (row.lifecycle === "running") return ["goto", "zoom", "stop"];
-	if (row.lifecycle === "queued") return ["stop"];
-	return [];
-}
-
-function supportsAction(row: LifecycleWidgetRow, action: PickerAction): boolean {
-	return availableActions(row).includes(action);
-}
-
 function actionHint(row: LifecycleWidgetRow): string {
 	if (row.lifecycle === "running") return "enter: visit · z: visit + zoom · x: stop";
 	if (row.lifecycle === "queued") return "x: cancel queued launch";
@@ -185,11 +175,11 @@ export function registerSubagentRunningCommand(
 								return;
 							}
 							const row = current.rows[current.cursor];
-							if ((matchesKey(data, "enter") || matchesKey(data, "return")) && supportsAction(row, "goto")) {
+							if ((matchesKey(data, "enter") || matchesKey(data, "return")) && row.lifecycle === "running") {
 								close({ row, action: "goto" });
-							} else if (data === "z" && supportsAction(row, "zoom")) {
+							} else if (data === "z" && row.lifecycle === "running") {
 								close({ row, action: "zoom" });
-							} else if (data === "x" && supportsAction(row, "stop")) {
+							} else if (data === "x" && (row.lifecycle === "running" || row.lifecycle === "queued")) {
 								close({ row, action: "stop" });
 							}
 						},

@@ -320,12 +320,9 @@ export function formatLifecycleRowLines(
 		const agent = padToColumns(agents[i], agentWidth);
 		const elapsed = elapsedValues[i].padStart(elapsedWidth, " ");
 		const selected = options.selectedIndex === i;
-		const leading = options.selectedIndex === undefined ? " " : selected ? "→ " : "  ";
-		const styledLeading = options.selectedIndex === undefined
-			? " "
-			: selected
-				? selectedStyle("→") + " "
-				: "  ";
+		const selectionPointer = selected ? "→" : " ";
+		const leading = options.selectedIndex === undefined ? " " : `${selectionPointer} `;
+		const styledLeading = selected ? selectedStyle(selectionPointer) + " " : leading;
 		const prefix = `${leading}${agentWidth > 0 ? `${agent} ` : ""}`;
 		const styledAgent = agents[i] === ""
 			? agent
