@@ -42,7 +42,7 @@ import {
 	type SpawnSpec,
 } from "./capacity.ts";
 import { config } from "./config.ts";
-import { clearExternalResult, requireHarnessProfile } from "./harnesses.ts";
+import { clearExternalResult, isExternalHarness, requireHarnessProfile } from "./harnesses.ts";
 import {
 	artifactBase,
 	buildChildEnv,
@@ -53,7 +53,7 @@ import {
 	writeLaunchMeta,
 } from "./launch.ts";
 import { assertValidThinkingLevel, resolveUsableModel, THINKING_LEVELS } from "./models.ts";
-import { countEntries, seedForkSession, seedFreshSession } from "./session.ts";
+import { countEntries, seedForkSession, seedNewSession } from "./session.ts";
 import { moduleGeneration } from "./state.ts";
 import { formatCollapsedSubagentCall, formatExpandedSubagentCall } from "./subagent-call.ts";
 import { renderSubagentLaunchResult } from "./subagent-result.ts";
@@ -69,7 +69,7 @@ const SubagentSpawnParams = Type.Object({
 	}),
 	task: Type.String({
 		description:
-			"Task prompt. With fresh context, make it self-contained: include the objective, relevant facts and paths, constraints, whether edits are allowed, and the expected output or verification. " +
+			"Task prompt. With new context, make it self-contained: include the objective, relevant facts and paths, constraints, whether edits are allowed, and the expected output or verification. " +
 			"With forked context, the task can be a directive that refers to the inherited conversation.",
 	}),
 	agent: Type.Optional(
@@ -79,11 +79,12 @@ const SubagentSpawnParams = Type.Object({
 		}),
 	),
 	context: Type.Optional(
-		Type.Union([Type.Literal("fresh"), Type.Literal("forked")], {
+		Type.Union([Type.Literal("new"), Type.Literal("forked")], {
 			description:
-				"'fresh' = no parent conversation (default; project files and instructions still load). Use for self-contained work and include all needed context in `task`. " +
+				"'new' = no parent conversation (default; project files and instructions still load). Use for self-contained work and include all needed context in `task`. " +
 				"'forked' = copies this conversation up to the moment the child actually launches — immediately when a concurrency slot is free, or later when a queued launch starts. Use when the task materially depends on accumulated discussion, reads, or decisions that would be difficult or lossy to restate, or to try parallel approaches from the same starting point. " +
-				"Forked history is sent to the child's selected model/provider, so prefer fresh when that history is unnecessary or sensitive. Use subagent_resume instead when a follow-up depends on a previous child's own context. Overrides the agent definition.",
+				"Forked history is sent to the child's selected model/provider, so prefer new when that history is unnecessary or sensitive. Use subagent_resume instead when a follow-up depends on a previous child's own context. Overrides the agent definition. " +
+				"'forked' requires the Pi harness; external sub-agents are new-only.",
 		}),
 	),
 	model: Type.Optional(
@@ -125,7 +126,7 @@ const SubagentSpawnParams = Type.Object({
 type SubagentSpawnParamsType = Static<typeof SubagentSpawnParams>;
 
 interface EffectiveSpawnBehavior {
-	context: "fresh" | "forked";
+	context: "new" | "forked";
 	autoExit: boolean;
 	useWorktree: boolean;
 	harness: string;
@@ -156,7 +157,7 @@ function parseSpawnPresentation(details: unknown): ParsedSpawnPresentation | und
 	const candidate = presentation as Partial<SpawnBehaviorPresentation>;
 	if (candidate.version !== 1 || !candidate.behavior || typeof candidate.behavior !== "object") return undefined;
 	const behavior = candidate.behavior as Partial<EffectiveSpawnBehavior>;
-	if ((behavior.context !== "fresh" && behavior.context !== "forked")
+	if ((behavior.context !== "new" && behavior.context !== "forked")
 		|| typeof behavior.autoExit !== "boolean"
 		|| typeof behavior.useWorktree !== "boolean"
 		|| typeof behavior.harness !== "string") return undefined;
@@ -169,7 +170,7 @@ function effectiveSpawnBehavior(
 	agentDef: AgentDefinition | null,
 ): EffectiveSpawnBehavior {
 	return {
-		context: params.context ?? agentDef?.context ?? "fresh",
+		context: params.context ?? agentDef?.context ?? "new",
 		autoExit: params.autoExit ?? agentDef?.autoExit ?? true,
 		useWorktree: params.worktree ?? (params.cwd ? false : (agentDef?.worktree ?? false)),
 		harness: agentDef?.harness ?? "pi",
@@ -218,7 +219,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			"the result. Call this multiple times only when tasks " +
 			"are independent, bounded, and able to proceed concurrently.",
 		promptGuidelines: [
-			"Use subagent_spawn with context 'fresh' by default for self-contained work; put all needed facts, constraints, and expected output in `task`. Use 'forked' only when the task materially depends on accumulated parent discussion, reads, or decisions that would be difficult or lossy to restate, and remember that the copied history goes to the child's selected model/provider. Use subagent_resume instead when a follow-up depends on the child's own prior context.",
+			"Use subagent_spawn with context 'new' by default for self-contained work; put all needed facts, constraints, and expected output in `task`. Use 'forked' only when the task materially depends on accumulated parent discussion, reads, or decisions that would be difficult or lossy to restate, and remember that the copied history goes to the child's selected model/provider — 'forked' requires the Pi harness; external sub-agents are new-only. Use subagent_resume instead when a follow-up depends on the child's own prior context.",
 			"Use subagent_spawn only for concrete, bounded tasks that can proceed independently. Keep trivial tasks, tightly coupled or sequential work, and critical-path blockers in the parent. Never give parallel sub-agents overlapping write scopes in the same checkout; use disjoint scopes or worktree isolation.",
 		],
 		parameters: SubagentSpawnParams,
@@ -318,12 +319,12 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			// an internal inconsistency - and then it fails loud.
 			const behavior = effectiveSpawnBehavior(params, agentDef);
 			const { harness, context, autoExit, useWorktree } = behavior;
-			const profile = harness === "pi" ? undefined : requireHarnessProfile(harness);
+			const profile = isExternalHarness(harness) ? requireHarnessProfile(harness) : undefined;
 			// The frontmatter combination is already a problem (checked above);
 			// this catches an explicit context param against an external agent.
 			if (profile && context === "forked") {
 				throw new Error(
-					`Agent "${agentName}" runs on harness "${harness}" - context "forked" is not supported for external tools (a pi conversation cannot be transplanted into a different tool).`,
+					`Agent "${agentName}" runs on the external harness "${harness}" - external sub-agents are new-only: a pi conversation cannot be transplanted into a different tool. Use context "new".`,
 				);
 			}
 			// An explicit param is just a one-entry candidate list — same
@@ -375,7 +376,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			// this pure validation failure never leaves a worktree behind.
 			if (context === "forked" && !existsSync(parentSessionFile)) {
 				throw new Error(
-					"Cannot fork yet: the parent session file has not been written to disk. Try again after this reply, or use context 'fresh'.",
+					"Cannot fork yet: the parent session file has not been written to disk. Try again after this reply, or use context 'new'.",
 				);
 			}
 
@@ -519,7 +520,7 @@ interface LaunchedSpawn {
  */
 async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<LaunchedSpawn> {
 	const launchGeneration = moduleGeneration();
-	const profile = spec.harness === "pi" ? undefined : requireHarnessProfile(spec.harness);
+	const profile = isExternalHarness(spec.harness) ? requireHarnessProfile(spec.harness) : undefined;
 
 	// Resolve the working directory. Worktree mode asks the user-pluggable
 	// create command for a fresh directory; a plain cwd was already validated
@@ -577,7 +578,7 @@ async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<Launch
 				});
 				skipEntries = countEntries(childSessionFile);
 			} else {
-				seedFreshSession({
+				seedNewSession({
 					parentSessionFile: spec.parentSessionFile,
 					childSessionFile,
 					childCwd: cwd,
@@ -600,7 +601,7 @@ async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<Launch
 			// tasks never touch the shell command line, tasks starting with "-" or
 			// "@" can't be misparsed as CLI flags, and the exact text stays
 			// inspectable under artifacts/. Forked children already carry the
-			// conversation so they get the raw task; fresh children also get
+			// conversation so they get the raw task; new children also get
 			// instructions about how their run ends — from the profile for
 			// external children, whose panes have no pi control tools.
 			const fullTask =

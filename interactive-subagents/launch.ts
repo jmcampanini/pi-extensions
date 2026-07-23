@@ -155,9 +155,9 @@ export interface LaunchMeta {
 	thinking?: string;
 	systemPromptFile?: string;
 	autoExit?: boolean;
-	/** How the conversation started (fresh/forked) — display-only, so the
+	/** How the conversation started (new/forked) — display-only, so the
 	 * running widget can keep showing it after a resume. */
-	context?: "fresh" | "forked";
+	context?: "new" | "forked";
 	/** Set when the child ran in a git worktree — lets a resume keep the same
 	 * cleanup behavior, and lets it explain a worktree that was removed. */
 	worktree?: WorktreeInfo;

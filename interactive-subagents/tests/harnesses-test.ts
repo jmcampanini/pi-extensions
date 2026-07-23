@@ -10,6 +10,7 @@ import {
 	externalResultPath,
 	externalSessionIdPath,
 	harnessProfile,
+	isExternalHarness,
 	readExternalResult,
 	readExternalSessionId,
 	requireHarnessProfile,
@@ -46,6 +47,8 @@ function throws(label: string, fn: () => void, includes: string) {
 
 eq("claude-code is the only registered profile", externalHarnessNames(), ["claude-code"]);
 eq("valid harness values include pi", validHarnessValues(), ["pi", "claude-code"]);
+eq("pi is not an external harness", isExternalHarness("pi"), false);
+eq("claude-code is an external harness", isExternalHarness("claude-code"), true);
 ok("lookup finds the profile", harnessProfile("claude-code") === claudeCodeProfile);
 ok("lookup misses unknown names", harnessProfile("codex") === undefined);
 throws("require fails loud on unknown names", () => requireHarnessProfile("codex"), 'Unknown harness "codex"');

@@ -8,7 +8,7 @@ interface SubagentCallArgs {
 	effectiveModel?: string | null;
 	modelPending?: boolean;
 	modelUnknown?: boolean;
-	context?: "fresh" | "forked";
+	context?: "new" | "forked";
 	autoExit?: boolean;
 	useWorktree?: boolean;
 	harness?: string;

@@ -469,7 +469,7 @@ if (callRenderer === undefined) {
 		renderContext(false),
 	).render(120).join("\n"));
 	eq("registered renderer names the external harness default model and effective harness",
-		externalOutput.includes("model harness default · context fresh · harness claude-code"), true);
+		externalOutput.includes("model harness default · context new · harness claude-code"), true);
 	const modelOverrideOutput = stripVTControlCharacters(callRenderer(
 		{ name: "Model override", agent: "worker", task: "Run", model: "provider/model" } as Parameters<typeof callRenderer>[0],
 		markedTheme,
@@ -499,14 +499,14 @@ if (callRenderer === undefined) {
 	const candidateComponent = callRenderer(candidateArgs, markedTheme, renderContext(false, candidateState));
 	eq("registered renderer does not present the first raw Pi model candidate as effective",
 		stripVTControlCharacters(candidateComponent.render(120).join("\n")).split("\n")[1].trimEnd(),
-		"model resolving · context fresh");
+		"model resolving · context new");
 	registeredSpawnTool?.renderResult?.(
 		{
 			content: [{ type: "text", text: "started" }],
 			details: {
 				presentation: {
 					version: 1,
-					behavior: { context: "fresh", autoExit: true, useWorktree: false, harness: "pi" },
+					behavior: { context: "new", autoExit: true, useWorktree: false, harness: "pi" },
 					model: "openai-codex/gpt-5.5",
 				},
 			},
@@ -517,13 +517,13 @@ if (callRenderer === undefined) {
 	);
 	eq("settled rendering replaces candidate resolution with the canonical effective model",
 		stripVTControlCharacters(candidateComponent.render(120).join("\n")).split("\n")[1].trimEnd(),
-		"model openai-codex/gpt-5.5 · context fresh");
+		"model openai-codex/gpt-5.5 · context new");
 	const overriddenOutput = stripVTControlCharacters(callRenderer(
 		{
 			name: "Overrides",
 			agent: "worker",
 			task: "Run",
-			context: "fresh",
+			context: "new",
 			autoExit: true,
 			worktree: false,
 		} as Parameters<typeof callRenderer>[0],
@@ -531,7 +531,7 @@ if (callRenderer === undefined) {
 		renderContext(false),
 	).render(120).join("\n"));
 	eq("explicit call values override inherited spawn modes", overriddenOutput.split("\n")[1].trimEnd(),
-		"inherits model · context fresh");
+		"inherits model · context new");
 	const cwdOverrideOutput = stripVTControlCharacters(callRenderer(
 		{ name: "Cwd override", agent: "worker", task: "Run", cwd: "nested" } as Parameters<typeof callRenderer>[0],
 		markedTheme,
@@ -546,11 +546,11 @@ if (callRenderer === undefined) {
 	eq("registered renderer styles the expanded task body as tool output", expandedOutput.includes("\x1b[36mfirst"), true);
 	eq("expanded renderer retains effective modes", stripVTControlCharacters(expandedOutput).includes("context forked · interactive · worktree"), true);
 	const sharedState: Record<string, unknown> = {};
-	writeFileSync(join(rendererDefs, "worker.md"), "---\ncontext: fresh\nauto-exit: true\nworktree: false\n---\nChanged.\n", "utf8");
+	writeFileSync(join(rendererDefs, "worker.md"), "---\ncontext: new\nauto-exit: true\nworktree: false\n---\nChanged.\n", "utf8");
 	const reopenedComponent = callRenderer(renderArgs, markedTheme, renderContext(false, sharedState));
 	eq("a reopened call initially falls back to current definition defaults",
 		stripVTControlCharacters(reopenedComponent.render(120).join("\n")).split("\n")[1].trimEnd(),
-		"inherits model · context fresh");
+		"inherits model · context new");
 	registeredSpawnTool?.renderResult?.(
 		{
 			content: [{ type: "text", text: "started" }],

@@ -26,7 +26,7 @@ export interface RunningSubagent {
 	tools?: string;
 	model?: string;
 	autoExit: boolean;
-	context?: "fresh" | "forked";
+	context?: "new" | "forked";
 	worktree?: WorktreeInfo;
 	abort: AbortController;
 	stoppedByUser?: boolean;
