@@ -252,7 +252,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			}
 
 			// A vanished cwd would otherwise fail OBSCURELY: the pane's `cd`
-			// fails, the sentinel reports exit 1 after ~1s, and the watcher
+			// fails, tmux records exit 1 on the dead pane, and the watcher
 			// delivers a misleading "failed" result with a stale summary. Catch
 			// it here and say what actually happened — for worktree children
 			// that usually means auto-cleanup removed the directory. (The

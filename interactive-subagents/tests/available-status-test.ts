@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import {
@@ -34,6 +34,7 @@ const capacity = await import("../capacity.ts");
 const available = await import("../tool-available.ts");
 const status = await import("../tool-status.ts");
 type ActivitySnapshot = import("../activity.ts").ActivitySnapshot;
+type AgentInfo = import("../agents.ts").AgentInfo;
 type RunningSubagent = import("../state.ts").RunningSubagent;
 type SpawnSpec = import("../capacity.ts").SpawnSpec;
 type AvailableToolDetails = import("../tool-available.ts").AvailableToolDetails;
@@ -78,7 +79,7 @@ function spawnSpec(id: string, name: string): SpawnSpec {
 		agentName: "worker",
 		harness: "pi",
 		agentBody: "Worker prompt.",
-		context: "fresh",
+		context: "new",
 		autoExit: true,
 		useWorktree: false,
 		cwd,
@@ -118,9 +119,9 @@ const availableResult = await availableTool.execute("available-call", {}, undefi
 const availableText = availableResult.content.find((part) => part.type === "text")?.text ?? "";
 eq("available model content contains definition details and effective configuration only", availableText,
 	"• scout (project, forked, interactive, worktree) — Maps relevant code paths before implementation begins.\n" +
-	"  config: source project · model inherits parent · context forked · interactive · worktree · harness pi\n" +
+	"  config: source project · inherits model · context forked · interactive · worktree · harness pi\n" +
 	"• worker (default) — Builds focused changes and verifies them.\n" +
-	"  config: source global · model inherits parent · context fresh · autonomous · shared checkout · harness pi");
+	"  config: source global · inherits model · context new · autonomous · shared checkout · harness pi");
 ok("available model content excludes launched names, ids, and runtime states",
 	!availableText.includes("RUNTIME STATUS SENTINEL") &&
 	!availableText.includes("liveonly") &&
@@ -135,6 +136,37 @@ eq("available details carry both definition directories", availableDetails.prese
 	global: join(globalRoot, "subagents"),
 	project: join(cwd, ".pi", "subagents"),
 });
+ok("pi agents carry no external capability markers", !availableText.includes("external:") && !availableText.includes("new-only"));
+const externalAgent: AgentInfo = {
+	name: "claude-code",
+	source: "global",
+	description: "Direct Claude Code handoff.",
+	details: "Direct means Claude Code runs through its native harness.",
+	filePath: join(globalRoot, "subagents", "claude-code.md"),
+	requestedModels: ["claude-opus-4-8"],
+	resolvedModel: "claude-opus-4-8",
+	context: "new",
+	autoExit: true,
+	worktree: false,
+	harness: "claude-code",
+	harnessPassThrough: "--permission-mode auto",
+	problems: [],
+};
+const externalAvailableText = available.formatAvailableModelText([externalAgent]);
+eq("external available model content advertises new-only everywhere needed", externalAvailableText,
+	"• claude-code (external: claude-code, new-only) — Direct means Claude Code runs through its native harness.\n" +
+	"  config: source global · model claude-opus-4-8 · context new-only · autonomous · shared checkout · external: claude-code · pass-through --permission-mode auto");
+const externalAvailableResult = {
+	...availableResult,
+	content: [{ type: "text" as const, text: externalAvailableText }],
+	details: {
+		presentation: {
+			version: 1 as const,
+			inventory: [externalAgent],
+			dirs: availableDetails.presentation.dirs,
+		},
+	},
+};
 state.running.clear();
 
 const emptyStatusResult = await statusTool.execute("status-empty", {}, undefined, undefined, {} as ExtensionContext);
@@ -202,6 +234,7 @@ ok("collapsed available card shows compact definition markers and description he
 	collapsedAvailablePlain.includes("scout · project · forked · interactive · worktree — Fast reconnaissance.") &&
 	collapsedAvailablePlain.includes("worker · default — General implementation."));
 ok("collapsed available card omits expanded details", !collapsedAvailablePlain.includes("Maps relevant code paths"));
+ok("collapsed pi cards carry no external capability markers", !collapsedAvailablePlain.includes("external:") && !collapsedAvailablePlain.includes("new-only"));
 ok("collapsed available card uses semantic name, metadata, preview, and hint tokens",
 	["accent", "muted", "dim"].every((token) => themeCalls.includes(token)));
 
@@ -215,12 +248,34 @@ const expandedAvailable = availableRenderer(
 const expandedAvailablePlain = stripVTControlCharacters(expandedAvailable.render(120).join("\n"));
 ok("expanded available card uses the versioned inventory for full details",
 	expandedAvailablePlain.includes("Maps relevant code paths before implementation begins.") &&
-	expandedAvailablePlain.includes("inherits parent model") &&
+	expandedAvailablePlain.includes("inherits model") &&
 	expandedAvailablePlain.includes("forked · interactive · worktree"));
 ok("expanded available card suppresses command-only header and footer",
 	!expandedAvailablePlain.includes("Sub-agents · 2") && !expandedAvailablePlain.includes("dismiss"));
 ok("expanded available card uses semantic accent, metadata, output, tertiary, and warning tokens",
 	["accent", "muted", "toolOutput", "dim", "warning"].every((token) => themeCalls.includes(token)));
+ok("expanded pi cards carry no external capability markers", !expandedAvailablePlain.includes("external:") && !expandedAvailablePlain.includes("new-only"));
+
+themeCalls.length = 0;
+const collapsedExternal = availableRenderer(
+	externalAvailableResult,
+	{ expanded: false, isPartial: false },
+	markedTheme,
+	renderContext(false),
+);
+const collapsedExternalPlain = stripVTControlCharacters(collapsedExternal.render(120).join("\n"));
+ok("collapsed external card advertises the harness and new-only capability",
+	collapsedExternalPlain.includes("claude-code · external: claude-code · new-only — Direct Claude Code handoff."));
+const expandedExternal = availableRenderer(
+	externalAvailableResult,
+	{ expanded: true, isPartial: false },
+	markedTheme,
+	renderContext(true),
+);
+const expandedExternalPlain = stripVTControlCharacters(expandedExternal.render(120).join("\n"));
+ok("expanded external overview marks new-only beside the harness",
+	expandedExternalPlain.includes("claude-code · new-only · pass-through: --permission-mode auto"));
+ok("expanded external overview warning-paints capability metadata", themeCalls.includes("warning"));
 const fallbackDescriptionInventory = availableDetails.presentation.inventory.map((agent) => agent.name === "worker"
 	? { ...agent, description: "General implementation. Use this second sentence for routing.", details: undefined }
 	: agent);
@@ -409,6 +464,19 @@ ok("starting and queued guidance says work proceeds without reissuing",
 	queuedEntry.description.includes("do not poll or reissue")));
 eq("queued status carries its machine-readable queue position", queuedEntry?.queuePosition, 1);
 
+eq("model-facing status format remains byte-for-byte unchanged", status.formatStatusModelText([{
+	id: "agent 01",
+	agent: "worker",
+	name: "Fix \"parser\"",
+	state: "active",
+	description: "working\nnow",
+	harness: null,
+	elapsedSeconds: 1,
+	contextTokens: null,
+	contextWindow: null,
+	costUsd: null,
+	queuePosition: null,
+}]), "• id agent 01 | agent worker | name \"Fix \\\"parser\\\"\" | active — working now");
 const statusText = status.formatStatusModelText(entries);
 const statusLines = statusText.split("\n");
 eq("flat status emits exactly one ungrouped row per unresolved id", statusLines.length, entries.length);
@@ -429,6 +497,8 @@ eq("registered status execution preserves the attention order in versioned detai
 		["delivery1", "stalled1", "waiting1", "starting1", "active01", "queued01"],
 	]);
 const liveStatusText = liveStatusResult.content.find((part) => part.type === "text")?.text ?? "";
+eq("registered status content is exactly the unchanged model formatter output",
+	liveStatusText, status.formatStatusModelText(liveStatusDetails.presentation.entries));
 ok("registered status execution keeps the same ID-first flat model format",
 	liveStatusText.split("\n").every((line) => line.startsWith("• id ")));
 const statusRenderResult = {
@@ -437,9 +507,18 @@ const statusRenderResult = {
 	details: { presentation: { version: 1 as const, entries } },
 };
 
+themeCalls.length = 0;
 const statusCallOutput = statusTool.renderCall?.({}, markedTheme, renderContext(false)).render(100).join("\n") ?? "";
-ok("status call title uses bold tool-title styling",
-	statusCallOutput.includes("\x1b[31m\x1b[1msubagent status"));
+ok("collapsed status call keeps the configured expansion hint beside its bold tool title",
+	statusCallOutput.includes("\x1b[31m\x1b[1msubagent status") &&
+	stripVTControlCharacters(statusCallOutput).includes("subagent status (") &&
+	stripVTControlCharacters(statusCallOutput).trimEnd().endsWith("to expand)") &&
+	themeCalls.includes("dim"));
+const expandedStatusCallOutput = statusTool.renderCall?.({}, markedTheme, renderContext(true)).render(100).join("\n") ?? "";
+eq("expanded status call removes the expansion hint",
+	stripVTControlCharacters(expandedStatusCallOutput).trimEnd(), "subagent status");
+eq("status call resolves Pi's configured expansion binding",
+	readFileSync(new URL("../tool-status.ts", import.meta.url), "utf8").includes('keyHint("app.tools.expand", "to expand")'), true);
 const statusRenderer = statusTool.renderResult as RenderResult;
 themeCalls.length = 0;
 const collapsedStatus = statusRenderer(
@@ -450,14 +529,23 @@ const collapsedStatus = statusRenderer(
 );
 const collapsedStatusOutput = collapsedStatus.render(160).join("\n");
 const collapsedStatusPlain = stripVTControlCharacters(collapsedStatusOutput);
-ok("collapsed status keeps ID-first fields, bounds rows, and hides verbose guidance",
-	collapsedStatusPlain.startsWith("id delivery1 | agent reviewer | name \"Completed audit\" | delivering") &&
-	collapsedStatusPlain.includes("… 1 more") &&
-	!collapsedStatusPlain.includes("id queued01") &&
-	!collapsedStatusPlain.includes("will arrive automatically"));
-ok("collapsed status uses semantic identity, metadata, warning-state, and hint tokens",
-	["accent", "muted", "warning", "dim"].every((token) => themeCalls.includes(token)) &&
-	collapsedStatusOutput.includes("\x1b[35m | stalled\x1b[0m"));
+eq("status rows follow one blank line after the call heading", collapsedStatusPlain.split("\n")[0], "");
+eq("collapsed status uses concise unlabeled ID-first dot grammar",
+	collapsedStatusPlain.split("\n")[1].trimEnd(), "delivery1 · reviewer · Completed audit · delivering");
+ok("collapsed status shows every concise row while hiding verbose guidance",
+	entries.every((entry) => collapsedStatusPlain.includes(entry.id)) &&
+	collapsedStatusPlain.split("\n").length === entries.length + 1 &&
+	!collapsedStatusPlain.includes("will arrive automatically") &&
+	!collapsedStatusPlain.includes("id delivery1") &&
+	!collapsedStatusPlain.includes("agent reviewer") &&
+	!collapsedStatusPlain.includes("|"));
+eq("collapsed status accents only the task name while muting identity, separators, and ordinary state",
+	collapsedStatusOutput.split("\n")[1].trimEnd(),
+	"\x1b[33mdelivery1\x1b[0m\x1b[33m · \x1b[0m\x1b[33mreviewer\x1b[0m\x1b[33m · \x1b[0m" +
+	"\x1b[32mCompleted audit\x1b[0m\x1b[33m · \x1b[0m\x1b[33mdelivering\x1b[0m");
+ok("collapsed status reserves warning styling for stalled state",
+	["accent", "muted", "warning"].every((token) => themeCalls.includes(token)) &&
+	collapsedStatusOutput.includes("\x1b[33m · \x1b[0m\x1b[35mstalled\x1b[0m"));
 
 themeCalls.length = 0;
 const expandedStatus = statusRenderer(
@@ -467,11 +555,40 @@ const expandedStatus = statusRenderer(
 	renderContext(true),
 );
 const expandedStatusPlain = stripVTControlCharacters(expandedStatus.render(180).join("\n"));
-ok("expanded status reveals telemetry and queued guidance without group headings",
+ok("expanded status keeps the heading spacer, concise cores, and descriptions without group headings",
+	expandedStatusPlain.startsWith("\ndelivery1 · reviewer · Completed audit · delivering — finished after") &&
 	expandedStatusPlain.includes("running bash for 10s") &&
 	expandedStatusPlain.includes("starts automatically when capacity frees") &&
 	!expandedStatusPlain.includes("Summary:"));
 ok("expanded status body uses the semantic tool-output token", themeCalls.includes("toolOutput"));
+const hostileStatus = statusRenderer(
+	{
+		...statusRenderResult,
+		details: {
+			presentation: {
+				version: 1,
+				entries: [{
+					...entries[0],
+					id: "delivery1\x1b]52;c;Y2xpcGJvYXJk\x07",
+					agent: "reviewer\nroot\x1b[2J",
+					name: `${"界".repeat(10)}\x1b]52;c;Y2xpcGJvYXJk\x07`,
+					description: "finished safely\x1b[2J",
+				}],
+			},
+		},
+	},
+	{ expanded: true, isPartial: false },
+	markedTheme,
+	renderContext(true),
+);
+for (const width of [1, 2, 8, 20, 40]) {
+	eq(`expanded status card is display-width safe for hostile CJK data at width ${width}`,
+		hostileStatus.render(width).every((line) => visibleWidth(line) <= width), true);
+}
+ok("expanded status card sanitizes terminal sequences and inline whitespace",
+	!hostileStatus.render(160).join("\n").includes("\x1b]52") &&
+	!hostileStatus.render(160).join("\n").includes("\x1b[2J") &&
+	plainRendered(hostileStatus.render(160).join("\n")).includes("reviewer root"));
 for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
 	eq(`status collapsed and expanded rendering fit width ${width}`,
 		[collapsedStatus, expandedStatus].every((component) =>
@@ -484,8 +601,8 @@ const renderedEmptyStatus = statusRenderer(
 	markedTheme,
 	renderContext(false),
 );
-eq("custom status renderer preserves the empty output",
-	plainRendered(renderedEmptyStatus.render(80).join("\n")), "No unresolved subagents.");
+eq("custom status renderer keeps the heading spacer before empty output",
+	plainRendered(renderedEmptyStatus.render(80).join("\n")), "\nNo unresolved subagents.");
 ok("empty custom status output uses semantic tool-output styling", themeCalls.includes("toolOutput"));
 themeCalls.length = 0;
 const staleStatus = statusRenderer(
@@ -494,8 +611,8 @@ const staleStatus = statusRenderer(
 	markedTheme,
 	renderContext(false),
 );
-eq("unknown status presentation versions fall back to flat model content",
-	plainRendered(staleStatus.render(500).join("\n")), statusText);
+eq("unknown status presentation versions keep the heading spacer before flat model content",
+	plainRendered(staleStatus.render(500).join("\n")), `\n${statusText}`);
 ok("status fallback content uses the semantic tool-output token", themeCalls.includes("toolOutput"));
 
 state.running.clear();

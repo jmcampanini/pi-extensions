@@ -8,6 +8,7 @@ import { Type } from "@sinclair/typebox";
 import {
 	agentDefsDir,
 	collectAgentInventory,
+	contextMode,
 	descriptionHeadline,
 	formatAgentOverviewLines,
 	projectDefsDir,
@@ -39,12 +40,16 @@ export interface AvailableCardStyle {
 
 function availableMarkers(agent: AgentInfo): string[] {
 	const markers: string[] = [];
+	const mode = contextMode(agent);
 	if (agent.name === "worker") markers.push("default");
 	if (agent.source === "project") markers.push("project");
-	if (agent.context === "forked") markers.push("forked");
+	if (mode === "forked") markers.push(mode);
 	if (!agent.autoExit) markers.push("interactive");
 	if (agent.worktree) markers.push("worktree");
-	if (agent.harness !== "pi") markers.push(`harness ${safeInline(agent.harness)}`);
+	if (mode === "new-only") {
+		markers.push(`external: ${safeInline(agent.harness)}`);
+		markers.push(mode);
+	}
 	return markers;
 }
 
@@ -52,6 +57,7 @@ export function formatAvailableModelText(inventory: readonly AgentInfo[]): strin
 	if (inventory.length === 0) return "No available subagent definitions.";
 	return inventory.map((agent) => {
 		const markers = availableMarkers(agent);
+		const mode = contextMode(agent);
 		const suffix = markers.length > 0 ? ` (${markers.join(", ")})` : "";
 		const problems = agent.problems.length > 0
 			? ` [not spawnable: ${safeInline(agent.problems.join("; "))}]`
@@ -61,14 +67,14 @@ export function formatAvailableModelText(inventory: readonly AgentInfo[]): strin
 			? `model ${agent.resolvedModel}`
 			: agent.requestedModels.length > 0
 				? `requested models ${agent.requestedModels.join(", ")} (none usable)`
-				: "model inherits parent";
+				: "inherits model";
 		const config = [
 			`source ${agent.source}`,
 			model,
-			`context ${agent.context}`,
+			`context ${mode}`,
 			agent.autoExit ? "autonomous" : "interactive",
 			agent.worktree ? "worktree" : "shared checkout",
-			`harness ${agent.harness}`,
+			mode === "new-only" ? `external: ${agent.harness}` : `harness ${agent.harness}`,
 			...(agent.thinking ? [`thinking ${agent.thinking}`] : []),
 			...(agent.tools ? [`tools ${agent.tools}`] : []),
 			...(agent.harnessPassThrough ? [`pass-through ${agent.harnessPassThrough}`] : []),
@@ -123,7 +129,7 @@ function isAgentInfo(value: unknown): value is AgentInfo {
 		&& (agent.harnessPassThrough === undefined || typeof agent.harnessPassThrough === "string")
 		&& Array.isArray(agent.requestedModels)
 		&& agent.requestedModels.every((model) => typeof model === "string")
-		&& (agent.context === "fresh" || agent.context === "forked")
+		&& (agent.context === "new" || agent.context === "forked")
 		&& typeof agent.autoExit === "boolean"
 		&& typeof agent.worktree === "boolean"
 		&& typeof agent.harness === "string"

@@ -4,7 +4,11 @@ interface SubagentCallArgs {
 	name?: string;
 	task?: string;
 	agent?: string;
-	context?: "fresh" | "forked";
+	model?: string;
+	effectiveModel?: string | null;
+	modelPending?: boolean;
+	modelUnknown?: boolean;
+	context?: "new" | "forked";
 	autoExit?: boolean;
 	useWorktree?: boolean;
 	harness?: string;
@@ -46,6 +50,12 @@ const plainText = (text: string): string => text;
 
 function spawnActionArgs(args: SubagentCallArgs): SubagentActionArgs {
 	const modes: string[] = [];
+	const model = args.effectiveModel === undefined ? args.model : args.effectiveModel;
+	if (args.modelPending) modes.push("model resolving");
+	else if (args.modelUnknown) modes.push("model unknown");
+	else if (model) modes.push(`model ${normalizedInline(model)}`);
+	else if (args.harness && args.harness !== "pi") modes.push("model harness default");
+	else modes.push("inherits model");
 	if (args.context) modes.push(`context ${args.context}`);
 	if (args.autoExit === false) modes.push("interactive");
 	if (args.useWorktree) modes.push("worktree");

@@ -26,7 +26,7 @@ function dirWith(content: string | null): string {
 const previewDefaults = {
 	maxConcurrentSubagents: 9,
 	callPreviewLines: 3,
-	resultPreviewLines: 5,
+	resultPreviewLines: 3,
 	widgetMaxRows: 5,
 };
 const worktreeDefaults = {
@@ -51,6 +51,8 @@ eq("partial file", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"off"}')
 eq("env beats file", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window"}'), PI_SUBAGENT_LAYOUT: "main" }).layout, "main");
 eq("file accepts header-only call previews",
 	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":0}') }).callPreviewLines, 0);
+eq("file accepts footer-only result cards",
+	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":0}') }).resultPreviewLines, 0);
 eq("file accepts the maximum result preview",
 	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":20}') }).resultPreviewLines, 20);
 eq("call preview env beats file",
