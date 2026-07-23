@@ -374,6 +374,10 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 	drainQueue(pi);
 }
 
+function hasFailureMessage(result: ExitResult): result is Extract<ExitResult, { errorMessage: string }> {
+	return result.reason === "error" || result.reason === "pane-closed" || result.reason === "killed";
+}
+
 async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, generation: number): Promise<void> {
 	const child = record.child;
 	const result = record.exit;
@@ -477,7 +481,8 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		: extractSummary(child.sessionFile, child.skipEntries);
 	const generatedSummary = summary === null ? null : sanitizeDisplayText(summary);
 	const resultTokens = generatedSummary === null ? undefined : estimateResultTokens(generatedSummary);
-	const failed = result.exitCode !== 0 || result.reason === "error" || result.reason === "pane-closed";
+	const failureHasMessage = hasFailureMessage(result);
+	const failed = result.exitCode !== 0 || failureHasMessage;
 
 	// Cleanup may overlap a reload. Store its promise on the stable record so
 	// every generation awaits the same outcome instead of running it twice.
@@ -500,12 +505,13 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		response = generatedSummary ?? "(the subagent produced no final message)";
 		presentation = resultPresentation("completed", exitElapsedSeconds, response);
 	} else {
-		failureReason =
-			result.reason === "error"
-				? `provider/agent error: ${result.errorMessage}`
-				: result.reason === "pane-closed"
-					? result.errorMessage
-					: `exit code ${result.exitCode}`;
+		if (result.reason === "error") {
+			failureReason = `provider/agent error: ${result.errorMessage}`;
+		} else if (failureHasMessage) {
+			failureReason = result.errorMessage;
+		} else {
+			failureReason = `exit code ${result.exitCode}`;
+		}
 		response = generatedSummary ?? undefined;
 		presentation = resultPresentation("failed", exitElapsedSeconds, response ?? failureReason);
 	}

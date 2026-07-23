@@ -120,7 +120,7 @@ export function clearActivityFile(sessionFile: string): void {
  * Best effort, same stance as writeExitSidecar (implant.ts): a failed write
  * must never throw into pi. Persistent failure is the designed loud failure:
  * the parent sees a missing/frozen snapshot and the watchdog reports
- * stalled, while the pane and the sentinel still catch real death.
+ * stalled, while tmux's dead-pane state still catches real process death.
  */
 export function writeActivitySnapshot(activityFile: string, snapshot: ActivitySnapshot): void {
 	try {

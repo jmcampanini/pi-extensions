@@ -38,7 +38,6 @@
 import { readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SENTINEL_ECHO_SUFFIX } from "./protocol.ts";
 import { shellQuote } from "./tmux.ts";
 
 // ── the external sidecars ────────────────────────────────────────────────
@@ -231,30 +230,26 @@ export const claudeCodeProfile: HarnessProfile = {
 	},
 	buildLaunchCommand(options: HarnessCommandOptions): string {
 		if (!options.taskFile) throw new Error("claude-code launch needs a task file.");
-		return (
-			[
-				`cd ${shellQuote(options.cwd)} &&`,
-				`claude --settings ${shellQuote(claudeLifecycleSettings(options.anchor, options.runId, options.autoExit))}`,
-				...claudeIdentityFlags(options),
-				catArg(options.taskFile),
-			]
-				.filter((part) => part !== "")
-				.join(" ") + SENTINEL_ECHO_SUFFIX
-		);
+		return [
+			`cd ${shellQuote(options.cwd)} &&`,
+			`claude --settings ${shellQuote(claudeLifecycleSettings(options.anchor, options.runId, options.autoExit))}`,
+			...claudeIdentityFlags(options),
+			catArg(options.taskFile),
+		]
+			.filter((part) => part !== "")
+			.join(" ");
 	},
 	buildResumeCommand(options: HarnessCommandOptions): string {
 		if (!options.resumeSessionId) throw new Error("claude-code resume needs the recorded session id.");
-		return (
-			[
-				`cd ${shellQuote(options.cwd)} &&`,
-				`claude --resume ${shellQuote(options.resumeSessionId)}`,
-				`--settings ${shellQuote(claudeLifecycleSettings(options.anchor, options.runId, options.autoExit))}`,
-				...claudeIdentityFlags(options),
-				options.messageFile ? catArg(options.messageFile) : "",
-			]
-				.filter((part) => part !== "")
-				.join(" ") + SENTINEL_ECHO_SUFFIX
-		);
+		return [
+			`cd ${shellQuote(options.cwd)} &&`,
+			`claude --resume ${shellQuote(options.resumeSessionId)}`,
+			`--settings ${shellQuote(claudeLifecycleSettings(options.anchor, options.runId, options.autoExit))}`,
+			...claudeIdentityFlags(options),
+			options.messageFile ? catArg(options.messageFile) : "",
+		]
+			.filter((part) => part !== "")
+			.join(" ");
 	},
 };
 

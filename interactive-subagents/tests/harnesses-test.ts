@@ -1,6 +1,5 @@
 // Unit tests for harnesses.ts — the external-tool profile seam. The exact
-// command bytes matter: the pane runs them verbatim, and the sentinel suffix
-// must stay consistent with protocol.ts's SENTINEL_REGEX.
+// command bytes matter: the pane runs them verbatim.
 import {
 	CLAUDE_HOOK_PATH,
 	claudeCodeProfile,
@@ -16,7 +15,6 @@ import {
 	requireHarnessProfile,
 	validHarnessValues,
 } from "../harnesses.ts";
-import { SENTINEL_ECHO_SUFFIX, SENTINEL_REGEX } from "../protocol.ts";
 import { shellQuote } from "../tmux.ts";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -122,11 +120,8 @@ eq(
 		"--model 'claude-haiku-4-5' --effort 'low' --allowedTools 'Read,Bash' " +
 		"--append-system-prompt-file '/sp.md' " +
 		"--permission-mode acceptEdits " +
-		`"$(cat '/task.md')"` +
-		SENTINEL_ECHO_SUFFIX,
+		`"$(cat '/task.md')"`,
 );
-ok("launch command does NOT match the poller regex (quote-split)", !SENTINEL_REGEX.test(full));
-ok("launch ends with the sentinel suffix", full.endsWith(SENTINEL_ECHO_SUFFIX));
 
 const minimalLaunch = claudeCodeProfile.buildLaunchCommand({
 	cwd: "/w",
@@ -138,7 +133,7 @@ const minimalLaunch = claudeCodeProfile.buildLaunchCommand({
 eq(
 	"minimal launch: settings and task only",
 	minimalLaunch,
-	`cd '/w' && claude --settings ${shellQuote(expectedSettings(false))} "$(cat '/t.md')"` + SENTINEL_ECHO_SUFFIX,
+	`cd '/w' && claude --settings ${shellQuote(expectedSettings(false))} "$(cat '/t.md')"`,
 );
 throws("launch without a task file fails loud", () =>
 	claudeCodeProfile.buildLaunchCommand({ cwd: "/w", anchor: ANCHOR, runId: RUN_ID, autoExit: true }), "needs a task file");
@@ -169,8 +164,7 @@ eq(
 		"--model 'claude-haiku-4-5' --allowedTools 'Read,Bash' " +
 		"--append-system-prompt-file '/sp.md' " +
 		"--permission-mode acceptEdits " +
-		`"$(cat '/msg.md')"` +
-		SENTINEL_ECHO_SUFFIX,
+		`"$(cat '/msg.md')"`,
 );
 
 const humanResume = claudeCodeProfile.buildResumeCommand({
@@ -183,7 +177,7 @@ const humanResume = claudeCodeProfile.buildResumeCommand({
 eq(
 	"message-free human resume: no trailing prompt",
 	humanResume,
-	`cd '/w' && claude --resume 'sess-1234' --settings ${shellQuote(expectedSettings(false))}` + SENTINEL_ECHO_SUFFIX,
+	`cd '/w' && claude --resume 'sess-1234' --settings ${shellQuote(expectedSettings(false))}`,
 );
 throws("resume without a session id fails loud", () =>
 	claudeCodeProfile.buildResumeCommand({ cwd: "/w", anchor: ANCHOR, runId: RUN_ID, autoExit: true }), "needs the recorded session id");

@@ -2,7 +2,7 @@
  * protocol.ts — the parent ↔ child contract, all in one file.
  *
  * The parent and the child are separate pi processes; they never share
- * memory. Everything they say to each other travels over three channels,
+ * memory. Everything they say to each other travels over two channels,
  * and this file defines the shape of each one:
  *
  *   1. ENV VARS (parent → child, at launch): `ChildEnvVars`, prefixed onto
@@ -12,9 +12,6 @@
  *      JSON file the child's implant writes next to its session file. It is
  *      the child's typed last word — done / ping / error — and the parent's
  *      poller deletes it on read (a one-shot signal).
- *   3. THE SCREEN SENTINEL (crash net): `SENTINEL_*`, a marker the launch
- *      script echoes after pi exits. It catches every exit where the child
- *      never ran our extension code (crashes, kills, provider explosions).
  *
  * If you change anything here, both sides change together — that is the
  * point of keeping the contract in one file.
@@ -54,18 +51,3 @@ export type ExitSidecar =
 	| { type: "done" }
 	| { type: "ping"; name?: string; message: string }
 	| { type: "error"; errorMessage: string };
-
-// ── channel 3: the screen sentinel (crash net) ───────────────────────────
-// The launch command ends with this suffix, so the shell echoes
-// `__SUBAGENT_DONE_<exit code>__` after pi exits — whatever the reason.
-//
-// The echo is written QUOTE-SPLIT on purpose. During a debugging hand re-run
-// typed into a shell, the displayed command contains
-// `'__SUBAGENT_DONE_'$?'__'` with `$?` unexpanded, so the poller's digits-only
-// regex cannot match it — only the real output that appears AFTER pi exits.
-// The suffix and the regex are two halves of one protocol; they live side by
-// side here so they can never drift apart.
-
-export const SENTINEL_ECHO_SUFFIX = ` ; echo '__SUBAGENT_DONE_'$?'__'`;
-
-export const SENTINEL_REGEX = /__SUBAGENT_DONE_(\d+)__/;
