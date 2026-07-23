@@ -42,7 +42,7 @@ import {
 	type SpawnSpec,
 } from "./capacity.ts";
 import { config } from "./config.ts";
-import { clearExternalResult, requireHarnessProfile } from "./harnesses.ts";
+import { clearExternalResult, isExternalHarness, requireHarnessProfile } from "./harnesses.ts";
 import {
 	artifactBase,
 	buildChildEnv,
@@ -83,7 +83,8 @@ const SubagentSpawnParams = Type.Object({
 			description:
 				"'new' = no parent conversation (default; project files and instructions still load). Use for self-contained work and include all needed context in `task`. " +
 				"'forked' = copies this conversation up to the moment the child actually launches — immediately when a concurrency slot is free, or later when a queued launch starts. Use when the task materially depends on accumulated discussion, reads, or decisions that would be difficult or lossy to restate, or to try parallel approaches from the same starting point. " +
-				"Forked history is sent to the child's selected model/provider, so prefer new when that history is unnecessary or sensitive. Use subagent_resume instead when a follow-up depends on a previous child's own context. Overrides the agent definition.",
+				"Forked history is sent to the child's selected model/provider, so prefer new when that history is unnecessary or sensitive. Use subagent_resume instead when a follow-up depends on a previous child's own context. Overrides the agent definition. " +
+				"'forked' requires the Pi harness; external sub-agents are new-only.",
 		}),
 	),
 	model: Type.Optional(
@@ -197,7 +198,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			"the result. Call this multiple times only when tasks " +
 			"are independent, bounded, and able to proceed concurrently.",
 		promptGuidelines: [
-			"Use subagent_spawn with context 'new' by default for self-contained work; put all needed facts, constraints, and expected output in `task`. Use 'forked' only when the task materially depends on accumulated parent discussion, reads, or decisions that would be difficult or lossy to restate, and remember that the copied history goes to the child's selected model/provider. Use subagent_resume instead when a follow-up depends on the child's own prior context.",
+			"Use subagent_spawn with context 'new' by default for self-contained work; put all needed facts, constraints, and expected output in `task`. Use 'forked' only when the task materially depends on accumulated parent discussion, reads, or decisions that would be difficult or lossy to restate, and remember that the copied history goes to the child's selected model/provider — 'forked' requires the Pi harness; external sub-agents are new-only. Use subagent_resume instead when a follow-up depends on the child's own prior context.",
 			"Use subagent_spawn only for concrete, bounded tasks that can proceed independently. Keep trivial tasks, tightly coupled or sequential work, and critical-path blockers in the parent. Never give parallel sub-agents overlapping write scopes in the same checkout; use disjoint scopes or worktree isolation.",
 		],
 		parameters: SubagentSpawnParams,
@@ -280,12 +281,12 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			const behavior = effectiveSpawnBehavior(params, agentDef);
 			const presentation: SpawnBehaviorPresentation = { version: 1, behavior: { ...behavior } };
 			const { harness, context, autoExit, useWorktree } = behavior;
-			const profile = harness === "pi" ? undefined : requireHarnessProfile(harness);
+			const profile = isExternalHarness(harness) ? requireHarnessProfile(harness) : undefined;
 			// The frontmatter combination is already a problem (checked above);
 			// this catches an explicit context param against an external agent.
-			if (profile && context === "forked") {
+			if (isExternalHarness(harness) && context === "forked") {
 				throw new Error(
-					`Agent "${agentName}" runs on harness "${harness}" - context "forked" is not supported for external tools (a pi conversation cannot be transplanted into a different tool).`,
+					`Agent "${agentName}" runs on the external harness "${harness}" - external sub-agents are new-only: a pi conversation cannot be transplanted into a different tool. Use context "new".`,
 				);
 			}
 			// An explicit param is just a one-entry candidate list — same
@@ -476,7 +477,7 @@ interface LaunchedSpawn {
  */
 async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<LaunchedSpawn> {
 	const launchGeneration = moduleGeneration();
-	const profile = spec.harness === "pi" ? undefined : requireHarnessProfile(spec.harness);
+	const profile = isExternalHarness(spec.harness) ? requireHarnessProfile(spec.harness) : undefined;
 
 	// Resolve the working directory. Worktree mode asks the user-pluggable
 	// create command for a fresh directory; a plain cwd was already validated

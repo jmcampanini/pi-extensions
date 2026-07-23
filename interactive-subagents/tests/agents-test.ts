@@ -3,6 +3,7 @@
 import {
 	CATALOGUE_DESCRIPTION_MAX_CHARS,
 	collectAgentInventory,
+	contextMode,
 	descriptionHeadline,
 	formatAgentCatalogue,
 	formatAgentOverviewLines,
@@ -266,7 +267,11 @@ ok("unknown harness problem lists the valid values", badharness.problems[0].incl
 writeFileSync(join(globalDefs, "extforked.md"), "---\nharness: claude-code\ncontext: forked\n---\nF.\n");
 const extforked = loadAgentDefinition("extforked", cwd)!;
 eq("forked + external harness is one problem", extforked.problems.length, 1);
-ok("forked + external problem explains why", extforked.problems[0].includes('context "forked" is not supported with harness "claude-code"'));
+eq(
+	"forked + external problem explains why",
+	extforked.problems[0],
+	'context "forked" requires the pi harness - external sub-agents are new-only (a pi conversation cannot be transplanted into a different tool)',
+);
 
 // Project shadows global for the new keys like every other key.
 writeFileSync(join(globalDefs, "shadowed-harness.md"), "---\nharness: claude-code\n---\nG.\n");
@@ -294,6 +299,7 @@ ok("unmappable thinking problem comes from the profile", extoff.problems[0].incl
 const extLines = formatAgentOverviewLines([extInfo], WIDTH, dirs);
 const extFlat = extLines.join("\n");
 ok("overview meta row names the harness", extFlat.includes("claude-code"));
+ok("overview marks external agents new-only", extFlat.includes("claude-code · new-only"));
 ok("overview shows the pass-through", extFlat.includes("pass-through: --permission-mode acceptEdits"));
 ok("external overview still fits the width", extLines.every((l) => visibleWidth(l) <= WIDTH));
 
@@ -335,6 +341,10 @@ function info(overrides: Partial<AgentInfo> & { name: string }): AgentInfo {
 	};
 }
 
+eq("pi new context mode", contextMode(info({ name: "pi-new" })), "new");
+eq("pi forked context mode", contextMode(info({ name: "pi-forked", context: "forked" })), "forked");
+eq("external context mode", contextMode(info({ name: "external", harness: "claude-code" })), "new-only");
+
 eq("empty inventory = no catalogue", formatAgentCatalogue([]), undefined);
 
 const catalogue = formatAgentCatalogue([
@@ -348,7 +358,7 @@ const catalogue = formatAgentCatalogue([
 ok("catalogue names the agent parameter", catalogue.includes("`agent` parameter of subagent_spawn"));
 ok("plain agent renders name: description", catalogue.includes("- scout: Fast recon."));
 ok("worker is marked default", catalogue.includes("- worker (default): General-purpose implementation."));
-ok("external harness is marked", catalogue.includes("- cc-worker (harness claude-code): Bounded edit tasks."));
+ok("external harness is marked new-only", catalogue.includes("- cc-worker (external: claude-code, new-only): Bounded edit tasks."));
 ok("interactive agent is marked", catalogue.includes("- pair (interactive): Live pairing session."));
 ok("broken agent points at subagent_available", catalogue.includes("- broken (not spawnable - see subagent_available)"));
 ok("broken agent's description is suppressed", !catalogue.includes("Secretly fine."));
@@ -364,6 +374,7 @@ ok(
 // Markers combine into one paren group.
 const combined = formatAgentCatalogue([info({ name: "worker", description: "W.", autoExit: false })])!;
 ok("combined markers share one group", combined.includes("- worker (default, interactive): W."));
+ok("pi catalogue agents have no external capability markers", !combined.includes("external:") && !combined.includes("new-only"));
 
 // The hard bound: overlong descriptions are cut to the cap with an ellipsis;
 // short ones pass through untouched.

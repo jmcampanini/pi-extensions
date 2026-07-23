@@ -266,6 +266,11 @@ const HARNESS_PROFILES: Record<string, HarnessProfile> = {
 	[claudeCodeProfile.name]: claudeCodeProfile,
 };
 
+/** True when the harness is an external tool rather than pi itself. */
+export function isExternalHarness(harness: string): boolean {
+	return harness !== "pi";
+}
+
 /** The names external children can use in `harness:` frontmatter. */
 export function externalHarnessNames(): string[] {
 	return Object.keys(HARNESS_PROFILES);

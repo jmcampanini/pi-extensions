@@ -8,6 +8,7 @@ import { Type } from "@sinclair/typebox";
 import {
 	agentDefsDir,
 	collectAgentInventory,
+	contextMode,
 	descriptionHeadline,
 	formatAgentOverviewLines,
 	projectDefsDir,
@@ -15,6 +16,7 @@ import {
 } from "./agents.ts";
 import { updateCatalogue } from "./catalogue.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
+import { isExternalHarness } from "./harnesses.ts";
 
 export interface AvailablePresentation {
 	version: 1;
@@ -41,10 +43,13 @@ function availableMarkers(agent: AgentInfo): string[] {
 	const markers: string[] = [];
 	if (agent.name === "worker") markers.push("default");
 	if (agent.source === "project") markers.push("project");
-	if (agent.context === "forked") markers.push("forked");
+	if (contextMode(agent) === "forked") markers.push("forked");
 	if (!agent.autoExit) markers.push("interactive");
 	if (agent.worktree) markers.push("worktree");
-	if (agent.harness !== "pi") markers.push(`harness ${safeInline(agent.harness)}`);
+	if (isExternalHarness(agent.harness)) {
+		markers.push(`external: ${safeInline(agent.harness)}`);
+		markers.push(contextMode(agent));
+	}
 	return markers;
 }
 
@@ -65,10 +70,10 @@ export function formatAvailableModelText(inventory: readonly AgentInfo[]): strin
 		const config = [
 			`source ${agent.source}`,
 			model,
-			`context ${agent.context}`,
+			`context ${contextMode(agent)}`,
 			agent.autoExit ? "autonomous" : "interactive",
 			agent.worktree ? "worktree" : "shared checkout",
-			`harness ${agent.harness}`,
+			isExternalHarness(agent.harness) ? `external: ${agent.harness}` : `harness ${agent.harness}`,
 			...(agent.thinking ? [`thinking ${agent.thinking}`] : []),
 			...(agent.tools ? [`tools ${agent.tools}`] : []),
 			...(agent.harnessPassThrough ? [`pass-through ${agent.harnessPassThrough}`] : []),

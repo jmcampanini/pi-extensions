@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { assertValidAgentIdentifier, isValidAgentIdentifier } from "./agent-identifier.ts";
 import { agentConfigDir } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
-import { harnessProfile, validHarnessValues } from "./harnesses.ts";
+import { harnessProfile, isExternalHarness, validHarnessValues } from "./harnesses.ts";
 import { assertValidThinkingLevel, resolveUsableModel, type ModelLookup } from "./models.ts";
 
 // ── where definitions live ───────────────────────────────────────────────
@@ -137,9 +137,9 @@ function parseAgentMarkdown(
 	}
 	// A forked context copies a pi conversation into the child; an external
 	// tool cannot open one, so the combination can never work.
-	if (harnessValid && rawHarness !== undefined && rawHarness !== "pi" && rawContext === "forked") {
+	if (harnessValid && rawHarness !== undefined && isExternalHarness(rawHarness) && rawContext === "forked") {
 		problems.push(
-			`context "forked" is not supported with harness "${rawHarness}" - a pi conversation cannot be transplanted into a different tool`,
+			'context "forked" requires the pi harness - external sub-agents are new-only (a pi conversation cannot be transplanted into a different tool)',
 		);
 	}
 
@@ -236,6 +236,11 @@ export interface AgentInfo {
 	problems: string[];
 }
 
+/** The discovery vocabulary for an agent's context capability. */
+export function contextMode(agent: Pick<AgentInfo, "harness" | "context">): "new" | "forked" | "new-only" {
+	return isExternalHarness(agent.harness) ? "new-only" : agent.context;
+}
+
 /** A thrown Error's message, trimmed. Line breaks are KEPT — each view
  * decides for itself: the overview widget indents them, the terse
  * subagent_available tool flattens them. */
@@ -252,7 +257,7 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 		// External model names are the tool's own: pi's registry never applies,
 		// the FIRST entry is what runs, verbatim. Same for thinking: the
 		// profile's effort mapping is the validity check, not pi's levels.
-		const profile = harness === "pi" ? undefined : harnessProfile(harness);
+		const profile = isExternalHarness(harness) ? harnessProfile(harness) : undefined;
 
 		if (def.models && def.models.length > 0) {
 			if (profile) {
@@ -333,7 +338,10 @@ export function formatAgentCatalogue(inventory: AgentInfo[]): string | undefined
 		}
 		const markers: string[] = [];
 		if (agent.name === "worker") markers.push("default");
-		if (agent.harness !== "pi") markers.push(`harness ${agent.harness}`);
+		if (isExternalHarness(agent.harness)) {
+			markers.push(`external: ${agent.harness}`);
+			markers.push(contextMode(agent));
+		}
 		if (!agent.autoExit) markers.push("interactive");
 		const tag = markers.length > 0 ? `${agent.name} (${markers.join(", ")})` : agent.name;
 		return `- ${tag}: ${boundedDescription(agent.description)}`;
@@ -564,11 +572,14 @@ export function formatAgentOverviewLines(
 		const parts: { text: string; paint: (text: string) => string }[] = [];
 		// A non-pi harness changes what program runs the child entirely - the
 		// loudest deviation there is, so it leads the row.
-		if (agent.harness !== "pi") parts.push({ text: agent.harness, paint: warning });
+		if (isExternalHarness(agent.harness)) {
+			parts.push({ text: agent.harness, paint: warning });
+			parts.push({ text: contextMode(agent), paint: warning });
+		}
 		if (agent.thinking) parts.push({ text: `thinking ${agent.thinking}`, paint: muted });
 		if (agent.tools) parts.push({ text: `tools: ${agent.tools}`, paint: muted });
 		if (agent.harnessPassThrough) parts.push({ text: `pass-through: ${agent.harnessPassThrough}`, paint: muted });
-		if (agent.context === "forked") parts.push({ text: "forked", paint: warning });
+		if (contextMode(agent) === "forked") parts.push({ text: "forked", paint: warning });
 		if (!agent.autoExit) parts.push({ text: "interactive", paint: warning });
 		// Worktree isolation changes where the child runs — a run-behavior
 		// deviation, so it renders loud like forked/interactive.
