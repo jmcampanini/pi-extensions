@@ -140,6 +140,7 @@ state.delivering.set("delivery", {
 	forked: true,
 	interactive: true,
 	worktree: false,
+	stopped: true,
 });
 capacity.admitLaunch(resumeSpec("pending"));
 capacity.admitLaunch(spawnSpec("queued"));
@@ -148,7 +149,7 @@ const rows = controller.collectLifecycleWidgetRows(NOW);
 eq("attention priority overrides source lifecycle order",
 	rows.map((row) => [row.id, row.status]),
 	[
-		["delivery", "delivering"],
+		["delivery", "stopped"],
 		["stalled", "stalled"],
 		["waiting", "waiting"],
 		["starting", "starting"],
@@ -196,8 +197,9 @@ const identityTheme = { fg: (_token: string, text: string) => text };
 const rendered = widgetFactory?.({}, identityTheme).render(100) ?? [];
 eq("widget renders five detailed rows plus rule and conditional summary", rendered.length, 7);
 ok("compact identifiers are unbracketed and full", rendered.some((line) => line.includes("worker") && !line.includes("[worker]")));
-ok("compact external rows use e instead of exact harness suffixes",
-	rendered.some((line) => line.includes("efi  delivery task")) && !rendered.some((line) => line.includes("claude-code")));
+ok("compact stopped deliveries use stopped while keeping compact external markers",
+	rendered.some((line) => line.includes("efi  delivery task") && line.includes("stopped"))
+		&& !rendered.some((line) => line.includes("claude-code")));
 const semanticTheme = { fg: (token: string, text: string) => `<${token}>${text}</${token}>` };
 const semanticRendered = widgetFactory?.({}, semanticTheme).render(100) ?? [];
 ok("compact agent identifiers use the muted semantic token",

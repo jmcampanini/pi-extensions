@@ -10,7 +10,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { cancelQueued, notifyQueueCancelled } from "./capacity.ts";
+import { requestCancel } from "./cancel.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import {
 	collectLifecycleWidgetRows,
@@ -24,7 +24,7 @@ import { formatLifecycleRowLines } from "./widget.ts";
 
 export const STATUS_PICKER_MAX_ROWS = 10;
 
-type PickerAction = "goto" | "zoom" | "stop";
+type PickerAction = "goto" | "zoom" | "cancel";
 
 type PickerChoice = { row: LifecycleWidgetRow; action: PickerAction };
 
@@ -44,8 +44,10 @@ export interface StatusPickerStyle {
 function actionHint(row: LifecycleWidgetRow): string {
 	if (row.lifecycle === "running") return "enter: visit · z: visit + zoom · x: stop";
 	if (row.lifecycle === "queued") return "x: cancel queued launch";
-	if (row.lifecycle === "pending") return "starting; controls available after start";
-	return "finished; result is on its way";
+	if (row.lifecycle === "pending") return "x: cancel launch";
+	return row.status === "stopped"
+		? "stopped; its stopped notice is on its way"
+		: "finished; result is on its way";
 }
 
 export function formatStatusPickerLines(
@@ -179,8 +181,10 @@ export function registerSubagentStatusCommand(
 								close({ row, action: "goto" });
 							} else if (data === "z" && row.lifecycle === "running") {
 								close({ row, action: "zoom" });
-							} else if (data === "x" && (row.lifecycle === "running" || row.lifecycle === "queued")) {
-								close({ row, action: "stop" });
+							} else if (data === "x" && (
+								row.lifecycle === "running" || row.lifecycle === "queued" || row.lifecycle === "pending"
+							)) {
+								close({ row, action: "cancel" });
 							}
 						},
 						invalidate(): void {},
@@ -205,25 +209,30 @@ export function registerSubagentStatusCommand(
 			}
 
 			if (!choice) return;
-			if (choice.row.lifecycle === "queued") {
-				const cancelled = cancelQueued(choice.row.id);
-				if (!cancelled) {
-					ctx.ui.notify(`"${sanitizeDisplayText(choice.row.name)}" already started.`, "info");
-					return;
-				}
+			if (choice.action === "cancel") {
+				const outcome = requestCancel(pi, choice.row.id, "user");
 				updateRunningWidget();
-				notifyQueueCancelled(pi, cancelled.spec);
+				const name = `"${sanitizeDisplayText(choice.row.name)}"`;
+				if (outcome.kind === "already-stopping") {
+					ctx.ui.notify(`${name} is already stopping; its stopped notice is on its way.`, "info");
+				} else if (outcome.kind === "delivering") {
+					ctx.ui.notify(
+						outcome.stopped
+							? `${name} already stopped; its stopped notice is on its way.`
+							: `${name} already finished; its result is on its way.`,
+						"info",
+					);
+				} else if (outcome.kind === "already-cancelled") {
+					ctx.ui.notify(`${name} was already cancelled.`, "info");
+				} else if (outcome.kind === "completed" || outcome.kind === "unknown") {
+					ctx.ui.notify(`${name} is already finished.`, "info");
+				}
 				return;
 			}
 
 			const child = running.get(choice.row.id);
 			if (!child) {
 				ctx.ui.notify(`"${sanitizeDisplayText(choice.row.name)}" is no longer running.`, "info");
-				return;
-			}
-			if (choice.action === "stop") {
-				child.stoppedByUser = true;
-				child.abort.abort();
 				return;
 			}
 			try {

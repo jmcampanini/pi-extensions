@@ -31,7 +31,12 @@ import { resolve } from "node:path";
 import { assertValidAgentIdentifier } from "./agent-identifier.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
-import { moduleGeneration, moduleSignal, running } from "./state.ts";
+import {
+	moduleGeneration,
+	moduleSignal,
+	running,
+	type CancellationRequester,
+} from "./state.ts";
 import type { WorktreeInfo } from "./worktree.ts";
 
 // ── launch specs: everything a deferred launch needs, as plain data ──────
@@ -128,6 +133,12 @@ export function specDisplay(spec: LaunchSpec): { name: string; agent?: string } 
 export interface PendingLaunch {
 	spec: LaunchSpec;
 	claimedAt: number;
+	origin: "inline" | "drain";
+}
+
+export interface CancellationRecord {
+	requester: CancellationRequester;
+	at: number;
 }
 
 interface CapacityStore {
@@ -136,6 +147,13 @@ interface CapacityStore {
 	 * spec id. Carrying the spec keeps a mid-launch child visible to the
 	 * widget/list and lets resume dedupe see launches in flight. */
 	claims: Map<string, PendingLaunch>;
+	/** Cancellation decisions outlive launch pipelines and module reloads so
+	 * an interrupted launch can never be resurrected by queue adoption. */
+	cancelled: Map<string, CancellationRecord>;
+	/** Claims fenced by a destructive boundary. The pipeline may still be
+	 * parked in a user-supplied worktree command, so its eventual catch must
+	 * drop rather than requeue it after shutdown. */
+	abandonedClaims: Set<string>;
 	/** The NEWEST generation's bound drainQueue, armed at session_start. A
 	 * dying generation that unwinds a launch after its replacement already
 	 * drained calls this so the requeued entry is not stranded — its own
@@ -152,7 +170,14 @@ const slots = globalThis as Record<symbol, unknown>;
 const store: CapacityStore = (slots[STORE_KEY] as CapacityStore | undefined) ?? {
 	queue: [],
 	claims: new Map(),
+	cancelled: new Map(),
+	abandonedClaims: new Set(),
 };
+store.cancelled ??= new Map<string, CancellationRecord>();
+store.abandonedClaims ??= new Set<string>();
+// A pre-upgrade claim cannot reveal its origin. Treat it as drained so a
+// human cancellation cannot disappear without either a tool result or steer.
+for (const pending of store.claims.values()) pending.origin ??= "drain";
 slots[STORE_KEY] = store;
 
 // ── counting ─────────────────────────────────────────────────────────────
@@ -171,6 +196,22 @@ export function queuedEntries(): readonly QueuedLaunch[] {
 
 export function findQueued(id: string): QueuedLaunch | undefined {
 	return store.queue.find((entry) => entry.spec.id === id);
+}
+
+export function findPendingLaunch(id: string): PendingLaunch | undefined {
+	return store.claims.get(id);
+}
+
+export function recordCancellation(id: string, requester: CancellationRequester): CancellationRecord {
+	const existing = store.cancelled.get(id);
+	if (existing) return existing;
+	const record = { requester, at: Date.now() };
+	store.cancelled.set(id, record);
+	return record;
+}
+
+export function cancellationFor(id: string): CancellationRecord | undefined {
+	return store.cancelled.get(id);
 }
 
 /** In-flight launches: slot claimed, child not yet registered in `running`.
@@ -225,7 +266,7 @@ export type Admission = { status: "run" } | { status: "queued"; ahead: number };
 export function admitLaunch(spec: LaunchSpec): Admission {
 	validateLaunchSpec(spec);
 	if (store.queue.length === 0 && hasCapacity()) {
-		store.claims.set(spec.id, { spec, claimedAt: Date.now() });
+		store.claims.set(spec.id, { spec, claimedAt: Date.now(), origin: "inline" });
 		return { status: "run" };
 	}
 	const ahead = store.queue.length;
@@ -235,6 +276,7 @@ export function admitLaunch(spec: LaunchSpec): Admission {
 
 export function releaseClaim(id: string): void {
 	store.claims.delete(id);
+	store.abandonedClaims.delete(id);
 }
 
 /** Remove a queued entry (picker cancel, or tests). Pure data — nothing to
@@ -250,6 +292,8 @@ export function cancelQueued(id: string): QueuedLaunch | undefined {
  * their own launch pipelines, which observe the boundary via the guards. */
 export function clearQueueForShutdown(): void {
 	store.queue.length = 0;
+	for (const id of store.claims.keys()) store.abandonedClaims.add(id);
+	store.cancelled.clear();
 }
 
 // ── the mid-launch boundary guards ───────────────────────────────────────
@@ -276,10 +320,31 @@ export class AbandonLaunch extends Error {
 	}
 }
 
-export function assertLaunchStillWanted(launchGeneration: number): void {
+export class CancelLaunch extends Error {
+	readonly requester: CancellationRequester;
+	readonly preserveWorktree: boolean;
+	cleanupFailure?: string;
+
+	constructor(requester: CancellationRequester, preserveWorktree = false) {
+		super("launch cancelled before registration");
+		this.requester = requester;
+		this.preserveWorktree = preserveWorktree;
+	}
+}
+
+export function resolveLaunchCancellation(id: string, error: unknown): CancelLaunch | undefined {
+	const cancellation = cancellationFor(id);
+	if (!cancellation) return undefined;
+	return error instanceof CancelLaunch ? error : new CancelLaunch(cancellation.requester);
+}
+
+export function assertLaunchStillWanted(launchGeneration: number, specId: string): void {
 	// Generation change = resetForShutdown ran in THIS module (/new etc.).
 	// Abort without a generation change = prepareForReload (or this module
 	// was replaced by a new import) — the queue survives those on purpose.
+	if (store.abandonedClaims.has(specId)) throw new AbandonLaunch();
+	const cancellation = cancellationFor(specId);
+	if (cancellation) throw new CancelLaunch(cancellation.requester);
 	if (moduleGeneration() !== launchGeneration) throw new AbandonLaunch();
 	if (moduleSignal().aborted) throw new RequeueLaunch();
 }
@@ -307,6 +372,10 @@ export function drainQueue(pi: ExtensionAPI): void {
 	if (moduleSignal().aborted) return;
 	while (store.queue.length > 0 && hasCapacity()) {
 		const entry = store.queue.shift() as QueuedLaunch;
+		if (cancellationFor(entry.spec.id)) {
+			store.queueChangedHook?.();
+			continue;
+		}
 		try {
 			validateLaunchSpec(entry.spec);
 		} catch (error) {
@@ -314,7 +383,7 @@ export function drainQueue(pi: ExtensionAPI): void {
 			store.queueChangedHook?.();
 			continue;
 		}
-		store.claims.set(entry.spec.id, { spec: entry.spec, claimedAt: Date.now() });
+		store.claims.set(entry.spec.id, { spec: entry.spec, claimedAt: Date.now(), origin: "drain" });
 		void launchDequeued(pi, entry);
 	}
 }
@@ -331,6 +400,11 @@ export function armDrainHook(pi: ExtensionAPI, onQueueChanged?: () => void): voi
 	let removed = false;
 	for (let index = store.queue.length - 1; index >= 0; index--) {
 		const entry = store.queue[index];
+		if (cancellationFor(entry.spec.id)) {
+			store.queue.splice(index, 1);
+			removed = true;
+			continue;
+		}
 		try {
 			validateLaunchSpec(entry.spec);
 		} catch (error) {
@@ -354,9 +428,24 @@ async function launchDequeued(pi: ExtensionAPI, entry: QueuedLaunch): Promise<vo
 		if (!launcher) throw new Error(`internal: no ${entry.spec.kind} launcher registered`);
 		await launcher(pi, entry.spec);
 	} catch (error) {
+		const abandoned = store.abandonedClaims.has(entry.spec.id);
 		releaseClaim(entry.spec.id);
+		const resolvedError = abandoned
+			? error
+			: (resolveLaunchCancellation(entry.spec.id, error) ?? error);
 		try {
-			if (error instanceof RequeueLaunch) {
+			if (abandoned) {
+				requestDrain(pi);
+				return;
+			}
+			if (resolvedError instanceof CancelLaunch) {
+				if (resolvedError.cleanupFailure) {
+					notifyCancellationCleanupFailure(pi, entry.spec, resolvedError.cleanupFailure);
+				}
+				requestDrain(pi);
+				return;
+			}
+			if (resolvedError instanceof RequeueLaunch) {
 				// A reload interrupted this launch mid-flight. The replacement
 				// generation's adoption drain may ALREADY have run (it races
 				// the unwind of this pipeline's awaits), so requeueing alone
@@ -365,13 +454,13 @@ async function launchDequeued(pi: ExtensionAPI, entry: QueuedLaunch): Promise<vo
 				requestDrain(pi);
 				return;
 			}
-			if (error instanceof AbandonLaunch) {
+			if (resolvedError instanceof AbandonLaunch) {
 				// The boundary cleared the queue, but a NEW session may have
 				// queued work behind this dying launch's slot already — drain.
 				requestDrain(pi);
 				return;
 			}
-			notifyLaunchFailure(pi, entry.spec, error);
+			notifyLaunchFailure(pi, entry.spec, resolvedError);
 			// The failed launch freed its slot — keep the queue moving.
 			requestDrain(pi);
 		} finally {
@@ -416,7 +505,7 @@ export function formatQueueCancelledNotice(spec: LaunchSpec): string {
 	const { name, agent } = specDisplay(spec);
 	const identity = `"${sanitizeDisplayText(name)}" (id ${spec.id}${agent ? `, agent ${sanitizeDisplayText(agent)}` : ""})`;
 	return (
-		`Queued sub-agent ${identity} was cancelled by the user before it started. ` +
+		`Sub-agent ${identity} was cancelled by the user before it started. ` +
 		`It never ran and no result will arrive for it; do not treat this as a failure. ` +
 		runningLine()
 	);
@@ -465,6 +554,28 @@ function notifyLaunchFailure(pi: ExtensionAPI, spec: LaunchSpec, error: unknown)
 		// A failed notice must not kill the drain; the queue keeps moving and
 		// subagent_status still shows the truth.
 	}
+}
+
+function notifyCancellationCleanupFailure(
+	pi: ExtensionAPI,
+	spec: LaunchSpec,
+	cleanupFailure: string,
+): void {
+	const { name, agent } = specDisplay(spec);
+	const identity = `"${sanitizeDisplayText(name)}" (id ${spec.id}${agent ? `, agent ${sanitizeDisplayText(agent)}` : ""})`;
+	try {
+		pi.sendMessage(
+			{
+				customType: "subagent_cancel_cleanup_failed",
+				content:
+					`Sub-agent ${identity} remains cancelled and no result will arrive, but launch cleanup failed. ` +
+					sanitizeDisplayText(cleanupFailure),
+				display: true,
+				details: { id: spec.id, kind: spec.kind, error: cleanupFailure },
+			},
+			{ triggerTurn: true, deliverAs: "steer" },
+		);
+	} catch {}
 }
 
 export function notifyQueueCancelled(pi: ExtensionAPI, spec: LaunchSpec): void {

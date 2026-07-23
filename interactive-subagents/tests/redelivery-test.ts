@@ -68,7 +68,7 @@ function stoppedRecord(id: string): DeliveryRecord {
 		skipEntries: 0,
 		autoExit: true,
 		abort: new AbortController(),
-		stoppedByUser: true,
+		stopRequester: "user",
 		expectsRun: true,
 	} satisfies RunningSubagent;
 	return {
@@ -80,6 +80,7 @@ function stoppedRecord(id: string): DeliveryRecord {
 		forked: false,
 		interactive: false,
 		worktree: false,
+		stopped: true,
 		child,
 		exit: { reason: "aborted", exitCode: 0 },
 	};
@@ -87,18 +88,19 @@ function stoppedRecord(id: string): DeliveryRecord {
 
 function pingRecord(id: string): DeliveryRecord {
 	const record = stoppedRecord(id);
-	record.child.stoppedByUser = false;
+	record.child.stopRequester = undefined;
 	return {
 		...record,
+		stopped: false,
 		exit: { reason: "ping", exitCode: 0, pingMessage: "Which API should I use?", pingName: record.name },
 	};
 }
 
 function completedRecord(id: string, sessionFile: string): DeliveryRecord {
 	const record = stoppedRecord(id);
-	record.child.stoppedByUser = false;
+	record.child.stopRequester = undefined;
 	record.child.sessionFile = sessionFile;
-	return { ...record, exit: { reason: "exited", exitCode: 0 } };
+	return { ...record, stopped: false, exit: { reason: "exited", exitCode: 0 } };
 }
 
 function sessionMessage(text: string, id: string): string {
@@ -310,7 +312,7 @@ eq("normal classifier rejects a run without an assistant", agentEndWasNormal({ m
 	const completed = completedRecord("racecomp", "/missing/completed-session.jsonl");
 	seed(completed);
 	startFinalizer(pi.api, completed);
-	completed.child.stoppedByUser = true;
+	completed.child.stopRequester = "user";
 	completed.finalizerGeneration = undefined;
 	startFinalizer(pi.api, completed);
 	eq("race: completion winner remains the sole envelope after a late stop", pi.calls.length, 1);

@@ -107,9 +107,9 @@ function runningEntry(id: string, state: SubagentRuntimeState, nowMs: number): S
 		const telemetry = hasReportedEconomics
 			? ` · ${runEconomics.text.map((clause) => `last reported ${clause}`).join(" · ")}`
 			: "";
-		description = `${stalledCondition(child.activity, nowMs)}; this is a warning, not a failure; wait or inspect its pane through /subagent-status${telemetry} · elapsed ${humanElapsed(elapsedSeconds)}`;
+		description = `${stalledCondition(child.activity, nowMs)}; this is a warning, not a failure; wait, inspect its pane through /subagent-status, or use subagent_cancel if the work is no longer needed${telemetry} · elapsed ${humanElapsed(elapsedSeconds)}`;
 	} else {
-		description = `launch is underway; no active run has been observed · elapsed ${humanElapsed(elapsedSeconds)}; do not poll or reissue`;
+		description = `launch is underway; no active run has been observed · elapsed ${humanElapsed(elapsedSeconds)}; use subagent_cancel to cancel, otherwise do not poll or reissue`;
 	}
 	return {
 		id: child.id,
@@ -135,8 +135,8 @@ function launchEntry(
 	const harness = spec.harness === "pi" ? null : spec.harness;
 	const harnessPrefix = harness === null ? "" : `harness ${sanitizeDisplayText(harness)} · `;
 	const description = queue
-		? `position ${queue.position} of ${queue.total}; starts automatically when capacity frees; do not poll or reissue`
-		: `launch is underway; no activity report yet · elapsed ${humanElapsed(elapsedSeconds)}; do not poll or reissue`;
+		? `position ${queue.position} of ${queue.total}; starts automatically when capacity frees; use subagent_cancel to cancel, otherwise do not poll or reissue`
+		: `launch is underway; no activity report yet · elapsed ${humanElapsed(elapsedSeconds)}; use subagent_cancel to cancel, otherwise do not poll or reissue`;
 	return {
 		id: spec.id,
 		agent: display.agent ?? "unknown",
@@ -174,7 +174,9 @@ export function collectStatusEntries(nowMs = Date.now()): StatusPresentationEntr
 				agent: child.agent ?? "unknown",
 				name: child.name,
 				state: "delivering",
-				description: `${harness}finished after ${humanElapsed(child.elapsedSeconds)}; its result is queued and will arrive automatically; do not poll or respawn`,
+				description: child.stopped
+					? `${harness}stopped after ${humanElapsed(child.elapsedSeconds)}; its stopped notice is queued and will arrive automatically; do not poll or respawn`
+					: `${harness}finished after ${humanElapsed(child.elapsedSeconds)}; its result is queued and will arrive automatically; do not poll or respawn`,
 				harness: child.harness ?? null,
 				elapsedSeconds: child.elapsedSeconds,
 				contextTokens: null,
@@ -280,7 +282,7 @@ export function registerSubagentStatusTool(pi: ExtensionAPI): void {
 		label: "Subagent Status",
 		description:
 			"Report every unresolved subagent instance in attention order: delivering, stalled, waiting, starting, active, then queued. " +
-			"Each row starts with the stable id that identifies the instance in later result and resume flows, followed by agent definition, display name, exact lifecycle state, relevant telemetry, and what—if anything—to do. " +
+			"Each row starts with the stable id used by subagent_cancel and later result and resume flows, followed by agent definition, display name, exact lifecycle state, relevant telemetry, and what—if anything—to do. " +
 			"This is a snapshot for coordination, not a polling primitive: never repeatedly call it while waiting for results.",
 		parameters: Type.Object({}),
 		renderCall(_args, theme, context) {

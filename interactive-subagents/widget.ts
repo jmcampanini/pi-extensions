@@ -81,8 +81,9 @@ export interface WidgetRow {
 	 * — the child has exited and its result message is still queued for the
 	 * parent) and "queued" (pre-launch — the child is waiting for a
 	 * concurrency slot, see capacity.ts). The controller passes no tool/token
-	 * telemetry with either. */
-	status?: "starting" | "active" | "waiting" | "stalled" | "delivering" | "queued";
+	 * telemetry with either. Stopped deliveries use "stopped" for human
+	 * surfaces while remaining model-facing "delivering" lifecycle entries. */
+	status?: "starting" | "active" | "waiting" | "stalled" | "delivering" | "stopped" | "queued";
 	/** Longest-running tool call's name. Child-written and therefore hostile:
 	 * re-sanitized inside the renderer, never trusted. Shown only while
 	 * status is "active". */

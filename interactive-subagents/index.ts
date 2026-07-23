@@ -27,13 +27,16 @@
  *   tmux.ts              panes: stage/create/close + the dead-pane exit poller
  *   launch.ts            building a child's launch command + the .meta sidecar
  *   state.ts             shared runtime state (running children, ledger, /reload)
+ *   capacity.ts          concurrency claims, queue, and cancellation tombstones
+ *   cancel.ts            shared lifecycle-aware cancellation primitive
  *   widget.ts            pure renderer for the running-children widget
  *   running-widget.ts    the widget's stateful controller (timer, ctx.ui)
  *   watcher.ts           per-child supervision + the steered result messages
  *   result-message.ts    compact/expanded renderer for delivered results
  *   delivery.ts          message_end listener that clears "delivering" widget rows
  *   implant.ts           loaded INSIDE each child: done/ping tools, auto-exit
- *   tool-*.ts            one file per model-facing tool (spawn, resume, available, status)
+ *   tool-cancel.ts       model-facing lifecycle-aware cancellation
+ *   tool-*.ts            the other model tools (spawn, resume, available, status)
  *   command-*.ts         one file per human command (available, status)
  *
  * This file only WIRES those pieces into pi: lifecycle events plus one
@@ -50,6 +53,7 @@ import { registerSubagentResultRenderer } from "./result-message.ts";
 import { activateRunningWidgetGeneration, stopWidgetTimer, updateRunningWidget } from "./running-widget.ts";
 import { completeReloadHandoff, moduleGeneration, prepareForReload, resetForShutdown, setLatestCtx } from "./state.ts";
 import { registerSubagentAvailableTool } from "./tool-available.ts";
+import { registerSubagentCancelTool } from "./tool-cancel.ts";
 import { registerSubagentStatusTool } from "./tool-status.ts";
 import { registerSubagentResumeTool } from "./tool-resume.ts";
 import { registerSubagentSpawnTool } from "./tool-spawn.ts";
@@ -115,6 +119,7 @@ export default function (pi: ExtensionAPI) {
 	registerSubagentResultRenderer(pi);
 
 	registerSubagentSpawnTool(pi);
+	registerSubagentCancelTool(pi);
 	registerSubagentAvailableCommand(pi);
 	registerSubagentStatusCommand(pi);
 	registerSubagentAvailableTool(pi);
