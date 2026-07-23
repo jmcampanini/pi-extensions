@@ -353,6 +353,7 @@ state.delivering.set("delivery1", {
 	forked: false,
 	interactive: false,
 	worktree: false,
+	stopped: true,
 });
 
 const entries = status.collectStatusEntries(NOW);
@@ -398,14 +399,20 @@ ok("stalled guidance labels last-known context and cost honestly",
 	stalledEntry.description.includes("last reported cost this run $2.75")));
 const startingEntry = entries.find((entry) => entry.state === "starting");
 const queuedEntry = entries.find((entry) => entry.state === "queued");
-ok("delivering and stalled guidance prevents polling or false failure conclusions",
-	Boolean(deliveringEntry?.description.includes("will arrive automatically; do not poll or respawn") &&
-	stalledEntry?.description.includes("this is a warning, not a failure") &&
-	stalledEntry.description.includes("inspect its pane through /subagent-status")));
-ok("starting and queued guidance says work proceeds without reissuing",
-	Boolean(startingEntry?.description.includes("do not poll or reissue") &&
+ok("stopped delivery stays model-facing delivering and queues its stopped notice",
+	Boolean(deliveringEntry?.state === "delivering" &&
+	deliveringEntry.description.includes("stopped after 1m 35s") &&
+	deliveringEntry.description.includes("its stopped notice is queued and will arrive automatically; do not poll or respawn")));
+ok("stalled guidance prevents false failure conclusions and offers cancellation",
+	Boolean(stalledEntry?.description.includes("this is a warning, not a failure") &&
+	stalledEntry.description.includes("inspect its pane through /subagent-status") &&
+	stalledEntry.description.includes("subagent_cancel")));
+ok("starting and queued guidance says work proceeds without reissuing or can be cancelled",
+	Boolean(startingEntry?.description.includes("subagent_cancel") &&
+	startingEntry.description.includes("do not poll or reissue") &&
 	queuedEntry?.description.includes("position 1 of 1") &&
 	queuedEntry.description.includes("starts automatically when capacity frees") &&
+	queuedEntry.description.includes("subagent_cancel") &&
 	queuedEntry.description.includes("do not poll or reissue")));
 eq("queued status carries its machine-readable queue position", queuedEntry?.queuePosition, 1);
 

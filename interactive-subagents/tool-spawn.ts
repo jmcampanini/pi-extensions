@@ -34,7 +34,9 @@ import { agentDefsDir, loadAgentDefinition, projectDefsDir, type AgentDefinition
 import {
 	AbandonLaunch,
 	admitLaunch,
+	CancelLaunch,
 	assertLaunchStillWanted,
+	cancellationFor,
 	registerLauncher,
 	releaseClaim,
 	requestDrain,
@@ -406,6 +408,10 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			try {
 				launched = await runSpawnLaunch(pi, spec);
 			} catch (error) {
+				const cancellation = cancellationFor(id);
+				if (cancellation && !(error instanceof CancelLaunch)) {
+					error = new CancelLaunch(cancellation.requester);
+				}
 				releaseClaim(id);
 				// The failed launch freed its slot — without this, queued work
 				// behind it could sit forever with capacity free (nothing else
@@ -414,6 +420,13 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 				updateRunningWidget();
 				// The boundary guards can only fire inline when the turn was
 				// already aborted mid-launch; translate them for the transcript.
+				if (error instanceof CancelLaunch) {
+					const by = error.requester === "user" ? "by the user" : "because you cancelled it";
+					const cleanup = error.cleanupFailure ? `\n\n${error.cleanupFailure}` : "";
+					throw new Error(
+						`Sub-agent launch was cancelled ${by} before it started — nothing is running and no result will arrive.${cleanup}`,
+					);
+				}
 				if (error instanceof RequeueLaunch || error instanceof AbandonLaunch) {
 					throw new Error(
 						"Sub-agent launch was interrupted by a session reload/shutdown before it started — " +
@@ -474,7 +487,7 @@ interface LaunchedSpawn {
  * step that registers the child; on a throw every side effect is rolled back
  * and the CALLER releases the claim.
  */
-async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<LaunchedSpawn> {
+export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<LaunchedSpawn> {
 	const launchGeneration = moduleGeneration();
 	const profile = spec.harness === "pi" ? undefined : requireHarnessProfile(spec.harness);
 
@@ -484,11 +497,17 @@ async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<Launch
 	let cwd: string;
 	let worktree: WorktreeInfo | undefined;
 	if (spec.useWorktree) {
-		worktree = await createWorktree({
-			name: `${spec.slug}-${spec.id}`,
-			parentCwd: spec.parentCwd,
-			command: config.worktreeCreateCommand,
-		});
+		try {
+			worktree = await createWorktree({
+				name: `${spec.slug}-${spec.id}`,
+				parentCwd: spec.parentCwd,
+				command: config.worktreeCreateCommand,
+			});
+		} catch (error) {
+			const cancellation = cancellationFor(spec.id);
+			if (cancellation) throw new CancelLaunch(cancellation.requester);
+			throw error;
+		}
 		cwd = worktree.dir;
 	} else {
 		cwd = spec.cwd as string;
@@ -650,7 +669,7 @@ async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<Launch
 			// createPane starts the child, it owns the session file and this
 			// catch must not roll it back.
 			stageLaunchScript(command, scriptPath);
-			assertLaunchStillWanted(launchGeneration);
+			assertLaunchStillWanted(launchGeneration, spec.id);
 			paneId = createPane(spec.name, scriptPath);
 		} catch (error) {
 			rmSync(childSessionFile, { force: true });
@@ -661,7 +680,7 @@ async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<Launch
 			throw error;
 		}
 
-		trackChild(pi, {
+		const tracked = trackChild(pi, {
 			id: spec.id,
 			name: spec.name,
 			agent: spec.agentName,
@@ -680,6 +699,14 @@ async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<Launch
 			// always armed (see status.ts).
 			expectsRun: true,
 		});
+		if (tracked.status === "cancelled") {
+			rmSync(childSessionFile, { force: true });
+			rmSync(`${childSessionFile}.meta`, { force: true });
+			clearExitSidecar(childSessionFile);
+			clearActivityFile(childSessionFile);
+			clearExternalResult(childSessionFile);
+			throw new CancelLaunch(tracked.requester, true);
+		}
 		releaseClaim(spec.id);
 
 		return { paneId, childSessionFile, scriptPath, worktree };
@@ -692,18 +719,31 @@ async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise<Launch
 		// as a new one: capacity.ts dispatches on the error's class
 		// (RequeueLaunch/AbandonLaunch), and wrapping would silently turn a
 		// requeue into a dropped entry.
-		if (worktree) {
+		if (worktree && !(error instanceof CancelLaunch && error.preserveWorktree)) {
 			const rollback = await removeWorktree(worktree, config.worktreeCleanupCommand);
 			if (rollback.status === "cleanup-failed") {
-				const warning =
-					`\n\nAlso: rolling back the worktree failed (${rollback.error}) — ` +
-					`remove ${worktree.dir} manually.`;
+				const cleanupFailure =
+					`Rolling back the worktree failed (${rollback.error}) — remove ${worktree.dir} manually.`;
+				const warning = `\n\nAlso: ${cleanupFailure}`;
+				const cancellation = cancellationFor(spec.id);
+				if (cancellation) {
+					const cancelled = error instanceof CancelLaunch
+						? error
+						: new CancelLaunch(cancellation.requester);
+					cancelled.cleanupFailure = cleanupFailure;
+					cancelled.message += warning;
+					throw cancelled;
+				}
 				if (error instanceof Error) {
 					error.message += warning;
 					throw error;
 				}
 				throw new Error(`${String(error)}${warning}`);
 			}
+		}
+		const cancellation = cancellationFor(spec.id);
+		if (cancellation && !(error instanceof CancelLaunch)) {
+			throw new CancelLaunch(cancellation.requester);
 		}
 		throw error;
 	}

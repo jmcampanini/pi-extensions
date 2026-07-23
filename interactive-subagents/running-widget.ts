@@ -146,7 +146,7 @@ export function collectLifecycleWidgetRows(now = Date.now()): LifecycleWidgetRow
 			interactive: child.interactive,
 			worktree: child.worktree,
 			external: child.harness !== undefined,
-			status: "delivering",
+			status: child.stopped ? "stopped" : "delivering",
 		});
 	}
 
@@ -166,7 +166,8 @@ export function collectLifecycleWidgetRows(now = Date.now()): LifecycleWidgetRow
 
 function rowPriority(row: LifecycleWidgetRow): number {
 	switch (row.status) {
-		case "delivering": return 0;
+		case "delivering":
+		case "stopped": return 0;
 		case "stalled": return 1;
 		case "waiting": return 2;
 		case "starting": return 3;

@@ -13,6 +13,8 @@ import type { SubagentStatus } from "./status.ts";
 import type { ExitResult } from "./tmux.ts";
 import type { WorktreeInfo, WorktreeOutcome } from "./worktree.ts";
 
+export type CancellationRequester = "user" | "model";
+
 export interface RunningSubagent {
 	id: string;
 	name: string;
@@ -29,7 +31,7 @@ export interface RunningSubagent {
 	context?: "fresh" | "forked";
 	worktree?: WorktreeInfo;
 	abort: AbortController;
-	stoppedByUser?: boolean;
+	stopRequester?: CancellationRequester;
 	expectsRun: boolean;
 	activity?: ActivityObservation;
 	lastStatus?: SubagentStatus;
@@ -52,6 +54,7 @@ export interface DeliveringSubagent {
 	forked: boolean;
 	interactive: boolean;
 	worktree: boolean;
+	stopped: boolean;
 }
 
 /** Private ownership retained so finalization can move between generations. */
@@ -96,9 +99,18 @@ const reloadState = (slots[STATE_KEY] as ReloadState | undefined) ?? {
 };
 // Upgrade process-stable state created by an older module during hot reload.
 reloadState.delivering ??= new Map<string, DeliveryRecord>();
+for (const child of reloadState.running.values()) {
+	const legacy = child as RunningSubagent & { stoppedByUser?: boolean };
+	if (child.stopRequester === undefined && legacy.stoppedByUser) child.stopRequester = "user";
+	delete legacy.stoppedByUser;
+}
 for (const record of reloadState.delivering.values()) {
+	const legacy = record.child as RunningSubagent & { stoppedByUser?: boolean };
+	if (record.child.stopRequester === undefined && legacy.stoppedByUser) record.child.stopRequester = "user";
+	delete legacy.stoppedByUser;
 	record.startedAt ??= record.child.startTime;
 	record.interactive ??= !record.child.autoExit;
+	record.stopped ??= record.exit.reason === "aborted";
 }
 slots[STATE_KEY] = reloadState;
 

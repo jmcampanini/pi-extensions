@@ -34,7 +34,12 @@ import {
 	type ActivityObservation,
 } from "./activity.ts";
 import { assertValidAgentIdentifier } from "./agent-identifier.ts";
-import { drainQueue } from "./capacity.ts";
+import {
+	cancellationFor,
+	drainQueue,
+	releaseClaim,
+	requestDrain,
+} from "./capacity.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { readExternalResult } from "./harnesses.ts";
@@ -120,7 +125,7 @@ function worktreeNote(info: WorktreeInfo, outcome: WorktreeOutcome): string {
  * out.
  */
 function canSteer(child: RunningSubagent, signal: AbortSignal): boolean {
-	return child.autoExit && !signal.aborted && !child.stoppedByUser && running.has(child.id);
+	return child.autoExit && !signal.aborted && child.stopRequester === undefined && running.has(child.id);
 }
 
 /**
@@ -162,7 +167,7 @@ function sendStalledSteer(pi: ExtensionAPI, child: RunningSubagent, obs: Activit
 			customType: "subagent_stalled",
 			content:
 				`Sub-agent "${childName}" (id ${child.id}) may be stalled: ${reason}.\n\n` +
-				`Options, in order: wait (it may still come up); check its pane via /subagent-status; or stop it there and retry with subagent_resume({ id: "${child.id}", message: "<guidance>" }).\n` +
+				`Options, in order: wait (it may still come up); check its pane via /subagent-status; cancel it with subagent_cancel({ id: "${child.id}" }); or retry later with subagent_resume({ id: "${child.id}", message: "<guidance>" }).\n` +
 				`This is a warning, not a failure: you will still get a result or failure message when it exits.\n` +
 				`Session: ${child.sessionFile}`,
 			display: true,
@@ -201,15 +206,37 @@ function startWatcher(pi: ExtensionAPI, child: RunningSubagent): void {
 	void watchSubagent(pi, child, generation);
 }
 
+export type TrackChildResult =
+	| { status: "tracked" }
+	| { status: "cancelled"; requester: "user" | "model" };
+
 /** Register a child and start its supervision machinery. */
-export function trackChild(pi: ExtensionAPI, child: RunningSubagent): void {
+export function trackChild(pi: ExtensionAPI, child: RunningSubagent): TrackChildResult {
 	if (child.agent !== undefined) assertValidAgentIdentifier(child.agent);
+	const cancellation = cancellationFor(child.id);
+	if (cancellation) {
+		closePane(child.paneId);
+		releaseClaim(child.id);
+		if (child.worktree) {
+			void finishWorktree({
+				info: child.worktree,
+				mode: config.worktreeCleanupMode,
+				command: config.worktreeCleanupCommand,
+				childSucceeded: false,
+			});
+		}
+		updateRunningWidget();
+		if (running.size > 0) refreshLayout();
+		requestDrain(pi);
+		return { status: "cancelled", requester: cancellation.requester };
+	}
 	child.activity = newActivityObservation(Date.now());
 	running.set(child.id, child);
 	ledger.set(child.id, { sessionFile: child.sessionFile, name: child.name });
 	ensureWidgetTimer();
 	updateRunningWidget();
 	startWatcher(pi, child);
+	return { status: "tracked" };
 }
 
 /** Rebind every live or finalizing child to the replacement runtime. */
@@ -332,7 +359,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 	if (result.reason !== "aborted") child.pendingExit ??= result;
 
 	if (!ownsActiveWatcher(child, generation)) return;
-	if (result.reason === "aborted" && !child.stoppedByUser) {
+	if (result.reason === "aborted" && child.stopRequester === undefined) {
 		running.delete(child.id);
 		child.pendingExit = undefined;
 		closePane(child.paneId);
@@ -352,6 +379,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 		forked: child.context === "forked",
 		interactive: !child.autoExit,
 		worktree: child.worktree !== undefined,
+		stopped: result.reason === "aborted",
 		child,
 		exit: result,
 		// Captured NOW, not at delivery time: a resume issued while this
@@ -387,13 +415,13 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 	const costUsd = child.harness ? undefined : obs.snapshot?.costUsd;
 
 	if (result.reason === "aborted") {
-		// Two ways to get aborted: the session is shutting down (stay
-		// silent — nobody is left to tell) or a human pressed x in the
-		// picker. The model must hear about the latter, because it was
-		// promised a result for this child and would otherwise wait for
-		// one that can never arrive.
-		if (child.stoppedByUser) {
-			const notice = "Stopped by the user. Do not treat this as a subagent failure.";
+		// Session shutdown aborts stay silent because nobody is left to
+		// tell. An explicit user/model stop must instead replace the result
+		// the caller was promised with one requester-attributed notice.
+		if (child.stopRequester) {
+			const notice = child.stopRequester === "user"
+				? "Stopped by the user. Do not treat this as a subagent failure."
+				: "Stopped because you cancelled it. Do not treat this as a subagent failure.";
 			const stoppedWorktreeNote = child.worktree
 				? `Worktree: kept at ${child.worktree.dir} because the work may be incomplete.`
 				: undefined;

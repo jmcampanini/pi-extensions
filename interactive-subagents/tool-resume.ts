@@ -23,7 +23,9 @@ import { activityFilePath, clearActivityFile } from "./activity.ts";
 import {
 	AbandonLaunch,
 	admitLaunch,
+	CancelLaunch,
 	assertLaunchStillWanted,
+	cancellationFor,
 	findQueued,
 	isPendingLaunch,
 	pendingResumeFor,
@@ -334,6 +336,10 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			try {
 				launched = await runResumeLaunch(pi, spec);
 			} catch (error) {
+				const cancellation = cancellationFor(id);
+				if (cancellation && !(error instanceof CancelLaunch)) {
+					error = new CancelLaunch(cancellation.requester);
+				}
 				releaseClaim(id);
 				// The failed launch freed its slot — without this, queued work
 				// behind it could sit forever with capacity free (nothing else
@@ -342,6 +348,12 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				updateRunningWidget();
 				// The boundary guards can only fire inline when the turn was
 				// already aborted mid-launch; translate them for the transcript.
+				if (error instanceof CancelLaunch) {
+					const by = error.requester === "user" ? "by the user" : "because you cancelled it";
+					throw new Error(
+						`Sub-agent resume was cancelled ${by} before it started — nothing is running and no result will arrive.`,
+					);
+				}
 				if (error instanceof RequeueLaunch || error instanceof AbandonLaunch) {
 					throw new Error(
 						"Sub-agent resume was interrupted by a session reload/shutdown before it started — " +
@@ -385,7 +397,7 @@ function vanishedCwdError(cwd: string, fromWorktree: boolean, worktreeDir?: stri
  * tool-spawn.ts's runSpawnLaunch. Unlike the old inline-only code, a failure
  * after the pane opened now closes it again instead of leaking it.
  */
-async function runResumeLaunch(pi: ExtensionAPI, spec: ResumeSpec): Promise<{ paneId: string }> {
+export async function runResumeLaunch(pi: ExtensionAPI, spec: ResumeSpec): Promise<{ paneId: string }> {
 	const launchGeneration = moduleGeneration();
 	const profile = spec.harness === "pi" ? undefined : requireHarnessProfile(spec.harness);
 
@@ -498,14 +510,14 @@ async function runResumeLaunch(pi: ExtensionAPI, spec: ResumeSpec): Promise<{ pa
 		// this pipeline, so the guard is a defensive assertion against a
 		// future refactor. Pane creation starts the child immediately.
 		stageLaunchScript(command, scriptPath);
-		assertLaunchStillWanted(launchGeneration);
+		assertLaunchStillWanted(launchGeneration, spec.id);
 		paneId = createPane(spec.name, scriptPath);
 	} catch (error) {
 		if (paneId !== undefined) closePane(paneId);
 		throw error;
 	}
 
-	trackChild(pi, {
+	const tracked = trackChild(pi, {
 		id: spec.id,
 		name: spec.name,
 		agent: spec.agent,
@@ -525,6 +537,7 @@ async function runResumeLaunch(pi: ExtensionAPI, spec: ResumeSpec): Promise<{ pa
 		abort: new AbortController(),
 		expectsRun: spec.expectsRun,
 	});
+	if (tracked.status === "cancelled") throw new CancelLaunch(tracked.requester, true);
 	releaseClaim(spec.id);
 
 	return { paneId };

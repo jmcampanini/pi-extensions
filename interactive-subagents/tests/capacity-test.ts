@@ -173,6 +173,10 @@ eq("findQueued sees a queued id", capacity.findQueued("b")?.spec.id, "b");
 eq("cancelQueued removes the right entry", capacity.cancelQueued("a")?.spec.id, "a");
 eq("cancel leaves the rest in order", capacity.queuedEntries().map((entry) => entry.spec.id), ["b"]);
 eq("cancel of an unknown id is undefined", capacity.cancelQueued("nope"), undefined);
+const firstCancellation = capacity.recordCancellation("cancelled", "user");
+eq("a cancellation tombstone records requester and is stable",
+	[capacity.cancellationFor("cancelled")?.requester, capacity.recordCancellation("cancelled", "model") === firstCancellation],
+	["user", true]);
 
 // ── drain ─────────────────────────────────────────────────────────────────
 
@@ -197,6 +201,18 @@ await flush();
 eq("drain launches as many as freed slots, in order", launched, ["a", "b"]);
 eq("drain leaves the remainder queued", capacity.queuedEntries().map((entry) => entry.spec.id), ["c"]);
 eq("drained children are running", [state.running.has("a"), state.running.has("b")], [true, true]);
+
+reset();
+for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+capacity.admitLaunch(spawnSpec("a"));
+capacity.admitLaunch(spawnSpec("b"));
+capacity.recordCancellation("a", "model");
+state.running.delete("run-0");
+launched.length = 0;
+capacity.drainQueue(fakePi);
+await flush();
+eq("drain drops a tombstoned entry and launches its neighbor", launched, ["b"]);
+eq("the tombstoned entry is not resurrected", state.running.has("a"), false);
 
 // a failing launch notifies the model and keeps draining
 reset();
@@ -251,6 +267,25 @@ await flush();
 eq("armed drain hook launches the requeued entry", launched, ["a"]);
 
 reset();
+let releaseBoundaryLaunch!: () => void;
+const boundaryGate = new Promise<void>((resolve) => { releaseBoundaryLaunch = resolve; });
+let boundaryLaunches = 0;
+capacity.registerLauncher("spawn", async () => {
+	boundaryLaunches++;
+	await boundaryGate;
+	throw new capacity.RequeueLaunch();
+});
+for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+capacity.admitLaunch(spawnSpec("a"));
+state.running.delete("run-0");
+capacity.drainQueue(fakePi);
+capacity.clearQueueForShutdown();
+releaseBoundaryLaunch();
+await flush();
+eq("a late RequeueLaunch cannot resurrect a claim fenced by shutdown",
+	[boundaryLaunches, capacity.queuedCount(), capacity.findPendingLaunch("a")], [1, 0, undefined]);
+
+reset();
 const retainedInvalid = { ...spawnSpec("retained-invalid"), agentName: "code reviewer" };
 (capacity.queuedEntries() as Array<{ spec: SpawnSpec; queuedAt: number }>).push({
 	spec: retainedInvalid,
@@ -275,6 +310,34 @@ await flush();
 eq("abandoned entry is dropped", capacity.queuedCount(), 0);
 eq("abandon sends nothing", sent.length, 0);
 
+reset();
+capacity.registerLauncher("spawn", async () => {
+	throw new capacity.CancelLaunch("model");
+});
+for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+capacity.admitLaunch(spawnSpec("a"));
+state.running.delete("run-0");
+capacity.drainQueue(fakePi);
+await flush();
+eq("CancelLaunch drops the claimed entry", [capacity.queuedCount(), capacity.isPendingLaunch("a")], [0, false]);
+eq("CancelLaunch dispatch sends no duplicate notice", sent.length, 0);
+
+reset();
+capacity.registerLauncher("spawn", async () => {
+	const error = new capacity.CancelLaunch("model");
+	error.cleanupFailure = "Remove /repo/leaked-worktree manually.";
+	throw error;
+});
+for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+capacity.admitLaunch(spawnSpec("a"));
+state.running.delete("run-0");
+capacity.drainQueue(fakePi);
+await flush();
+eq("cancel rollback failure emits one distinct operational notice",
+	sent.map((message) => message.customType), ["subagent_cancel_cleanup_failed"]);
+ok("cancel rollback warning preserves the manual cleanup instruction",
+	sent[0]?.content?.includes("remains cancelled") === true && sent[0]?.content?.includes("/repo/leaked-worktree"));
+
 // ── notices are self-contained ────────────────────────────────────────────
 
 reset();
@@ -296,11 +359,18 @@ ok("cancel notice carries id and no-result warning",
 reset();
 const generation = state.moduleGeneration();
 let guardOutcome = "none";
-try { capacity.assertLaunchStillWanted(generation); guardOutcome = "passed"; } catch { guardOutcome = "threw"; }
+try { capacity.assertLaunchStillWanted(generation, "guard-live"); guardOutcome = "passed"; } catch { guardOutcome = "threw"; }
 eq("guard passes in a live generation", guardOutcome, "passed");
 
+capacity.recordCancellation("guard-cancel", "user");
+try { capacity.assertLaunchStillWanted(generation, "guard-cancel"); guardOutcome = "passed"; }
+catch (error) {
+	guardOutcome = error instanceof capacity.CancelLaunch && error.requester === "user" ? "cancel" : "other";
+}
+eq("a tombstone wins the launch boundary", guardOutcome, "cancel");
+
 state.prepareForReload(() => {});
-try { capacity.assertLaunchStillWanted(generation); guardOutcome = "passed"; }
+try { capacity.assertLaunchStillWanted(generation, "guard-reload"); guardOutcome = "passed"; }
 catch (error) { guardOutcome = error instanceof capacity.RequeueLaunch ? "requeue" : "other"; }
 eq("reload in progress requeues", guardOutcome, "requeue");
 
@@ -315,7 +385,7 @@ ok("drain is a no-op while the generation is aborted", (() => {
 })());
 
 state.completeReloadHandoff();
-try { capacity.assertLaunchStillWanted(generation); guardOutcome = "passed"; }
+try { capacity.assertLaunchStillWanted(generation, "guard-abandon"); guardOutcome = "passed"; }
 catch (error) { guardOutcome = error instanceof capacity.AbandonLaunch ? "abandon" : "other"; }
 eq("a later generation abandons", guardOutcome, "abandon");
 
@@ -334,9 +404,15 @@ state.completeReloadHandoff();
 reset();
 for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
 capacity.admitLaunch(spawnSpec("a"));
+capacity.recordCancellation("reload-cancel", "model");
 const reloaded = await import(new URL(`../capacity.ts?reload-test=${Date.now()}`, import.meta.url).href) as typeof capacity;
 eq("queue survives a module re-import",
 	reloaded.queuedEntries().map((entry) => entry.spec.id), ["a"]);
+eq("cancellation tombstones survive a module re-import",
+	reloaded.cancellationFor("reload-cancel")?.requester, "model");
+reloaded.clearQueueForShutdown();
+eq("destructive shutdown clears cancellation tombstones",
+	reloaded.cancellationFor("reload-cancel"), undefined);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

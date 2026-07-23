@@ -199,22 +199,24 @@ to TypeScript; match the existing files' comment density and style).
   upgrade for stores created by older module generations, mirroring `state.ts`).
   Exported helpers: `recordCancellation(id, requester)`, `cancellationFor(id)`.
   Cleared at destructive session boundaries only (extend `clearQueueForShutdown`); it
-  survives `/reload` by construction.
+  survives `/reload` by construction. Destructive clearing also fences every live claim as
+  abandoned until its pipeline unwinds, so a failed-reload reaper cannot clear a tombstone
+  and then let a late `RequeueLaunch` resurrect the cancelled work.
 - New error class `CancelLaunch` alongside `RequeueLaunch`/`AbandonLaunch`, carrying the
   requester. Extend `assertLaunchStillWanted(launchGeneration, specId)` to throw it when
   the spec id is tombstoned. (Both call sites pass the spec id.)
-- `launchDequeued`'s catch dispatches on it: release claim (already done), do NOT requeue,
-  steer the "cancelled before it started" notice only when the tombstone's requester is
-  `user` (reuse/generalize `formatQueueCancelledNotice` — the same "never ran, no result
-  will arrive" shape is correct for a cancelled starting launch), then `requestDrain` and
-  `queueChangedHook` as the failure path does.
+- `launchDequeued`'s catch dispatches on it: release claim (already done), do NOT requeue
+  or send a second notice, then `requestDrain` and `queueChangedHook` as the failure path
+  does. The shared primitive owns the notice at cancellation time.
 - **`drainQueue` and `armDrainHook` must skip tombstoned queue entries** (drop silently —
-  they were already reported cancelled). This closes the resurrection edge: a cancelled
+  drained user cancellations were already reported, inline cancellations surface through
+  their tool call, and model cancellations need no steer). This closes the resurrection edge: a cancelled
   starting launch interrupted by `/reload` is requeued via `RequeueLaunch` and would
   otherwise relaunch after adoption.
-- `PendingLaunch` gains `origin: "inline" | "drain"` so notices know whether a cancelled
-  inline launch needs a steer (it does not — the awaiting spawn/resume tool call itself
-  surfaces the cancellation as its error; see 5.3).
+- `PendingLaunch` gains `origin: "inline" | "drain"` so the shared primitive can notify a
+  user cancellation synchronously for a drained launch. An inline launch gets no steer —
+  the awaiting spawn/resume tool call itself surfaces the cancellation as its error (see
+  5.3). Model-requested cancellation never steers.
 
 ### 5.2 The shared primitive — new file `interactive-subagents/cancel.ts`
 
@@ -228,17 +230,24 @@ Outcome is a discriminated union the callers translate into tool results, errors
 picker notifications: `cancelled-queued`, `cancelled-starting`, `stopping`,
 `already-stopping`, and the rejections (`delivering`, `already-cancelled`, `completed`,
 `unknown`). It implements exactly the table in 4.2 and owns the user-requester steers
-(reusing `notifyQueueCancelled`), so the picker and tool cannot drift. It must be pure
-bookkeeping — synchronous, no awaits.
+(reusing `notifyQueueCancelled`): queued and drained-starting cancellations steer
+immediately, while inline starts rely on their launch tool error. This keeps the notice
+exactly once even when reload races the pipeline unwind. The primitive must be synchronous,
+with no awaits.
 
 ### 5.3 `tool-spawn.ts` / `tool-resume.ts` — pipelines
 
-- Pass the spec id into the boundary guard calls.
+- Pass the spec id into the boundary guard calls. Re-check the tombstone when an awaited
+  launch step rejects, before translating the failure, so cancellation still dominates when
+  `createWorktree` fails instead of reaching the boundary guard.
 - Inline execute paths: translate `CancelLaunch` into a clear tool error, alongside the
   existing `RequeueLaunch`/`AbandonLaunch` translation: "cancelled by the user before it
   started — nothing is running and no result will arrive" (requester is on the error; a
   model-requested cancel of an inline claim can only come from a parallel tool call and
   gets symmetric prose).
+- A worktree rollback failure remains attached to `CancelLaunch`: inline calls include its
+  manual cleanup instruction in their error, while drained launches send one distinct
+  operational cleanup-failure notice without duplicating the cancellation notice.
 - Resume-specific: the rollback for a cancelled resume must NOT delete the target session
   file — it belongs to the earlier run. The existing rollback scope in `runResumeLaunch`
   already has this property (it only closes the pane); keep it that way and pin it with a
@@ -254,8 +263,10 @@ bookkeeping — synchronous, no awaits.
   register-then-silently-abort is NOT needed — instead close the pane, skip registration,
   release the claim, and (unlike the generation-death silent path) trigger a drain, keeping
   the worktree decision under `finishWorktree` with `childSucceeded: false` so a child that
-  briefly ran cannot have real work deleted. This path is defensively unreachable today;
-  keep it small, deterministic, and tested via a forced tombstone.
+  briefly ran cannot have real work deleted. It must return a cancellation outcome to the
+  pipeline so an inline spawn/resume cannot falsely report `started`; spawn then removes its
+  newly seeded session artifacts while resume preserves its earlier session. This path is
+  defensively unreachable today; keep it small, deterministic, and tested via a forced tombstone.
 - The aborted-exit silent path's condition changes from `!child.stoppedByUser` to
   `child.stopRequester === undefined`.
 
@@ -339,8 +350,8 @@ helpers, no framework). Suggested placement:
   capacity/state directly with fake launchers, as `tests/capacity-test.ts` does; a fake
   launcher parked on a controllable promise simulates the worktree await.
 - `tests/capacity-test.ts` — extend: drain skips tombstoned entries; `CancelLaunch`
-  dispatch in `launchDequeued` (no requeue, notice only for user requester, drain
-  continues).
+  dispatch in `launchDequeued` (no requeue or duplicate notice, drain continues); destructive
+  claim fencing prevents a late `RequeueLaunch` from surviving the failed-reload reaper.
 - `tests/command-status-test.ts` — extend: `x` on pending rows selects the cancel action;
   hints updated; picker routes through the primitive (spy/stub).
 - `tests/running-widget-test.ts` / `tests/widget-test.ts` / new assertions in
@@ -349,6 +360,8 @@ helpers, no framework). Suggested placement:
   upgrade; tombstone store survives reload and clears at shutdown.
 - `tests/tool-cancel-test.ts` (if the tool wrapper has logic worth isolating beyond the
   primitive: parameter validation, result/error text selection, render functions).
+- `tests/starting-cancel-test.ts` — real worktree pipeline rollback, awaited-create rejection
+  dominance, rollback-failure warning preservation, and resume-session preservation.
 
 ## 8. Conventions checklist
 

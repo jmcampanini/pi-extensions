@@ -50,6 +50,7 @@ function seed(id: string): void {
 		forked: false,
 		interactive: false,
 		worktree: false,
+		stopped: false,
 	});
 }
 function message(id: unknown, customType: string = "subagent_result"): unknown {

@@ -81,10 +81,21 @@ const startingLines = command.formatStatusPickerLines([{
 	elapsedSeconds: 1,
 	status: "starting",
 }], 0, 0, 80);
-ok("pending launch uses only the user-facing starting term",
+ok("pending launch uses only the user-facing starting term and offers cancellation",
 	startingLines.join("\n").includes("starting")
+		&& startingLines.join("\n").includes("x: cancel launch")
 		&& !startingLines.join("\n").includes("pending")
 		&& !startingLines.join("\n").includes("launching"));
+const stoppedDeliveryLines = command.formatStatusPickerLines([{
+	id: "stopped-delivery",
+	lifecycle: "delivering",
+	startedAt: 0,
+	name: "stopped task",
+	elapsedSeconds: 1,
+	status: "stopped",
+}], 0, 0, 100);
+ok("stopped delivery explains that its stopped notice is on the way",
+	stoppedDeliveryLines.join("\n").includes("stopped; its stopped notice is on its way"));
 let pickerWidthViolations = 0;
 for (let width = -2; width <= 90; width++) {
 	for (const line of command.formatStatusPickerLines(formatterRows, 11, 2, width)) {
@@ -282,6 +293,7 @@ await handler?.("", contextForSteps([
 			forked: false,
 			interactive: false,
 			worktree: false,
+			stopped: false,
 		});
 		selected.startTime = Date.now() - 61_000;
 		renderedDuringStep = component.render(100);
@@ -291,7 +303,7 @@ await handler?.("", contextForSteps([
 ok("live picker adds higher-priority rows while open", renderedDuringStep.some((line) => line.includes("delivery task")));
 ok("live picker refreshes elapsed clocks", renderedDuringStep.some((line) => line.includes("01:01") || line.includes("01:00")));
 eq("selection stays anchored by id after live reprioritization",
-	[selected.stoppedByUser, selected.abort.signal.aborted, first.abort.signal.aborted], [true, true, false]);
+	[selected.stopRequester, selected.abort.signal.aborted, first.abort.signal.aborted], ["user", true, false]);
 
 reset();
 const beforeRemoved = runningChild("before-removed");
@@ -325,7 +337,8 @@ for (let index = 0; index < 9; index++) capacity.admitLaunch(spawnSpec(`fill-${i
 capacity.admitLaunch(spawnSpec("queued"));
 for (let index = 0; index < 9; index++) capacity.releaseClaim(`fill-${index}`);
 await handler?.("", contextForSteps(["x"]));
-eq("x cancels a queued launch", capacity.queuedCount(), 0);
+eq("x routes queued cancellation through the shared primitive",
+	[capacity.queuedCount(), capacity.cancellationFor("queued")?.requester], [0, "user"]);
 eq("queued cancellation keeps its model notification", sent.map((message) => message.customType), ["subagent_queue_cancelled"]);
 
 reset();
@@ -337,6 +350,7 @@ state.delivering.set("delivery", {
 	forked: false,
 	interactive: false,
 	worktree: false,
+	stopped: false,
 });
 await handler?.("", contextForSteps(["x", "\x1b"]));
 eq("delivering rows ignore invalid x and remain visible until Escape",
@@ -344,9 +358,13 @@ eq("delivering rows ignore invalid x and remain visible until Escape",
 
 reset();
 capacity.admitLaunch(spawnSpec("pending"));
-await handler?.("", contextForSteps(["x", "\x1b"]));
-eq("starting pending rows ignore invalid x and remain visible until Escape",
-	(contextForSteps as unknown as { lastDoneCalls?: number }).lastDoneCalls, 1);
+await handler?.("", contextForSteps(["x"]));
+eq("x routes a starting pending row through the shared primitive",
+	[
+		(contextForSteps as unknown as { lastDoneCalls?: number }).lastDoneCalls,
+		capacity.cancellationFor("pending")?.requester,
+	],
+	[1, "user"]);
 capacity.releaseClaim("pending");
 reset();
 state.resetForShutdown();

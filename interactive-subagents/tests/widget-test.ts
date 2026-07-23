@@ -540,6 +540,15 @@ const deliveringStyled = formatRunningWidgetLines(deliveringRow, 50,
 eq("delivering core and clock separator render dim",
 	deliveringStyled[1].includes(`<D>delivering${" ".repeat(7)}</D><D> · </D><D>03:12</D> `), true);
 eq("delivering never uses the warn hook", deliveringStyled[1].includes("<W>"), false);
+const stoppedRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "stopped" }];
+const stoppedLines = formatRunningWidgetLines(stoppedRow, 50);
+eq("stopped delivery renders the human-facing stopped status",
+	stoppedLines[1].includes("stopped") && !stoppedLines[1].includes("delivering"), true);
+eq("stopped delivery row remains exact-width", visibleWidth(stoppedLines[1]), 50);
+const stoppedStyled = formatRunningWidgetLines(stoppedRow, 50,
+	{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
+eq("stopped delivery uses dim rather than warning styling",
+	stoppedStyled[1].includes("<D>stopped") && !stoppedStyled[1].includes("<W>"), true);
 // The fixed core remains while it fits with identity and clock, sacrificing
 // the name first. Once the core no longer fits, the row uses v1 geometry.
 const deliveringLadder: WidgetRow[] = [{ name: "Auth refactor", agent: "scout", elapsedSeconds: 192, status: "delivering" }];

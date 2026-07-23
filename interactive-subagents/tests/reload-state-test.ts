@@ -33,6 +33,7 @@ const child = {
 
 const firstGeneration = initial.moduleGeneration();
 const firstSignal = initial.moduleSignal();
+(child as RunningSubagent & { stoppedByUser?: boolean }).stoppedByUser = true;
 initial.running.set(child.id, child);
 initial.ledger.set(child.id, { sessionFile: child.sessionFile, name: child.name });
 const widgetWrites: Array<{ key: string; content: unknown }> = [];
@@ -61,6 +62,9 @@ const replacement = await import(new URL(`../state.ts?reload-test=${Date.now()}`
 eq("replacement import advances the generation", replacement.moduleGeneration() > firstGeneration, true);
 eq("replacement import shares the running map", replacement.running, initial.running);
 eq("replacement import shares the ledger", replacement.ledger, initial.ledger);
+eq("replacement upgrades a legacy user stop requester", replacement.running.get(child.id)?.stopRequester, "user");
+eq("replacement removes the legacy user stop field",
+	"stoppedByUser" in (replacement.running.get(child.id) as RunningSubagent), false);
 replacement.completeReloadHandoff();
 
 const context = createWidgetContext();
@@ -113,7 +117,7 @@ const delivery = {
 	forked: false,
 	worktree: false,
 	child,
-	exit: { reason: "exited", exitCode: 0 },
+	exit: { reason: "aborted" },
 	worktreeCleanup: sharedCleanup,
 	sendAccepted: true,
 } as unknown as DeliveryRecord;
@@ -123,6 +127,7 @@ const second = await import(new URL(`../state.ts?reload-test-2=${Date.now()}`, i
 eq("first delivery reload keeps the sole enriched record", second.deliveryRecord(child.id), delivery);
 eq("delivery reload backfills launch time", second.deliveryRecord(child.id)?.startedAt, child.startTime);
 eq("delivery reload backfills the interactive marker", second.deliveryRecord(child.id)?.interactive, true);
+eq("delivery reload backfills the stopped projection", second.deliveryRecord(child.id)?.stopped, true);
 second.completeReloadHandoff();
 second.prepareForReload(() => {});
 const third = await import(new URL(`../state.ts?reload-test-3=${Date.now()}`, import.meta.url).href) as typeof initial;
