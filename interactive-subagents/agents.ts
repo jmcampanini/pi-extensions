@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { assertValidAgentIdentifier, isValidAgentIdentifier } from "./agent-identifier.ts";
 import { agentConfigDir } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
-import { harnessProfile, validHarnessValues } from "./harnesses.ts";
+import { harnessProfile, isExternalHarness, validHarnessValues } from "./harnesses.ts";
 import { assertValidThinkingLevel, resolveUsableModel, type ModelLookup } from "./models.ts";
 
 // ── where definitions live ───────────────────────────────────────────────
@@ -66,8 +66,8 @@ export interface AgentDefinition {
 	thinking?: string;
 	/** Comma-separated tool allowlist for `pi --tools`. */
 	tools?: string;
-	/** "forked" (inherit parent conversation) or "fresh" (clean context). */
-	context?: "fresh" | "forked";
+	/** "forked" (inherit parent conversation) or "new" (clean context). */
+	context?: "new" | "forked";
 	/** true = autonomous (exits when its turn completes). Default true. */
 	autoExit?: boolean;
 	/** true = spawn this agent in a fresh git worktree by default. */
@@ -119,9 +119,9 @@ function parseAgentMarkdown(
 
 	const problems: string[] = [];
 	// Unknown values are problems, not silent defaults — a typo in `context:`
-	// quietly spawning a fresh child would hide a forked-context intent.
-	if (rawContext !== undefined && rawContext !== "fresh" && rawContext !== "forked") {
-		problems.push(`invalid context "${rawContext}" — use "fresh" or "forked"`);
+	// quietly spawning a new child would hide a forked-context intent.
+	if (rawContext !== undefined && rawContext !== "new" && rawContext !== "forked") {
+		problems.push(`invalid context "${rawContext}" — use "new" or "forked"`);
 	}
 	// Same loudness for worktree: `worktree: yes` silently spawning WITHOUT
 	// isolation would be exactly the parallel-edit hazard the flag prevents.
@@ -137,9 +137,9 @@ function parseAgentMarkdown(
 	}
 	// A forked context copies a pi conversation into the child; an external
 	// tool cannot open one, so the combination can never work.
-	if (harnessValid && rawHarness !== undefined && rawHarness !== "pi" && rawContext === "forked") {
+	if (harnessValid && rawHarness !== undefined && isExternalHarness(rawHarness) && rawContext === "forked") {
 		problems.push(
-			`context "forked" is not supported with harness "${rawHarness}" - a pi conversation cannot be transplanted into a different tool`,
+			'context "forked" requires the pi harness - external sub-agents are new-only (a pi conversation cannot be transplanted into a different tool)',
 		);
 	}
 
@@ -154,7 +154,7 @@ function parseAgentMarkdown(
 			: undefined,
 		thinking: frontmatterValue(frontmatter, "thinking"),
 		tools: frontmatterValue(frontmatter, "tools"),
-		context: rawContext === "forked" || rawContext === "fresh" ? rawContext : undefined,
+		context: rawContext === "forked" || rawContext === "new" ? rawContext : undefined,
 		autoExit: rawAutoExit === "true" ? true : rawAutoExit === "false" ? false : undefined,
 		worktree: rawWorktree === "true" ? true : rawWorktree === "false" ? false : undefined,
 		harness: harnessValid ? rawHarness : undefined,
@@ -218,13 +218,13 @@ export interface AgentInfo {
 	/** The definition file this agent came from. */
 	filePath: string;
 	/** The frontmatter model candidates, verbatim. Empty = no models listed
-	 * (the child simply inherits the parent's model). */
+	 * (the child simply inherits the active model). */
 	requestedModels: string[];
 	/** The model that wins on this machine (canonical provider/model), if the agent lists any. */
 	resolvedModel?: string;
 	thinking?: string;
 	tools?: string;
-	context: "fresh" | "forked";
+	context: "new" | "forked";
 	autoExit: boolean;
 	/** true = this agent runs in a fresh git worktree by default. */
 	worktree: boolean;
@@ -234,6 +234,11 @@ export interface AgentInfo {
 	harnessPassThrough?: string;
 	/** Anything that would break or degrade spawning this agent. Empty = valid. */
 	problems: string[];
+}
+
+/** The discovery vocabulary for an agent's context capability. */
+export function contextMode(agent: Pick<AgentInfo, "harness" | "context">): "new" | "forked" | "new-only" {
+	return isExternalHarness(agent.harness) ? "new-only" : agent.context;
 }
 
 /** A thrown Error's message, trimmed. Line breaks are KEPT — each view
@@ -252,7 +257,7 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 		// External model names are the tool's own: pi's registry never applies,
 		// the FIRST entry is what runs, verbatim. Same for thinking: the
 		// profile's effort mapping is the validity check, not pi's levels.
-		const profile = harness === "pi" ? undefined : harnessProfile(harness);
+		const profile = isExternalHarness(harness) ? harnessProfile(harness) : undefined;
 
 		if (def.models && def.models.length > 0) {
 			if (profile) {
@@ -284,7 +289,7 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 			resolvedModel,
 			thinking: def.thinking,
 			tools: def.tools,
-			context: def.context ?? "fresh",
+			context: def.context ?? "new",
 			autoExit: def.autoExit ?? true,
 			worktree: def.worktree ?? false,
 			harness,
@@ -333,7 +338,11 @@ export function formatAgentCatalogue(inventory: AgentInfo[]): string | undefined
 		}
 		const markers: string[] = [];
 		if (agent.name === "worker") markers.push("default");
-		if (agent.harness !== "pi") markers.push(`harness ${agent.harness}`);
+		const mode = contextMode(agent);
+		if (mode === "new-only") {
+			markers.push(`external: ${agent.harness}`);
+			markers.push(mode);
+		}
 		if (!agent.autoExit) markers.push("interactive");
 		const tag = markers.length > 0 ? `${agent.name} (${markers.join(", ")})` : agent.name;
 		return `- ${tag}: ${boundedDescription(agent.description)}`;
@@ -498,12 +507,12 @@ export function formatAgentOverviewLines(
 		// Header row: [name]  model ······· source (· default). The model slot
 		// answers the #1 question — what would this agent run on. When
 		// resolution failed it says so in red; when no models are listed the
-		// child inherits the parent's model, which reads quieter on purpose.
+		// child inherits the active model, which reads quieter on purpose.
 		const slot = agent.resolvedModel
 			? { text: agent.resolvedModel, paint: bold }
 			: agent.requestedModels.length > 0
 				? { text: "✗ no usable model", paint: (text: string) => bold(error(text)) }
-				: { text: "inherits parent model", paint: (text: string) => italic(muted(text)) };
+				: { text: "inherits model", paint: (text: string) => italic(muted(text)) };
 		const isDefault = inventory[i].name === "worker";
 		const right = agent.source + (isDefault ? " · default" : "");
 		// The dots absorb the leftover width (min 3); a too-long model slot
@@ -562,13 +571,17 @@ export function formatAgentOverviewLines(
 		// Meta row: only what deviates from a plain default agent — a fully
 		// default one gets no row at all. Run-behavior deviations render loud.
 		const parts: { text: string; paint: (text: string) => string }[] = [];
+		const mode = contextMode(agent);
 		// A non-pi harness changes what program runs the child entirely - the
 		// loudest deviation there is, so it leads the row.
-		if (agent.harness !== "pi") parts.push({ text: agent.harness, paint: warning });
+		if (mode === "new-only") {
+			parts.push({ text: agent.harness, paint: warning });
+			parts.push({ text: mode, paint: warning });
+		}
 		if (agent.thinking) parts.push({ text: `thinking ${agent.thinking}`, paint: muted });
 		if (agent.tools) parts.push({ text: `tools: ${agent.tools}`, paint: muted });
 		if (agent.harnessPassThrough) parts.push({ text: `pass-through: ${agent.harnessPassThrough}`, paint: muted });
-		if (agent.context === "forked") parts.push({ text: "forked", paint: warning });
+		if (mode === "forked") parts.push({ text: mode, paint: warning });
 		if (!agent.autoExit) parts.push({ text: "interactive", paint: warning });
 		// Worktree isolation changes where the child runs — a run-behavior
 		// deviation, so it renders loud like forked/interactive.

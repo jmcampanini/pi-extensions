@@ -55,7 +55,7 @@ export interface SpawnSpec {
 	/** The agent definition's body, snapshotted at call time. */
 	agentBody: string;
 	harnessPassThrough?: string;
-	context: "fresh" | "forked";
+	context: "new" | "forked";
 	model?: string;
 	thinking?: string;
 	tools?: string;
@@ -85,7 +85,7 @@ export interface ResumeSpec {
 	thinking?: string;
 	systemPromptFile?: string;
 	message?: string;
-	context?: "fresh" | "forked";
+	context?: "new" | "forked";
 	worktree?: WorktreeInfo;
 	harnessPassThrough?: string;
 	/** The child's cwd: a string to cd into, null = wherever the shell is. */

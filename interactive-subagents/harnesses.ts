@@ -128,7 +128,7 @@ export interface HarnessProfile {
 	mapEffort(thinking: string): string;
 	/** Map the frontmatter `tools:` list to the tool's allowed-tools argument. */
 	mapTools(tools: string): string;
-	/** How a fresh task tells the child its run ends (appended to the task).
+	/** How a new-context task tells the child its run ends (appended to the task).
 	 * Must not mention pi-only control tools - external children have none. */
 	completionInstruction(autoExit: boolean): string;
 	buildLaunchCommand(options: HarnessCommandOptions): string;
@@ -260,6 +260,11 @@ export const claudeCodeProfile: HarnessProfile = {
 const HARNESS_PROFILES: Record<string, HarnessProfile> = {
 	[claudeCodeProfile.name]: claudeCodeProfile,
 };
+
+/** True when the harness is an external tool rather than pi itself. */
+export function isExternalHarness(harness: string): boolean {
+	return harness !== "pi";
+}
 
 /** The names external children can use in `harness:` frontmatter. */
 export function externalHarnessNames(): string[] {

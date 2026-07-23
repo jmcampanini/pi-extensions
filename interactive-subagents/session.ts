@@ -89,15 +89,15 @@ function sessionInfoLine(name: string, parentId: string | null): string {
 	});
 }
 
-// ── fresh seeding ────────────────────────────────────────────────────────
+// ── new seeding ──────────────────────────────────────────────────────────
 
 /**
- * Create a child session file for a FRESH child: a header and a display
+ * Create a child session file for a NEW child: a header and a display
  * name, no conversation. Pre-creating the file (instead of letting pi make
  * its own on first open) buys the two picker niceties the header/name
  * helpers above describe: threading under the parent, and a readable label.
  */
-export function seedFreshSession(options: {
+export function seedNewSession(options: {
 	parentSessionFile: string;
 	childSessionFile: string;
 	childCwd: string;
