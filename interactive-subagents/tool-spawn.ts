@@ -36,11 +36,11 @@ import {
 	admitLaunch,
 	CancelLaunch,
 	assertLaunchStillWanted,
-	cancellationFor,
 	registerLauncher,
 	releaseClaim,
 	requestDrain,
 	RequeueLaunch,
+	resolveLaunchCancellation,
 	type SpawnSpec,
 } from "./capacity.ts";
 import { config } from "./config.ts";
@@ -408,10 +408,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			try {
 				launched = await runSpawnLaunch(pi, spec);
 			} catch (error) {
-				const cancellation = cancellationFor(id);
-				if (cancellation && !(error instanceof CancelLaunch)) {
-					error = new CancelLaunch(cancellation.requester);
-				}
+				error = resolveLaunchCancellation(id, error) ?? error;
 				releaseClaim(id);
 				// The failed launch freed its slot — without this, queued work
 				// behind it could sit forever with capacity free (nothing else
@@ -504,9 +501,7 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 				command: config.worktreeCreateCommand,
 			});
 		} catch (error) {
-			const cancellation = cancellationFor(spec.id);
-			if (cancellation) throw new CancelLaunch(cancellation.requester);
-			throw error;
+			throw resolveLaunchCancellation(spec.id, error) ?? error;
 		}
 		cwd = worktree.dir;
 	} else {
@@ -725,11 +720,8 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 				const cleanupFailure =
 					`Rolling back the worktree failed (${rollback.error}) — remove ${worktree.dir} manually.`;
 				const warning = `\n\nAlso: ${cleanupFailure}`;
-				const cancellation = cancellationFor(spec.id);
-				if (cancellation) {
-					const cancelled = error instanceof CancelLaunch
-						? error
-						: new CancelLaunch(cancellation.requester);
+				const cancelled = resolveLaunchCancellation(spec.id, error);
+				if (cancelled) {
 					cancelled.cleanupFailure = cleanupFailure;
 					cancelled.message += warning;
 					throw cancelled;
@@ -741,10 +733,6 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 				throw new Error(`${String(error)}${warning}`);
 			}
 		}
-		const cancellation = cancellationFor(spec.id);
-		if (cancellation && !(error instanceof CancelLaunch)) {
-			throw new CancelLaunch(cancellation.requester);
-		}
-		throw error;
+		throw resolveLaunchCancellation(spec.id, error) ?? error;
 	}
 }

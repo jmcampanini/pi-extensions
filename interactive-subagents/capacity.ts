@@ -332,6 +332,12 @@ export class CancelLaunch extends Error {
 	}
 }
 
+export function resolveLaunchCancellation(id: string, error: unknown): CancelLaunch | undefined {
+	const cancellation = cancellationFor(id);
+	if (!cancellation) return undefined;
+	return error instanceof CancelLaunch ? error : new CancelLaunch(cancellation.requester);
+}
+
 export function assertLaunchStillWanted(launchGeneration: number, specId: string): void {
 	// Generation change = resetForShutdown ran in THIS module (/new etc.).
 	// Abort without a generation change = prepareForReload (or this module
@@ -423,12 +429,10 @@ async function launchDequeued(pi: ExtensionAPI, entry: QueuedLaunch): Promise<vo
 		await launcher(pi, entry.spec);
 	} catch (error) {
 		const abandoned = store.abandonedClaims.has(entry.spec.id);
-		store.claims.delete(entry.spec.id);
-		store.abandonedClaims.delete(entry.spec.id);
-		const cancellation = cancellationFor(entry.spec.id);
-		const resolvedError = !abandoned && cancellation && !(error instanceof CancelLaunch)
-			? new CancelLaunch(cancellation.requester)
-			: error;
+		releaseClaim(entry.spec.id);
+		const resolvedError = abandoned
+			? error
+			: (resolveLaunchCancellation(entry.spec.id, error) ?? error);
 		try {
 			if (abandoned) {
 				requestDrain(pi);

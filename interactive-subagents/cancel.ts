@@ -3,7 +3,6 @@ import {
 	cancelQueued,
 	cancellationFor,
 	findPendingLaunch,
-	findQueued,
 	notifyQueueCancelled,
 	recordCancellation,
 	specDisplay,
@@ -70,13 +69,11 @@ export function requestCancel(
 		};
 	}
 
-	const queued = findQueued(id);
+	const queued = cancelQueued(id);
 	if (queued) {
-		const removed = cancelQueued(id);
-		if (!removed) return { kind: "unknown", id };
 		recordCancellation(id, requester);
-		if (requester === "user") notifyQueueCancelled(pi, removed.spec);
-		return { kind: "cancelled-queued", target: specTarget(removed.spec), spec: removed.spec };
+		if (requester === "user") notifyQueueCancelled(pi, queued.spec);
+		return { kind: "cancelled-queued", target: specTarget(queued.spec), spec: queued.spec };
 	}
 
 	const pending = findPendingLaunch(id);

@@ -25,7 +25,6 @@ import {
 	admitLaunch,
 	CancelLaunch,
 	assertLaunchStillWanted,
-	cancellationFor,
 	findQueued,
 	isPendingLaunch,
 	pendingResumeFor,
@@ -33,6 +32,7 @@ import {
 	releaseClaim,
 	requestDrain,
 	RequeueLaunch,
+	resolveLaunchCancellation,
 	type ResumeSpec,
 } from "./capacity.ts";
 import { config } from "./config.ts";
@@ -336,10 +336,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			try {
 				launched = await runResumeLaunch(pi, spec);
 			} catch (error) {
-				const cancellation = cancellationFor(id);
-				if (cancellation && !(error instanceof CancelLaunch)) {
-					error = new CancelLaunch(cancellation.requester);
-				}
+				error = resolveLaunchCancellation(id, error) ?? error;
 				releaseClaim(id);
 				// The failed launch freed its slot — without this, queued work
 				// behind it could sit forever with capacity free (nothing else
