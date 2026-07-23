@@ -135,13 +135,22 @@ interface EffectiveSpawnBehavior {
 interface SpawnBehaviorPresentation {
 	version: 1;
 	behavior: EffectiveSpawnBehavior;
+	/** Optional so persisted v1 rows from before model presentation still render. */
+	model?: string | null;
+}
+
+interface ParsedSpawnPresentation {
+	behavior: EffectiveSpawnBehavior;
+	model?: string | null;
 }
 
 interface SpawnRenderState {
 	effectiveBehavior?: EffectiveSpawnBehavior;
+	effectiveModel?: string | null;
+	presentationSettled?: boolean;
 }
 
-function parseSpawnBehavior(details: unknown): EffectiveSpawnBehavior | undefined {
+function parseSpawnPresentation(details: unknown): ParsedSpawnPresentation | undefined {
 	if (!details || typeof details !== "object") return undefined;
 	const presentation = (details as { presentation?: unknown }).presentation;
 	if (!presentation || typeof presentation !== "object") return undefined;
@@ -152,7 +161,8 @@ function parseSpawnBehavior(details: unknown): EffectiveSpawnBehavior | undefine
 		|| typeof behavior.autoExit !== "boolean"
 		|| typeof behavior.useWorktree !== "boolean"
 		|| typeof behavior.harness !== "string") return undefined;
-	return behavior as EffectiveSpawnBehavior;
+	if (candidate.model !== undefined && candidate.model !== null && typeof candidate.model !== "string") return undefined;
+	return { behavior: behavior as EffectiveSpawnBehavior, model: candidate.model };
 }
 
 function effectiveSpawnBehavior(
@@ -167,12 +177,23 @@ function effectiveSpawnBehavior(
 	};
 }
 
-function spawnCallPresentation(params: SubagentSpawnParamsType, cwd: string): SubagentSpawnParamsType & EffectiveSpawnBehavior {
+function spawnCallPresentation(
+	params: SubagentSpawnParamsType,
+	cwd: string,
+): SubagentSpawnParamsType & EffectiveSpawnBehavior & { effectiveModel: string | null; modelPending: boolean } {
 	let agentDef: AgentDefinition | null = null;
 	try {
 		agentDef = loadAgentDefinition(params.agent ?? "worker", cwd);
 	} catch {}
-	return { ...params, ...effectiveSpawnBehavior(params, agentDef) };
+	const behavior = effectiveSpawnBehavior(params, agentDef);
+	const requestedModel = params.model ?? agentDef?.models?.[0];
+	const modelPending = behavior.harness === "pi" && requestedModel !== undefined;
+	return {
+		...params,
+		...behavior,
+		effectiveModel: modelPending ? null : (requestedModel ?? null),
+		modelPending,
+	};
 }
 
 const CALL_TEXT_METRICS = {
@@ -218,8 +239,21 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			return {
 				invalidate(): void {},
 				render(width: number): string[] {
-					const presentation = state.effectiveBehavior
-						? { ...args, ...state.effectiveBehavior }
+					const fallbackHasSelectedModel = fallbackPresentation.modelPending
+						|| fallbackPresentation.effectiveModel !== null;
+					const presentation = state.presentationSettled || state.effectiveBehavior
+						? {
+							...fallbackPresentation,
+							...args,
+							...(state.effectiveBehavior ?? {}),
+							effectiveModel: state.effectiveModel === undefined
+								? fallbackPresentation.effectiveModel
+								: state.effectiveModel,
+							modelPending: !state.presentationSettled && fallbackPresentation.modelPending,
+							modelUnknown: state.presentationSettled
+								&& state.effectiveModel === undefined
+								&& fallbackHasSelectedModel,
+						}
 						: fallbackPresentation;
 					if (context.expanded) {
 						return formatExpandedSubagentCall(presentation, width, CALL_TEXT_METRICS, style);
@@ -236,8 +270,13 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			};
 		},
 		renderResult(result, _options, theme, context) {
-			const behavior = context.isError ? undefined : parseSpawnBehavior(result.details);
-			if (behavior) (context.state as SpawnRenderState).effectiveBehavior = behavior;
+			const state = context.state as SpawnRenderState;
+			state.presentationSettled = true;
+			const presentation = context.isError ? undefined : parseSpawnPresentation(result.details);
+			if (presentation) {
+				state.effectiveBehavior = presentation.behavior;
+				if (presentation.model !== undefined) state.effectiveModel = presentation.model;
+			}
 			return renderSubagentLaunchResult(result, context.isError, (text) =>
 				new Text(theme.fg("error", text), 0, 0),
 			);
@@ -279,7 +318,6 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			// unknown names as problems above, so this lookup can only fail on
 			// an internal inconsistency - and then it fails loud.
 			const behavior = effectiveSpawnBehavior(params, agentDef);
-			const presentation: SpawnBehaviorPresentation = { version: 1, behavior: { ...behavior } };
 			const { harness, context, autoExit, useWorktree } = behavior;
 			const profile = isExternalHarness(harness) ? requireHarnessProfile(harness) : undefined;
 			// The frontmatter combination is already a problem (checked above);
@@ -301,6 +339,11 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 				: modelCandidates.length > 0
 					? resolveUsableModel(modelCandidates, ctx.modelRegistry)
 					: undefined;
+			const presentation: SpawnBehaviorPresentation = {
+				version: 1,
+				behavior: { ...behavior },
+				model: model ?? null,
+			};
 			// Thinking/effort level: param beats frontmatter. Passed to the
 			// child as pi's standalone `--thinking` flag so it works with or
 			// without a resolved model. Validated here so a typo fails the
