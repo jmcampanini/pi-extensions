@@ -4,7 +4,7 @@
  * Both `subagent_spawn` (first launch) and `subagent_resume` (relaunch of
  * an existing session) go through the helpers in this file, so there is a
  * single place that decides what a child's command line looks like: the env
- * prefix, the pi flags, the control-tool union, and the exit sentinel. If
+ * prefix, the pi flags, the control-tool union, and the prompt argument. If
  * spawn and resume ever behave differently, the difference is visible in
  * their own files — not hidden in two drifting copies of this logic.
  *
@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertValidAgentIdentifier } from "./agent-identifier.ts";
 import { agentConfigDir } from "./config.ts";
-import { SENTINEL_ECHO_SUFFIX, type ChildEnvVars } from "./protocol.ts";
+import type { ChildEnvVars } from "./protocol.ts";
 import { shellQuote } from "./tmux.ts";
 import type { WorktreeInfo } from "./worktree.ts";
 
@@ -120,26 +120,24 @@ export interface LaunchCommandOptions {
 
 /**
  * The full command a child pane runs: optional `cd`, env prefix, `pi` with
- * its flags, the prompt argument, and the exit sentinel (see protocol.ts).
- * Empty parts are dropped, so optional settings simply don't appear.
+ * its flags, and the prompt argument. Empty parts are dropped, so optional
+ * settings simply don't appear.
  */
 export function buildLaunchCommand(options: LaunchCommandOptions): string {
-	return (
-		[
-			options.cwd ? `cd ${shellQuote(options.cwd)} &&` : "",
-			options.env,
-			`pi --session ${shellQuote(options.sessionFile)}`,
-			`-e ${shellQuote(IMPLANT_PATH)}`,
-			options.model ? `--model ${shellQuote(options.model)}` : "",
-			options.thinking ? `--thinking ${shellQuote(options.thinking)}` : "",
-			options.systemPromptFile ? `--append-system-prompt ${shellQuote(options.systemPromptFile)}` : "",
-			options.tools ? `--tools ${shellQuote(withControlTools(options.tools))}` : "",
-			options.passThrough ?? "",
-			options.promptArg,
-		]
-			.filter((part) => part !== "")
-			.join(" ") + SENTINEL_ECHO_SUFFIX
-	);
+	return [
+		options.cwd ? `cd ${shellQuote(options.cwd)} &&` : "",
+		options.env,
+		`pi --session ${shellQuote(options.sessionFile)}`,
+		`-e ${shellQuote(IMPLANT_PATH)}`,
+		options.model ? `--model ${shellQuote(options.model)}` : "",
+		options.thinking ? `--thinking ${shellQuote(options.thinking)}` : "",
+		options.systemPromptFile ? `--append-system-prompt ${shellQuote(options.systemPromptFile)}` : "",
+		options.tools ? `--tools ${shellQuote(withControlTools(options.tools))}` : "",
+		options.passThrough ?? "",
+		options.promptArg,
+	]
+		.filter((part) => part !== "")
+		.join(" ");
 }
 
 // ── the `.meta` launch-metadata sidecar ──────────────────────────────────

@@ -2,7 +2,7 @@
  * tmux.ts — the terminal layer.
  *
  * Everything the orchestrator needs from tmux: stage a launch script, create
- * a pane that runs it, read its screen, close it, and poll for the child's exit.
+ * a pane that runs it, close it, and poll for the child's exit.
  *
  * Design notes:
  * - Launch commands are staged as bash scripts under the session artifacts,
@@ -17,7 +17,6 @@ import { execFileSync } from "node:child_process";
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, resolve } from "node:path";
 import { config } from "./config.ts";
-import { SENTINEL_REGEX } from "./protocol.ts";
 
 // ── running tmux ─────────────────────────────────────────────────────────
 
@@ -301,7 +300,8 @@ export function refreshLayout(): void {
 /**
  * Stage a bash launch script under the session artifacts for inspection and
  * hand re-runs. The guarded first line parks a launch-created pane even when
- * the child command fails immediately, without changing a developer's pane.
+ * the child command fails immediately, which preserves tmux's exit status for
+ * the poller without changing a developer's pane.
  */
 export function stageLaunchScript(command: string, scriptPath: string): void {
 	mkdirSync(dirname(scriptPath), { recursive: true });
@@ -311,23 +311,40 @@ export function stageLaunchScript(command: string, scriptPath: string): void {
 	writeFileSync(scriptPath, `${remainOnExit}\n${command}\n`, { mode: 0o755 });
 }
 
-// ── reading screens ──────────────────────────────────────────────────────
-
-/**
- * Read the last `lines` lines of a pane's screen (including scrollback).
- * Throws if the pane no longer exists — callers use that as a signal.
- */
-export function readScreen(paneId: string, lines = 50): string {
-	return tmux(["capture-pane", "-p", "-t", paneId, "-S", `-${lines}`]);
-}
-
 // ── exit detection ───────────────────────────────────────────────────────
 
 /** What pollForExit reports back to the watcher. */
 export type ExitResult =
 	| { reason: "done" | "exited" | "aborted"; exitCode: number }
 	| { reason: "ping"; exitCode: number; pingMessage: string; pingName?: string }
-	| { reason: "error" | "pane-closed"; exitCode: number; errorMessage: string };
+	| { reason: "error" | "pane-closed" | "killed"; exitCode: number; errorMessage: string };
+
+type PaneDeadState =
+	| { state: "alive" }
+	| { state: "dead"; exitCode: number | null }
+	| { state: "gone" };
+
+/** Read tmux's retained process state for a pane in one query. */
+function queryPaneDeadState(paneId: string): PaneDeadState {
+	let output: string;
+	try {
+		output = tmux(["display-message", "-p", "-t", paneId, "#{pane_dead},#{pane_dead_status}"]).trimEnd();
+	} catch {
+		return { state: "gone" };
+	}
+
+	const comma = output.indexOf(",");
+	if (comma === -1) return { state: "gone" };
+	const dead = output.slice(0, comma);
+	const status = output.slice(comma + 1);
+	if (dead === "0") return { state: "alive" };
+	if (dead !== "1") return { state: "gone" };
+
+	return {
+		state: "dead",
+		exitCode: /^\d+$/.test(status) ? Number.parseInt(status, 10) : null,
+	};
+}
 
 /**
  * If the pane disappears (user closed it, tmux died) and no sidecar shows up,
@@ -338,13 +355,17 @@ export type ExitResult =
 const PANE_GONE_GRACE_TICKS = 5;
 
 /**
- * Wait for a child to finish, checking once per second, in priority order:
+ * Wait for a child to finish, checking once per second by default, in
+ * priority order:
  *
  *   1. The `.exit` sidecar file — the child's typed last word
  *      ({type: "done" | "ping" | "error"}). Most precise; deleted on read.
- *   2. The screen sentinel `__SUBAGENT_DONE_<code>__` — catches crashes and
- *      any exit where the child never ran our extension code.
- *   3. Pane gone + grace period expired — the child was killed externally.
+ *   2. A dead pane's tmux-recorded exit status — the crash net for a child
+ *      that exits without running our extension code. The sidecar is checked
+ *      once more on the death tick so a simultaneous precise result wins.
+ *      Signal death has no tmux exit status and is reported distinctly.
+ *   3. Pane gone + grace period expired — the child vanished before tmux
+ *      could retain its status, with late sidecars checked during the grace.
  *
  * `onTick` fires once per loop. v1 passes nothing; v2 attaches liveness
  * snapshot observation here — this parameter is the designed seam.
@@ -354,8 +375,9 @@ export async function pollForExit(options: {
 	sessionFile: string;
 	signal: AbortSignal;
 	onTick?: (elapsedSeconds: number) => void;
+	tickMs?: number;
 }): Promise<ExitResult> {
-	const { paneId, sessionFile, signal, onTick } = options;
+	const { paneId, sessionFile, signal, onTick, tickMs = 1000 } = options;
 	const sidecarPath = `${sessionFile}.exit`;
 	const startedAt = Date.now();
 	let ticksSincePaneGone = 0;
@@ -370,18 +392,21 @@ export async function pollForExit(options: {
 		const sidecar = readSidecar(sidecarPath);
 		if (sidecar) return sidecar;
 
-		// 2. Screen sentinel: scan only the last few lines for the exit marker.
-		try {
-			const screen = readScreen(paneId, 5);
-			const match = screen.match(SENTINEL_REGEX);
-			if (match) {
-				return { reason: "exited", exitCode: Number.parseInt(match[1], 10) };
-			}
+		const pane = queryPaneDeadState(paneId);
+		if (pane.state === "alive") {
 			ticksSincePaneGone = 0;
-		} catch {
-			// 3. The pane is gone. The child may have JUST written its sidecar
-			// before the pane closed, so re-check it for a few more ticks
-			// before giving up.
+		} else if (pane.state === "dead") {
+			const lateSidecar = readSidecar(sidecarPath);
+			if (lateSidecar) return lateSidecar;
+			if (pane.exitCode !== null) {
+				return { reason: "exited", exitCode: pane.exitCode };
+			}
+			return {
+				reason: "killed",
+				exitCode: 1,
+				errorMessage: "The subagent's process died without reporting an exit status (killed by a signal or the system).",
+			};
+		} else {
 			const lateSidecar = readSidecar(sidecarPath);
 			if (lateSidecar) return lateSidecar;
 
@@ -396,7 +421,7 @@ export async function pollForExit(options: {
 		}
 
 		onTick?.(Math.round((Date.now() - startedAt) / 1000));
-		await sleep(1000);
+		await sleep(tickMs);
 	}
 }
 

@@ -96,13 +96,13 @@ export default function (pi: ExtensionAPI) {
 	let sidecarWritten = false;
 
 	/** Write the one-shot `.exit` sidecar. Best effort: if the write fails,
-	 * the parent still detects our exit via the screen sentinel. */
+	 * the parent still detects our exit from tmux's dead-pane state. */
 	function writeExitSidecar(data: ExitSidecar): void {
 		sidecarWritten = true;
 		try {
 			writeFileSync(`${sessionFile}.exit`, JSON.stringify(data));
 		} catch {
-			// fall back to sentinel-based detection
+			// fall back to tmux dead-pane detection
 		}
 	}
 

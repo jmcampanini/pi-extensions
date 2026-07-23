@@ -18,13 +18,13 @@
  *
  * Where to find things — one file per job:
  *
- *   protocol.ts          the parent↔child contract (env vars, .exit sidecar, sentinel)
+ *   protocol.ts          the parent↔child contract (env vars + .exit sidecar)
  *   config.ts            layered settings (defaults < subagents.json < env), fail-fast
  *   models.ts            picking a usable model from an agent's candidates
  *   agents.ts            agent definition files + the inventory built from them
  *   catalogue.ts         the bounded agent catalogue in the parent's system prompt
  *   session.ts           reading/seeding pi session .jsonl files (fork, summaries)
- *   tmux.ts              panes: stage/create/read/close + the exit poller
+ *   tmux.ts              panes: stage/create/close + the dead-pane exit poller
  *   launch.ts            building a child's launch command + the .meta sidecar
  *   state.ts             shared runtime state (running children, ledger, /reload)
  *   widget.ts            pure renderer for the running-children widget

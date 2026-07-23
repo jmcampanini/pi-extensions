@@ -477,7 +477,8 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		: extractSummary(child.sessionFile, child.skipEntries);
 	const generatedSummary = summary === null ? null : sanitizeDisplayText(summary);
 	const resultTokens = generatedSummary === null ? undefined : estimateResultTokens(generatedSummary);
-	const failed = result.exitCode !== 0 || result.reason === "error" || result.reason === "pane-closed";
+	const failed =
+		result.exitCode !== 0 || result.reason === "error" || result.reason === "pane-closed" || result.reason === "killed";
 
 	// Cleanup may overlap a reload. Store its promise on the stable record so
 	// every generation awaits the same outcome instead of running it twice.
@@ -503,7 +504,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		failureReason =
 			result.reason === "error"
 				? `provider/agent error: ${result.errorMessage}`
-				: result.reason === "pane-closed"
+				: result.reason === "pane-closed" || result.reason === "killed"
 					? result.errorMessage
 					: `exit code ${result.exitCode}`;
 		response = generatedSummary ?? undefined;

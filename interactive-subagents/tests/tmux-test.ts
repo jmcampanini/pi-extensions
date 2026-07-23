@@ -1,7 +1,6 @@
 // Integration test for the real tmux pane boundary. It uses an isolated
 // server and a stand-in `pi` on that server's PATH, so no user session or
 // interactive shell initialization participates in the launch.
-import { SENTINEL_ECHO_SUFFIX, SENTINEL_REGEX } from "../protocol.ts";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
@@ -110,19 +109,21 @@ try {
 	process.env.TMUX_PANE = parentPane;
 
 	const { config } = await import("../config.ts");
-	const { closePane, createPane, readScreen, stageLaunchScript } = await import("../tmux.ts");
+	const { closePane, createPane, stageLaunchScript } = await import("../tmux.ts");
 
 	async function launch(layout: "off" | "main" | "window", label: string): Promise<string> {
 		config.layout = layout;
 		const scriptPath = join(root, `${label}.sh`);
-		stageLaunchScript(`pi${SENTINEL_ECHO_SUFFIX}`, scriptPath);
+		stageLaunchScript("pi", scriptPath);
 		const paneId = createPane(label, scriptPath);
 		await waitForDeadPane(paneId);
 
 		eq(`${label}: remain-on-exit is on`, attachedTmux(["show-options", "-p", "-v", "-t", paneId, "remain-on-exit"]).trim(), "on");
-		const screen = readScreen(paneId, 50);
-		ok(`${label}: dead pane remains readable`, screen.includes("stand-in pi crashed immediately"));
-		eq(`${label}: sentinel preserves the fast crash exit code`, screen.match(SENTINEL_REGEX)?.[1], "23");
+		eq(
+			`${label}: tmux preserves the fast crash exit code`,
+			attachedTmux(["display-message", "-p", "-t", paneId, "#{pane_dead},#{pane_dead_status}"]).trim(),
+			"1,23",
+		);
 		return paneId;
 	}
 
