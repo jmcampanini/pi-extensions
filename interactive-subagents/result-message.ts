@@ -219,14 +219,11 @@ function formatHeader(
 	const shortStatusText = style.metadata(` · ${status}`);
 	const minimumNameWidth = Math.min(4, metrics.visibleWidth(name));
 
-	function withFullAgent(suffixes: string[]): string | undefined {
-		for (const suffix of suffixes) {
-			const nameWidth = width - metrics.visibleWidth(prefix) - metrics.visibleWidth(suffix);
-			if (nameWidth < minimumNameWidth) continue;
-			const clippedName = metrics.truncateToWidth(style.name(name), nameWidth, "…");
-			return metrics.truncateToWidth(`${prefix}${clippedName}${suffix}`, width, "");
-		}
-		return undefined;
+	function withFullAgent(suffix: string): string | undefined {
+		const nameWidth = width - metrics.visibleWidth(prefix) - metrics.visibleWidth(suffix);
+		if (nameWidth < minimumNameWidth) return undefined;
+		const clippedName = metrics.truncateToWidth(style.name(name), nameWidth, "…");
+		return metrics.truncateToWidth(`${prefix}${clippedName}${suffix}`, width, "");
 	}
 
 	function withClippedAgent(suffix: string): string | undefined {
@@ -246,14 +243,14 @@ function formatHeader(
 		);
 	}
 
-	const timedHeading = withFullAgent([statusText]);
+	const timedHeading = withFullAgent(statusText);
 	if (timedHeading !== undefined) return timedHeading;
 	const clippedTimedHeading = withClippedAgent(statusText);
 	if (clippedTimedHeading !== undefined) return clippedTimedHeading;
 	const timedStatusOnly = titleText + statusText;
 	if (metrics.visibleWidth(timedStatusOnly) <= width) return timedStatusOnly;
 
-	const shortHeading = withFullAgent([shortStatusText]);
+	const shortHeading = withFullAgent(shortStatusText);
 	if (shortHeading !== undefined) return shortHeading;
 	const clippedShortHeading = withClippedAgent(shortStatusText);
 	if (clippedShortHeading !== undefined) return clippedShortHeading;
