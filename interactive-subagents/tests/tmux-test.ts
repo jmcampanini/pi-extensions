@@ -74,7 +74,14 @@ async function waitForDeadPane(paneId: string, exitCode: number): Promise<void> 
 		if (state === `1,${exitCode}`) return;
 		await new Promise((resolve) => setTimeout(resolve, 20));
 	}
-	throw new Error(`pane ${paneId} did not retain exit code ${exitCode}`);
+	const details = attachedTmux([
+		"display-message",
+		"-p",
+		"-t",
+		paneId,
+		"dead=#{pane_dead} status=#{pane_dead_status} signal=#{pane_dead_signal} current=#{pane_current_command} start=#{pane_start_command}",
+	]).trim();
+	throw new Error(`pane ${paneId} did not retain exit code ${exitCode}: ${details}`);
 }
 
 function restore(name: keyof typeof savedEnv): void {
