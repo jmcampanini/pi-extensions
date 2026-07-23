@@ -142,7 +142,7 @@ const plainLines = (lines: string[]): string[] => lines.map((line) => stripVTCon
 const comfortable = formatCollapsedSubagentCall(args, 100, 3, metrics);
 eq("collapsed call has heading, model metadata, spacer, and task", comfortable.length, 4);
 eq("comfortable heading", plainLines(comfortable)[0], "subagent spawn · scout · Auth flow");
-eq("comfortable inherited model", plainLines(comfortable)[1], "inherits parent model");
+eq("comfortable inherited model", plainLines(comfortable)[1], "inherits model");
 eq("comfortable spacer", plainLines(comfortable)[2], "");
 eq("comfortable task preview", plainLines(comfortable)[3], task);
 
@@ -241,7 +241,7 @@ const twentyLinePreview = formatCollapsedSubagentCall(
 	20,
 	metrics,
 );
-eq("maximum call preview line limit is honored after wrapped model metadata", twentyLinePreview.length, 25);
+eq("maximum call preview line limit is honored after wrapped model metadata", twentyLinePreview.length, 24);
 
 const styled = formatCollapsedSubagentCall(
 	{ name: "界e\u0301", agent: "偵察", task: "漢字 and cafe\u0301 continue" },
@@ -268,7 +268,7 @@ const hostileCollapsed = formatCollapsedSubagentCall(hostileArgs, 100, 3, metric
 eq("collapsed input terminal controls are removed", hostileCollapsed.join("").includes("\x1b]52"), false);
 eq("collapsed input keeps safe text", plainLines(hostileCollapsed), [
 	"subagent spawn · scout · Auth flow",
-	"inherits parent model",
+	"inherits model",
 	"",
 	"Trace authentication.",
 ]);
@@ -276,7 +276,7 @@ const hostileExpanded = formatExpandedSubagentCall(hostileArgs, 100, metrics);
 eq("expanded input terminal controls are removed", hostileExpanded.join("").includes("\x1b]52"), false);
 eq("expanded input keeps safe text", plainLines(hostileExpanded).slice(0, 4), [
 	"subagent spawn · scout · Auth flow",
-	"inherits parent model",
+	"inherits model",
 	"",
 	"Trace authentication.",
 ]);
@@ -299,7 +299,7 @@ eq("resume input keeps safe text", plainLines(hostileResume), ["subagent resume 
 eq(
 	"multiline task is normalized for preview",
 	plainLines(formatCollapsedSubagentCall({ name: "N", task: "Trace auth.\n\nReturn  file:\tline pointers." }, 100, 3, metrics)),
-	["subagent spawn · worker · N", "inherits parent model", "", "Trace auth. Return file: line pointers."],
+	["subagent spawn · worker · N", "inherits model", "", "Trace auth. Return file: line pointers."],
 );
 eq("an omitted agent displays worker without brackets", plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, 3, metrics))[0], "subagent spawn · worker · Tests");
 eq(
@@ -336,14 +336,14 @@ eq("collapsed width one obeys the width contract", formatCollapsedSubagentCall(a
 eq(
 	"collapsed extreme width retains all content",
 	plainLines(formatCollapsedSubagentCall(args, 1_000_000, 3, metrics)),
-	["subagent spawn · scout · Auth flow", "inherits parent model", "", task],
+	["subagent spawn · scout · Auth flow", "inherits model", "", task],
 );
 
 const original = "first\tcolumn\rsecond\r\n界e\u0301";
 const expanded = formatExpandedSubagentCall({ name: "Auth flow", agent: "scout", task: original }, 120, metrics).map((line) => line.trimEnd());
 eq("expanded heading keeps identity and model", expanded.slice(0, 3), [
 	"subagent spawn · scout · Auth flow",
-	"inherits parent model",
+	"inherits model",
 	"",
 ]);
 eq("expanded uses Text tab display and safe CR line breaks", expanded.slice(3), ["first   column", "second", "界e\u0301"]);
@@ -460,7 +460,7 @@ if (callRenderer === undefined) {
 	eq("registered renderer styles the task preview as dim", collapsedOutput.includes("\x1b[2mfirst second\x1b[0m"), true);
 	eq(
 		"registered renderer shows inherited model and effective spawn modes on a separate metadata line",
-		collapsedPlain.includes("inherits parent model · context forked · interactive · worktree"),
+		collapsedPlain.includes("inherits model · context forked · interactive · worktree"),
 		true,
 	);
 	const externalOutput = stripVTControlCharacters(callRenderer(
@@ -531,14 +531,14 @@ if (callRenderer === undefined) {
 		renderContext(false),
 	).render(120).join("\n"));
 	eq("explicit call values override inherited spawn modes", overriddenOutput.split("\n")[1].trimEnd(),
-		"inherits parent model · context fresh");
+		"inherits model · context fresh");
 	const cwdOverrideOutput = stripVTControlCharacters(callRenderer(
 		{ name: "Cwd override", agent: "worker", task: "Run", cwd: "nested" } as Parameters<typeof callRenderer>[0],
 		markedTheme,
 		renderContext(false),
 	).render(120).join("\n"));
 	eq("an explicit cwd disables an inherited worktree mode", cwdOverrideOutput.split("\n")[1].trimEnd(),
-		"inherits parent model · context forked · interactive");
+		"inherits model · context forked · interactive");
 	const toolSource = readFileSync(new URL("../tool-spawn.ts", import.meta.url), "utf8");
 	eq("registered renderer resolves the configured expansion binding", toolSource.includes('keyHint("app.tools.expand", "to expand")'), true);
 	eq("execution-time presentation persists the resolved model", toolSource.includes("model: model ?? null"), true);
@@ -550,7 +550,7 @@ if (callRenderer === undefined) {
 	const reopenedComponent = callRenderer(renderArgs, markedTheme, renderContext(false, sharedState));
 	eq("a reopened call initially falls back to current definition defaults",
 		stripVTControlCharacters(reopenedComponent.render(120).join("\n")).split("\n")[1].trimEnd(),
-		"inherits parent model · context fresh");
+		"inherits model · context fresh");
 	registeredSpawnTool?.renderResult?.(
 		{
 			content: [{ type: "text", text: "started" }],

@@ -160,7 +160,7 @@ const flat = lines.join("\n");
 ok("top rule carries the count", lines[0].startsWith("── Sub-agents · 5 ─") && visibleWidth(lines[0]) === WIDTH);
 ok("names render as tags", flat.includes("[scout]") && flat.includes("[worker]"));
 ok("resolved model on the header row", lines.some((l) => l.includes("[scout]") && l.includes("openai-codex/gpt-5.5")));
-ok("no models listed reads as inherits", lines.some((l) => l.includes("[worker]") && l.includes("inherits parent model")));
+ok("no models listed reads as inherits", lines.some((l) => l.includes("[worker]") && l.includes("inherits model")));
 ok(
 	"source right-anchored, worker marked default",
 	lines.some((l) => l.includes("[worker]") && l.endsWith("project · default")),

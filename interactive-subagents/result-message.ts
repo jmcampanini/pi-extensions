@@ -391,23 +391,24 @@ function structuredExpandedResult(
 				lines.push(...markdown.render(maxWidth));
 			}
 
-			const footer: string[] = [];
+			const detailsFooter: string[] = [];
+			if (expanded.worktreeNote) detailsFooter.push(style.metadata(safeMarkdown(expanded.worktreeNote)));
+			if (details.sessionFile) {
+				detailsFooter.push(style.metadata("session ") + accent(sanitizeDisplayText(details.sessionFile)));
+			}
+			const action = details.presentation.status === "failed" ? "retry" : "resume";
+			const message = details.presentation.status === "failed" ? "<guidance>" : "...";
+			detailsFooter.push(
+				style.metadata(`${action} `) +
+				accent(`subagent_resume({ id: "${sanitizeDisplayText(details.id)}", message: "${message}" })`),
+			);
+			appendText(detailsFooter.join("\n"));
+
 			const runMetrics: string[] = [];
 			if (details.contextTokens !== undefined) runMetrics.push(`context ${formatTokens(details.contextTokens)}`);
 			if (details.resultTokens !== undefined) runMetrics.push(`result ~${formatTokens(details.resultTokens)}`);
 			if (details.costUsd !== undefined) runMetrics.push(`cost this run ${formatCost(details.costUsd)}`);
-			if (runMetrics.length > 0) footer.push(style.metadata(runMetrics.join(" · ")));
-			if (details.sessionFile) {
-				footer.push(style.metadata("session ") + accent(sanitizeDisplayText(details.sessionFile)));
-			}
-			const action = details.presentation.status === "failed" ? "retry" : "resume";
-			const message = details.presentation.status === "failed" ? "<guidance>" : "...";
-			footer.push(
-				style.metadata(`${action} `) +
-				accent(`subagent_resume({ id: "${sanitizeDisplayText(details.id)}", message: "${message}" })`),
-			);
-			if (expanded.worktreeNote) footer.push(style.metadata(safeMarkdown(expanded.worktreeNote)));
-			if (footer.length > 0) appendText(footer.join("\n"));
+			if (runMetrics.length > 0) appendText(style.metadata(runMetrics.join(" · ")));
 			return lines.map((line) => truncateToWidth(line, maxWidth, ""));
 		},
 	};

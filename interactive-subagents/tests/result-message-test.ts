@@ -269,7 +269,8 @@ for (const status of ["completed", "failed", "stopped"] as const) {
 const expandedLines = expandedComponent?.render(60) ?? [];
 const expandedPlainLines = expandedLines.map(plain);
 const expandedText = expandedPlainLines.join("\n");
-const expandedWideText = expandedComponent?.render(120).map(plain).join("\n") ?? "";
+const expandedWideLines = expandedComponent?.render(120).map(plain) ?? [];
+const expandedWideText = expandedWideLines.join("\n");
 eq("expanded renderer uses native vertical padding", [expandedPlainLines[0], expandedPlainLines.at(-1)], ["", ""]);
 eq("expanded content receives native horizontal padding",
 	expandedPlainLines.filter(Boolean).every((line) => line.startsWith(" ")), true);
@@ -280,11 +281,22 @@ eq("expanded result omits size metrics from its header",
 eq("expanded result renders the complete child response", expandedText.includes("TAIL_SENTINEL"), true);
 eq("expanded result does not render envelope labels", expandedText.includes("Status: completed"), false);
 eq("expanded result does not render response delimiters", expandedText.includes("<result>"), false);
-eq("expanded footer begins with context, result, and cost metrics",
-	expandedWideText.includes("context 84k · result ~1.8k · cost this run $0.31"), true);
-eq("expanded result shows the session path", expandedText.includes("/sessions/child.jsonl"), true);
-eq("expanded result shows resume guidance", expandedText.includes("resume subagent_resume"), true);
-eq("expanded result shows the worktree outcome", expandedText.includes("Worktree: kept"), true);
+const sessionLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("session "));
+const resumeLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("resume "));
+const metricsLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("context 84k"));
+eq("expanded footer orders session and resume above the final run metrics",
+	sessionLineIndex > 0 && resumeLineIndex === sessionLineIndex + 1 && metricsLineIndex === resumeLineIndex + 2, true);
+eq("expanded footer separates resume guidance from final run metrics",
+	expandedWideLines[resumeLineIndex + 1], "");
+eq("expanded footer ends with context, result, and cost metrics",
+	metricsLineIndex === expandedWideLines.length - 2 &&
+	expandedWideLines[metricsLineIndex]?.trimStart() === "context 84k · result ~1.8k · cost this run $0.31", true);
+eq("expanded result shows the session path", expandedWideLines[sessionLineIndex]?.trimStart(),
+	"session /sessions/child.jsonl");
+eq("expanded result shows resume guidance", expandedWideLines[resumeLineIndex]?.trimStart(),
+	'resume subagent_resume({ id: "abc12345", message: "..." })');
+eq("expanded result shows the worktree outcome before session metadata",
+	expandedWideLines.findIndex((line) => line.includes("Worktree: kept")) < sessionLineIndex, true);
 eq("expanded result has no expansion hint", expandedText.includes("to expand"), false);
 eq("expanded result strips terminal controls", expandedLines.join("").includes("\x1b]52"), false);
 eq("expanded rendering does not mutate model-facing content", message.content, originalContent);

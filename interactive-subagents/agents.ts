@@ -218,7 +218,7 @@ export interface AgentInfo {
 	/** The definition file this agent came from. */
 	filePath: string;
 	/** The frontmatter model candidates, verbatim. Empty = no models listed
-	 * (the child simply inherits the parent's model). */
+	 * (the child simply inherits the active model). */
 	requestedModels: string[];
 	/** The model that wins on this machine (canonical provider/model), if the agent lists any. */
 	resolvedModel?: string;
@@ -498,12 +498,12 @@ export function formatAgentOverviewLines(
 		// Header row: [name]  model ······· source (· default). The model slot
 		// answers the #1 question — what would this agent run on. When
 		// resolution failed it says so in red; when no models are listed the
-		// child inherits the parent's model, which reads quieter on purpose.
+		// child inherits the active model, which reads quieter on purpose.
 		const slot = agent.resolvedModel
 			? { text: agent.resolvedModel, paint: bold }
 			: agent.requestedModels.length > 0
 				? { text: "✗ no usable model", paint: (text: string) => bold(error(text)) }
-				: { text: "inherits parent model", paint: (text: string) => italic(muted(text)) };
+				: { text: "inherits model", paint: (text: string) => italic(muted(text)) };
 		const isDefault = inventory[i].name === "worker";
 		const right = agent.source + (isDefault ? " · default" : "");
 		// The dots absorb the leftover width (min 3); a too-long model slot

@@ -39,7 +39,6 @@ export interface StatusToolDetails {
 	presentation: StatusPresentation;
 }
 
-const STATUS_CARD_MAX_ROWS = 5;
 const plainText = (text: string): string => text;
 
 export interface StatusCardStyle {
@@ -49,7 +48,6 @@ export interface StatusCardStyle {
 	separator?: (text: string) => string;
 	state?: (state: SubagentRuntimeState, text: string) => string;
 	body?: (text: string) => string;
-	hint?: (text: string) => string;
 }
 
 function stalledCondition(obs: ActivityObservation | undefined, nowMs: number): string {
@@ -220,7 +218,6 @@ export function formatStatusCardLines(
 	width: number,
 	expanded: boolean,
 	style: StatusCardStyle = {},
-	expandHint = "",
 ): string[] {
 	const safeWidth = Math.max(0, Math.floor(width));
 	if (safeWidth === 0) return [];
@@ -230,11 +227,10 @@ export function formatStatusCardLines(
 	const separator = style.separator ?? plainText;
 	const state = style.state ?? ((_state, text) => text);
 	const body = style.body ?? plainText;
-	const hint = style.hint ?? plainText;
-	if (entries.length === 0) return new Text(body("No unresolved subagents."), 0, 0).render(safeWidth);
+	if (entries.length === 0) return ["", ...new Text(body("No unresolved subagents."), 0, 0).render(safeWidth)];
 
-	const lines: string[] = [];
-	for (const entry of entries.slice(0, expanded ? entries.length : STATUS_CARD_MAX_ROWS)) {
+	const lines: string[] = [""];
+	for (const entry of entries) {
 		const core = id(safeInline(entry.id)) +
 			separator(" · ") +
 			agent(safeInline(entry.agent)) +
@@ -244,11 +240,6 @@ export function formatStatusCardLines(
 			state(entry.state, entry.state);
 		const text = expanded ? core + body(` — ${safeInline(entry.description)}`) : core;
 		lines.push(...new Text(text, 0, 0).render(safeWidth));
-	}
-	if (!expanded && expandHint) {
-		const hidden = entries.length - Math.min(entries.length, STATUS_CARD_MAX_ROWS);
-		const label = hidden > 0 ? `… ${hidden} more · ${expandHint}` : `(${expandHint})`;
-		lines.push(truncateToWidth(hint(label), safeWidth, ""));
 	}
 	return lines.map((line) => truncateToWidth(line, safeWidth, ""));
 }
@@ -292,23 +283,34 @@ export function registerSubagentStatusTool(pi: ExtensionAPI): void {
 			"Each row starts with the stable id that identifies the instance in later result and resume flows, followed by agent definition, display name, exact lifecycle state, relevant telemetry, and what—if anything—to do. " +
 			"This is a snapshot for coordination, not a polling primitive: never repeatedly call it while waiting for results.",
 		parameters: Type.Object({}),
-		renderCall(_args, theme) {
-			return new Text(theme.fg("toolTitle", theme.bold("subagent status")), 0, 0);
+		renderCall(_args, theme, context) {
+			const hint = context.expanded ? "" : keyHint("app.tools.expand", "to expand");
+			const heading = theme.fg("toolTitle", theme.bold("subagent status")) +
+				(hint ? theme.fg("dim", " (") + hint + theme.fg("dim", ")") : "");
+			return new Text(heading, 0, 0);
 		},
 		renderResult(result, { expanded }, theme, context) {
 			const presentation = parseDetails(result.details);
 			if (!presentation) {
 				const text = result.content.find((part) => part.type === "text");
 				const output = sanitizeDisplayText(text?.type === "text" ? text.text : "");
-				return new Text(
+				const component = new Text(
 					context.isError
 						? theme.fg("error", output || "Unable to read subagent status.")
 						: theme.fg("toolOutput", output),
 					0,
 					0,
 				);
+				return {
+					invalidate(): void {
+						component.invalidate();
+					},
+					render(width: number): string[] {
+						if (width <= 0) return [];
+						return ["", ...component.render(width)];
+					},
+				};
 			}
-			const hint = expanded ? "" : keyHint("app.tools.expand", "to expand");
 			return {
 				invalidate(): void {},
 				render(width: number): string[] {
@@ -319,8 +321,7 @@ export function registerSubagentStatusTool(pi: ExtensionAPI): void {
 						separator: (text) => theme.fg("muted", text),
 						state: (status, text) => theme.fg(status === "stalled" ? "warning" : "muted", text),
 						body: (text) => theme.fg("toolOutput", text),
-						hint: (text) => theme.fg("dim", text),
-					}, hint);
+					});
 				},
 			};
 		},

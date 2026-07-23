@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import {
@@ -118,9 +118,9 @@ const availableResult = await availableTool.execute("available-call", {}, undefi
 const availableText = availableResult.content.find((part) => part.type === "text")?.text ?? "";
 eq("available model content contains definition details and effective configuration only", availableText,
 	"• scout (project, forked, interactive, worktree) — Maps relevant code paths before implementation begins.\n" +
-	"  config: source project · model inherits parent · context forked · interactive · worktree · harness pi\n" +
+	"  config: source project · inherits model · context forked · interactive · worktree · harness pi\n" +
 	"• worker (default) — Builds focused changes and verifies them.\n" +
-	"  config: source global · model inherits parent · context fresh · autonomous · shared checkout · harness pi");
+	"  config: source global · inherits model · context fresh · autonomous · shared checkout · harness pi");
 ok("available model content excludes launched names, ids, and runtime states",
 	!availableText.includes("RUNTIME STATUS SENTINEL") &&
 	!availableText.includes("liveonly") &&
@@ -215,7 +215,7 @@ const expandedAvailable = availableRenderer(
 const expandedAvailablePlain = stripVTControlCharacters(expandedAvailable.render(120).join("\n"));
 ok("expanded available card uses the versioned inventory for full details",
 	expandedAvailablePlain.includes("Maps relevant code paths before implementation begins.") &&
-	expandedAvailablePlain.includes("inherits parent model") &&
+	expandedAvailablePlain.includes("inherits model") &&
 	expandedAvailablePlain.includes("forked · interactive · worktree"));
 ok("expanded available card suppresses command-only header and footer",
 	!expandedAvailablePlain.includes("Sub-agents · 2") && !expandedAvailablePlain.includes("dismiss"));
@@ -452,9 +452,18 @@ const statusRenderResult = {
 	details: { presentation: { version: 1 as const, entries } },
 };
 
+themeCalls.length = 0;
 const statusCallOutput = statusTool.renderCall?.({}, markedTheme, renderContext(false)).render(100).join("\n") ?? "";
-ok("status call title uses bold tool-title styling",
-	statusCallOutput.includes("\x1b[31m\x1b[1msubagent status"));
+ok("collapsed status call keeps the configured expansion hint beside its bold tool title",
+	statusCallOutput.includes("\x1b[31m\x1b[1msubagent status") &&
+	stripVTControlCharacters(statusCallOutput).includes("subagent status (") &&
+	stripVTControlCharacters(statusCallOutput).trimEnd().endsWith("to expand)") &&
+	themeCalls.includes("dim"));
+const expandedStatusCallOutput = statusTool.renderCall?.({}, markedTheme, renderContext(true)).render(100).join("\n") ?? "";
+eq("expanded status call removes the expansion hint",
+	stripVTControlCharacters(expandedStatusCallOutput).trimEnd(), "subagent status");
+eq("status call resolves Pi's configured expansion binding",
+	readFileSync(new URL("../tool-status.ts", import.meta.url), "utf8").includes('keyHint("app.tools.expand", "to expand")'), true);
 const statusRenderer = statusTool.renderResult as RenderResult;
 themeCalls.length = 0;
 const collapsedStatus = statusRenderer(
@@ -465,23 +474,23 @@ const collapsedStatus = statusRenderer(
 );
 const collapsedStatusOutput = collapsedStatus.render(160).join("\n");
 const collapsedStatusPlain = stripVTControlCharacters(collapsedStatusOutput);
+eq("status rows follow one blank line after the call heading", collapsedStatusPlain.split("\n")[0], "");
 eq("collapsed status uses concise unlabeled ID-first dot grammar",
-	collapsedStatusPlain.split("\n")[0].trimEnd(), "delivery1 · reviewer · Completed audit · delivering");
-ok("collapsed status bounds rows and hides verbose guidance",
-	collapsedStatusPlain.includes("… 1 more") &&
-	!collapsedStatusPlain.includes("queued01") &&
+	collapsedStatusPlain.split("\n")[1].trimEnd(), "delivery1 · reviewer · Completed audit · delivering");
+ok("collapsed status shows every concise row while hiding verbose guidance",
+	entries.every((entry) => collapsedStatusPlain.includes(entry.id)) &&
+	collapsedStatusPlain.split("\n").length === entries.length + 1 &&
 	!collapsedStatusPlain.includes("will arrive automatically") &&
 	!collapsedStatusPlain.includes("id delivery1") &&
 	!collapsedStatusPlain.includes("agent reviewer") &&
 	!collapsedStatusPlain.includes("|"));
 eq("collapsed status accents only the task name while muting identity, separators, and ordinary state",
-	collapsedStatusOutput.split("\n")[0].trimEnd(),
+	collapsedStatusOutput.split("\n")[1].trimEnd(),
 	"\x1b[33mdelivery1\x1b[0m\x1b[33m · \x1b[0m\x1b[33mreviewer\x1b[0m\x1b[33m · \x1b[0m" +
 	"\x1b[32mCompleted audit\x1b[0m\x1b[33m · \x1b[0m\x1b[33mdelivering\x1b[0m");
-ok("collapsed status uses warning for stalled and dim for the hint",
-	["accent", "muted", "warning", "dim"].every((token) => themeCalls.includes(token)) &&
-	collapsedStatusOutput.includes("\x1b[33m · \x1b[0m\x1b[35mstalled\x1b[0m") &&
-	collapsedStatusOutput.includes("\x1b[2m… 1 more"));
+ok("collapsed status reserves warning styling for stalled state",
+	["accent", "muted", "warning"].every((token) => themeCalls.includes(token)) &&
+	collapsedStatusOutput.includes("\x1b[33m · \x1b[0m\x1b[35mstalled\x1b[0m"));
 
 themeCalls.length = 0;
 const expandedStatus = statusRenderer(
@@ -491,8 +500,8 @@ const expandedStatus = statusRenderer(
 	renderContext(true),
 );
 const expandedStatusPlain = stripVTControlCharacters(expandedStatus.render(180).join("\n"));
-ok("expanded status keeps concise cores and reveals descriptions without group headings",
-	expandedStatusPlain.startsWith("delivery1 · reviewer · Completed audit · delivering — finished after") &&
+ok("expanded status keeps the heading spacer, concise cores, and descriptions without group headings",
+	expandedStatusPlain.startsWith("\ndelivery1 · reviewer · Completed audit · delivering — finished after") &&
 	expandedStatusPlain.includes("running bash for 10s") &&
 	expandedStatusPlain.includes("starts automatically when capacity frees") &&
 	!expandedStatusPlain.includes("Summary:"));
@@ -537,8 +546,8 @@ const renderedEmptyStatus = statusRenderer(
 	markedTheme,
 	renderContext(false),
 );
-eq("custom status renderer preserves the empty output",
-	plainRendered(renderedEmptyStatus.render(80).join("\n")), "No unresolved subagents.");
+eq("custom status renderer keeps the heading spacer before empty output",
+	plainRendered(renderedEmptyStatus.render(80).join("\n")), "\nNo unresolved subagents.");
 ok("empty custom status output uses semantic tool-output styling", themeCalls.includes("toolOutput"));
 themeCalls.length = 0;
 const staleStatus = statusRenderer(
@@ -547,8 +556,8 @@ const staleStatus = statusRenderer(
 	markedTheme,
 	renderContext(false),
 );
-eq("unknown status presentation versions fall back to flat model content",
-	plainRendered(staleStatus.render(500).join("\n")), statusText);
+eq("unknown status presentation versions keep the heading spacer before flat model content",
+	plainRendered(staleStatus.render(500).join("\n")), `\n${statusText}`);
 ok("status fallback content uses the semantic tool-output token", themeCalls.includes("toolOutput"));
 
 state.running.clear();

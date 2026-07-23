@@ -55,7 +55,7 @@ function spawnActionArgs(args: SubagentCallArgs): SubagentActionArgs {
 	else if (args.modelUnknown) modes.push("model unknown");
 	else if (model) modes.push(`model ${normalizedInline(model)}`);
 	else if (args.harness && args.harness !== "pi") modes.push("model harness default");
-	else modes.push("inherits parent model");
+	else modes.push("inherits model");
 	if (args.context) modes.push(`context ${args.context}`);
 	if (args.autoExit === false) modes.push("interactive");
 	if (args.useWorktree) modes.push("worktree");

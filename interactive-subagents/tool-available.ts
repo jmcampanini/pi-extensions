@@ -61,7 +61,7 @@ export function formatAvailableModelText(inventory: readonly AgentInfo[]): strin
 			? `model ${agent.resolvedModel}`
 			: agent.requestedModels.length > 0
 				? `requested models ${agent.requestedModels.join(", ")} (none usable)`
-				: "model inherits parent";
+				: "inherits model";
 		const config = [
 			`source ${agent.source}`,
 			model,
