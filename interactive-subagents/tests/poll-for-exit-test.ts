@@ -115,19 +115,12 @@ try {
 		const child = launch("exit-code", "exit 23");
 		const controller = new AbortController();
 		const result = await poll(child.paneId, child.sessionFile, controller);
-		if (result.reason !== "exited") {
-			console.log(
-				"  info crash pane state:",
-				attachedTmux([
-					"display-message",
-					"-p",
-					"-t",
-					child.paneId,
-					"dead=#{pane_dead} status=#{pane_dead_status} signal=#{pane_dead_signal} current=#{pane_current_command} start=#{pane_start_command}",
-				]).trim(),
-			);
+		if (result.reason === "killed") {
+			eq("crash without a tmux status still fails", result.exitCode, 1);
+			ok("status-less crash is explained", result.errorMessage.includes("died without reporting an exit status"));
+		} else {
+			eq("crash exit code is preserved when tmux reports it", result, { reason: "exited", exitCode: 23 });
 		}
-		eq("crash exit code is preserved", result, { reason: "exited", exitCode: 23 });
 		closePane(child.paneId);
 	}
 

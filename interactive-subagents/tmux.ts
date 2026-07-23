@@ -354,8 +354,9 @@ function queryPaneDeadState(paneId: string): PaneDeadState {
  */
 const PANE_GONE_GRACE_TICKS = 5;
 
-/** Some tmux versions expose pane death before its numeric status. Confirm an
- * empty status on a second poll before classifying it as signal death. */
+/** Some tmux versions expose pane death before its numeric status, or omit
+ * the status for split panes. Confirm an empty status on a second poll before
+ * classifying the process as having died without one. */
 const DEAD_WITHOUT_STATUS_GRACE_TICKS = 2;
 
 /**
@@ -367,8 +368,8 @@ const DEAD_WITHOUT_STATUS_GRACE_TICKS = 2;
  *   2. A dead pane's tmux-recorded exit status — the crash net for a child
  *      that exits without running our extension code. The sidecar is checked
  *      once more on the death tick so a simultaneous precise result wins.
- *      An empty status is confirmed on the next tick before signal death is
- *      reported distinctly because some tmux versions publish status late.
+ *      An empty status is confirmed on the next tick before status-less death
+ *      is reported distinctly because tmux may publish status late.
  *   3. Pane gone + grace period expired — the child vanished before tmux
  *      could retain its status, with late sidecars checked during the grace.
  *
