@@ -129,7 +129,7 @@ export interface HarnessProfile {
 	mapEffort(thinking: string): string;
 	/** Map the frontmatter `tools:` list to the tool's allowed-tools argument. */
 	mapTools(tools: string): string;
-	/** How a fresh task tells the child its run ends (appended to the task).
+	/** How a new-context task tells the child its run ends (appended to the task).
 	 * Must not mention pi-only control tools - external children have none. */
 	completionInstruction(autoExit: boolean): string;
 	buildLaunchCommand(options: HarnessCommandOptions): string;

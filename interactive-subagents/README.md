@@ -35,19 +35,19 @@ Use `/subagent-available` to confirm that `worker` is available and comes from t
 subagent_spawn({
   name: "test map",
   task: "Inspect this repository's test setup and report the commands to run. Do not edit files.",
-  context: "fresh",
+  context: "new",
   autoExit: true,
   worktree: false,
 })
 ```
 
-This uses the listed `worker` in the parent's working directory with explicit fresh context, automatic exit, and no worktree. It returns `started`; the answer arrives automatically.
+This uses the listed `worker` in the parent's working directory with explicit new context, automatic exit, and no worktree. It returns `started`; the answer arrives automatically.
 
 ## Choose where context comes from
 
 | Need | Choice |
 |---|---|
-| A self-contained task | Use `context: "fresh"`, the default. Project files and instructions still load. Include the objective, paths, facts, constraints, edit permission, output, and verification in the task. |
+| A self-contained task | Use `context: "new"`, the default. Project files and instructions still load. Include the objective, paths, facts, constraints, edit permission, output, and verification in the task. |
 | Parent discussion or decisions would be difficult or lossy to restate | Use `context: "forked"`. It copies completed parent history as of the moment the child launches — immediately when a concurrency slot is free, or when a queued launch starts. That history goes to the child's selected model and provider, so do not fork unnecessary or sensitive context. A first-turn fork may fail before the parent session is written. |
 | Follow-up depends on a child's findings or tool history | Use `subagent_resume` to continue that child's conversation. |
 | A human should drive the pane | Set `autoExit: false`. The child normally finishes by calling `subagent_done`, or can ask for help with `caller_ping`. |
@@ -56,7 +56,7 @@ This uses the listed `worker` in the parent's working directory with explicit fr
 
 Parent operations use the singular `subagent` namespace: model tools follow `subagent_<operation>`, and slash commands follow `/subagent-<operation>`. Creation is `spawn` because it launches an existing agent definition as an independent child process and session; it does not create a definition.
 
-- **`subagent_spawn`** starts a child. `name` and `task` are required. Calls can choose an agent, context, model, thinking, tools, directory, worktree, and exit behavior. Call values override agent definitions. Explicit `worktree: true` cannot be combined with `cwd`. Returns `started`, or `queued` at the concurrency limit (see Concurrency and the launch queue). Its rendered call always names the effective context as `fresh` or `forked`; it also exposes effective non-default launch behavior when the child is interactive (`autoExit: false`), uses a worktree, or uses a non-`pi` harness, whose exact name is shown.
+- **`subagent_spawn`** starts a child. `name` and `task` are required. Calls can choose an agent, context, model, thinking, tools, directory, worktree, and exit behavior. Call values override agent definitions. Explicit `worktree: true` cannot be combined with `cwd`. Returns `started`, or `queued` at the concurrency limit (see Concurrency and the launch queue). Its rendered call always names the effective context as `new` or `forked`; it also exposes effective non-default launch behavior when the child is interactive (`autoExit: false`), uses a worktree, or uses a non-`pi` harness, whose exact name is shown.
 - **`subagent_available`** reports the fresh definition inventory only: each agent's source and routing markers, its `details` (or full `description` when `details` is absent), effective model and launch configuration, and definition problems. Use it to select an agent or diagnose definitions; it does not report child runs.
 - **`subagent_status`** reports every unresolved child instance, including queued launches and results still being delivered. Output is a flat list with each short id first and that instance's exact current state (`queued`, `starting`, `active`, `waiting`, `stalled`, or `delivering`), never an aggregate summary. Use it for one-shot lifecycle diagnosis, not polling.
 - **`subagent_resume`** handles help, retries, and follow-up while restoring launch identity. Use `id` in the same parent process, including after `/reload`; after restart use `sessionPath`. Autonomous resume requires a message. Message-free resume requires an effective `autoExit: false` for human control. A resume opens a new pane and process, so it consumes a concurrency slot exactly like a spawn and can return `queued` the same way.
@@ -69,7 +69,7 @@ The parent needs no discovery round trip: its system prompt ends with a compact 
 
 Definition filename stems are agent identifiers; their Markdown bodies extend the child system prompt. Identifiers are non-empty, contain no whitespace, and occupy at most 20 terminal display columns. Task display names remain free-form and may contain spaces. Only definition files with valid identifiers are discovered, and explicit invalid `agent` values are rejected. `<cwd>/.pi/subagents/` shadows `$PI_CODING_AGENT_DIR/subagents/`, normally `~/.pi/agent/subagents/`. A repository can replace `worker`, so inspect `.pi/subagents/` in untrusted repositories.
 
-Optional frontmatter keys are `description`, `details`, `models`, `thinking`, `tools`, `context`, `auto-exit`, `worktree`, `harness`, and `harness-pass-through`. Omitted model, thinking, and tools settings inherit Pi defaults; the other defaults are `fresh`, `true`, `false`, and `pi`. A model list is tried in order until a usable exact match is found (external harnesses instead take the first entry verbatim; see External harnesses). Call values override frontmatter, which overrides built-in defaults.
+Optional frontmatter keys are `description`, `details`, `models`, `thinking`, `tools`, `context`, `auto-exit`, `worktree`, `harness`, and `harness-pass-through`. Omitted model, thinking, and tools settings inherit Pi defaults; the other defaults are `new`, `true`, `false`, and `pi`. A model list is tried in order until a usable exact match is found (external harnesses instead take the first entry verbatim; see External harnesses). Call values override frontmatter, which overrides built-in defaults.
 
 `description` is the compact routing text: one sentence for the parent's injected catalogue, where it renders bounded to 200 characters. `details` is an optional expanded explanation for humans and explicit discovery, shown untruncated by `subagent_available` and beneath the description headline in `/subagent-available`. When it is absent, `subagent_available` shows the full `description` instead and the overview keeps its headline-only card, so description-only definitions work unchanged.
 

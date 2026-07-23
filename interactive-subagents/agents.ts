@@ -66,8 +66,8 @@ export interface AgentDefinition {
 	thinking?: string;
 	/** Comma-separated tool allowlist for `pi --tools`. */
 	tools?: string;
-	/** "forked" (inherit parent conversation) or "fresh" (clean context). */
-	context?: "fresh" | "forked";
+	/** "forked" (inherit parent conversation) or "new" (clean context). */
+	context?: "new" | "forked";
 	/** true = autonomous (exits when its turn completes). Default true. */
 	autoExit?: boolean;
 	/** true = spawn this agent in a fresh git worktree by default. */
@@ -119,9 +119,9 @@ function parseAgentMarkdown(
 
 	const problems: string[] = [];
 	// Unknown values are problems, not silent defaults — a typo in `context:`
-	// quietly spawning a fresh child would hide a forked-context intent.
-	if (rawContext !== undefined && rawContext !== "fresh" && rawContext !== "forked") {
-		problems.push(`invalid context "${rawContext}" — use "fresh" or "forked"`);
+	// quietly spawning a new child would hide a forked-context intent.
+	if (rawContext !== undefined && rawContext !== "new" && rawContext !== "forked") {
+		problems.push(`invalid context "${rawContext}" — use "new" or "forked"`);
 	}
 	// Same loudness for worktree: `worktree: yes` silently spawning WITHOUT
 	// isolation would be exactly the parallel-edit hazard the flag prevents.
@@ -154,7 +154,7 @@ function parseAgentMarkdown(
 			: undefined,
 		thinking: frontmatterValue(frontmatter, "thinking"),
 		tools: frontmatterValue(frontmatter, "tools"),
-		context: rawContext === "forked" || rawContext === "fresh" ? rawContext : undefined,
+		context: rawContext === "forked" || rawContext === "new" ? rawContext : undefined,
 		autoExit: rawAutoExit === "true" ? true : rawAutoExit === "false" ? false : undefined,
 		worktree: rawWorktree === "true" ? true : rawWorktree === "false" ? false : undefined,
 		harness: harnessValid ? rawHarness : undefined,
@@ -224,7 +224,7 @@ export interface AgentInfo {
 	resolvedModel?: string;
 	thinking?: string;
 	tools?: string;
-	context: "fresh" | "forked";
+	context: "new" | "forked";
 	autoExit: boolean;
 	/** true = this agent runs in a fresh git worktree by default. */
 	worktree: boolean;
@@ -284,7 +284,7 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 			resolvedModel,
 			thinking: def.thinking,
 			tools: def.tools,
-			context: def.context ?? "fresh",
+			context: def.context ?? "new",
 			autoExit: def.autoExit ?? true,
 			worktree: def.worktree ?? false,
 			harness,

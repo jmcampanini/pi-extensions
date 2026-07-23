@@ -78,7 +78,7 @@ function spawnSpec(id: string, name: string): SpawnSpec {
 		agentName: "worker",
 		harness: "pi",
 		agentBody: "Worker prompt.",
-		context: "fresh",
+		context: "new",
 		autoExit: true,
 		useWorktree: false,
 		cwd,
@@ -120,7 +120,7 @@ eq("available model content contains definition details and effective configurat
 	"• scout (project, forked, interactive, worktree) — Maps relevant code paths before implementation begins.\n" +
 	"  config: source project · model inherits parent · context forked · interactive · worktree · harness pi\n" +
 	"• worker (default) — Builds focused changes and verifies them.\n" +
-	"  config: source global · model inherits parent · context fresh · autonomous · shared checkout · harness pi");
+	"  config: source global · model inherits parent · context new · autonomous · shared checkout · harness pi");
 ok("available model content excludes launched names, ids, and runtime states",
 	!availableText.includes("RUNTIME STATUS SENTINEL") &&
 	!availableText.includes("liveonly") &&

@@ -4,7 +4,7 @@ interface SubagentCallArgs {
 	name?: string;
 	task?: string;
 	agent?: string;
-	context?: "fresh" | "forked";
+	context?: "new" | "forked";
 	autoExit?: boolean;
 	useWorktree?: boolean;
 	harness?: string;

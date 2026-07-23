@@ -63,7 +63,7 @@ eq("body is the system prompt", scout.body, "You are a scout.");
 writeFileSync(join(globalDefs, "badcontext.md"), "---\ncontext: shared\n---\nBad context value.\n");
 const badcontext = loadAgentDefinition("badcontext", cwd)!;
 eq("invalid context value does not set context", badcontext.context, undefined);
-ok("invalid context problem suggests the valid values", badcontext.problems[0].includes('"forked"'));
+eq("invalid context problem suggests the valid values", badcontext.problems[0], 'invalid context "shared" — use "new" or "forked"');
 
 writeFileSync(join(globalDefs, "crlf.md"), "---\r\ndescription: windows line endings\r\n---\r\nBody here.\r\n");
 eq("CRLF frontmatter still parses", loadAgentDefinition("crlf", cwd)!.description, "windows line endings");
@@ -108,7 +108,7 @@ eq("first usable model wins", scoutInfo.resolvedModel, "openai-codex/gpt-5.5");
 eq("requested models kept verbatim", scoutInfo.requestedModels, ["openai-codex/gpt-5.5", "gpt-5.4-mini"]);
 eq("valid agent has no problems", scoutInfo.problems, []);
 const workerInfo = inventory.find((a) => a.name === "worker")!;
-eq("defaults applied: context fresh, auto-exit true", [workerInfo.context, workerInfo.autoExit], ["fresh", true]);
+eq("defaults applied: context new, auto-exit true", [workerInfo.context, workerInfo.autoExit], ["new", true]);
 eq("no models listed = empty requestedModels", workerInfo.requestedModels, []);
 const badcontextInfo = inventory.find((a) => a.name === "badcontext")!;
 eq("frontmatter problems flow into the inventory", badcontextInfo.problems.length, 1);
@@ -167,9 +167,9 @@ ok(
 );
 ok("file paths are gone", !flat.includes(worker.filePath) && !flat.includes(globalDefs));
 // The fold is checked on a worker-only render: the full flat legitimately
-// contains "fresh"/"forked" inside the invalid-context problem text.
+// contains "new"/"forked" inside the invalid-context problem text.
 const workerCard = formatAgentOverviewLines([workerInfo], WIDTH, dirs).join("\n");
-ok("default run behavior is folded away", !workerCard.includes("fresh") && !workerCard.includes("auto-exit"));
+ok("default run behavior is folded away", !workerCard.includes("new") && !workerCard.includes("auto-exit"));
 ok(
 	"deviations surface on the meta row",
 	lines.some((l) => l.includes("thinking low") && l.includes("tools: read, bash") && l.includes("forked · interactive")),
@@ -326,7 +326,7 @@ function info(overrides: Partial<AgentInfo> & { name: string }): AgentInfo {
 		source: "global",
 		filePath: `/g/subagents/${overrides.name}.md`,
 		requestedModels: [],
-		context: "fresh",
+		context: "new",
 		autoExit: true,
 		worktree: false,
 		harness: "pi",

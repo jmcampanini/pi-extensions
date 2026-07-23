@@ -123,7 +123,7 @@ function isAgentInfo(value: unknown): value is AgentInfo {
 		&& (agent.harnessPassThrough === undefined || typeof agent.harnessPassThrough === "string")
 		&& Array.isArray(agent.requestedModels)
 		&& agent.requestedModels.every((model) => typeof model === "string")
-		&& (agent.context === "fresh" || agent.context === "forked")
+		&& (agent.context === "new" || agent.context === "forked")
 		&& typeof agent.autoExit === "boolean"
 		&& typeof agent.worktree === "boolean"
 		&& typeof agent.harness === "string"
