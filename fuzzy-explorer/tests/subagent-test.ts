@@ -25,9 +25,9 @@ const spawnArguments = {
 	name: "Message type recon",
 	task: "## Goal\n\nFind **everything** relevant to message types.",
 	agent: "scout",
-	context: "fresh",
+	context: "new",
 };
-const spawnAck = 'Sub-agent "Message type recon" started (id c853bdcf, fresh context). One concise report is delivered when it exits; end your turn.';
+const spawnAck = 'Sub-agent "Message type recon" started (id c853bdcf, new context). One concise report is delivered when it exits; end your turn.';
 const spawnInvocation = `subagent_spawn ${JSON.stringify(spawnArguments, null, 2)}`;
 const spawnCanonical = `${spawnInvocation}\n\n${spawnAck}`;
 const spawnBlock = makeBlock({
@@ -35,7 +35,7 @@ const spawnBlock = makeBlock({
 	kind: "tool",
 	toolName: "subagent_spawn",
 	title: "subagent_spawn",
-	subtitle: "name=Message type recon task=## Goal Find **everything** relevant to message types. agent=scout context=fresh",
+	subtitle: "name=Message type recon task=## Goal Find **everything** relevant to message types. agent=scout context=new",
 	body: spawnAck,
 	canonicalText: spawnCanonical,
 	canonicalBodyOffset: spawnCanonical.length - spawnAck.length,
@@ -76,7 +76,7 @@ eq("spawn arguments split into prioritized metadata and prose",
 	spawnView?.fields, [
 		{ key: "name", value: "Message type recon" },
 		{ key: "agent", value: "scout" },
-		{ key: "context", value: "fresh" },
+		{ key: "context", value: "new" },
 	]);
 ok("spawn content is the task prompt followed by the ack",
 	spawnView?.content.startsWith("## Goal") === true && spawnView?.content.endsWith("end your turn.") === true);
@@ -96,7 +96,7 @@ eq("non-subagent blocks have no view", [
 
 const spawnRow = stripVTControlCharacters(formatResultRow(spawnBlock, false, 120, 16));
 ok("spawn rows show metadata fields without the prompt",
-	spawnRow.includes("name=Message type recon agent=scout context=fresh") && !spawnRow.includes("task="));
+	spawnRow.includes("name=Message type recon agent=scout context=new") && !spawnRow.includes("task="));
 const resultRow = stripVTControlCharacters(formatResultRow(resultBlock, false, 120, 16));
 ok("result rows lead with name, agent, and status fields",
 	resultRow.includes("name=Message type recon agent=scout status=completed"));

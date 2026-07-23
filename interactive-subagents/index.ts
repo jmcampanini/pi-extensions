@@ -18,13 +18,13 @@
  *
  * Where to find things — one file per job:
  *
- *   protocol.ts          the parent↔child contract (env vars, .exit sidecar, sentinel)
+ *   protocol.ts          the parent↔child contract (env vars + .exit sidecar)
  *   config.ts            layered settings (defaults < subagents.json < env), fail-fast
  *   models.ts            picking a usable model from an agent's candidates
  *   agents.ts            agent definition files + the inventory built from them
  *   catalogue.ts         the bounded agent catalogue in the parent's system prompt
  *   session.ts           reading/seeding pi session .jsonl files (fork, summaries)
- *   tmux.ts              panes: stage/create/read/close + the exit poller
+ *   tmux.ts              panes: stage/create/close + the dead-pane exit poller
  *   launch.ts            building a child's launch command + the .meta sidecar
  *   state.ts             shared runtime state (running children, ledger, /reload)
  *   capacity.ts          concurrency claims, queue, and cancellation tombstones
@@ -110,10 +110,10 @@ export default function (pi: ExtensionAPI) {
 	// the no-recursion rule.
 	if (IS_SUBAGENT_CHILD) return;
 
-	// Parent mode only: watch our own result/ping messages land in the parent
-	// transcript so "delivering" widget rows can be cleared (see delivery.ts).
+	// Parent mode only: watch result/ping messages land and parent runs settle
+	// so dropped deliveries can be proved, retried, and cleared (delivery.ts).
 	// Registered before the spawn tools: on an idle parent the landing event
-	// fires within microtasks of the watcher's send, so the listener must
+	// fires within microtasks of the watcher's send, so the listeners must
 	// exist before any child can possibly exit.
 	registerDeliveryListener(pi);
 	registerSubagentResultRenderer(pi);

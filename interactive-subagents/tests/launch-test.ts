@@ -1,7 +1,6 @@
 // Unit tests for launch.ts — the single place child launch commands are built.
 // The exact command bytes matter: the E2E suite greps launch scripts for
-// `--model '...'` / `--thinking '...'`, and the sentinel suffix must match
-// protocol.ts's SENTINEL_REGEX.
+// `--model '...'` / `--thinking '...'`.
 import {
 	buildChildEnv,
 	buildLaunchCommand,
@@ -10,7 +9,6 @@ import {
 	slugify,
 	writeLaunchMeta,
 } from "../launch.ts";
-import { SENTINEL_ECHO_SUFFIX, SENTINEL_REGEX } from "../protocol.ts";
 import { stageLaunchScript, supportsRequiredTmuxVersion } from "../tmux.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -100,9 +98,7 @@ ok("has --model (e2e greps this)", full.includes("--model 'openai-codex/gpt-5.5'
 ok("has --thinking (e2e greps this)", full.includes("--thinking 'low'"));
 ok("has --append-system-prompt", full.includes("--append-system-prompt '/sp.md'"));
 ok("control tools are unioned into --tools", full.includes("--tools 'read,bash,subagent_done,caller_ping'"));
-ok("prompt arg before sentinel", full.includes("'@/task.md' ; echo"));
-ok("ends with the sentinel suffix", full.endsWith(SENTINEL_ECHO_SUFFIX));
-ok("launch command does NOT match the poller regex (quote-split)", !SENTINEL_REGEX.test(full));
+ok("prompt arg is last", full.endsWith("'@/task.md'"));
 
 // harness-pass-through applies to pi children too: appended VERBATIM (no
 // quoting) between the named flags and the prompt argument.
@@ -128,7 +124,7 @@ const minimal = buildLaunchCommand({
 eq(
 	"minimal resume: no cd, no flags, no prompt",
 	minimal,
-	"E='1' pi --session '/s.jsonl' -e '" + full.split("-e '")[1].split("'")[0] + "'" + SENTINEL_ECHO_SUFFIX,
+	"E='1' pi --session '/s.jsonl' -e '" + full.split("-e '")[1].split("'")[0] + "'",
 );
 
 // ── tmux version boundary ────────────────────────────────────────────────

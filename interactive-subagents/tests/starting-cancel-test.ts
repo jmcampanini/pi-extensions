@@ -64,7 +64,7 @@ const capacity = await import("../capacity.ts");
 const { requestCancel } = await import("../cancel.ts");
 const { runSpawnLaunch } = await import("../tool-spawn.ts");
 const { runResumeLaunch } = await import("../tool-resume.ts");
-const { seedFreshSession } = await import("../session.ts");
+const { seedNewSession } = await import("../session.ts");
 type SpawnSpec = import("../capacity.ts").SpawnSpec;
 type ResumeSpec = import("../capacity.ts").ResumeSpec;
 
@@ -89,7 +89,7 @@ const spawnSpec: SpawnSpec = {
 	agentName: "worker",
 	harness: "pi",
 	agentBody: "",
-	context: "fresh",
+	context: "new",
 	autoExit: true,
 	useWorktree: true,
 	parentCwd: repo,
@@ -194,7 +194,7 @@ execFileSync("git", ["branch", "-D", `pi/${cleanupSpec.slug}-${cleanupId}`], { c
 capacity.clearQueueForShutdown();
 const resumeId = "resume01";
 const sessionPath = join(repo, "resume.jsonl");
-seedFreshSession({
+seedNewSession({
 	parentSessionFile: join(root, "parent.jsonl"),
 	childSessionFile: sessionPath,
 	childCwd: repo,
@@ -210,7 +210,7 @@ const resumeSpec: ResumeSpec = {
 	harness: "pi",
 	autoExit: true,
 	message: "continue",
-	context: "fresh",
+	context: "new",
 	cwd: repo,
 	cwdFromWorktree: false,
 	base: join(root, "artifacts"),

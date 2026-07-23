@@ -19,8 +19,9 @@
  * `{ triggerTurn: true, deliverAs: "steer" }` makes the message start/steer
  * a turn instead of waiting for the human to type something. Those exact
  * options are also LOAD-BEARING for the delivering row: delivery.ts only
- * observes messages that travel the agent event stream, so a weakened send
- * would strand its row forever.
+ * observes messages that travel the agent event stream. If Escape drops a
+ * queued delivery, that module proves the loss from later run boundaries and
+ * restarts this module's finalizer.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -48,6 +49,7 @@ import { computeStatus, STALL_AFTER_MS, type SubagentStatus } from "./status.ts"
 import { closePane, pollForExit, refreshLayout, type ExitResult } from "./tmux.ts";
 import { extractSummary } from "./session.ts";
 import {
+	currentRunIndex,
 	deliveryRecord,
 	deliveryRecords,
 	ledger,
@@ -56,6 +58,7 @@ import {
 	running,
 	setDeliveryRecord,
 	type DeliveryRecord,
+	type PreparedDeliveryMessage,
 	type RunningSubagent,
 } from "./state.ts";
 import { ensureWidgetTimer, updateRunningWidget } from "./running-widget.ts";
@@ -270,21 +273,37 @@ function ownsFinalizer(record: DeliveryRecord, generation: number): boolean {
 		&& deliveryRecord(record.id) === record;
 }
 
-function startFinalizer(pi: ExtensionAPI, record: DeliveryRecord): void {
+const DELIVERY_OPTIONS = { triggerTurn: true, deliverAs: "steer" } as const;
+
+export function startFinalizer(pi: ExtensionAPI, record: DeliveryRecord): void {
 	const generation = moduleGeneration();
 	if (record.finalizerGeneration === generation) return;
 	record.finalizerGeneration = generation;
+	if (record.preparedMessage) {
+		sendDelivery(pi, record, generation);
+		return;
+	}
 	void finalizeDelivery(pi, record, generation);
 }
 
-function sendDelivery(record: DeliveryRecord, generation: number, send: () => void): void {
+function sendDelivery(
+	pi: ExtensionAPI,
+	record: DeliveryRecord,
+	generation: number,
+	message?: PreparedDeliveryMessage,
+): void {
 	if (!ownsFinalizer(record, generation) || record.sendAccepted) return;
+	if (message) record.preparedMessage ??= message;
+	if (!record.preparedMessage) return;
 	try {
-		send();
+		pi.sendMessage(record.preparedMessage, DELIVERY_OPTIONS);
+		record.sendAcceptedRunIndex = currentRunIndex();
 		record.sendAccepted = true;
 	} catch {
-		// Keep the sole record for replacement-generation retry. A successful
-		// queued send survives reload and is never sent a second time.
+		// Keep the sole record for a later normal settlement or replacement-
+		// generation retry. An accepted send is retried only after proven loss.
+		record.sendAcceptedRunIndex = undefined;
+		record.sendAccepted = false;
 	}
 }
 
@@ -402,6 +421,10 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 	drainQueue(pi);
 }
 
+function hasFailureMessage(result: ExitResult): result is Extract<ExitResult, { errorMessage: string }> {
+	return result.reason === "error" || result.reason === "pane-closed" || result.reason === "killed";
+}
+
 async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, generation: number): Promise<void> {
 	const child = record.child;
 	const result = record.exit;
@@ -440,34 +463,31 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 				sessionFile: child.sessionFile,
 				worktreeNote: stoppedWorktreeNote,
 			});
-			sendDelivery(record, generation, () => pi.sendMessage(
-				{
-					customType: "subagent_result",
-					content: envelope.content,
-					display: true,
-					details: {
-						id: child.id,
-						name: child.name,
-						agent: child.agent,
-						harness: child.harness,
-						reason: "stopped",
-						sessionFile: child.sessionFile,
-						contextTokens: obs.snapshot?.context?.tokens,
-						costUsd,
-						expanded: {
-							version: 1,
-							notice,
-							worktreeNote: stoppedWorktreeNote,
-						} satisfies SubagentExpandedResultPresentation,
-						presentation: resultPresentation(
-							"stopped",
-							exitElapsedSeconds,
-							"No final result was delivered. Partial work may remain; expand for resume and worktree details.",
-						),
-					},
+			sendDelivery(pi, record, generation, {
+				customType: "subagent_result",
+				content: envelope.content,
+				display: true,
+				details: {
+					id: child.id,
+					name: child.name,
+					agent: child.agent,
+					harness: child.harness,
+					reason: "stopped",
+					sessionFile: child.sessionFile,
+					contextTokens: obs.snapshot?.context?.tokens,
+					costUsd,
+					expanded: {
+						version: 1,
+						notice,
+						worktreeNote: stoppedWorktreeNote,
+					} satisfies SubagentExpandedResultPresentation,
+					presentation: resultPresentation(
+						"stopped",
+						exitElapsedSeconds,
+						"No final result was delivered. Partial work may remain; expand for resume and worktree details.",
+					),
 				},
-				{ triggerTurn: true, deliverAs: "steer" },
-			));
+			});
 		}
 		return;
 	}
@@ -477,19 +497,16 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 	if (result.reason === "ping") {
 		const pingName = sanitizeDisplayText(result.pingName ?? child.name);
 		const pingMessage = sanitizeDisplayText(result.pingMessage);
-		sendDelivery(record, generation, () => pi.sendMessage(
-			{
-				customType: "subagent_ping",
-				content:
-					`Sub-agent "${pingName}" (id ${child.id}) needs help: ${pingMessage}\n\n` +
-					`Answer with subagent_resume({ id: "${child.id}", message: "<your answer>" }). ` +
-					"Its original system prompt, tools, and model are reapplied automatically.\n" +
-					`Session: ${child.sessionFile} (pass as sessionPath instead of id if the id is no longer known)`,
-				display: true,
-				details: { id: child.id, name: child.name, sessionFile: child.sessionFile },
-			},
-			{ triggerTurn: true, deliverAs: "steer" },
-		));
+		sendDelivery(pi, record, generation, {
+			customType: "subagent_ping",
+			content:
+				`Sub-agent "${pingName}" (id ${child.id}) needs help: ${pingMessage}\n\n` +
+				`Answer with subagent_resume({ id: "${child.id}", message: "<your answer>" }). ` +
+				"Its original system prompt, tools, and model are reapplied automatically.\n" +
+				`Session: ${child.sessionFile} (pass as sessionPath instead of id if the id is no longer known)`,
+			display: true,
+			details: { id: child.id, name: child.name, sessionFile: child.sessionFile },
+		});
 		return;
 	}
 
@@ -505,7 +522,8 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		: extractSummary(child.sessionFile, child.skipEntries);
 	const generatedSummary = summary === null ? null : sanitizeDisplayText(summary);
 	const resultTokens = generatedSummary === null ? undefined : estimateResultTokens(generatedSummary);
-	const failed = result.exitCode !== 0 || result.reason === "error" || result.reason === "pane-closed";
+	const failureHasMessage = hasFailureMessage(result);
+	const failed = result.exitCode !== 0 || failureHasMessage;
 
 	// Cleanup may overlap a reload. Store its promise on the stable record so
 	// every generation awaits the same outcome instead of running it twice.
@@ -528,12 +546,13 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		response = generatedSummary ?? "(the subagent produced no final message)";
 		presentation = resultPresentation("completed", exitElapsedSeconds, response);
 	} else {
-		failureReason =
-			result.reason === "error"
-				? `provider/agent error: ${result.errorMessage}`
-				: result.reason === "pane-closed"
-					? result.errorMessage
-					: `exit code ${result.exitCode}`;
+		if (result.reason === "error") {
+			failureReason = `provider/agent error: ${result.errorMessage}`;
+		} else if (failureHasMessage) {
+			failureReason = result.errorMessage;
+		} else {
+			failureReason = `exit code ${result.exitCode}`;
+		}
 		response = generatedSummary ?? undefined;
 		presentation = resultPresentation("failed", exitElapsedSeconds, response ?? failureReason);
 	}
@@ -566,34 +585,31 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		worktreeNote: note,
 	};
 
-	sendDelivery(record, generation, () => pi.sendMessage(
-		{
-			customType: "subagent_result",
-			content,
-			display: true,
-			details: {
-				id: child.id,
-				name: child.name,
-				agent: child.agent,
-				harness: child.harness,
-				exitCode: result.exitCode,
-				reason: result.reason,
-				sessionFile: child.sessionFile,
-				tools: child.tools,
-				model: child.model,
-				worktreeDir: child.worktree?.dir,
-				worktreeBranch: child.worktree?.branch,
-				worktreeStatus: worktreeOutcome?.status,
-				// Raw context telemetry remains available to the TUI and tooling
-				// (undefined without a snapshot; null just after compaction).
-				contextTokens: obs.snapshot?.context?.tokens,
-				contextWindow: obs.snapshot?.context?.window,
-				resultTokens,
-				costUsd,
-				expanded,
-				presentation,
-			},
+	sendDelivery(pi, record, generation, {
+		customType: "subagent_result",
+		content,
+		display: true,
+		details: {
+			id: child.id,
+			name: child.name,
+			agent: child.agent,
+			harness: child.harness,
+			exitCode: result.exitCode,
+			reason: result.reason,
+			sessionFile: child.sessionFile,
+			tools: child.tools,
+			model: child.model,
+			worktreeDir: child.worktree?.dir,
+			worktreeBranch: child.worktree?.branch,
+			worktreeStatus: worktreeOutcome?.status,
+			// Raw context telemetry remains available to the TUI and tooling
+			// (undefined without a snapshot; null just after compaction).
+			contextTokens: obs.snapshot?.context?.tokens,
+			contextWindow: obs.snapshot?.context?.window,
+			resultTokens,
+			costUsd,
+			expanded,
+			presentation,
 		},
-		{ triggerTurn: true, deliverAs: "steer" },
-	));
+	});
 }

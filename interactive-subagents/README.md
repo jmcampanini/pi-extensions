@@ -35,19 +35,19 @@ Use `/subagent-available` to confirm that `worker` is available and comes from t
 subagent_spawn({
   name: "test map",
   task: "Inspect this repository's test setup and report the commands to run. Do not edit files.",
-  context: "fresh",
+  context: "new",
   autoExit: true,
   worktree: false,
 })
 ```
 
-This uses the listed `worker` in the parent's working directory with explicit fresh context, automatic exit, and no worktree. It returns `started`; the answer arrives automatically.
+This uses the listed `worker` in the parent's working directory with explicit new context, automatic exit, and no worktree. It returns `started`; the answer arrives automatically.
 
 ## Choose where context comes from
 
 | Need | Choice |
 |---|---|
-| A self-contained task | Use `context: "fresh"`, the default. Project files and instructions still load. Include the objective, paths, facts, constraints, edit permission, output, and verification in the task. |
+| A self-contained task | Use `context: "new"`, the default. Project files and instructions still load. Include the objective, paths, facts, constraints, edit permission, output, and verification in the task. |
 | Parent discussion or decisions would be difficult or lossy to restate | Use `context: "forked"`. It copies completed parent history as of the moment the child launches — immediately when a concurrency slot is free, or when a queued launch starts. That history goes to the child's selected model and provider, so do not fork unnecessary or sensitive context. A first-turn fork may fail before the parent session is written. |
 | Follow-up depends on a child's findings or tool history | Use `subagent_resume` to continue that child's conversation. |
 | A human should drive the pane | Set `autoExit: false`. The child normally finishes by calling `subagent_done`, or can ask for help with `caller_ping`. |
@@ -56,21 +56,21 @@ This uses the listed `worker` in the parent's working directory with explicit fr
 
 Parent operations use the singular `subagent` namespace: model tools follow `subagent_<operation>`, and slash commands follow `/subagent-<operation>`. Creation is `spawn` because it launches an existing agent definition as an independent child process and session; it does not create a definition.
 
-- **`subagent_spawn`** starts a child. `name` and `task` are required. Calls can choose an agent, context, model, thinking, tools, directory, worktree, and exit behavior. Call values override agent definitions. Explicit `worktree: true` cannot be combined with `cwd`. Returns `started`, or `queued` at the concurrency limit (see Concurrency and the launch queue). Its rendered call always names the effective context as `fresh` or `forked`; it also exposes effective non-default launch behavior when the child is interactive (`autoExit: false`), uses a worktree, or uses a non-`pi` harness, whose exact name is shown.
+- **`subagent_spawn`** starts a child. `name` and `task` are required. Calls can choose an agent, context, model, thinking, tools, directory, worktree, and exit behavior. Call values override agent definitions. Explicit `worktree: true` cannot be combined with `cwd`. Returns `started`, or `queued` at the concurrency limit (see Concurrency and the launch queue). Its rendered call always names the model state and effective context (`new` or `forked`): Pi children without a selected model say `inherits model`, unresolved Pi selections briefly say `model resolving`, successful selections settle to canonical `provider/model`, external children without a selection say `model harness default`, and historical rows that predate persisted model metadata say `model unknown`. It also exposes effective non-default launch behavior when the child is interactive (`autoExit: false`), uses a worktree, or uses a non-`pi` harness, whose exact name is shown.
 - **`subagent_available`** reports the fresh definition inventory only: each agent's source and routing markers, its `details` (or full `description` when `details` is absent), effective model and launch configuration, and definition problems. Use it to select an agent or diagnose definitions; it does not report child runs.
-- **`subagent_status`** reports every unresolved child instance, including queued launches and results still being delivered. Output is a flat list with each short id first and that instance's exact current state (`queued`, `starting`, `active`, `waiting`, `stalled`, or `delivering`), never an aggregate summary. Use it for one-shot lifecycle diagnosis, not polling.
+- **`subagent_status`** reports every unresolved child instance, including queued launches and results still being delivered. Model output is a flat labeled list with each short id first and that instance's exact current state (`queued`, `starting`, `active`, `waiting`, `stalled`, or `delivering`), never an aggregate summary. Its collapsed TUI call puts the configured expansion-key hint beside `subagent status`, followed by a blank line and every concise `id · agent · name · state` row; expansion reveals the detailed guidance. Use it for one-shot lifecycle diagnosis, not polling.
 - **`subagent_cancel`** resolves one short `id` against its current lifecycle state and cancels work that has not run or asks a running child to stop. It returns immediately: `cancelled` guarantees that no result will arrive, while `stopping` means a stopped notice will arrive asynchronously and must not be polled for. A running stop may leave partial work, and any worktree is kept. Interactive children may have a human working in their pane, so cancel an `autoExit: false` child only when the user clearly wants that.
 - **`subagent_resume`** handles help, retries, and follow-up while restoring launch identity. Use `id` in the same parent process, including after `/reload`; after restart use `sessionPath`. Autonomous resume requires a message. Message-free resume requires an effective `autoExit: false` for human control. A resume opens a new pane and process, so it consumes a concurrency slot exactly like a spawn and can return `queued` the same way.
 
 A blocked child calls `caller_ping` and exits. Its question wakes the parent, which answers with `subagent_resume({ id, message })`.
 
-The parent needs no discovery round trip: its system prompt ends with a compact catalogue of the effective agents for the working directory, one line per agent with its `description` and routing markers (`default`, `interactive`, `harness <name>`, or `not spawnable`). Each injected description is flattened to one line and truncated to 200 characters with an ellipsis, so a definition cannot grow the parent's context; the source text stays intact for the detailed surfaces. The catalogue is a snapshot taken at session start (including `/reload`, `/new`, and `/resume`) and refreshed whenever `subagent_available` or `/subagent-available` computes a fresh inventory. A snapshot that lags a mid-session file edit blocks nothing, because `subagent_spawn` reads definitions from disk at call time.
+The parent needs no discovery round trip: its system prompt ends with a compact catalogue of the effective agents for the working directory, one line per agent with its `description` and routing markers (`default`, `interactive`, `external: <name>`, `new-only`, or `not spawnable`). Each injected description is flattened to one line and truncated to 200 characters with an ellipsis, so a definition cannot grow the parent's context; the source text stays intact for the detailed surfaces. The catalogue is a snapshot taken at session start (including `/reload`, `/new`, and `/resume`) and refreshed whenever `subagent_available` or `/subagent-available` computes a fresh inventory. A snapshot that lags a mid-session file edit blocks nothing, because `subagent_spawn` reads definitions from disk at call time.
 
 ## Agent definitions and trust
 
 Definition filename stems are agent identifiers; their Markdown bodies extend the child system prompt. Identifiers are non-empty, contain no whitespace, and occupy at most 20 terminal display columns. Task display names remain free-form and may contain spaces. Only definition files with valid identifiers are discovered, and explicit invalid `agent` values are rejected. `<cwd>/.pi/subagents/` shadows `$PI_CODING_AGENT_DIR/subagents/`, normally `~/.pi/agent/subagents/`. A repository can replace `worker`, so inspect `.pi/subagents/` in untrusted repositories.
 
-Optional frontmatter keys are `description`, `details`, `models`, `thinking`, `tools`, `context`, `auto-exit`, `worktree`, `harness`, and `harness-pass-through`. Omitted model, thinking, and tools settings inherit Pi defaults; the other defaults are `fresh`, `true`, `false`, and `pi`. A model list is tried in order until a usable exact match is found (external harnesses instead take the first entry verbatim; see External harnesses). Call values override frontmatter, which overrides built-in defaults.
+Optional frontmatter keys are `description`, `details`, `models`, `thinking`, `tools`, `context`, `auto-exit`, `worktree`, `harness`, and `harness-pass-through`. Omitted model, thinking, and tools settings inherit Pi defaults; the other defaults are `new`, `true`, `false`, and `pi`. A model list is tried in order until a usable exact match is found (external harnesses instead take the first entry verbatim; see External harnesses). Call values override frontmatter, which overrides built-in defaults.
 
 `description` is the compact routing text: one sentence for the parent's injected catalogue, where it renders bounded to 200 characters. `details` is an optional expanded explanation for humans and explicit discovery, shown untruncated by `subagent_available` and beneath the description headline in `/subagent-available`. When it is absent, `subagent_available` shows the full `description` instead and the overview keeps its headline-only card, so description-only definitions work unchanged.
 
@@ -81,7 +81,7 @@ An agent definition can run its children as a different command-line coding tool
 - `harness:` names the tool. Absent or `pi` keeps today's behavior. `claude-code` runs the child as Claude Code. Unknown values make the agent unspawnable, loudly.
 - `harness-pass-through:` is a raw string of extra command-line flags appended verbatim to the launch command. Tool-specific flag knowledge lives here, not in the extension. It is also honored for `pi` children, with the same append-verbatim semantics.
 
-For external agents the other keys are reinterpreted in the tool's own vocabulary: the first `models:` entry is passed verbatim as the tool's model name (no Pi registry lookup), `tools:` becomes the tool's allowed-tools list using its own tool names (`--allowedTools` for Claude Code), and `thinking:` maps to the tool's effort setting (`--effort`; Pi's `minimal` maps to `low`, `low` through `max` pass through, and `off` is rejected because Claude Code silently ignores out-of-range values). `context: forked` is not supported: a Pi conversation cannot be transplanted into a different tool.
+For external agents the other keys are reinterpreted in the tool's own vocabulary: the first `models:` entry is passed verbatim as the tool's model name (no Pi registry lookup), `tools:` becomes the tool's allowed-tools list using its own tool names (`--allowedTools` for Claude Code), and `thinking:` maps to the tool's effort setting (`--effort`; Pi's `minimal` maps to `low`, `low` through `max` pass through, and `off` is rejected because Claude Code silently ignores out-of-range values). External sub-agents are new-only; `forked` is a Pi-harness capability because a Pi conversation cannot be transplanted into a different tool.
 
 A Claude Code recipe:
 
@@ -149,7 +149,7 @@ Completion, failure, user stop, and help are explicit. Results include resume gu
 
 Results reach the parent through Pi's steering queue. Under Pi's default `steeringMode` setting, `"one-at-a-time"`, queued results deliver one per turn boundary, so several children finishing while the parent is working arrive spread across its following turns, each answered separately. Set `steeringMode` to `"all"` in Pi's settings to receive every queued result at the next boundary at once.
 
-A successful `/reload` preserves running children, pending cleanup and delivery, and short ids within the same parent Pi process. If the replacement extension fails to load, preserved children are stopped after a 30-second handoff timeout. Quit, `/new`, `/resume`, `/fork`, crashes, and process restarts do not reconstruct live supervision, though session files and retained worktrees survive where possible. If sending a result throws, a later successful `/reload` can retry it. If Escape interrupts a streaming parent before an accepted queued result lands, Pi can drop it; a permanently `delivering` row is the signal. The extension does not resend accepted results because that could duplicate one that landed.
+A successful `/reload` preserves running children, pending cleanup and delivery, and short ids within the same parent Pi process. If the replacement extension fails to load, preserved children are stopped after a 30-second handoff timeout. Quit, `/new`, `/resume`, `/fork`, crashes, and process restarts do not reconstruct live supervision, though session files and retained worktrees survive where possible. If sending a result throws, the next normally completed parent run or a later successful `/reload` retries it. Escape can drop a result queued behind a streaming parent, leaving its row in `delivering` temporarily. After the next normally completed parent run proves the queued copy is gone, the extension redelivers it; each row clears when its result actually lands, without duplicating outcomes.
 
 ## Configuration
 
@@ -161,20 +161,20 @@ Settings resolve from built-in defaults, then `$PI_CODING_AGENT_DIR/subagents.js
 | `mainWidth` | `60%` |
 | `maxConcurrentSubagents` | `9` (`1` through `9`; further launches queue) |
 | `callPreviewLines` | `3` (start and resume calls, `0` through `20`) |
-| `resultPreviewLines` | `5` (completed, failed, and stopped results, `0` through `20`) |
+| `resultPreviewLines` | `3` (completed, failed, and stopped results, `0` through `20`) |
 | `widgetMaxRows` | `5` (positive integer; compact-widget detailed-row cap) |
 | `worktreeCreateCommand` | Built-in Git creation under `.pi/worktrees/` |
 | `worktreeCleanupCommand` | Built-in Git removal and branch deletion when applicable |
 | `worktreeCleanupMode` | `auto` (`never` always keeps worktrees) |
 
-Preview limits count visual lines after sanitized, whitespace-flattened text wraps to the current terminal width. A value of `0` keeps only the collapsed header. Results add an ellipsis when the line limit hides more preview text; start and resume calls rely on the configured expansion-key hint instead. Persisted result previews keep at most 2,000 source code points plus an ellipsis, so that storage ceiling can be reached before a high visual-line limit on a very wide terminal. Expansion preserves the complete existing content, including Markdown rendering for results.
+Preview limits count visual lines after sanitized, whitespace-flattened text wraps to the current terminal width. A value of `0` removes the preview. Collapsed results keep status and elapsed time in the header, then the preview, then a final footer with available context/result sizes and the configured expansion-key hint. Results add an ellipsis when the line limit hides more preview text; start and resume calls rely on the configured expansion-key hint instead. Persisted result previews keep at most 2,000 source code points plus an ellipsis, so that storage ceiling can be reached before a high visual-line limit on a very wide terminal. Expansion preserves the complete existing content, including Markdown rendering for results. Expanded results place worktree, session, and resume guidance below the response, then end with a separated context/result/cost line.
 
 Every key has a matching environment override named `PI_SUBAGENT_` plus the key in SCREAMING_SNAKE (for example `PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS` and `PI_SUBAGENT_WIDGET_MAX_ROWS`):
 
 ```json
 {
   "callPreviewLines": 3,
-  "resultPreviewLines": 5,
+  "resultPreviewLines": 3,
   "widgetMaxRows": 5
 }
 ```

@@ -83,7 +83,7 @@ const spec: SpawnSpec = {
 	agentName: "worker",
 	harness: "pi",
 	agentBody: "",
-	context: "fresh",
+	context: "new",
 	autoExit: true,
 	useWorktree: true,
 	parentCwd: process.cwd(),

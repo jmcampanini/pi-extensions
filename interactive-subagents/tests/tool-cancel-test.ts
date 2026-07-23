@@ -46,7 +46,7 @@ function spawnSpec(id: string, name: string): SpawnSpec {
 		agentName: "worker",
 		harness: "pi",
 		agentBody: "",
-		context: "fresh",
+		context: "new",
 		autoExit: true,
 		useWorktree: false,
 		cwd: "/repo",

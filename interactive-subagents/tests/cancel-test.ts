@@ -30,7 +30,7 @@ function spawnSpec(id: string, overrides: Partial<SpawnSpec> = {}): SpawnSpec {
 		agentName: "worker",
 		harness: "pi",
 		agentBody: "",
-		context: "fresh",
+		context: "new",
 		autoExit: true,
 		useWorktree: false,
 		cwd: "/repo",

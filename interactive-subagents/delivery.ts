@@ -1,32 +1,26 @@
 /**
- * delivery.ts - observing our own result messages landing in the parent
- * transcript, so the widget can stop showing a finished child.
+ * delivery.ts - observing result messages and proving when queued ones were
+ * dropped before reaching the parent transcript.
  *
- * Why this exists: pi delivers steered messages one at a time, only at the
- * parent's next turn boundary. When the parent is mid-turn, a child's result
- * can sit queued for minutes after its pane closed. The watcher parks exited
- * children in state.ts's delivering map instead of deleting their widget
- * row; this listener removes the row only when the message ACTUALLY lands.
- * When the parent is idle the whole cycle takes microseconds and the state
- * just flashes.
+ * Why this exists: pi delivers steered messages one at a time at parent turn
+ * boundaries. The watcher parks an exited child in state.ts's delivering map
+ * until message_end proves its result landed. Escape can silently clear a
+ * queued custom steer, so run lifecycle events provide the complementary
+ * proof: after a normally settled run, a delivery accepted before that run
+ * either landed or was dropped. A record still parked in the map was dropped
+ * and its finalizer can safely send the same envelope again.
  *
- * pi API in play: pi.on("message_end", handler) fires for every message
- * appended to the agent transcript - including this extension's own
- * pi.sendMessage sends. It fires ONLY for messages that travel the agent
- * event stream, which is exactly what the watcher's
- * { triggerTurn: true, deliverAs: "steer" } options guarantee; a send
- * without them would deliver invisibly and strand its row forever.
- *
- * The deliberate gap: if the human presses Escape while the parent streams,
- * pi drops the queued steer silently - no event ever fires, nothing can be
- * polled - and the row sticks. That stuck "delivering" row is the one honest
- * signal that a result was lost. /reload preserves it; an accepted send is
- * never guessed lost and re-sent.
+ * agent_start stamps a process-stable counter. agent_end classifies the most
+ * recent run, while agent_settled waits until retries, compaction, and queued
+ * continuations are finished before applying the proof. Aborted, errored, or
+ * ambiguous runs prove nothing. A delivery accepted during the settled run
+ * also waits because it may have missed that run's final steering poll.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { delivering } from "./state.ts";
+import { delivering, deliveryRecords, incrementRunIndex, type DeliveryRecord } from "./state.ts";
 import { updateRunningWidget } from "./running-widget.ts";
+import { startFinalizer } from "./watcher.ts";
 
 /**
  * Pure matcher: the delivering-map key confirmed by a landed message, or
@@ -49,19 +43,73 @@ export function deliveredChildId(message: unknown): string | undefined {
 	return typeof id === "string" ? id : undefined;
 }
 
+/** Whether a record can be safely re-armed after a normal settlement. */
+export function needsRedelivery(record: DeliveryRecord, settledRunStartIndex: number): boolean {
+	if (record.sendAccepted === false) return true;
+	return record.sendAccepted === true
+		&& typeof record.sendAcceptedRunIndex === "number"
+		&& record.sendAcceptedRunIndex < settledRunStartIndex;
+}
+
+/** Conservative classifier for the most recent agent_end. */
+export function agentEndWasNormal(event: unknown): boolean {
+	if (typeof event !== "object" || event === null) return false;
+	const messages = (event as { messages?: unknown }).messages;
+	if (!Array.isArray(messages)) return false;
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (typeof message !== "object" || message === null) continue;
+		const assistant = message as { role?: unknown; stopReason?: unknown };
+		if (assistant.role !== "assistant") continue;
+		return typeof assistant.stopReason === "string"
+			&& assistant.stopReason !== "aborted"
+			&& assistant.stopReason !== "error";
+	}
+	return false;
+}
+
+function retryDroppedDeliveries(pi: ExtensionAPI, settledRunStartIndex: number): void {
+	for (const record of [...deliveryRecords()]) {
+		if (!needsRedelivery(record, settledRunStartIndex)) continue;
+		record.sendAccepted = undefined;
+		record.sendAcceptedRunIndex = undefined;
+		record.finalizerGeneration = undefined;
+		startFinalizer(pi, record);
+	}
+}
+
 /**
  * Registered once at activation (parent mode only, index.ts), BEFORE any
  * child can exist: on an idle parent, message_end for a result fires within
  * microtasks of the watcher's pi.sendMessage call, so late registration
- * would miss it. The body stays trivial on purpose - pi survives a throwing
- * handler but the row would be stranded. Unknown ids are normal after a
- * destructive session boundary, and Map.delete is idempotent, so redelivery
- * is harmless too.
+ * would miss it. Unknown ids are normal after a destructive session
+ * boundary, and Map.delete is idempotent, so redelivery is harmless too.
  */
 export function registerDeliveryListener(pi: ExtensionAPI): void {
+	let lastRunStartIndex: number | undefined;
+	let lastRunEndedNormally = false;
+
 	pi.on("message_end", (event) => {
 		const id = deliveredChildId(event.message);
 		if (id === undefined) return;
 		if (delivering.delete(id)) updateRunningWidget();
+	});
+
+	pi.on("agent_start", () => {
+		lastRunStartIndex = incrementRunIndex();
+		lastRunEndedNormally = false;
+	});
+
+	pi.on("agent_end", (event) => {
+		lastRunEndedNormally = agentEndWasNormal(event);
+	});
+
+	pi.on("agent_settled", () => {
+		const settledRunStartIndex = lastRunStartIndex;
+		const settledNormally = lastRunEndedNormally;
+		lastRunStartIndex = undefined;
+		lastRunEndedNormally = false;
+		if (!settledNormally || settledRunStartIndex === undefined) return;
+		retryDroppedDeliveries(pi, settledRunStartIndex);
 	});
 }

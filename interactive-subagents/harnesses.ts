@@ -38,7 +38,6 @@
 import { readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SENTINEL_ECHO_SUFFIX } from "./protocol.ts";
 import { shellQuote } from "./tmux.ts";
 
 // ── the external sidecars ────────────────────────────────────────────────
@@ -129,7 +128,7 @@ export interface HarnessProfile {
 	mapEffort(thinking: string): string;
 	/** Map the frontmatter `tools:` list to the tool's allowed-tools argument. */
 	mapTools(tools: string): string;
-	/** How a fresh task tells the child its run ends (appended to the task).
+	/** How a new-context task tells the child its run ends (appended to the task).
 	 * Must not mention pi-only control tools - external children have none. */
 	completionInstruction(autoExit: boolean): string;
 	buildLaunchCommand(options: HarnessCommandOptions): string;
@@ -231,30 +230,26 @@ export const claudeCodeProfile: HarnessProfile = {
 	},
 	buildLaunchCommand(options: HarnessCommandOptions): string {
 		if (!options.taskFile) throw new Error("claude-code launch needs a task file.");
-		return (
-			[
-				`cd ${shellQuote(options.cwd)} &&`,
-				`claude --settings ${shellQuote(claudeLifecycleSettings(options.anchor, options.runId, options.autoExit))}`,
-				...claudeIdentityFlags(options),
-				catArg(options.taskFile),
-			]
-				.filter((part) => part !== "")
-				.join(" ") + SENTINEL_ECHO_SUFFIX
-		);
+		return [
+			`cd ${shellQuote(options.cwd)} &&`,
+			`claude --settings ${shellQuote(claudeLifecycleSettings(options.anchor, options.runId, options.autoExit))}`,
+			...claudeIdentityFlags(options),
+			catArg(options.taskFile),
+		]
+			.filter((part) => part !== "")
+			.join(" ");
 	},
 	buildResumeCommand(options: HarnessCommandOptions): string {
 		if (!options.resumeSessionId) throw new Error("claude-code resume needs the recorded session id.");
-		return (
-			[
-				`cd ${shellQuote(options.cwd)} &&`,
-				`claude --resume ${shellQuote(options.resumeSessionId)}`,
-				`--settings ${shellQuote(claudeLifecycleSettings(options.anchor, options.runId, options.autoExit))}`,
-				...claudeIdentityFlags(options),
-				options.messageFile ? catArg(options.messageFile) : "",
-			]
-				.filter((part) => part !== "")
-				.join(" ") + SENTINEL_ECHO_SUFFIX
-		);
+		return [
+			`cd ${shellQuote(options.cwd)} &&`,
+			`claude --resume ${shellQuote(options.resumeSessionId)}`,
+			`--settings ${shellQuote(claudeLifecycleSettings(options.anchor, options.runId, options.autoExit))}`,
+			...claudeIdentityFlags(options),
+			options.messageFile ? catArg(options.messageFile) : "",
+		]
+			.filter((part) => part !== "")
+			.join(" ");
 	},
 };
 
@@ -265,6 +260,11 @@ export const claudeCodeProfile: HarnessProfile = {
 const HARNESS_PROFILES: Record<string, HarnessProfile> = {
 	[claudeCodeProfile.name]: claudeCodeProfile,
 };
+
+/** True when the harness is an external tool rather than pi itself. */
+export function isExternalHarness(harness: string): boolean {
+	return harness !== "pi";
+}
 
 /** The names external children can use in `harness:` frontmatter. */
 export function externalHarnessNames(): string[] {

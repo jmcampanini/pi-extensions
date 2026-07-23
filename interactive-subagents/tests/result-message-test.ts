@@ -52,24 +52,38 @@ const oversizedPresentation = resultPresentation("completed", 1, "x".repeat(10_0
 eq("persisted preview is bounded without affecting message content", Array.from(oversizedPresentation.preview).length, 2001);
 eq("bounded persisted preview marks omitted text", oversizedPresentation.preview.endsWith("…"), true);
 
-const completed = formatCollapsedSubagentResult(details("completed"), 120, 5, "Ctrl+O").map(plain);
-eq("completed uses compact native tool identity and size metadata", completed[0],
-	"subagent result · code-reviewer · API review · done 2m14s · 84k ctx · ~1.8k result (Ctrl+O)");
+const completed = formatCollapsedSubagentResult(details("completed"), 120, 5, "ctrl+o").map(plain);
+eq("completed header keeps identity, outcome, and elapsed time", completed[0],
+	"subagent result · code-reviewer · API review · done 2m14s");
 eq("completed separates its preview from the header", completed[1], "");
 eq("completed includes its preview without extra indentation", completed[2], "Found two authentication bypass risks in the token refresh path.");
+eq("completed separates its footer from the preview", completed[3], "");
+eq("completed footer carries sizes and the expansion hint", completed[4],
+	"84k ctx · ~1.8k result (ctrl+o to expand)");
 const failed = formatCollapsedSubagentResult(details("failed", "Provider authentication expired."), 120, 5, "Ctrl+O").map(plain);
-eq("failed is explicit without a status icon", failed[0],
-	"subagent result · code-reviewer · API review · failed 2m14s · 84k ctx · ~1.8k result (Ctrl+O)");
+eq("failed is explicit without header metrics", failed[0],
+	"subagent result · code-reviewer · API review · failed 2m14s");
 const stoppedDetails = { ...details("stopped", "No final result was delivered."), resultTokens: undefined };
 const stopped = formatCollapsedSubagentResult(stoppedDetails, 120, 5, "Ctrl+O").map(plain);
-eq("stopped omits unavailable result size", stopped[0],
-	"subagent result · code-reviewer · API review · stopped 2m14s · 84k ctx (Ctrl+O)");
+eq("stopped omits unavailable result size from its footer", stopped.at(-1),
+	"84k ctx (Ctrl+O to expand)");
+const resultOnly = formatCollapsedSubagentResult({
+	...details("completed"),
+	contextTokens: undefined,
+}, 120, 5, "Ctrl+O").map(plain);
+eq("collapsed footer can show only a result size", resultOnly.at(-1), "~1.8k result (Ctrl+O to expand)");
+const sizesUnavailable = formatCollapsedSubagentResult({
+	...details("completed"),
+	contextTokens: undefined,
+	resultTokens: undefined,
+}, 120, 0, "Ctrl+O").map(plain);
+eq("collapsed footer remains useful when sizes are unavailable", sizesUnavailable.at(-1), "(Ctrl+O to expand)");
 eq("status headers have no leading symbols", [completed[0], failed[0], stopped[0]].every((line) => line.startsWith("subagent result ")), true);
 const styledHint = formatCollapsedSubagentResult(
 	details("completed"),
 	500,
 	5,
-	"Ctrl+O",
+	"ctrl+o",
 	{
 		visibleWidth,
 		truncateToWidth,
@@ -83,21 +97,29 @@ const styledHint = formatCollapsedSubagentResult(
 		preview: (text) => text,
 	},
 ).join("\n");
-eq("collapsed expansion key supports dim hint styling", styledHint.includes("<dim>Ctrl+O</dim>"), true);
+eq("collapsed expansion hint supports dim styling", styledHint.includes("<dim>(ctrl+o to expand)</dim>"), true);
+const customHintFooter = formatCollapsedSubagentResult(details("completed"), 120, 0, "f6").map(plain).at(-1);
+eq("collapsed footer accepts a configured expansion binding", customHintFooter?.endsWith("(f6 to expand)"), true);
 
 const longPreview = Array.from({ length: 40 }, (_, index) => `finding-${index}`).join(" ");
 const bounded = formatCollapsedSubagentResult(details("completed", longPreview), 42, 5, "Ctrl+O");
-eq("collapsed output has one header, one spacer, and five preview lines", bounded.length, 7);
+eq("collapsed output has a header, five preview lines, and a footer", bounded.length, 9);
 eq("truncated preview advertises omitted content", plain(bounded[6]).endsWith("…"), true);
-const headerOnly = formatCollapsedSubagentResult(details("completed", longPreview), 120, 0, "Ctrl+O");
-eq("zero result preview lines render only the header", headerOnly.length, 1);
-eq("header-only results retain the compact expansion key", plain(headerOnly[0]).endsWith("(Ctrl+O)"), true);
+eq("collapsed hint remains on the final line", plain(bounded.at(-1) ?? "").endsWith("(Ctrl+O to expand)"), true);
+const headerOnly = formatCollapsedSubagentResult(details("completed", longPreview), 120, 0, "Ctrl+O").map(plain);
+eq("zero result preview lines still render the footer", headerOnly.length, 3);
+eq("zero result preview separates header and footer", headerOnly[1], "");
+eq("zero result preview retains sizes and expansion guidance", headerOnly[2],
+	"84k ctx · ~1.8k result (Ctrl+O to expand)");
 const twentyLineResult = formatCollapsedSubagentResult(details("completed", longPreview.repeat(4)), 16, 20, "");
-eq("maximum result preview line limit is honored", twentyLineResult.length, 22);
-eq("maximum result preview still marks omitted content", plain(twentyLineResult.at(-1) ?? "").endsWith("…"), true);
+eq("maximum result preview line limit is honored", twentyLineResult.length, 24);
+eq("maximum result preview still marks omitted content", plain(twentyLineResult.at(-3) ?? "").endsWith("…"), true);
 const narrowHeader = plain(formatCollapsedSubagentResult(details("completed"), 40, 5, "Ctrl+O")[0] ?? "");
-eq("narrow headers preserve a clipped agent profile before the name", narrowHeader.includes("· co"), true);
-eq("narrow headers preserve the result status", narrowHeader.endsWith("· done"), true);
+eq("narrow headers preserve clipped identity when it fits before elapsed time", narrowHeader.includes("· c"), true);
+eq("narrow headers preserve status and elapsed time", narrowHeader.endsWith("· done 2m14s"), true);
+const timedStatusOnlyHeader = plain(formatCollapsedSubagentResult(details("completed"), 30, 5, "Ctrl+O")[0] ?? "");
+eq("narrow headers drop optional identity before elapsed time", timedStatusOnlyHeader,
+	"subagent result · done 2m14s");
 const statusOnlyHeader = plain(formatCollapsedSubagentResult(details("failed"), 20, 5, "Ctrl+O")[0] ?? "");
 eq("very narrow headers prioritize exceptional status", statusOnlyHeader.includes("failed"), true);
 for (const width of [0, 1, 2, 8, 20, 40, 80]) {
@@ -209,7 +231,9 @@ eq("collapsed renderer uses native vertical padding", [collapsedShellLines[0], c
 eq("collapsed header receives native horizontal padding", collapsedShellLines[1]?.startsWith(" subagent result"), true);
 eq("collapsed body keeps a native spacer", collapsedShellLines[2], "");
 eq("collapsed preview relies only on boxed horizontal padding", collapsedShellLines[3]?.startsWith(" Found two"), true);
-eq("collapsed result hint omits redundant explanatory copy", collapsedShellLines.join("\n").includes("to expand"), false);
+eq("collapsed footer keeps a native spacer", collapsedShellLines[4], "");
+eq("collapsed footer is the final content line",
+	collapsedShellLines.at(-2)?.trimStart().startsWith("84k ctx · ~1.8k result"), true);
 eq("completed shell uses the tool-success background", backgroundColors.includes("toolSuccessBg"), true);
 eq("completed shell does not use the custom-message background", backgroundColors.includes("customMessageBg"), false);
 for (const status of ["completed", "failed", "stopped"] as const) {
@@ -238,25 +262,42 @@ for (const status of ["completed", "failed", "stopped"] as const) {
 	eq(`${status} uses accent styling for the task name`, styledOutput.includes("<accent>API review</accent>"), true);
 	eq(`${status} uses muted separator and agent metadata`, styledOutput.includes("<muted> · </muted><muted>code-reviewer</muted><muted> · </muted>"), true);
 	eq(`${status} uses muted status metadata`, styledOutput.includes(`<muted> · ${status === "completed" ? "done" : status} 2m14s</muted>`), true);
-	eq(`${status} uses muted size metadata`, styledOutput.includes("<muted> · 84k ctx · ~1.8k result</muted>"), true);
+	eq(`${status} omits size metadata from the header`, styledOutput.includes("2m14s</muted><muted> · 84k"), false);
+	eq(`${status} uses muted size metadata in the footer`, styledOutput.includes("<muted>84k ctx · ~1.8k result</muted>"), true);
 	eq(`${status} has no legacy status icon`, /[✓✗■]/u.test(styledOutput), false);
 }
 const expandedLines = expandedComponent?.render(60) ?? [];
 const expandedPlainLines = expandedLines.map(plain);
 const expandedText = expandedPlainLines.join("\n");
-const expandedWideText = expandedComponent?.render(120).map(plain).join("\n") ?? "";
+const expandedWideLines = expandedComponent?.render(120).map(plain) ?? [];
+const expandedWideText = expandedWideLines.join("\n");
 eq("expanded renderer uses native vertical padding", [expandedPlainLines[0], expandedPlainLines.at(-1)], ["", ""]);
 eq("expanded content receives native horizontal padding",
 	expandedPlainLines.filter(Boolean).every((line) => line.startsWith(" ")), true);
-eq("expanded result uses the compact native header",
-	expandedWideText.includes("subagent result · code-reviewer · API review · done 2m14s · 84k ctx · ~1.8k result"), true);
+eq("expanded result uses the outcome-only native header",
+	expandedWideText.includes("subagent result · code-reviewer · API review · done 2m14s"), true);
+eq("expanded result omits size metrics from its header",
+	expandedWideText.includes("done 2m14s · 84k ctx"), false);
 eq("expanded result renders the complete child response", expandedText.includes("TAIL_SENTINEL"), true);
 eq("expanded result does not render envelope labels", expandedText.includes("Status: completed"), false);
 eq("expanded result does not render response delimiters", expandedText.includes("<result>"), false);
-eq("expanded result shows compact cost metadata", expandedText.includes("cost this run $0.31"), true);
-eq("expanded result shows the session path", expandedText.includes("/sessions/child.jsonl"), true);
-eq("expanded result shows resume guidance", expandedText.includes("resume subagent_resume"), true);
-eq("expanded result shows the worktree outcome", expandedText.includes("Worktree: kept"), true);
+const sessionLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("session "));
+const resumeLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("resume "));
+const metricsLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("context 84k"));
+eq("expanded footer orders session and resume above the final run metrics",
+	sessionLineIndex > 0 && resumeLineIndex === sessionLineIndex + 1 && metricsLineIndex === resumeLineIndex + 2, true);
+eq("expanded footer separates resume guidance from final run metrics",
+	expandedWideLines[resumeLineIndex + 1], "");
+eq("expanded footer ends with context, result, and cost metrics",
+	metricsLineIndex === expandedWideLines.length - 2 &&
+	expandedWideLines[metricsLineIndex]?.trimStart() === "context 84k · result ~1.8k · cost this run $0.31", true);
+eq("expanded result shows the session path", expandedWideLines[sessionLineIndex]?.trimStart(),
+	"session /sessions/child.jsonl");
+eq("expanded result shows resume guidance", expandedWideLines[resumeLineIndex]?.trimStart(),
+	'resume subagent_resume({ id: "abc12345", message: "..." })');
+eq("expanded result shows the worktree outcome before session metadata",
+	expandedWideLines.findIndex((line) => line.includes("Worktree: kept")) < sessionLineIndex, true);
+eq("expanded result has no expansion hint", expandedText.includes("to expand"), false);
 eq("expanded result strips terminal controls", expandedLines.join("").includes("\x1b]52"), false);
 eq("expanded rendering does not mutate model-facing content", message.content, originalContent);
 
@@ -265,8 +306,8 @@ eq("expanded result styles its title as a tool title",
 	structuredMarked.includes("<toolTitle>subagent result</toolTitle>"), true);
 eq("expanded result styles session paths as accents",
 	structuredMarked.includes("<accent>/sessions/child.jsonl</accent>"), true);
-eq("expanded result styles footer labels as metadata",
-	structuredMarked.includes("<muted>cost this run $0.31</muted>"), true);
+eq("expanded result styles footer metrics as metadata",
+	structuredMarked.includes("<muted>context 84k · result ~1.8k · cost this run $0.31</muted>"), true);
 
 const failedResponse = "The provider returned partial output.";
 const failedEnvelope = buildSubagentResultEnvelope({
@@ -331,6 +372,8 @@ const stoppedStructuredMessage = {
 };
 const stoppedStructuredText = renderer?.(stoppedStructuredMessage, { expanded: true }, theme)?.render(100).map(plain).join("\n") ?? "";
 eq("expanded stopped result shows its notice", stoppedStructuredText.includes(stoppedNotice), true);
+eq("expanded stopped footer includes only available run metrics",
+	stoppedStructuredText.includes("context 84k · cost this run $0.02") && !stoppedStructuredText.includes("result ~"), true);
 eq("expanded stopped result shows resume guidance", stoppedStructuredText.includes("resume subagent_resume"), true);
 
 for (const width of [1, 2, 8, 20, 60]) {
@@ -357,7 +400,7 @@ eq("watcher emits result token details", watcherSource.includes("resultTokens,\n
 eq("watcher builds labeled model-facing envelopes", watcherSource.includes("buildSubagentResultEnvelope({"), true);
 eq("watcher passes envelope response boundaries to the TUI", watcherSource.includes("response: envelope.response"), true);
 eq("watcher keeps structured expanded details out of model-facing content",
-	watcherSource.includes("expanded,\n\t\t\t\tpresentation,"), true);
+	watcherSource.includes("expanded,\n\t\t\tpresentation,"), true);
 eq("result renderer resolves the configured expansion binding",
 	resultMessageSource.includes('keyText("app.tools.expand")'), true);
 eq("parent extension registers the result renderer", indexSource.includes("registerSubagentResultRenderer(pi)"), true);
