@@ -284,7 +284,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			const profile = isExternalHarness(harness) ? requireHarnessProfile(harness) : undefined;
 			// The frontmatter combination is already a problem (checked above);
 			// this catches an explicit context param against an external agent.
-			if (isExternalHarness(harness) && context === "forked") {
+			if (profile && context === "forked") {
 				throw new Error(
 					`Agent "${agentName}" runs on the external harness "${harness}" - external sub-agents are new-only: a pi conversation cannot be transplanted into a different tool. Use context "new".`,
 				);

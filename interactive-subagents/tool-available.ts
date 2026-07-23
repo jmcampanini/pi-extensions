@@ -16,7 +16,6 @@ import {
 } from "./agents.ts";
 import { updateCatalogue } from "./catalogue.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
-import { isExternalHarness } from "./harnesses.ts";
 
 export interface AvailablePresentation {
 	version: 1;
@@ -41,14 +40,15 @@ export interface AvailableCardStyle {
 
 function availableMarkers(agent: AgentInfo): string[] {
 	const markers: string[] = [];
+	const mode = contextMode(agent);
 	if (agent.name === "worker") markers.push("default");
 	if (agent.source === "project") markers.push("project");
-	if (contextMode(agent) === "forked") markers.push("forked");
+	if (mode === "forked") markers.push(mode);
 	if (!agent.autoExit) markers.push("interactive");
 	if (agent.worktree) markers.push("worktree");
-	if (isExternalHarness(agent.harness)) {
+	if (mode === "new-only") {
 		markers.push(`external: ${safeInline(agent.harness)}`);
-		markers.push(contextMode(agent));
+		markers.push(mode);
 	}
 	return markers;
 }
@@ -57,6 +57,7 @@ export function formatAvailableModelText(inventory: readonly AgentInfo[]): strin
 	if (inventory.length === 0) return "No available subagent definitions.";
 	return inventory.map((agent) => {
 		const markers = availableMarkers(agent);
+		const mode = contextMode(agent);
 		const suffix = markers.length > 0 ? ` (${markers.join(", ")})` : "";
 		const problems = agent.problems.length > 0
 			? ` [not spawnable: ${safeInline(agent.problems.join("; "))}]`
@@ -70,10 +71,10 @@ export function formatAvailableModelText(inventory: readonly AgentInfo[]): strin
 		const config = [
 			`source ${agent.source}`,
 			model,
-			`context ${contextMode(agent)}`,
+			`context ${mode}`,
 			agent.autoExit ? "autonomous" : "interactive",
 			agent.worktree ? "worktree" : "shared checkout",
-			isExternalHarness(agent.harness) ? `external: ${agent.harness}` : `harness ${agent.harness}`,
+			mode === "new-only" ? `external: ${agent.harness}` : `harness ${agent.harness}`,
 			...(agent.thinking ? [`thinking ${agent.thinking}`] : []),
 			...(agent.tools ? [`tools ${agent.tools}`] : []),
 			...(agent.harnessPassThrough ? [`pass-through ${agent.harnessPassThrough}`] : []),

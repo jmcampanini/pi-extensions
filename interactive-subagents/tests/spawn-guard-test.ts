@@ -175,12 +175,10 @@ exit 64
 		ctx,
 	);
 	const tmuxCalls = (): string[] => readFileSync(tmuxLog, "utf8").trim().split("\n").filter(Boolean);
-	const assertNoLaunchState = (stage: string): void => {
+	const assertNoLaunchSideEffects = (stage: string): void => {
 		eq(`${stage} leaves the launch queue empty`, capacityModule.queuedCount(), 0);
 		eq(`${stage} leaves no launch claim`, capacityModule.pendingLaunchCount(), 0);
 		eq(`${stage} leaves no running child`, stateModule.running.size, 0);
-	};
-	const assertNoFilesystemSideEffects = (stage: string): void => {
 		eq(`${stage} creates no files or directories`, treeEntries(root), baselineTree);
 		ok(`${stage} creates no session artifacts`, !existsSync(artifactRoot));
 		ok(`${stage} creates no child session or metadata`, !existsSync(generatedSessionsRoot));
@@ -192,8 +190,7 @@ exit 64
 		await thrownMessage(() => execute("claude-code")),
 		'Agent "claude-code" runs on the external harness "claude-code" - external sub-agents are new-only: a pi conversation cannot be transplanted into a different tool. Use context "new".',
 	);
-	assertNoLaunchState("external guard");
-	assertNoFilesystemSideEffects("external guard");
+	assertNoLaunchSideEffects("external guard");
 	eq(
 		"external guard checks tmux availability but creates no pane",
 		tmuxCalls(),
@@ -206,8 +203,7 @@ exit 64
 		await thrownMessage(() => execute("pi-agent")),
 		"Cannot fork yet: the parent session file has not been written to disk. Try again after this reply, or use context 'new'.",
 	);
-	assertNoLaunchState("pi positive control");
-	assertNoFilesystemSideEffects("pi positive control");
+	assertNoLaunchSideEffects("pi positive control");
 	eq(
 		"pi positive control also creates no pane",
 		tmuxCalls(),

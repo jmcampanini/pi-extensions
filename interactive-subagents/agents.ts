@@ -338,9 +338,10 @@ export function formatAgentCatalogue(inventory: AgentInfo[]): string | undefined
 		}
 		const markers: string[] = [];
 		if (agent.name === "worker") markers.push("default");
-		if (isExternalHarness(agent.harness)) {
+		const mode = contextMode(agent);
+		if (mode === "new-only") {
 			markers.push(`external: ${agent.harness}`);
-			markers.push(contextMode(agent));
+			markers.push(mode);
 		}
 		if (!agent.autoExit) markers.push("interactive");
 		const tag = markers.length > 0 ? `${agent.name} (${markers.join(", ")})` : agent.name;
@@ -570,16 +571,17 @@ export function formatAgentOverviewLines(
 		// Meta row: only what deviates from a plain default agent — a fully
 		// default one gets no row at all. Run-behavior deviations render loud.
 		const parts: { text: string; paint: (text: string) => string }[] = [];
+		const mode = contextMode(agent);
 		// A non-pi harness changes what program runs the child entirely - the
 		// loudest deviation there is, so it leads the row.
-		if (isExternalHarness(agent.harness)) {
+		if (mode === "new-only") {
 			parts.push({ text: agent.harness, paint: warning });
-			parts.push({ text: contextMode(agent), paint: warning });
+			parts.push({ text: mode, paint: warning });
 		}
 		if (agent.thinking) parts.push({ text: `thinking ${agent.thinking}`, paint: muted });
 		if (agent.tools) parts.push({ text: `tools: ${agent.tools}`, paint: muted });
 		if (agent.harnessPassThrough) parts.push({ text: `pass-through: ${agent.harnessPassThrough}`, paint: muted });
-		if (contextMode(agent) === "forked") parts.push({ text: "forked", paint: warning });
+		if (mode === "forked") parts.push({ text: mode, paint: warning });
 		if (!agent.autoExit) parts.push({ text: "interactive", paint: warning });
 		// Worktree isolation changes where the child runs — a run-behavior
 		// deviation, so it renders loud like forked/interactive.
