@@ -202,7 +202,6 @@ function availableWidth(width: number): number {
 function formatHeader(
 	details: SubagentResultDetails,
 	width: number,
-	hint: string,
 	metrics: ResultMetrics,
 	style: ResultStyle,
 ): string {
@@ -218,11 +217,6 @@ function formatHeader(
 	const prefix = titleText + agentText;
 	const statusText = style.metadata(` · ${status} ${duration}`);
 	const shortStatusText = style.metadata(` · ${status}`);
-	const sizeParts: string[] = [];
-	if (details.contextTokens !== undefined) sizeParts.push(`${formatTokens(details.contextTokens)} ctx`);
-	if (details.resultTokens !== undefined) sizeParts.push(`~${formatTokens(details.resultTokens)} result`);
-	const sizeText = sizeParts.length > 0 ? style.metadata(` · ${sizeParts.join(" · ")}`) : "";
-	const hintText = hint ? style.metadata(" (") + style.hint(hint) + style.metadata(")") : "";
 	const minimumNameWidth = Math.min(4, metrics.visibleWidth(name));
 
 	function withFullAgent(suffixes: string[]): string | undefined {
@@ -252,27 +246,45 @@ function formatHeader(
 		);
 	}
 
-	if (sizeText) {
-		const sized = withFullAgent(hintText
-			? [statusText + sizeText + hintText, statusText + sizeText, shortStatusText + sizeText]
-			: [statusText + sizeText, shortStatusText + sizeText]);
-		if (sized !== undefined) return sized;
-		const clippedSized = withClippedAgent(shortStatusText + sizeText);
-		if (clippedSized !== undefined) return clippedSized;
-	}
+	const timedHeading = withFullAgent([statusText]);
+	if (timedHeading !== undefined) return timedHeading;
+	const clippedTimedHeading = withClippedAgent(statusText);
+	if (clippedTimedHeading !== undefined) return clippedTimedHeading;
+	const timedStatusOnly = titleText + statusText;
+	if (metrics.visibleWidth(timedStatusOnly) <= width) return timedStatusOnly;
 
-	const unsized = withFullAgent(sizeText
-		? [statusText, shortStatusText]
-		: hintText
-			? [statusText + hintText, statusText, shortStatusText]
-			: [statusText, shortStatusText]);
-	if (unsized !== undefined) return unsized;
-	const clipped = withClippedAgent(shortStatusText);
-	if (clipped !== undefined) return clipped;
-
+	const shortHeading = withFullAgent([shortStatusText]);
+	if (shortHeading !== undefined) return shortHeading;
+	const clippedShortHeading = withClippedAgent(shortStatusText);
+	if (clippedShortHeading !== undefined) return clippedShortHeading;
 	const statusOnly = `${titleText}${style.metadata(` ${status}`)}`;
 	if (metrics.visibleWidth(statusOnly) <= width) return statusOnly;
 	return metrics.truncateToWidth(`${style.title("subagent")}${style.metadata(` ${status}`)}`, width, "");
+}
+
+function formatCollapsedFooter(
+	details: SubagentResultDetails,
+	width: number,
+	hint: string,
+	metrics: ResultMetrics,
+	style: ResultStyle,
+): string {
+	const sizeParts: string[] = [];
+	if (details.contextTokens !== undefined) sizeParts.push(`${formatTokens(details.contextTokens)} ctx`);
+	if (details.resultTokens !== undefined) sizeParts.push(`~${formatTokens(details.resultTokens)} result`);
+	const sizeText = sizeParts.length > 0 ? style.metadata(sizeParts.join(" · ")) : "";
+	const safeHint = inline(hint);
+	const hintText = safeHint ? style.hint(`(${safeHint} to expand)`) : "";
+	const separator = sizeText && hintText ? style.metadata(" ") : "";
+	const footer = sizeText + separator + hintText;
+	if (metrics.visibleWidth(footer) <= width) return footer;
+	if (!hintText) return metrics.truncateToWidth(sizeText, width, "…");
+
+	const hintWidth = metrics.visibleWidth(hintText);
+	if (hintWidth >= width) return metrics.truncateToWidth(hintText, width, "");
+	const sizeWidth = width - hintWidth - metrics.visibleWidth(separator);
+	if (sizeWidth <= 0) return hintText;
+	return metrics.truncateToWidth(sizeText, sizeWidth, "…") + separator + hintText;
 }
 
 export function formatCollapsedSubagentResult(
@@ -285,21 +297,23 @@ export function formatCollapsedSubagentResult(
 ): string[] {
 	const maxWidth = availableWidth(width);
 	if (maxWidth === 0) return [];
-	const lines = [formatHeader(details, maxWidth, hint, metrics, style)];
-	if (maxWidth <= 2 || previewLineLimit === 0) return lines;
-
+	const lines = [formatHeader(details, maxWidth, metrics, style)];
 	const preview = resultPreview(details.presentation.preview);
-	if (!preview) return lines;
-	const visualLines = metrics.renderText(preview, maxWidth).map((line) => line.trimEnd());
-	const shown = visualLines.slice(0, previewLineLimit);
-	if (visualLines.length > previewLineLimit && shown.length > 0) {
-		const last = shown.length - 1;
-		shown[last] = metrics.truncateToWidth(`${shown[last]}…`, maxWidth, "…");
+	if (preview && previewLineLimit > 0) {
+		const visualLines = metrics.renderText(preview, maxWidth).map((line) => line.trimEnd());
+		const shown = visualLines.slice(0, previewLineLimit);
+		if (visualLines.length > previewLineLimit && shown.length > 0) {
+			const last = shown.length - 1;
+			shown[last] = metrics.truncateToWidth(`${shown[last]}…`, maxWidth, "…");
+		}
+		if (shown.length > 0) {
+			lines.push("");
+			for (const line of shown) {
+				lines.push(metrics.truncateToWidth(style.preview(line), maxWidth, ""));
+			}
+		}
 	}
-	lines.push("");
-	for (const line of shown) {
-		lines.push(metrics.truncateToWidth(style.preview(line), maxWidth, ""));
-	}
+	lines.push("", formatCollapsedFooter(details, maxWidth, hint, metrics, style));
 	return lines;
 }
 
@@ -361,7 +375,7 @@ function structuredExpandedResult(
 		render(width: number): string[] {
 			const maxWidth = availableWidth(width);
 			if (maxWidth === 0) return [];
-			const lines = [formatHeader(details, maxWidth, "", METRICS, style)];
+			const lines = [formatHeader(details, maxWidth, METRICS, style)];
 			const appendText = (text: string): void => {
 				if (lines.at(-1) !== "") lines.push("");
 				lines.push(...new Text(text, 0, 0).render(maxWidth));
@@ -378,7 +392,11 @@ function structuredExpandedResult(
 			}
 
 			const footer: string[] = [];
-			if (details.costUsd !== undefined) footer.push(style.metadata(`cost this run ${formatCost(details.costUsd)}`));
+			const runMetrics: string[] = [];
+			if (details.contextTokens !== undefined) runMetrics.push(`context ${formatTokens(details.contextTokens)}`);
+			if (details.resultTokens !== undefined) runMetrics.push(`result ~${formatTokens(details.resultTokens)}`);
+			if (details.costUsd !== undefined) runMetrics.push(`cost this run ${formatCost(details.costUsd)}`);
+			if (runMetrics.length > 0) footer.push(style.metadata(runMetrics.join(" · ")));
 			if (details.sessionFile) {
 				footer.push(style.metadata("session ") + accent(sanitizeDisplayText(details.sessionFile)));
 			}

@@ -56,9 +56,9 @@ This uses the listed `worker` in the parent's working directory with explicit fr
 
 Parent operations use the singular `subagent` namespace: model tools follow `subagent_<operation>`, and slash commands follow `/subagent-<operation>`. Creation is `spawn` because it launches an existing agent definition as an independent child process and session; it does not create a definition.
 
-- **`subagent_spawn`** starts a child. `name` and `task` are required. Calls can choose an agent, context, model, thinking, tools, directory, worktree, and exit behavior. Call values override agent definitions. Explicit `worktree: true` cannot be combined with `cwd`. Returns `started`, or `queued` at the concurrency limit (see Concurrency and the launch queue). Its rendered call always names the effective context as `fresh` or `forked`; it also exposes effective non-default launch behavior when the child is interactive (`autoExit: false`), uses a worktree, or uses a non-`pi` harness, whose exact name is shown.
+- **`subagent_spawn`** starts a child. `name` and `task` are required. Calls can choose an agent, context, model, thinking, tools, directory, worktree, and exit behavior. Call values override agent definitions. Explicit `worktree: true` cannot be combined with `cwd`. Returns `started`, or `queued` at the concurrency limit (see Concurrency and the launch queue). Its rendered call always names the model state and effective context: Pi children without a selected model say `inherits parent model`, unresolved Pi selections briefly say `model resolving`, successful selections settle to canonical `provider/model`, external children without a selection say `model harness default`, and historical rows that predate persisted model metadata say `model unknown`. It also exposes effective non-default launch behavior when the child is interactive (`autoExit: false`), uses a worktree, or uses a non-`pi` harness, whose exact name is shown.
 - **`subagent_available`** reports the fresh definition inventory only: each agent's source and routing markers, its `details` (or full `description` when `details` is absent), effective model and launch configuration, and definition problems. Use it to select an agent or diagnose definitions; it does not report child runs.
-- **`subagent_status`** reports every unresolved child instance, including queued launches and results still being delivered. Output is a flat list with each short id first and that instance's exact current state (`queued`, `starting`, `active`, `waiting`, `stalled`, or `delivering`), never an aggregate summary. Use it for one-shot lifecycle diagnosis, not polling.
+- **`subagent_status`** reports every unresolved child instance, including queued launches and results still being delivered. Model output is a flat labeled list with each short id first and that instance's exact current state (`queued`, `starting`, `active`, `waiting`, `stalled`, or `delivering`), never an aggregate summary. Its collapsed TUI rows use the concise `id · agent · name · state` grammar and expansion reveals the detailed guidance. Use it for one-shot lifecycle diagnosis, not polling.
 - **`subagent_resume`** handles help, retries, and follow-up while restoring launch identity. Use `id` in the same parent process, including after `/reload`; after restart use `sessionPath`. Autonomous resume requires a message. Message-free resume requires an effective `autoExit: false` for human control. A resume opens a new pane and process, so it consumes a concurrency slot exactly like a spawn and can return `queued` the same way.
 
 A blocked child calls `caller_ping` and exits. Its question wakes the parent, which answers with `subagent_resume({ id, message })`.
@@ -146,20 +146,20 @@ Settings resolve from built-in defaults, then `$PI_CODING_AGENT_DIR/subagents.js
 | `mainWidth` | `60%` |
 | `maxConcurrentSubagents` | `9` (`1` through `9`; further launches queue) |
 | `callPreviewLines` | `3` (start and resume calls, `0` through `20`) |
-| `resultPreviewLines` | `5` (completed, failed, and stopped results, `0` through `20`) |
+| `resultPreviewLines` | `3` (completed, failed, and stopped results, `0` through `20`) |
 | `widgetMaxRows` | `5` (positive integer; compact-widget detailed-row cap) |
 | `worktreeCreateCommand` | Built-in Git creation under `.pi/worktrees/` |
 | `worktreeCleanupCommand` | Built-in Git removal and branch deletion when applicable |
 | `worktreeCleanupMode` | `auto` (`never` always keeps worktrees) |
 
-Preview limits count visual lines after sanitized, whitespace-flattened text wraps to the current terminal width. A value of `0` keeps only the collapsed header. Results add an ellipsis when the line limit hides more preview text; start and resume calls rely on the configured expansion-key hint instead. Persisted result previews keep at most 2,000 source code points plus an ellipsis, so that storage ceiling can be reached before a high visual-line limit on a very wide terminal. Expansion preserves the complete existing content, including Markdown rendering for results.
+Preview limits count visual lines after sanitized, whitespace-flattened text wraps to the current terminal width. A value of `0` removes the preview. Collapsed results keep status and elapsed time in the header, then the preview, then a final footer with available context/result sizes and the configured expansion-key hint. Results add an ellipsis when the line limit hides more preview text; start and resume calls rely on the configured expansion-key hint instead. Persisted result previews keep at most 2,000 source code points plus an ellipsis, so that storage ceiling can be reached before a high visual-line limit on a very wide terminal. Expansion preserves the complete existing content, including Markdown rendering for results.
 
 Every key has a matching environment override named `PI_SUBAGENT_` plus the key in SCREAMING_SNAKE (for example `PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS` and `PI_SUBAGENT_WIDGET_MAX_ROWS`):
 
 ```json
 {
   "callPreviewLines": 3,
-  "resultPreviewLines": 5,
+  "resultPreviewLines": 3,
   "widgetMaxRows": 5
 }
 ```

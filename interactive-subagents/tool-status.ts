@@ -46,6 +46,7 @@ export interface StatusCardStyle {
 	id?: (text: string) => string;
 	agent?: (text: string) => string;
 	name?: (text: string) => string;
+	separator?: (text: string) => string;
 	state?: (state: SubagentRuntimeState, text: string) => string;
 	body?: (text: string) => string;
 	hint?: (text: string) => string;
@@ -226,6 +227,7 @@ export function formatStatusCardLines(
 	const id = style.id ?? plainText;
 	const agent = style.agent ?? plainText;
 	const name = style.name ?? plainText;
+	const separator = style.separator ?? plainText;
 	const state = style.state ?? ((_state, text) => text);
 	const body = style.body ?? plainText;
 	const hint = style.hint ?? plainText;
@@ -233,10 +235,13 @@ export function formatStatusCardLines(
 
 	const lines: string[] = [];
 	for (const entry of entries.slice(0, expanded ? entries.length : STATUS_CARD_MAX_ROWS)) {
-		const core = id(`id ${safeInline(entry.id)}`) +
-			agent(` | agent ${safeInline(entry.agent)}`) +
-			name(` | name ${JSON.stringify(safeInline(entry.name))}`) +
-			state(entry.state, ` | ${entry.state}`);
+		const core = id(safeInline(entry.id)) +
+			separator(" · ") +
+			agent(safeInline(entry.agent)) +
+			separator(" · ") +
+			name(safeInline(entry.name)) +
+			separator(" · ") +
+			state(entry.state, entry.state);
 		const text = expanded ? core + body(` — ${safeInline(entry.description)}`) : core;
 		lines.push(...new Text(text, 0, 0).render(safeWidth));
 	}
@@ -308,9 +313,10 @@ export function registerSubagentStatusTool(pi: ExtensionAPI): void {
 				invalidate(): void {},
 				render(width: number): string[] {
 					return formatStatusCardLines(presentation.entries, width, expanded, {
-						id: (text) => theme.fg("accent", text),
+						id: (text) => theme.fg("muted", text),
 						agent: (text) => theme.fg("muted", text),
 						name: (text) => theme.fg("accent", text),
+						separator: (text) => theme.fg("muted", text),
 						state: (status, text) => theme.fg(status === "stalled" ? "warning" : "muted", text),
 						body: (text) => theme.fg("toolOutput", text),
 						hint: (text) => theme.fg("dim", text),

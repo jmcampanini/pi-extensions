@@ -63,7 +63,7 @@ const DEFAULTS: SubagentsConfig = {
 	mainWidth: "60%",
 	maxConcurrentSubagents: 9,
 	callPreviewLines: 3,
-	resultPreviewLines: 5,
+	resultPreviewLines: 3,
 	widgetMaxRows: 5,
 	worktreeCreateCommand: DEFAULT_WORKTREE_CREATE_COMMAND,
 	worktreeCleanupCommand: DEFAULT_WORKTREE_CLEANUP_COMMAND,

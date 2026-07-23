@@ -409,6 +409,19 @@ ok("starting and queued guidance says work proceeds without reissuing",
 	queuedEntry.description.includes("do not poll or reissue")));
 eq("queued status carries its machine-readable queue position", queuedEntry?.queuePosition, 1);
 
+eq("model-facing status format remains byte-for-byte unchanged", status.formatStatusModelText([{
+	id: "agent 01",
+	agent: "worker",
+	name: "Fix \"parser\"",
+	state: "active",
+	description: "working\nnow",
+	harness: null,
+	elapsedSeconds: 1,
+	contextTokens: null,
+	contextWindow: null,
+	costUsd: null,
+	queuePosition: null,
+}]), "• id agent 01 | agent worker | name \"Fix \\\"parser\\\"\" | active — working now");
 const statusText = status.formatStatusModelText(entries);
 const statusLines = statusText.split("\n");
 eq("flat status emits exactly one ungrouped row per unresolved id", statusLines.length, entries.length);
@@ -429,6 +442,8 @@ eq("registered status execution preserves the attention order in versioned detai
 		["delivery1", "stalled1", "waiting1", "starting1", "active01", "queued01"],
 	]);
 const liveStatusText = liveStatusResult.content.find((part) => part.type === "text")?.text ?? "";
+eq("registered status content is exactly the unchanged model formatter output",
+	liveStatusText, status.formatStatusModelText(liveStatusDetails.presentation.entries));
 ok("registered status execution keeps the same ID-first flat model format",
 	liveStatusText.split("\n").every((line) => line.startsWith("• id ")));
 const statusRenderResult = {
@@ -450,14 +465,23 @@ const collapsedStatus = statusRenderer(
 );
 const collapsedStatusOutput = collapsedStatus.render(160).join("\n");
 const collapsedStatusPlain = stripVTControlCharacters(collapsedStatusOutput);
-ok("collapsed status keeps ID-first fields, bounds rows, and hides verbose guidance",
-	collapsedStatusPlain.startsWith("id delivery1 | agent reviewer | name \"Completed audit\" | delivering") &&
+eq("collapsed status uses concise unlabeled ID-first dot grammar",
+	collapsedStatusPlain.split("\n")[0].trimEnd(), "delivery1 · reviewer · Completed audit · delivering");
+ok("collapsed status bounds rows and hides verbose guidance",
 	collapsedStatusPlain.includes("… 1 more") &&
-	!collapsedStatusPlain.includes("id queued01") &&
-	!collapsedStatusPlain.includes("will arrive automatically"));
-ok("collapsed status uses semantic identity, metadata, warning-state, and hint tokens",
+	!collapsedStatusPlain.includes("queued01") &&
+	!collapsedStatusPlain.includes("will arrive automatically") &&
+	!collapsedStatusPlain.includes("id delivery1") &&
+	!collapsedStatusPlain.includes("agent reviewer") &&
+	!collapsedStatusPlain.includes("|"));
+eq("collapsed status accents only the task name while muting identity, separators, and ordinary state",
+	collapsedStatusOutput.split("\n")[0].trimEnd(),
+	"\x1b[33mdelivery1\x1b[0m\x1b[33m · \x1b[0m\x1b[33mreviewer\x1b[0m\x1b[33m · \x1b[0m" +
+	"\x1b[32mCompleted audit\x1b[0m\x1b[33m · \x1b[0m\x1b[33mdelivering\x1b[0m");
+ok("collapsed status uses warning for stalled and dim for the hint",
 	["accent", "muted", "warning", "dim"].every((token) => themeCalls.includes(token)) &&
-	collapsedStatusOutput.includes("\x1b[35m | stalled\x1b[0m"));
+	collapsedStatusOutput.includes("\x1b[33m · \x1b[0m\x1b[35mstalled\x1b[0m") &&
+	collapsedStatusOutput.includes("\x1b[2m… 1 more"));
 
 themeCalls.length = 0;
 const expandedStatus = statusRenderer(
@@ -467,11 +491,40 @@ const expandedStatus = statusRenderer(
 	renderContext(true),
 );
 const expandedStatusPlain = stripVTControlCharacters(expandedStatus.render(180).join("\n"));
-ok("expanded status reveals telemetry and queued guidance without group headings",
+ok("expanded status keeps concise cores and reveals descriptions without group headings",
+	expandedStatusPlain.startsWith("delivery1 · reviewer · Completed audit · delivering — finished after") &&
 	expandedStatusPlain.includes("running bash for 10s") &&
 	expandedStatusPlain.includes("starts automatically when capacity frees") &&
 	!expandedStatusPlain.includes("Summary:"));
 ok("expanded status body uses the semantic tool-output token", themeCalls.includes("toolOutput"));
+const hostileStatus = statusRenderer(
+	{
+		...statusRenderResult,
+		details: {
+			presentation: {
+				version: 1,
+				entries: [{
+					...entries[0],
+					id: "delivery1\x1b]52;c;Y2xpcGJvYXJk\x07",
+					agent: "reviewer\nroot\x1b[2J",
+					name: `${"界".repeat(10)}\x1b]52;c;Y2xpcGJvYXJk\x07`,
+					description: "finished safely\x1b[2J",
+				}],
+			},
+		},
+	},
+	{ expanded: true, isPartial: false },
+	markedTheme,
+	renderContext(true),
+);
+for (const width of [1, 2, 8, 20, 40]) {
+	eq(`expanded status card is display-width safe for hostile CJK data at width ${width}`,
+		hostileStatus.render(width).every((line) => visibleWidth(line) <= width), true);
+}
+ok("expanded status card sanitizes terminal sequences and inline whitespace",
+	!hostileStatus.render(160).join("\n").includes("\x1b]52") &&
+	!hostileStatus.render(160).join("\n").includes("\x1b[2J") &&
+	plainRendered(hostileStatus.render(160).join("\n")).includes("reviewer root"));
 for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
 	eq(`status collapsed and expanded rendering fit width ${width}`,
 		[collapsedStatus, expandedStatus].every((component) =>
