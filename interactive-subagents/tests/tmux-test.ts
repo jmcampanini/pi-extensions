@@ -68,12 +68,13 @@ function paneExists(paneId: string): boolean {
 		.some((line) => line.trim() === paneId);
 }
 
-async function waitForDeadPane(paneId: string): Promise<void> {
+async function waitForDeadPane(paneId: string, exitCode: number): Promise<void> {
 	for (let attempt = 0; attempt < 100; attempt++) {
-		if (attachedTmux(["display-message", "-p", "-t", paneId, "#{pane_dead}"]).trim() === "1") return;
+		const state = attachedTmux(["display-message", "-p", "-t", paneId, "#{pane_dead},#{pane_dead_status}"]).trim();
+		if (state === `1,${exitCode}`) return;
 		await new Promise((resolve) => setTimeout(resolve, 20));
 	}
-	throw new Error(`pane ${paneId} did not become dead`);
+	throw new Error(`pane ${paneId} did not retain exit code ${exitCode}`);
 }
 
 function restore(name: keyof typeof savedEnv): void {
@@ -116,7 +117,7 @@ try {
 		const scriptPath = join(root, `${label}.sh`);
 		stageLaunchScript("pi", scriptPath);
 		const paneId = createPane(label, scriptPath);
-		await waitForDeadPane(paneId);
+		await waitForDeadPane(paneId, 23);
 
 		eq(`${label}: remain-on-exit is on`, attachedTmux(["show-options", "-p", "-v", "-t", paneId, "remain-on-exit"]).trim(), "on");
 		eq(

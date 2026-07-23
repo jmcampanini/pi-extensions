@@ -125,8 +125,10 @@ try {
 		const panePid = Number.parseInt(attachedTmux(["display-message", "-p", "-t", child.paneId, "#{pane_pid}"]).trim(), 10);
 		process.kill(panePid, "SIGKILL");
 		const controller = new AbortController();
-		const result = await poll(child.paneId, child.sessionFile, controller);
+		let ticks = 0;
+		const result = await poll(child.paneId, child.sessionFile, controller, () => { ticks += 1; });
 		eq("signal death has a distinct reason", result.reason, "killed");
+		ok("empty dead status is confirmed on a later tick", ticks >= 1);
 		eq("signal death uses failure exit code", result.exitCode, 1);
 		ok(
 			"signal death explains the missing status",

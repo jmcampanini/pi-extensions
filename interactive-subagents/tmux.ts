@@ -354,6 +354,10 @@ function queryPaneDeadState(paneId: string): PaneDeadState {
  */
 const PANE_GONE_GRACE_TICKS = 5;
 
+/** Some tmux versions expose pane death before its numeric status. Confirm an
+ * empty status on a second poll before classifying it as signal death. */
+const DEAD_WITHOUT_STATUS_GRACE_TICKS = 2;
+
 /**
  * Wait for a child to finish, checking once per second by default, in
  * priority order:
@@ -363,7 +367,8 @@ const PANE_GONE_GRACE_TICKS = 5;
  *   2. A dead pane's tmux-recorded exit status — the crash net for a child
  *      that exits without running our extension code. The sidecar is checked
  *      once more on the death tick so a simultaneous precise result wins.
- *      Signal death has no tmux exit status and is reported distinctly.
+ *      An empty status is confirmed on the next tick before signal death is
+ *      reported distinctly because some tmux versions publish status late.
  *   3. Pane gone + grace period expired — the child vanished before tmux
  *      could retain its status, with late sidecars checked during the grace.
  *
@@ -381,6 +386,7 @@ export async function pollForExit(options: {
 	const sidecarPath = `${sessionFile}.exit`;
 	const startedAt = Date.now();
 	let ticksSincePaneGone = 0;
+	let ticksSinceDeadWithoutStatus = 0;
 
 	while (true) {
 		// Parent session is shutting down / reloading — stop watching.
@@ -401,17 +407,23 @@ export async function pollForExit(options: {
 		switch (pane.state) {
 			case "alive":
 				ticksSincePaneGone = 0;
+				ticksSinceDeadWithoutStatus = 0;
 				break;
 			case "dead":
 				if (pane.exitCode !== null) {
 					return { reason: "exited", exitCode: pane.exitCode };
 				}
-				return {
-					reason: "killed",
-					exitCode: 1,
-					errorMessage: "The subagent's process died without reporting an exit status (killed by a signal or the system).",
-				};
+				ticksSinceDeadWithoutStatus += 1;
+				if (ticksSinceDeadWithoutStatus >= DEAD_WITHOUT_STATUS_GRACE_TICKS) {
+					return {
+						reason: "killed",
+						exitCode: 1,
+						errorMessage: "The subagent's process died without reporting an exit status (killed by a signal or the system).",
+					};
+				}
+				break;
 			case "gone":
+				ticksSinceDeadWithoutStatus = 0;
 				ticksSincePaneGone += 1;
 				if (ticksSincePaneGone >= PANE_GONE_GRACE_TICKS) {
 					return {
