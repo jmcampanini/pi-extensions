@@ -19,6 +19,10 @@ function eq(label: string, got: unknown, want: unknown): void {
 initial.running.clear();
 initial.ledger.clear();
 
+const firstRunIndex = initial.currentRunIndex();
+const acceptedRunIndex = initial.incrementRunIndex();
+eq("run counter increments monotonically", acceptedRunIndex, firstRunIndex + 1);
+
 const child = {
 	id: "reload01",
 	name: "reload fixture",
@@ -61,6 +65,7 @@ const replacement = await import(new URL(`../state.ts?reload-test=${Date.now()}`
 eq("replacement import advances the generation", replacement.moduleGeneration() > firstGeneration, true);
 eq("replacement import shares the running map", replacement.running, initial.running);
 eq("replacement import shares the ledger", replacement.ledger, initial.ledger);
+eq("replacement import preserves the run counter", replacement.currentRunIndex(), acceptedRunIndex);
 replacement.completeReloadHandoff();
 
 const context = createWidgetContext();
@@ -123,10 +128,12 @@ const second = await import(new URL(`../state.ts?reload-test-2=${Date.now()}`, i
 eq("first delivery reload keeps the sole enriched record", second.deliveryRecord(child.id), delivery);
 eq("delivery reload backfills launch time", second.deliveryRecord(child.id)?.startedAt, child.startTime);
 eq("delivery reload backfills the interactive marker", second.deliveryRecord(child.id)?.interactive, true);
+eq("delivery reload backfills a legacy accepted-send run stamp", second.deliveryRecord(child.id)?.sendAcceptedRunIndex, acceptedRunIndex);
 second.completeReloadHandoff();
 second.prepareForReload(() => {});
 const third = await import(new URL(`../state.ts?reload-test-3=${Date.now()}`, import.meta.url).href) as typeof initial;
 eq("second delivery reload keeps the same accepted-send record", third.deliveryRecord(child.id), delivery);
+eq("delivery reload preserves the accepted-send run stamp", third.deliveryRecord(child.id)?.sendAcceptedRunIndex, acceptedRunIndex);
 eq("two reloads retain one cleanup promise", third.deliveryRecord(child.id)?.worktreeCleanup, sharedCleanup);
 await third.deliveryRecord(child.id)?.worktreeCleanup;
 eq("the retained cleanup executes once", cleanupRuns, 1);
@@ -135,12 +142,13 @@ third.completeReloadHandoff();
 let landedHandlers = 0;
 let handler: ((event: unknown) => void) | undefined;
 registerDeliveryListener({
-	on(_type: string, callback: (event: unknown) => void): void {
+	on(type: string, callback: (event: unknown) => void): void {
+		if (type !== "message_end") return;
 		landedHandlers++;
 		handler = callback;
 	},
 } as unknown as ExtensionAPI);
-eq("one active delivery listener is registered", landedHandlers, 1);
+eq("one active message_end delivery listener is registered", landedHandlers, 1);
 handler?.({ message: { role: "custom", customType: "subagent_result", details: { id: child.id } } });
 eq("one landed result clears the delivery row after two reloads", third.deliveryRecord(child.id), undefined);
 

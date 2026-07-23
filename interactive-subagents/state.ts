@@ -54,6 +54,13 @@ export interface DeliveringSubagent {
 	worktree: boolean;
 }
 
+export interface PreparedDeliveryMessage {
+	customType: "subagent_result" | "subagent_ping";
+	content: string;
+	display: true;
+	details: unknown;
+}
+
 /** Private ownership retained so finalization can move between generations. */
 export interface DeliveryRecord extends DeliveringSubagent {
 	readonly child: RunningSubagent;
@@ -66,8 +73,12 @@ export interface DeliveryRecord extends DeliveringSubagent {
 	readonly externalSummary?: string | null;
 	finalizerGeneration?: number;
 	worktreeCleanup?: Promise<WorktreeOutcome>;
-	/** True only after sendMessage returned successfully; queued sends survive reload. */
+	/** True only after sendMessage returned successfully. */
 	sendAccepted?: boolean;
+	/** Parent run counter value when sendMessage accepted the delivery. */
+	sendAcceptedRunIndex?: number;
+	/** Immutable first-send payload reused after a proven drop or send failure. */
+	preparedMessage?: PreparedDeliveryMessage;
 }
 
 interface ModuleLifetime {
@@ -82,6 +93,7 @@ interface ReloadState {
 	latestCtx: ExtensionContext | null;
 	lifetime?: ModuleLifetime;
 	nextGeneration: number;
+	runIndex: number;
 	handoffTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -93,12 +105,19 @@ const reloadState = (slots[STATE_KEY] as ReloadState | undefined) ?? {
 	ledger: new Map<string, { sessionFile: string; name: string }>(),
 	latestCtx: null,
 	nextGeneration: 0,
+	runIndex: 0,
 };
 // Upgrade process-stable state created by an older module during hot reload.
 reloadState.delivering ??= new Map<string, DeliveryRecord>();
+reloadState.runIndex ??= 0;
 for (const record of reloadState.delivering.values()) {
 	record.startedAt ??= record.child.startTime;
 	record.interactive ??= !record.child.autoExit;
+	// A pre-stamp accepted send predates every run this module can observe.
+	// The first later normal run either lands that copy or proves it was lost.
+	if (record.sendAccepted === true && record.sendAcceptedRunIndex === undefined) {
+		record.sendAcceptedRunIndex = reloadState.runIndex;
+	}
 }
 slots[STATE_KEY] = reloadState;
 
@@ -127,6 +146,14 @@ export function setDeliveryRecord(record: DeliveryRecord): void {
 
 export function deliveryRecords(): IterableIterator<DeliveryRecord> {
 	return reloadState.delivering.values();
+}
+
+export function currentRunIndex(): number {
+	return reloadState.runIndex;
+}
+
+export function incrementRunIndex(): number {
+	return ++reloadState.runIndex;
 }
 
 export function moduleSignal(): AbortSignal {

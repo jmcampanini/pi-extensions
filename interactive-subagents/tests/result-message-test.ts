@@ -400,7 +400,7 @@ eq("watcher emits result token details", watcherSource.includes("resultTokens,\n
 eq("watcher builds labeled model-facing envelopes", watcherSource.includes("buildSubagentResultEnvelope({"), true);
 eq("watcher passes envelope response boundaries to the TUI", watcherSource.includes("response: envelope.response"), true);
 eq("watcher keeps structured expanded details out of model-facing content",
-	watcherSource.includes("expanded,\n\t\t\t\tpresentation,"), true);
+	watcherSource.includes("expanded,\n\t\t\tpresentation,"), true);
 eq("result renderer resolves the configured expansion binding",
 	resultMessageSource.includes('keyText("app.tools.expand")'), true);
 eq("parent extension registers the result renderer", indexSource.includes("registerSubagentResultRenderer(pi)"), true);

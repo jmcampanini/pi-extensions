@@ -106,10 +106,10 @@ export default function (pi: ExtensionAPI) {
 	// the no-recursion rule.
 	if (IS_SUBAGENT_CHILD) return;
 
-	// Parent mode only: watch our own result/ping messages land in the parent
-	// transcript so "delivering" widget rows can be cleared (see delivery.ts).
+	// Parent mode only: watch result/ping messages land and parent runs settle
+	// so dropped deliveries can be proved, retried, and cleared (delivery.ts).
 	// Registered before the spawn tools: on an idle parent the landing event
-	// fires within microtasks of the watcher's send, so the listener must
+	// fires within microtasks of the watcher's send, so the listeners must
 	// exist before any child can possibly exit.
 	registerDeliveryListener(pi);
 	registerSubagentResultRenderer(pi);
