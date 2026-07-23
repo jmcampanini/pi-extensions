@@ -3,6 +3,7 @@
 import {
 	CATALOGUE_DESCRIPTION_MAX_CHARS,
 	collectAgentInventory,
+	contextMode,
 	descriptionHeadline,
 	formatAgentCatalogue,
 	formatAgentOverviewLines,
@@ -63,7 +64,7 @@ eq("body is the system prompt", scout.body, "You are a scout.");
 writeFileSync(join(globalDefs, "badcontext.md"), "---\ncontext: shared\n---\nBad context value.\n");
 const badcontext = loadAgentDefinition("badcontext", cwd)!;
 eq("invalid context value does not set context", badcontext.context, undefined);
-ok("invalid context problem suggests the valid values", badcontext.problems[0].includes('"forked"'));
+eq("invalid context problem suggests the valid values", badcontext.problems[0], 'invalid context "shared" — use "new" or "forked"');
 
 writeFileSync(join(globalDefs, "crlf.md"), "---\r\ndescription: windows line endings\r\n---\r\nBody here.\r\n");
 eq("CRLF frontmatter still parses", loadAgentDefinition("crlf", cwd)!.description, "windows line endings");
@@ -108,7 +109,7 @@ eq("first usable model wins", scoutInfo.resolvedModel, "openai-codex/gpt-5.5");
 eq("requested models kept verbatim", scoutInfo.requestedModels, ["openai-codex/gpt-5.5", "gpt-5.4-mini"]);
 eq("valid agent has no problems", scoutInfo.problems, []);
 const workerInfo = inventory.find((a) => a.name === "worker")!;
-eq("defaults applied: context fresh, auto-exit true", [workerInfo.context, workerInfo.autoExit], ["fresh", true]);
+eq("defaults applied: context new, auto-exit true", [workerInfo.context, workerInfo.autoExit], ["new", true]);
 eq("no models listed = empty requestedModels", workerInfo.requestedModels, []);
 const badcontextInfo = inventory.find((a) => a.name === "badcontext")!;
 eq("frontmatter problems flow into the inventory", badcontextInfo.problems.length, 1);
@@ -167,9 +168,9 @@ ok(
 );
 ok("file paths are gone", !flat.includes(worker.filePath) && !flat.includes(globalDefs));
 // The fold is checked on a worker-only render: the full flat legitimately
-// contains "fresh"/"forked" inside the invalid-context problem text.
+// contains "new"/"forked" inside the invalid-context problem text.
 const workerCard = formatAgentOverviewLines([workerInfo], WIDTH, dirs).join("\n");
-ok("default run behavior is folded away", !workerCard.includes("fresh") && !workerCard.includes("auto-exit"));
+ok("default run behavior is folded away", !workerCard.includes("new") && !workerCard.includes("auto-exit"));
 ok(
 	"deviations surface on the meta row",
 	lines.some((l) => l.includes("thinking low") && l.includes("tools: read, bash") && l.includes("forked · interactive")),
@@ -266,7 +267,11 @@ ok("unknown harness problem lists the valid values", badharness.problems[0].incl
 writeFileSync(join(globalDefs, "extforked.md"), "---\nharness: claude-code\ncontext: forked\n---\nF.\n");
 const extforked = loadAgentDefinition("extforked", cwd)!;
 eq("forked + external harness is one problem", extforked.problems.length, 1);
-ok("forked + external problem explains why", extforked.problems[0].includes('context "forked" is not supported with harness "claude-code"'));
+eq(
+	"forked + external problem explains why",
+	extforked.problems[0],
+	'context "forked" requires the pi harness - external sub-agents are new-only (a pi conversation cannot be transplanted into a different tool)',
+);
 
 // Project shadows global for the new keys like every other key.
 writeFileSync(join(globalDefs, "shadowed-harness.md"), "---\nharness: claude-code\n---\nG.\n");
@@ -294,6 +299,7 @@ ok("unmappable thinking problem comes from the profile", extoff.problems[0].incl
 const extLines = formatAgentOverviewLines([extInfo], WIDTH, dirs);
 const extFlat = extLines.join("\n");
 ok("overview meta row names the harness", extFlat.includes("claude-code"));
+ok("overview marks external agents new-only", extFlat.includes("claude-code · new-only"));
 ok("overview shows the pass-through", extFlat.includes("pass-through: --permission-mode acceptEdits"));
 ok("external overview still fits the width", extLines.every((l) => visibleWidth(l) <= WIDTH));
 
@@ -326,7 +332,7 @@ function info(overrides: Partial<AgentInfo> & { name: string }): AgentInfo {
 		source: "global",
 		filePath: `/g/subagents/${overrides.name}.md`,
 		requestedModels: [],
-		context: "fresh",
+		context: "new",
 		autoExit: true,
 		worktree: false,
 		harness: "pi",
@@ -334,6 +340,10 @@ function info(overrides: Partial<AgentInfo> & { name: string }): AgentInfo {
 		...overrides,
 	};
 }
+
+eq("pi new context mode", contextMode(info({ name: "pi-new" })), "new");
+eq("pi forked context mode", contextMode(info({ name: "pi-forked", context: "forked" })), "forked");
+eq("external context mode", contextMode(info({ name: "external", harness: "claude-code" })), "new-only");
 
 eq("empty inventory = no catalogue", formatAgentCatalogue([]), undefined);
 
@@ -348,7 +358,7 @@ const catalogue = formatAgentCatalogue([
 ok("catalogue names the agent parameter", catalogue.includes("`agent` parameter of subagent_spawn"));
 ok("plain agent renders name: description", catalogue.includes("- scout: Fast recon."));
 ok("worker is marked default", catalogue.includes("- worker (default): General-purpose implementation."));
-ok("external harness is marked", catalogue.includes("- cc-worker (harness claude-code): Bounded edit tasks."));
+ok("external harness is marked new-only", catalogue.includes("- cc-worker (external: claude-code, new-only): Bounded edit tasks."));
 ok("interactive agent is marked", catalogue.includes("- pair (interactive): Live pairing session."));
 ok("broken agent points at subagent_available", catalogue.includes("- broken (not spawnable - see subagent_available)"));
 ok("broken agent's description is suppressed", !catalogue.includes("Secretly fine."));
@@ -364,6 +374,7 @@ ok(
 // Markers combine into one paren group.
 const combined = formatAgentCatalogue([info({ name: "worker", description: "W.", autoExit: false })])!;
 ok("combined markers share one group", combined.includes("- worker (default, interactive): W."));
+ok("pi catalogue agents have no external capability markers", !combined.includes("external:") && !combined.includes("new-only"));
 
 // The hard bound: overlong descriptions are cut to the cap with an ellipsis;
 // short ones pass through untouched.

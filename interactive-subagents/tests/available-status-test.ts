@@ -34,6 +34,7 @@ const capacity = await import("../capacity.ts");
 const available = await import("../tool-available.ts");
 const status = await import("../tool-status.ts");
 type ActivitySnapshot = import("../activity.ts").ActivitySnapshot;
+type AgentInfo = import("../agents.ts").AgentInfo;
 type RunningSubagent = import("../state.ts").RunningSubagent;
 type SpawnSpec = import("../capacity.ts").SpawnSpec;
 type AvailableToolDetails = import("../tool-available.ts").AvailableToolDetails;
@@ -78,7 +79,7 @@ function spawnSpec(id: string, name: string): SpawnSpec {
 		agentName: "worker",
 		harness: "pi",
 		agentBody: "Worker prompt.",
-		context: "fresh",
+		context: "new",
 		autoExit: true,
 		useWorktree: false,
 		cwd,
@@ -120,7 +121,7 @@ eq("available model content contains definition details and effective configurat
 	"• scout (project, forked, interactive, worktree) — Maps relevant code paths before implementation begins.\n" +
 	"  config: source project · model inherits parent · context forked · interactive · worktree · harness pi\n" +
 	"• worker (default) — Builds focused changes and verifies them.\n" +
-	"  config: source global · model inherits parent · context fresh · autonomous · shared checkout · harness pi");
+	"  config: source global · model inherits parent · context new · autonomous · shared checkout · harness pi");
 ok("available model content excludes launched names, ids, and runtime states",
 	!availableText.includes("RUNTIME STATUS SENTINEL") &&
 	!availableText.includes("liveonly") &&
@@ -135,6 +136,37 @@ eq("available details carry both definition directories", availableDetails.prese
 	global: join(globalRoot, "subagents"),
 	project: join(cwd, ".pi", "subagents"),
 });
+ok("pi agents carry no external capability markers", !availableText.includes("external:") && !availableText.includes("new-only"));
+const externalAgent: AgentInfo = {
+	name: "claude-code",
+	source: "global",
+	description: "Direct Claude Code handoff.",
+	details: "Direct means Claude Code runs through its native harness.",
+	filePath: join(globalRoot, "subagents", "claude-code.md"),
+	requestedModels: ["claude-opus-4-8"],
+	resolvedModel: "claude-opus-4-8",
+	context: "new",
+	autoExit: true,
+	worktree: false,
+	harness: "claude-code",
+	harnessPassThrough: "--permission-mode auto",
+	problems: [],
+};
+const externalAvailableText = available.formatAvailableModelText([externalAgent]);
+eq("external available model content advertises new-only everywhere needed", externalAvailableText,
+	"• claude-code (external: claude-code, new-only) — Direct means Claude Code runs through its native harness.\n" +
+	"  config: source global · model claude-opus-4-8 · context new-only · autonomous · shared checkout · external: claude-code · pass-through --permission-mode auto");
+const externalAvailableResult = {
+	...availableResult,
+	content: [{ type: "text" as const, text: externalAvailableText }],
+	details: {
+		presentation: {
+			version: 1 as const,
+			inventory: [externalAgent],
+			dirs: availableDetails.presentation.dirs,
+		},
+	},
+};
 state.running.clear();
 
 const emptyStatusResult = await statusTool.execute("status-empty", {}, undefined, undefined, {} as ExtensionContext);
@@ -202,6 +234,7 @@ ok("collapsed available card shows compact definition markers and description he
 	collapsedAvailablePlain.includes("scout · project · forked · interactive · worktree — Fast reconnaissance.") &&
 	collapsedAvailablePlain.includes("worker · default — General implementation."));
 ok("collapsed available card omits expanded details", !collapsedAvailablePlain.includes("Maps relevant code paths"));
+ok("collapsed pi cards carry no external capability markers", !collapsedAvailablePlain.includes("external:") && !collapsedAvailablePlain.includes("new-only"));
 ok("collapsed available card uses semantic name, metadata, preview, and hint tokens",
 	["accent", "muted", "dim"].every((token) => themeCalls.includes(token)));
 
@@ -221,6 +254,28 @@ ok("expanded available card suppresses command-only header and footer",
 	!expandedAvailablePlain.includes("Sub-agents · 2") && !expandedAvailablePlain.includes("dismiss"));
 ok("expanded available card uses semantic accent, metadata, output, tertiary, and warning tokens",
 	["accent", "muted", "toolOutput", "dim", "warning"].every((token) => themeCalls.includes(token)));
+ok("expanded pi cards carry no external capability markers", !expandedAvailablePlain.includes("external:") && !expandedAvailablePlain.includes("new-only"));
+
+themeCalls.length = 0;
+const collapsedExternal = availableRenderer(
+	externalAvailableResult,
+	{ expanded: false, isPartial: false },
+	markedTheme,
+	renderContext(false),
+);
+const collapsedExternalPlain = stripVTControlCharacters(collapsedExternal.render(120).join("\n"));
+ok("collapsed external card advertises the harness and new-only capability",
+	collapsedExternalPlain.includes("claude-code · external: claude-code · new-only — Direct Claude Code handoff."));
+const expandedExternal = availableRenderer(
+	externalAvailableResult,
+	{ expanded: true, isPartial: false },
+	markedTheme,
+	renderContext(true),
+);
+const expandedExternalPlain = stripVTControlCharacters(expandedExternal.render(120).join("\n"));
+ok("expanded external overview marks new-only beside the harness",
+	expandedExternalPlain.includes("claude-code · new-only · pass-through: --permission-mode auto"));
+ok("expanded external overview warning-paints capability metadata", themeCalls.includes("warning"));
 const fallbackDescriptionInventory = availableDetails.presentation.inventory.map((agent) => agent.name === "worker"
 	? { ...agent, description: "General implementation. Use this second sentence for routing.", details: undefined }
 	: agent);

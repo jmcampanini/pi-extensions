@@ -1,4 +1,4 @@
-import { appendSessionName, readSessionName, seedForkSession, seedFreshSession } from "../session.ts";
+import { appendSessionName, readSessionName, seedForkSession, seedNewSession } from "../session.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 
 function entry(o: unknown): string { return JSON.stringify(o); }
@@ -9,30 +9,30 @@ function check(label: string, ok: boolean, detail = ""): void {
 	console.log(`${label}: ${ok ? "PASS" : `FAIL ${detail}`}`);
 }
 
-// Case A: a fresh seed is exactly header + session_info, with the header
-// pointing at the parent (threading) and the name readable back.
-const freshFile = "/tmp/naming-test-fresh.jsonl";
-seedFreshSession({
+// Case A: a new-context seed is exactly header + session_info, with the
+// header pointing at the parent (threading) and the name readable back.
+const newFile = "/tmp/naming-test-new.jsonl";
+seedNewSession({
 	parentSessionFile: "/tmp/naming-test-parent.jsonl",
-	childSessionFile: freshFile,
+	childSessionFile: newFile,
 	childCwd: "/tmp/work",
 	name: "subagent › scout › wait 1",
 });
-const fresh = lines(freshFile);
-check("A1 shape", fresh.length === 2 && fresh[0].type === "session" && fresh[1].type === "session_info");
+const newEntries = lines(newFile);
+check("A1 shape", newEntries.length === 2 && newEntries[0].type === "session" && newEntries[1].type === "session_info");
 check(
 	"A2 header",
-	fresh[0].version === 3 && fresh[0].cwd === "/tmp/work" && fresh[0].parentSession === "/tmp/naming-test-parent.jsonl",
+	newEntries[0].version === 3 && newEntries[0].cwd === "/tmp/work" && newEntries[0].parentSession === "/tmp/naming-test-parent.jsonl",
 );
 check(
 	"A3 UUIDv7 session id",
-	typeof fresh[0].id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(fresh[0].id as string),
+	typeof newEntries[0].id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(newEntries[0].id as string),
 );
-check("A4 name entry", fresh[1].name === "subagent › scout › wait 1" && fresh[1].parentId === null);
-check("A5 readSessionName", readSessionName(freshFile) === "subagent › scout › wait 1");
+check("A4 name entry", newEntries[1].name === "subagent › scout › wait 1" && newEntries[1].parentId === null);
+check("A5 readSessionName", readSessionName(newFile) === "subagent › scout › wait 1");
 // Full-uuid entry id: an 8-hex id could collide with a copied parent entry's
 // id, which would shadow that entry in pi's index and hang its context walk.
-check("A6 full-uuid id", typeof fresh[1].id === "string" && (fresh[1].id as string).length === 36);
+check("A6 full-uuid id", typeof newEntries[1].id === "string" && (newEntries[1].id as string).length === 36);
 
 // Case B: a fork seed keeps the copied conversation byte-identical and puts
 // the session_info LAST, linked to the last copied entry's id.
@@ -105,7 +105,7 @@ check("F2 links past corruption", corruptLast.type === "session_info" && corrupt
 // Case G: names are sanitized the way pi's own rename sanitizes them —
 // newlines flattened to spaces — before they reach the session file.
 const multilineFile = "/tmp/naming-test-multiline.jsonl";
-seedFreshSession({
+seedNewSession({
 	parentSessionFile: "/tmp/naming-test-parent.jsonl",
 	childSessionFile: multilineFile,
 	childCwd: "/tmp/work",

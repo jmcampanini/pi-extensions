@@ -441,20 +441,20 @@ if (callRenderer === undefined) {
 		markedTheme,
 		renderContext(false),
 	).render(120).join("\n"));
-	eq("registered renderer names an effective external harness", externalOutput.includes("context fresh · harness claude-code"), true);
+	eq("registered renderer names an effective external harness", externalOutput.includes("context new · harness claude-code"), true);
 	const overriddenOutput = stripVTControlCharacters(callRenderer(
 		{
 			name: "Overrides",
 			agent: "worker",
 			task: "Run",
-			context: "fresh",
+			context: "new",
 			autoExit: true,
 			worktree: false,
 		} as Parameters<typeof callRenderer>[0],
 		markedTheme,
 		renderContext(false),
 	).render(120).join("\n"));
-	eq("explicit call values override inherited spawn modes", overriddenOutput.split("\n")[1].trimEnd(), "context fresh");
+	eq("explicit call values override inherited spawn modes", overriddenOutput.split("\n")[1].trimEnd(), "context new");
 	const cwdOverrideOutput = stripVTControlCharacters(callRenderer(
 		{ name: "Cwd override", agent: "worker", task: "Run", cwd: "nested" } as Parameters<typeof callRenderer>[0],
 		markedTheme,
@@ -467,10 +467,10 @@ if (callRenderer === undefined) {
 	eq("registered renderer styles the expanded task body as tool output", expandedOutput.includes("\x1b[36mfirst"), true);
 	eq("expanded renderer retains effective modes", stripVTControlCharacters(expandedOutput).includes("context forked · interactive · worktree"), true);
 	const sharedState: Record<string, unknown> = {};
-	writeFileSync(join(rendererDefs, "worker.md"), "---\ncontext: fresh\nauto-exit: true\nworktree: false\n---\nChanged.\n", "utf8");
+	writeFileSync(join(rendererDefs, "worker.md"), "---\ncontext: new\nauto-exit: true\nworktree: false\n---\nChanged.\n", "utf8");
 	const reopenedComponent = callRenderer(renderArgs, markedTheme, renderContext(false, sharedState));
 	eq("a reopened call initially falls back to current definition defaults",
-		stripVTControlCharacters(reopenedComponent.render(120).join("\n")).split("\n")[1].trimEnd(), "context fresh");
+		stripVTControlCharacters(reopenedComponent.render(120).join("\n")).split("\n")[1].trimEnd(), "context new");
 	registeredSpawnTool?.renderResult?.(
 		{
 			content: [{ type: "text", text: "started" }],
