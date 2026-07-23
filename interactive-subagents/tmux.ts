@@ -393,31 +393,33 @@ export async function pollForExit(options: {
 		if (sidecar) return sidecar;
 
 		const pane = queryPaneDeadState(paneId);
-		if (pane.state === "alive") {
-			ticksSincePaneGone = 0;
-		} else if (pane.state === "dead") {
+		if (pane.state !== "alive") {
 			const lateSidecar = readSidecar(sidecarPath);
 			if (lateSidecar) return lateSidecar;
-			if (pane.exitCode !== null) {
-				return { reason: "exited", exitCode: pane.exitCode };
-			}
-			return {
-				reason: "killed",
-				exitCode: 1,
-				errorMessage: "The subagent's process died without reporting an exit status (killed by a signal or the system).",
-			};
-		} else {
-			const lateSidecar = readSidecar(sidecarPath);
-			if (lateSidecar) return lateSidecar;
+		}
 
-			ticksSincePaneGone += 1;
-			if (ticksSincePaneGone >= PANE_GONE_GRACE_TICKS) {
+		switch (pane.state) {
+			case "alive":
+				ticksSincePaneGone = 0;
+				break;
+			case "dead":
+				if (pane.exitCode !== null) {
+					return { reason: "exited", exitCode: pane.exitCode };
+				}
 				return {
-					reason: "pane-closed",
+					reason: "killed",
 					exitCode: 1,
-					errorMessage: "The subagent's pane closed without reporting a result.",
+					errorMessage: "The subagent's process died without reporting an exit status (killed by a signal or the system).",
 				};
-			}
+			case "gone":
+				ticksSincePaneGone += 1;
+				if (ticksSincePaneGone >= PANE_GONE_GRACE_TICKS) {
+					return {
+						reason: "pane-closed",
+						exitCode: 1,
+						errorMessage: "The subagent's pane closed without reporting a result.",
+					};
+				}
 		}
 
 		onTick?.(Math.round((Date.now() - startedAt) / 1000));
