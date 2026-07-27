@@ -41,7 +41,8 @@ interface SubagentCallStyle {
 
 interface SubagentCallTextMetrics {
 	visibleWidth: (text: string) => number;
-	truncateToWidth: (text: string, width: number, ellipsis: string) => string;
+	fitText: (text: string, maxWidth: number, ellipsis?: string) => string;
+	clampStyled: (line: string, maxWidth: number) => string;
 	renderText: (text: string, width: number) => string[];
 }
 
@@ -102,44 +103,34 @@ function formatCollapsedHeading(
 	style: SubagentCallStyle,
 	width: number,
 	metrics: SubagentCallTextMetrics,
-	hint: string,
 ): string {
 	const title = style.title ?? plainText;
 	const nameStyle = style.name ?? plainText;
 	const agentStyle = style.agent ?? plainText;
-	const hintStyle = style.hint ?? plainText;
 	const name = normalizedInline(args.name);
+	const agent = agentName(args.agent);
 	const titleText = title(`subagent ${args.action}`);
-	const agentLead = agentStyle(" · ");
-	const agentValue = agentStyle(agentName(args.agent));
-	const agentTrail = agentStyle(" · ");
-	const agentText = agentLead + agentValue + agentTrail;
-	const prefix = titleText + agentText;
-	const hintText = hint ? hintStyle(" (") + hint + hintStyle(")") : "";
+	const titleWidth = metrics.visibleWidth(titleText);
+	const separatorsWidth = metrics.visibleWidth(" · ") * 2;
 	const minimumNameWidth = Math.min(4, metrics.visibleWidth(name));
 
-	for (const suffix of hintText ? [hintText, ""] : [""]) {
-		const nameWidth = width - metrics.visibleWidth(prefix) - metrics.visibleWidth(suffix);
-		if (nameWidth < minimumNameWidth) continue;
-		return metrics.truncateToWidth(
-			`${prefix}${metrics.truncateToWidth(nameStyle(name), nameWidth, "…")}${suffix}`,
-			width,
-			"",
-		);
+	const nameWidth = width - titleWidth - separatorsWidth - metrics.visibleWidth(agent);
+	if (nameWidth >= minimumNameWidth) {
+		return titleText + agentStyle(" · ") + agentStyle(agent) + agentStyle(" · ")
+			+ nameStyle(metrics.fitText(name, nameWidth));
 	}
 
-	const fixedAgentWidth = metrics.visibleWidth(agentLead) + metrics.visibleWidth(agentTrail);
-	const agentWidth = Math.max(0, width - metrics.visibleWidth(titleText) - minimumNameWidth);
-	if (agentWidth > fixedAgentWidth) {
-		const clippedAgentValue = metrics.truncateToWidth(agentValue, agentWidth - fixedAgentWidth, "…");
-		const clippedAgent = agentLead + clippedAgentValue + agentTrail;
-		const nameWidth = Math.max(0, width - metrics.visibleWidth(titleText) - metrics.visibleWidth(clippedAgent));
-		const heading = `${titleText}${clippedAgent}${metrics.truncateToWidth(nameStyle(name), nameWidth, "…")}`;
-		return metrics.truncateToWidth(heading, width, "");
+	const agentWidth = width - titleWidth - separatorsWidth - minimumNameWidth;
+	if (agentWidth > 0) {
+		return titleText + agentStyle(" · ") + agentStyle(metrics.fitText(agent, agentWidth))
+			+ agentStyle(" · ") + nameStyle(metrics.fitText(name, minimumNameWidth));
 	}
 
-	const nameFallback = name ? agentStyle(" · ") + nameStyle(name) : "";
-	return metrics.truncateToWidth(`${titleText}${nameFallback}`, width, "");
+	const fallbackNameWidth = width - titleWidth - metrics.visibleWidth(" · ");
+	const nameFallback = name && fallbackNameWidth > 0
+		? agentStyle(" · ") + nameStyle(metrics.fitText(name, fallbackNameWidth))
+		: "";
+	return metrics.clampStyled(`${titleText}${nameFallback}`, width);
 }
 
 function availableWidth(width: number): number {
@@ -189,25 +180,31 @@ function formatCollapsedSubagentAction(
 ): string[] {
 	const maxWidth = availableWidth(width);
 	if (maxWidth === 0) return [];
-	const hint = bodyHasHiddenDetail(args, maxWidth, previewLineLimit, metrics) ? expandHint : "";
-	const heading = metrics.truncateToWidth(
-		metrics.renderText(formatCollapsedHeading(args, style, maxWidth, metrics, hint), maxWidth)[0] ?? "",
+	const heading = metrics.clampStyled(
+		metrics.renderText(formatCollapsedHeading(args, style, maxWidth, metrics), maxWidth)[0] ?? "",
 		maxWidth,
-		"",
 	);
 	const metadataLines = args.metadata
 		? metrics.renderText((style.metadata ?? plainText)(args.metadata), maxWidth)
-			.map((line) => metrics.truncateToWidth(line, maxWidth, ""))
+			.map((line) => metrics.clampStyled(line, maxWidth))
 		: [];
-	if (previewLineLimit === 0) return [heading, ...metadataLines];
-	const preview = (style.preview ?? plainText)(normalizedInline(args.body) || args.emptyBody || "");
-	const previewLines = metrics
-		.renderText(preview, maxWidth)
-		.slice(0, previewLineLimit)
-		.map((line) => metrics.truncateToWidth(line, maxWidth, ""));
-	return previewLines.length > 0
-		? [heading, ...metadataLines, "", ...previewLines]
-		: [heading, ...metadataLines];
+	const lines = [heading, ...metadataLines];
+	if (previewLineLimit > 0) {
+		const preview = normalizedInline(args.body) || args.emptyBody || "";
+		if (preview !== "") {
+			const visualLines = metrics.renderText(preview, maxWidth).map((line) => line.trimEnd());
+			const shown = visualLines.slice(0, previewLineLimit);
+			if (visualLines.length > previewLineLimit && shown.length > 0) {
+				const last = shown.length - 1;
+				shown[last] = metrics.fitText(`${shown[last]}…`, maxWidth);
+			}
+			lines.push("", ...shown.map((line) => metrics.clampStyled((style.preview ?? plainText)(line), maxWidth)));
+		}
+	}
+	if (expandHint && bodyHasHiddenDetail(args, maxWidth, previewLineLimit, metrics)) {
+		lines.push("", metrics.clampStyled((style.hint ?? plainText)(`(${expandHint} to expand)`), maxWidth));
+	}
+	return lines;
 }
 
 function formatExpandedSubagentAction(
@@ -220,7 +217,7 @@ function formatExpandedSubagentAction(
 	if (maxWidth === 0) return [];
 	return metrics
 		.renderText(expandedContent(args, style), maxWidth)
-		.map((line) => metrics.truncateToWidth(line, maxWidth, ""));
+		.map((line) => metrics.clampStyled(line, maxWidth));
 }
 
 export function formatCollapsedSubagentCall(

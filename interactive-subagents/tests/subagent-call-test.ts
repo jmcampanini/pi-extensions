@@ -59,26 +59,37 @@ function tokens(text: string): Array<{ text: string; width: number }> {
 	return result;
 }
 
-function fallbackTruncate(text: string, width: number, ellipsis = "..."): string {
-	if (width <= 0) return "";
-	if (fallbackVisibleWidth(text) <= width) return text;
+const END_STYLES = "\x1b[39;22;23;24;27;29m";
+function fallbackCut(text: string, maxWidth: number, ellipsis: string): string {
 	const ellipsisWidth = fallbackVisibleWidth(ellipsis);
-	if (ellipsisWidth >= width) {
+	if (ellipsisWidth >= maxWidth) {
 		let result = "", used = 0;
 		for (const token of tokens(ellipsis)) {
-			if (used + token.width > width) break;
+			if (used + token.width > maxWidth) break;
 			result += token.text;
 			used += token.width;
 		}
 		return result;
 	}
-	let result = "", used = 0;
+	let kept = "", used = 0;
 	for (const token of tokens(text)) {
-		if (used + token.width > width - ellipsisWidth) break;
-		result += token.text;
+		if (used + token.width > maxWidth - ellipsisWidth) break;
+		kept += token.text;
 		used += token.width;
 	}
-	return `${result}\x1b[0m${ellipsis}\x1b[0m`;
+	return kept.includes("\x1b") ? kept + END_STYLES + ellipsis : kept + ellipsis;
+}
+
+function fallbackFitText(text: string, maxWidth: number, ellipsis = "…"): string {
+	if (maxWidth <= 0) return "";
+	if (fallbackVisibleWidth(text) <= maxWidth) return text;
+	return fallbackCut(text, maxWidth, ellipsis);
+}
+
+function fallbackClampStyled(line: string, maxWidth: number): string {
+	if (maxWidth <= 0) return "";
+	if (fallbackVisibleWidth(line) <= maxWidth) return line;
+	return fallbackCut(line, maxWidth, "");
 }
 
 function fallbackRenderText(text: string, width: number): string[] {
@@ -107,19 +118,27 @@ const packageName = "@earendil-works/pi-tui";
 const tui = await import(packageName).catch(() => undefined) as
 	| {
 		visibleWidth: (text: string) => number;
-		truncateToWidth: (text: string, width: number, ellipsis?: string) => string;
 		Text: new (text: string, paddingX: number, paddingY: number) => { render(width: number): string[] };
 	}
 	| undefined;
-const metrics = tui
+const textFitModule = "../text-fit.ts";
+const textFit = tui
+	? await import(textFitModule) as {
+		fitText: (text: string, maxWidth: number, ellipsis?: string) => string;
+		clampStyled: (line: string, maxWidth: number) => string;
+	}
+	: undefined;
+const metrics = tui && textFit
 	? {
 		visibleWidth: tui.visibleWidth,
-		truncateToWidth: tui.truncateToWidth,
+		fitText: textFit.fitText,
+		clampStyled: textFit.clampStyled,
 		renderText: (text: string, width: number) => new tui.Text(text, 0, 0).render(width),
 	}
 	: {
 		visibleWidth: fallbackVisibleWidth,
-		truncateToWidth: fallbackTruncate,
+		fitText: fallbackFitText,
+		clampStyled: fallbackClampStyled,
 		renderText: fallbackRenderText,
 	};
 
@@ -151,18 +170,16 @@ const comfortableResume = formatCollapsedSubagentResumeCall(resumeArgs, 100, 3, 
 eq("resume call matches the spawn identity grammar", plainLines(comfortableResume)[0], "subagent resume · scout · Auth flow");
 eq("resume call separates its follow-up with a blank line", plainLines(comfortableResume)[1], "");
 eq("resume call previews its follow-up", plainLines(comfortableResume)[2], resumeArgs.message);
-eq(
-	"multiline resume follow-up advertises expansion",
-	plainLines(formatCollapsedSubagentResumeCall(
-		{ ...resumeArgs, message: "Apply the fix.\nRerun the tests." },
-		100,
-		3,
-		metrics,
-		{},
-		"Ctrl+O to expand",
-	))[0],
-	"subagent resume · scout · Auth flow (Ctrl+O to expand)",
-);
+const multilineResume = plainLines(formatCollapsedSubagentResumeCall(
+	{ ...resumeArgs, message: "Apply the fix.\nRerun the tests." },
+	100,
+	3,
+	metrics,
+	{},
+	"Ctrl+O",
+));
+eq("multiline resume follow-up advertises expansion in the footer", multilineResume.at(-1), "(Ctrl+O to expand)");
+eq("multiline resume keeps its heading free of the hint", multilineResume[0], "subagent resume · scout · Auth flow");
 eq(
 	"resume without a follow-up has a neutral preview and no expansion hint",
 	plainLines(formatCollapsedSubagentResumeCall(
@@ -171,7 +188,7 @@ eq(
 		3,
 		metrics,
 		{},
-		"Ctrl+O to expand",
+		"Ctrl+O",
 	)),
 	["subagent resume · scout · Auth flow", "", "No follow-up message."],
 );
@@ -191,7 +208,7 @@ for (const width of [0, 1, 2, 8, 20, 36]) {
 		3,
 		metrics,
 		{},
-		"Ctrl+O to expand",
+		"Ctrl+O",
 	);
 	eq(`resume width ${width} never exceeds terminal columns`, lines.every((line) => metrics.visibleWidth(line) <= width), true);
 }
@@ -209,29 +226,29 @@ const threeLinePreview = formatCollapsedSubagentCall(
 	3,
 	metrics,
 	{},
-	"Ctrl+O to expand",
+	"Ctrl+O",
 );
-eq("configured call previews include one header, model metadata, one spacer, and three visual lines", threeLinePreview.length, 6);
-eq("configured call previews advertise detail hidden by the line limit",
-	plainLines(threeLinePreview)[0].includes("Ctrl+O to expand"), true);
-eq("call previews do not add result-style ellipses", plainLines(threeLinePreview).slice(2).some((line) => line.includes("…")), false);
+eq("configured call previews include a header, model metadata, three visual lines, and a hint footer", threeLinePreview.length, 8);
+eq("call headings no longer carry the expansion hint", plainLines(threeLinePreview)[0].includes("to expand"), false);
+eq("clipped call previews mark omitted text with an ellipsis", plainLines(threeLinePreview)[5].endsWith("…"), true);
+eq("call preview footers advertise detail hidden by the line limit", plainLines(threeLinePreview).at(-1), "(Ctrl+O to expand)");
 const headerOnlyCall = formatCollapsedSubagentCall(
 	{ name: "Long task", task: longTask },
 	100,
 	0,
 	metrics,
 	{},
-	"Ctrl+O to expand",
+	"Ctrl+O",
 );
-eq("zero call preview lines retain the heading and model metadata", headerOnlyCall.length, 2);
-eq("header-only calls retain the expansion hint", plainLines(headerOnlyCall)[0].includes("Ctrl+O to expand"), true);
+eq("zero call preview lines retain the heading, model metadata, and hint footer", headerOnlyCall.length, 4);
+eq("header-only calls retain the expansion hint in the footer", plainLines(headerOnlyCall).at(-1), "(Ctrl+O to expand)");
 const headerOnlyEmptyResume = formatCollapsedSubagentResumeCall(
 	{ name: "No follow-up" },
 	100,
 	0,
 	metrics,
 	{},
-	"Ctrl+O to expand",
+	"Ctrl+O",
 );
 eq("zero-line empty resumes have no spacer or misleading expansion hint",
 	plainLines(headerOnlyEmptyResume), ["subagent resume · worker · No follow-up"]);
@@ -304,25 +321,28 @@ eq(
 eq("an omitted agent displays worker without brackets", plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, 3, metrics))[0], "subagent spawn · worker · Tests");
 eq(
 	"collapsed call advertises expansion when task detail is hidden",
-	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "first\nsecond" }, 100, 3, metrics, {}, "Ctrl+O to expand"))[0],
-	"subagent spawn · worker · Tests (Ctrl+O to expand)",
+	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "first\nsecond" }, 100, 3, metrics, {}, "Ctrl+O")).at(-1),
+	"(Ctrl+O to expand)",
 );
 eq(
 	"collapsed call omits the expansion hint when the full task is already visible",
-	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, 3, metrics, {}, "Ctrl+O to expand"))[0],
-	"subagent spawn · worker · Tests",
+	plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "Run" }, 100, 3, metrics, {}, "Ctrl+O")),
+	["subagent spawn · worker · Tests", "inherits model", "", "Run"],
 );
-const longIdentityHeading = plainLines(formatCollapsedSubagentCall(
+const longIdentity = plainLines(formatCollapsedSubagentCall(
 	{ name: "A very long invocation name that must yield space to metadata", agent: "code-reviewer", task: "first\nsecond" },
 	80,
 	3,
 	metrics,
 	{},
-	"Ctrl+O to expand",
-))[0];
-eq("long names retain the agent profile before the clipped name", longIdentityHeading.includes("· code-reviewer ·"), true);
-eq("long names clip before the expansion hint", longIdentityHeading.endsWith("(Ctrl+O to expand)"), true);
-eq("long identity headings still fit", metrics.visibleWidth(longIdentityHeading) <= 80, true);
+	"Ctrl+O",
+));
+eq("long names retain the agent profile before the clipped name", longIdentity[0].includes("· code-reviewer ·"), true);
+eq("long names are clipped with an ellipsis", longIdentity[0].endsWith("…"), true);
+eq("long identity headings still fit", metrics.visibleWidth(longIdentity[0]) <= 80, true);
+eq("hidden detail keeps its hint in the footer at any heading length", longIdentity.at(-1), "(Ctrl+O to expand)");
+const narrowUnstyled = formatCollapsedSubagentCall(args, 20, 3, metrics, {}, "Ctrl+O");
+eq("unstyled narrow renders contain no residual escape codes", narrowUnstyled.join("").includes("\x1b"), false);
 const narrowLongAgentHeading = plainLines(formatCollapsedSubagentCall(
 	{ name: "Auth flow", agent: "code-reviewer", task: "Run" },
 	30,
@@ -456,7 +476,11 @@ if (callRenderer === undefined) {
 	eq("registered renderer styles the invocation name as the primary accent", collapsedOutput.includes("\x1b[32mAuth flow\x1b[0m"), true);
 	eq("registered renderer styles the leading separator as muted metadata", collapsedOutput.includes("\x1b[33m · \x1b[0m"), true);
 	eq("registered renderer styles the unbracketed agent as muted metadata", collapsedOutput.includes("\x1b[33mworker\x1b[0m"), true);
-	eq("registered renderer displays an expansion hint", collapsedPlain.includes("to expand"), true);
+	// keyText("app.tools.expand") resolves to no key in this bare process (a
+	// live session registers app keybindings), so the footer must be absent
+	// rather than dangling an empty "( to expand)".
+	eq("registered renderer omits the hint footer when no expand binding resolves",
+		collapsedPlain.includes("to expand") || collapsedPlain.includes("()"), false);
 	eq("registered renderer styles the task preview as dim", collapsedOutput.includes("\x1b[2mfirst second\x1b[0m"), true);
 	eq(
 		"registered renderer shows inherited model and effective spawn modes on a separate metadata line",
@@ -540,7 +564,7 @@ if (callRenderer === undefined) {
 	eq("an explicit cwd disables an inherited worktree mode", cwdOverrideOutput.split("\n")[1].trimEnd(),
 		"inherits model · context forked · interactive");
 	const toolSource = readFileSync(new URL("../tool-spawn.ts", import.meta.url), "utf8");
-	eq("registered renderer resolves the configured expansion binding", toolSource.includes('keyHint("app.tools.expand", "to expand")'), true);
+	eq("registered renderer resolves the configured expansion binding", toolSource.includes('keyText("app.tools.expand")'), true);
 	eq("execution-time presentation persists the resolved model", toolSource.includes("model: model ?? null"), true);
 	const expandedOutput = callRenderer(renderArgs, markedTheme, renderContext(true)).render(120).join("\n");
 	eq("registered renderer styles the expanded task body as tool output", expandedOutput.includes("\x1b[36mfirst"), true);
@@ -660,7 +684,8 @@ if (resumeCallRenderer === undefined) {
 		eq("resume renderer styles the resolved name as the primary accent", collapsedOutput.includes("\x1b[32mAuth flow\x1b[0m"), true);
 		eq("resume renderer styles the agent as muted metadata", collapsedOutput.includes("\x1b[33mscout\x1b[0m"), true);
 		eq("resume renderer styles the follow-up preview as dim", collapsedOutput.includes("\x1b[2mApply the fix. Rerun the tests.\x1b[0m"), true);
-		eq("resume renderer displays an expansion hint for hidden detail", collapsedPlain.includes("to expand"), true);
+		eq("resume renderer omits the hint footer when no expand binding resolves",
+			collapsedPlain.includes("to expand") || collapsedPlain.includes("()"), false);
 		const expandedOutput = resumeCallRenderer(renderArgs, markedTheme, renderContext(true)).render(120).join("\n");
 		eq("resume renderer styles the expanded follow-up as tool output", expandedOutput.includes("\x1b[36mApply the fix."), true);
 		const expandedPlainLines = plainLines(expandedOutput.split("\n"));
@@ -680,7 +705,7 @@ if (resumeCallRenderer === undefined) {
 		).render(120).join("\n");
 		eq("explicit resume names override launch metadata", stripVTControlCharacters(renamedOutput).includes("· Verification"), true);
 		const resumeSource = readFileSync(new URL("../tool-resume.ts", import.meta.url), "utf8");
-		eq("resume renderer resolves the configured expansion binding", resumeSource.includes('keyHint("app.tools.expand", "to expand")'), true);
+		eq("resume renderer resolves the configured expansion binding", resumeSource.includes('keyText("app.tools.expand")'), true);
 		eq("resume name schema documents original-name fallback", resumeSource.includes("defaults to the child's original name, then 'Resumed'"), true);
 	} finally {
 		ledger.delete(id);

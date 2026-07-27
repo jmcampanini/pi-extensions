@@ -13,8 +13,8 @@
  * ('started') or queues (capacity.ts starts it when a slot frees, 'queued').
  */
 
-import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { keyText, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Text, visibleWidth } from "@earendil-works/pi-tui";
 import { Type, type Static } from "@sinclair/typebox";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -50,6 +50,7 @@ import {
 	formatExpandedSubagentResumeCall,
 } from "./subagent-call.ts";
 import { renderSubagentLaunchResult } from "./subagent-result.ts";
+import { clampStyled, fitText } from "./text-fit.ts";
 import { updateRunningWidget } from "./running-widget.ts";
 import { closePane, createPane, isTmuxAvailable, shellQuote, stageLaunchScript } from "./tmux.ts";
 import { ledger, moduleGeneration, running } from "./state.ts";
@@ -80,7 +81,8 @@ type ResumeParamsType = Static<typeof ResumeParams>;
 
 const CALL_TEXT_METRICS = {
 	visibleWidth,
-	truncateToWidth,
+	fitText,
+	clampStyled,
 	renderText: (text: string, width: number) => new Text(text, 0, 0).render(width),
 };
 
@@ -116,7 +118,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				preview: (text: string) => theme.fg("dim", text),
 				body: (text: string) => theme.fg("toolOutput", text),
 			};
-			const expandHint = keyHint("app.tools.expand", "to expand");
+			const expandHint = keyText("app.tools.expand");
 			return {
 				invalidate(): void {},
 				render(width: number): string[] {

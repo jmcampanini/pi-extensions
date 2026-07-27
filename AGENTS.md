@@ -8,3 +8,4 @@
   - Use `theme.fg("dim", ...)` for tertiary previews, hints, and less important metadata.
   - Render tool body output with `theme.fg("toolOutput", ...)`.
 - In TUI code, use semantic theme tokens rather than palette names or literal colors. Palette-specific mappings belong in theme JSON.
+- Never truncate card text with pi-tui's `truncateToWidth` — it injects `\x1b[0m` resets that kill the enclosing background. Use `interactive-subagents/text-fit.ts`: `fitText` on raw text before styling (the ellipsis inherits the style), `clampStyled` to hard-clamp an already-styled line.

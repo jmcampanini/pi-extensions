@@ -7,8 +7,9 @@ import { initTheme } from "@earendil-works/pi-coding-agent";
 import { stripVTControlCharacters } from "node:util";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Text, visibleWidth } from "@earendil-works/pi-tui";
 import { buildSubagentResultEnvelope } from "../result-content.ts";
+import { clampStyled, fitText } from "../text-fit.ts";
 import {
 	estimateResultTokens,
 	formatCollapsedSubagentResult,
@@ -63,7 +64,10 @@ eq("completed footer carries sizes and the expansion hint", completed[4],
 const failed = formatCollapsedSubagentResult(details("failed", "Provider authentication expired."), 120, 5, "Ctrl+O").map(plain);
 eq("failed is explicit without header metrics", failed[0],
 	"subagent result · code-reviewer · API review · failed 2m14s");
-const stoppedDetails = { ...details("stopped", "No final result was delivered."), resultTokens: undefined };
+const stoppedDetails = {
+	...details("stopped", "Stopped by the user — no final result. Partial work may remain; expand for resume and worktree details."),
+	resultTokens: undefined,
+};
 const stopped = formatCollapsedSubagentResult(stoppedDetails, 120, 5, "Ctrl+O").map(plain);
 eq("stopped omits unavailable result size from its footer", stopped.at(-1),
 	"84k ctx (Ctrl+O to expand)");
@@ -86,7 +90,8 @@ const styledHint = formatCollapsedSubagentResult(
 	"ctrl+o",
 	{
 		visibleWidth,
-		truncateToWidth,
+		fitText,
+		clampStyled,
 		renderText: (text, width) => new Text(text, 0, 0).render(width),
 	},
 	{
@@ -133,6 +138,7 @@ for (const width of [0, 1, 2, 8, 20, 40, 80]) {
 	const lines = formatCollapsedSubagentResult(hostile, width, 5, "Ctrl+O");
 	eq(`width ${width} never exceeds terminal columns`, lines.every((line) => visibleWidth(line) <= width), true);
 	eq(`width ${width} never exposes child terminal controls`, lines.join("").includes("\x1b]52"), false);
+	eq(`width ${width} truncation introduces no escape codes`, lines.join("").includes("\x1b"), false);
 }
 
 const current = details("completed");
@@ -247,7 +253,8 @@ for (const status of ["completed", "failed", "stopped"] as const) {
 	} as unknown as Theme;
 	const statusMessage = { ...message, details: details(status) };
 	renderer?.(statusMessage, { expanded: false }, statusTheme)?.render(120);
-	const expectedBackground = status === "completed" ? "toolSuccessBg" : "toolErrorBg";
+	const expectedBackground =
+		status === "completed" ? "toolSuccessBg" : status === "stopped" ? "customMessageBg" : "toolErrorBg";
 	eq(`${status} uses ${expectedBackground}`, usedBackgrounds.includes(expectedBackground), true);
 }
 const markedTheme = {
@@ -395,6 +402,8 @@ const resultMessageSource = readFileSync(`${directory}/result-message.ts`, "utf8
 eq("watcher emits completed presentation details", watcherSource.includes('resultPresentation("completed"'), true);
 eq("watcher emits failed presentation details", watcherSource.includes('resultPresentation("failed"'), true);
 eq("watcher emits stopped presentation details", watcherSource.includes('"stopped",\n'), true);
+eq("watcher's stopped preview leads with the requester",
+	watcherSource.includes('child.stopRequester === "user" ? "Stopped by the user" : "Stopped by the parent agent"'), true);
 eq("watcher estimates extracted result tokens", watcherSource.includes("estimateResultTokens(generatedSummary)"), true);
 eq("watcher emits result token details", watcherSource.includes("resultTokens,\n"), true);
 eq("watcher builds labeled model-facing envelopes", watcherSource.includes("buildSubagentResultEnvelope({"), true);

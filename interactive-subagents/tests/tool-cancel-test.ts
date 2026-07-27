@@ -280,9 +280,9 @@ const renderContext = (isError: boolean) => ({
 }) as Parameters<NonNullable<ToolDefinition["renderResult"]>>[3];
 
 const callOutput = tool.renderCall?.({ id: "abc12345" }, markedTheme, renderContext(false)).render(100).join("\n").trimEnd() ?? "";
-eq("call renderer uses a bold tool title and unbolded accent id",
-	callOutput, "<toolTitle><b>cancel subagent</b></toolTitle> <accent>abc12345</accent>");
-eq("call renderer touches only native title and argument tokens", themeCalls, ["toolTitle", "accent"]);
+eq("call renderer matches the subagent tool family grammar",
+	callOutput, "<toolTitle><b>subagent cancel</b></toolTitle><muted> · </muted><accent>abc12345</accent>");
+eq("call renderer touches only native title, separator, and argument tokens", themeCalls, ["toolTitle", "muted", "accent"]);
 const hostileCallOutput = tool.renderCall?.(
 	{ id: "abc\u001b]52;c;Y2xpcGJvYXJk\u000712345\n" },
 	markedTheme,

@@ -16,11 +16,12 @@
  * ModelLookup interface; its only UI dependency is pi-tui's text metrics.
  */
 
-import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Text, visibleWidth } from "@earendil-works/pi-tui";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { assertValidAgentIdentifier, isValidAgentIdentifier } from "./agent-identifier.ts";
+import { clampStyled, fitText } from "./text-fit.ts";
 import { agentConfigDir } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { harnessProfile, isExternalHarness, validHarnessValues } from "./harnesses.ts";
@@ -479,7 +480,7 @@ export function formatAgentOverviewLines(
 				"Create <name>.md files there (frontmatter: description, details, models, thinking, tools, context, auto-exit, worktree, harness, harness-pass-through; body = system prompt).",
 				Math.max(1, safeWidth - 1),
 			).map((wrapped) => ` ${wrapped}`),
-		].map((line) => truncateToWidth(line, safeWidth, ""));
+		].map((line) => clampStyled(line, safeWidth));
 	}
 
 	// Tag column: "[scout]" padded so every card's body starts at the same
@@ -519,7 +520,7 @@ export function formatAgentOverviewLines(
 		// gives way with an ellipsis — or vanishes entirely on an absurdly
 		// narrow pane — so the source column stays anchored.
 		const maxSlot = Math.max(0, safeWidth - indent - visibleWidth(right) - 2 - 3);
-		const slotText = truncateToWidth(slot.text, maxSlot, maxSlot > 0 ? "…" : "");
+		const slotText = fitText(slot.text, maxSlot);
 		const dots = Math.max(3, safeWidth - indent - visibleWidth(slotText) - visibleWidth(right) - 2);
 		lines.push(
 			" " +
@@ -618,5 +619,5 @@ export function formatAgentOverviewLines(
 			lines.push(dim(` ${wrapped}`));
 		}
 	}
-	return lines.map((line) => truncateToWidth(line, safeWidth, ""));
+	return lines.map((line) => clampStyled(line, safeWidth));
 }
