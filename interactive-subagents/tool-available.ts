@@ -3,7 +3,7 @@
  */
 
 import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import {
 	agentDefsDir,
@@ -16,6 +16,7 @@ import {
 } from "./agents.ts";
 import { updateCatalogue } from "./catalogue.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
+import { clampStyled } from "./text-fit.ts";
 
 export interface AvailablePresentation {
 	version: 1;
@@ -110,9 +111,9 @@ export function formatCollapsedAvailableLines(
 	if (expandHint) {
 		const hidden = inventory.length - Math.min(inventory.length, AVAILABLE_CARD_MAX_ROWS);
 		const label = hidden > 0 ? `… ${hidden} more · ${expandHint}` : `(${expandHint})`;
-		lines.push(truncateToWidth(metadata(label), safeWidth, ""));
+		lines.push(clampStyled(metadata(label), safeWidth));
 	}
-	return lines.map((line) => truncateToWidth(line, safeWidth, ""));
+	return lines.map((line) => clampStyled(line, safeWidth));
 }
 
 function isAgentInfo(value: unknown): value is AgentInfo {

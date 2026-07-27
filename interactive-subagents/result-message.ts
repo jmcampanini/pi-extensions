@@ -1,8 +1,9 @@
 import { estimateTokens, getMarkdownTheme, keyText, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Box, Markdown, Text, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { Box, Markdown, Text, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { isValidAgentIdentifier } from "./agent-identifier.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
+import { clampStyled, fitText } from "./text-fit.ts";
 import { formatCost, formatTokens } from "./widget.ts";
 
 export type SubagentResultStatus = "completed" | "failed" | "stopped";
@@ -49,13 +50,15 @@ interface ResultStyle {
 
 interface ResultMetrics {
 	visibleWidth: (text: string) => number;
-	truncateToWidth: (text: string, width: number, ellipsis?: string) => string;
+	fitText: (text: string, maxWidth: number, ellipsis?: string) => string;
+	clampStyled: (line: string, maxWidth: number) => string;
 	renderText: (text: string, width: number) => string[];
 }
 
 const METRICS: ResultMetrics = {
 	visibleWidth,
-	truncateToWidth,
+	fitText,
+	clampStyled,
 	renderText: (text, width) => new Text(text, 0, 0).render(width),
 };
 
@@ -65,6 +68,12 @@ const STATUS_COPY = {
 	completed: "done",
 	failed: "failed",
 	stopped: "stopped",
+} as const;
+
+const STATUS_BACKGROUNDS = {
+	completed: "toolSuccessBg",
+	failed: "toolErrorBg",
+	stopped: "customMessageBg",
 } as const;
 
 const PLAIN_STYLE: ResultStyle = {
@@ -210,53 +219,36 @@ function formatHeader(
 	const agent = inline(details.agent ?? "") || "worker";
 	const duration = humanElapsed(details.presentation.elapsedSeconds).replace(/\s+/g, "");
 	const titleText = style.title("subagent result");
-	const agentLead = style.metadata(" · ");
-	const agentValue = style.metadata(agent);
-	const agentTrail = style.metadata(" · ");
-	const agentText = agentLead + agentValue + agentTrail;
-	const prefix = titleText + agentText;
-	const statusText = style.metadata(` · ${status} ${duration}`);
-	const shortStatusText = style.metadata(` · ${status}`);
+	const titleWidth = metrics.visibleWidth(titleText);
+	const separatorsWidth = metrics.visibleWidth(" · ") * 2;
 	const minimumNameWidth = Math.min(4, metrics.visibleWidth(name));
 
-	function withFullAgent(suffix: string): string | undefined {
-		const nameWidth = width - metrics.visibleWidth(prefix) - metrics.visibleWidth(suffix);
-		if (nameWidth < minimumNameWidth) return undefined;
-		const clippedName = metrics.truncateToWidth(style.name(name), nameWidth, "…");
-		return metrics.truncateToWidth(`${prefix}${clippedName}${suffix}`, width, "");
+	function withIdentity(statusSuffix: string): string | undefined {
+		const suffixText = style.metadata(statusSuffix);
+		const suffixWidth = metrics.visibleWidth(statusSuffix);
+		const nameWidth = width - titleWidth - separatorsWidth - metrics.visibleWidth(agent) - suffixWidth;
+		if (nameWidth >= minimumNameWidth) {
+			return titleText + style.metadata(" · ") + style.metadata(agent) + style.metadata(" · ")
+				+ style.name(metrics.fitText(name, nameWidth)) + suffixText;
+		}
+		const agentWidth = width - titleWidth - separatorsWidth - minimumNameWidth - suffixWidth;
+		if (agentWidth > 0) {
+			return titleText + style.metadata(" · ") + style.metadata(metrics.fitText(agent, agentWidth))
+				+ style.metadata(" · ") + style.name(metrics.fitText(name, minimumNameWidth)) + suffixText;
+		}
+		return undefined;
 	}
 
-	function withClippedAgent(suffix: string): string | undefined {
-		const fixedAgentWidth = metrics.visibleWidth(agentLead) + metrics.visibleWidth(agentTrail);
-		const agentWidth = width - metrics.visibleWidth(titleText) - minimumNameWidth - metrics.visibleWidth(suffix);
-		if (agentWidth <= fixedAgentWidth) return undefined;
-		const clippedAgentValue = metrics.truncateToWidth(agentValue, agentWidth - fixedAgentWidth, "…");
-		const clippedAgent = agentLead + clippedAgentValue + agentTrail;
-		const nameWidth = Math.max(
-			0,
-			width - metrics.visibleWidth(titleText) - metrics.visibleWidth(clippedAgent) - metrics.visibleWidth(suffix),
-		);
-		return metrics.truncateToWidth(
-			`${titleText}${clippedAgent}${metrics.truncateToWidth(style.name(name), nameWidth, "…")}${suffix}`,
-			width,
-			"",
-		);
-	}
-
-	const timedHeading = withFullAgent(statusText);
+	const timedHeading = withIdentity(` · ${status} ${duration}`);
 	if (timedHeading !== undefined) return timedHeading;
-	const clippedTimedHeading = withClippedAgent(statusText);
-	if (clippedTimedHeading !== undefined) return clippedTimedHeading;
-	const timedStatusOnly = titleText + statusText;
+	const timedStatusOnly = titleText + style.metadata(` · ${status} ${duration}`);
 	if (metrics.visibleWidth(timedStatusOnly) <= width) return timedStatusOnly;
 
-	const shortHeading = withFullAgent(shortStatusText);
+	const shortHeading = withIdentity(` · ${status}`);
 	if (shortHeading !== undefined) return shortHeading;
-	const clippedShortHeading = withClippedAgent(shortStatusText);
-	if (clippedShortHeading !== undefined) return clippedShortHeading;
 	const statusOnly = `${titleText}${style.metadata(` ${status}`)}`;
 	if (metrics.visibleWidth(statusOnly) <= width) return statusOnly;
-	return metrics.truncateToWidth(`${style.title("subagent")}${style.metadata(` ${status}`)}`, width, "");
+	return metrics.clampStyled(`${style.title("subagent")}${style.metadata(` ${status}`)}`, width);
 }
 
 function formatCollapsedFooter(
@@ -269,19 +261,20 @@ function formatCollapsedFooter(
 	const sizeParts: string[] = [];
 	if (details.contextTokens !== undefined) sizeParts.push(`${formatTokens(details.contextTokens)} ctx`);
 	if (details.resultTokens !== undefined) sizeParts.push(`~${formatTokens(details.resultTokens)} result`);
-	const sizeText = sizeParts.length > 0 ? style.metadata(sizeParts.join(" · ")) : "";
+	const sizeRaw = sizeParts.join(" · ");
+	const sizeText = sizeRaw ? style.metadata(sizeRaw) : "";
 	const safeHint = inline(hint);
 	const hintText = safeHint ? style.hint(`(${safeHint} to expand)`) : "";
 	const separator = sizeText && hintText ? style.metadata(" ") : "";
 	const footer = sizeText + separator + hintText;
 	if (metrics.visibleWidth(footer) <= width) return footer;
-	if (!hintText) return metrics.truncateToWidth(sizeText, width, "…");
+	if (!hintText) return style.metadata(metrics.fitText(sizeRaw, width));
 
 	const hintWidth = metrics.visibleWidth(hintText);
-	if (hintWidth >= width) return metrics.truncateToWidth(hintText, width, "");
+	if (hintWidth >= width) return metrics.clampStyled(hintText, width);
 	const sizeWidth = width - hintWidth - metrics.visibleWidth(separator);
 	if (sizeWidth <= 0) return hintText;
-	return metrics.truncateToWidth(sizeText, sizeWidth, "…") + separator + hintText;
+	return style.metadata(metrics.fitText(sizeRaw, sizeWidth)) + separator + hintText;
 }
 
 export function formatCollapsedSubagentResult(
@@ -301,12 +294,12 @@ export function formatCollapsedSubagentResult(
 		const shown = visualLines.slice(0, previewLineLimit);
 		if (visualLines.length > previewLineLimit && shown.length > 0) {
 			const last = shown.length - 1;
-			shown[last] = metrics.truncateToWidth(`${shown[last]}…`, maxWidth, "…");
+			shown[last] = metrics.fitText(`${shown[last]}…`, maxWidth);
 		}
 		if (shown.length > 0) {
 			lines.push("");
 			for (const line of shown) {
-				lines.push(metrics.truncateToWidth(style.preview(line), maxWidth, ""));
+				lines.push(metrics.clampStyled(style.preview(line), maxWidth));
 			}
 		}
 	}
@@ -336,7 +329,7 @@ function widthSafe(component: Component): Component {
 		render(width: number): string[] {
 			const maxWidth = availableWidth(width);
 			if (maxWidth === 0) return [];
-			return component.render(maxWidth).map((line) => truncateToWidth(line, maxWidth, ""));
+			return component.render(maxWidth).map((line) => clampStyled(line, maxWidth));
 		},
 	};
 }
@@ -406,7 +399,7 @@ function structuredExpandedResult(
 			if (details.resultTokens !== undefined) runMetrics.push(`result ~${formatTokens(details.resultTokens)}`);
 			if (details.costUsd !== undefined) runMetrics.push(`cost this run ${formatCost(details.costUsd)}`);
 			if (runMetrics.length > 0) appendText(style.metadata(runMetrics.join(" · ")));
-			return lines.map((line) => truncateToWidth(line, maxWidth, ""));
+			return lines.map((line) => clampStyled(line, maxWidth));
 		},
 	};
 }
@@ -415,7 +408,9 @@ export function registerSubagentResultRenderer(pi: ExtensionAPI): void {
 	pi.registerMessageRenderer("subagent_result", (message, { expanded }, theme) => {
 		const details = parseSubagentResultDetails(message.details);
 		if (details === undefined) return undefined;
-		const background = details.presentation.status === "completed" ? "toolSuccessBg" : "toolErrorBg";
+		// A stop the user or parent asked for is not a failure — red stays
+		// reserved for runs that actually failed.
+		const background = STATUS_BACKGROUNDS[details.presentation.status];
 		const shell = (component: Component): Component =>
 			nativeMessageShell(component, (text) => theme.bg(background, text));
 		const style: ResultStyle = {

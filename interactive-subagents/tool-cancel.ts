@@ -89,7 +89,7 @@ export function registerSubagentCancelTool(pi: ExtensionAPI): void {
 		renderCall(args, theme) {
 			const id = sanitizeDisplayText(args.id).replace(/\s+/g, " ").trim();
 			return new Text(
-				theme.fg("toolTitle", theme.bold("cancel subagent")) + " " + theme.fg("accent", id),
+				theme.fg("toolTitle", theme.bold("subagent cancel")) + theme.fg("muted", " · ") + theme.fg("accent", id),
 				0,
 				0,
 			);

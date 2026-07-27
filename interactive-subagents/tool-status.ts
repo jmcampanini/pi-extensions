@@ -3,11 +3,12 @@
  */
 
 import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { oldestActiveTool, toolElapsedSeconds, type ActivityObservation } from "./activity.ts";
 import { pendingLaunches, queuedEntries, specDisplay, type LaunchSpec } from "./capacity.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
+import { clampStyled } from "./text-fit.ts";
 import { humanElapsed } from "./result-message.ts";
 import { collectLifecycleWidgetRows } from "./running-widget.ts";
 import { delivering, running } from "./state.ts";
@@ -243,7 +244,7 @@ export function formatStatusCardLines(
 		const text = expanded ? core + body(` — ${safeInline(entry.description)}`) : core;
 		lines.push(...new Text(text, 0, 0).render(safeWidth));
 	}
-	return lines.map((line) => truncateToWidth(line, safeWidth, ""));
+	return lines.map((line) => clampStyled(line, safeWidth));
 }
 
 const RUNTIME_STATES = new Set<SubagentRuntimeState>([

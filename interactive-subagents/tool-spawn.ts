@@ -21,8 +21,8 @@
  * as steered messages.
  */
 
-import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { keyText, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Text, visibleWidth } from "@earendil-works/pi-tui";
 import { Type, type Static } from "@sinclair/typebox";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -59,6 +59,7 @@ import { countEntries, seedForkSession, seedNewSession } from "./session.ts";
 import { moduleGeneration } from "./state.ts";
 import { formatCollapsedSubagentCall, formatExpandedSubagentCall } from "./subagent-call.ts";
 import { renderSubagentLaunchResult } from "./subagent-result.ts";
+import { clampStyled, fitText } from "./text-fit.ts";
 import { updateRunningWidget } from "./running-widget.ts";
 import { closePane, createPane, isTmuxAvailable, shellQuote, stageLaunchScript } from "./tmux.ts";
 import { trackChild } from "./watcher.ts";
@@ -200,7 +201,8 @@ function spawnCallPresentation(
 
 const CALL_TEXT_METRICS = {
 	visibleWidth,
-	truncateToWidth,
+	fitText,
+	clampStyled,
 	renderText: (text: string, width: number) => new Text(text, 0, 0).render(width),
 };
 
@@ -237,7 +239,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 				metadata: (text: string) => theme.fg("muted", text),
 				body: (text: string) => theme.fg("toolOutput", text),
 			};
-			const expandHint = keyHint("app.tools.expand", "to expand");
+			const expandHint = keyText("app.tools.expand");
 			return {
 				invalidate(): void {},
 				render(width: number): string[] {

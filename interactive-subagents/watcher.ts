@@ -484,7 +484,8 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 					presentation: resultPresentation(
 						"stopped",
 						exitElapsedSeconds,
-						"No final result was delivered. Partial work may remain; expand for resume and worktree details.",
+						(child.stopRequester === "user" ? "Stopped by the user" : "Stopped by the parent agent") +
+							" — no final result. Partial work may remain; expand for resume and worktree details.",
 					),
 				},
 			});

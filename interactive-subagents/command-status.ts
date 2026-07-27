@@ -9,9 +9,10 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 import { requestCancel } from "./cancel.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
+import { clampStyled, fitText } from "./text-fit.ts";
 import {
 	collectLifecycleWidgetRows,
 	type LifecycleWidgetRow,
@@ -81,9 +82,9 @@ export function formatStatusPickerLines(
 		warn,
 	}, { selectedIndex: cursor - start }));
 
-	if (rows.length === 0) lines.push(truncateToWidth(dim(" No unresolved sub-agents"), safeWidth));
+	if (rows.length === 0) lines.push(dim(fitText(" No unresolved sub-agents", safeWidth)));
 	if (rows.length > limit) {
-		lines.push(truncateToWidth(dim(` ${start + 1}–${end} of ${rows.length}`), safeWidth));
+		lines.push(dim(fitText(` ${start + 1}–${end} of ${rows.length}`, safeWidth)));
 	}
 	const selectedRow = rows[Math.max(0, Math.min(cursor, rows.length - 1))];
 	if (selectedRow) {
@@ -93,7 +94,7 @@ export function formatStatusPickerLines(
 		const showHarness = harnessName !== undefined
 			&& visibleWidth(` harness ${harnessName} · ${controls}`) <= safeWidth;
 		const harness = showHarness ? meta(` harness ${harnessName}`) + dim(" · ") : "";
-		lines.push(truncateToWidth(harness + dim(`${showHarness ? "" : " "}${controls}`), safeWidth));
+		lines.push(clampStyled(harness + dim(`${showHarness ? "" : " "}${controls}`), safeWidth));
 	}
 	lines.push(border("─".repeat(safeWidth)));
 	return lines;
