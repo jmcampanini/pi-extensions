@@ -186,6 +186,12 @@ const theme = {
 	},
 	bold: (text: string) => text,
 } as unknown as Theme;
+const renderMessage = (
+	message: Parameters<MessageRenderer>[0],
+	expanded: boolean,
+	theme: Theme,
+	outputPad = 1,
+) => renderer?.(message, { expanded, outputPad }, theme);
 const responseMarkdown = [
 	"# Complete report",
 	"",
@@ -228,13 +234,16 @@ const message = {
 	timestamp: 1,
 };
 const originalContent = message.content;
-const collapsedComponent = renderer?.(message, { expanded: false }, theme);
-const expandedComponent = renderer?.(message, { expanded: true }, theme);
+const collapsedComponent = renderMessage(message, false, theme);
+const expandedComponent = renderMessage(message, true, theme);
 eq("current details receive collapsed custom rendering", collapsedComponent !== undefined, true);
 eq("current details receive expanded custom rendering", expandedComponent !== undefined, true);
 const collapsedShellLines = collapsedComponent?.render(120).map(plain) ?? [];
 eq("collapsed renderer uses native vertical padding", [collapsedShellLines[0], collapsedShellLines.at(-1)], ["", ""]);
 eq("collapsed header receives native horizontal padding", collapsedShellLines[1]?.startsWith(" subagent result"), true);
+const unpaddedShellLines = renderMessage(message, false, theme, 0)?.render(120).map(plain) ?? [];
+eq("zero configured output padding removes horizontal padding",
+	unpaddedShellLines[1]?.startsWith("subagent result"), true);
 eq("collapsed body keeps a native spacer", collapsedShellLines[2], "");
 eq("collapsed preview relies only on boxed horizontal padding", collapsedShellLines[3]?.startsWith(" Found two"), true);
 eq("collapsed footer keeps a native spacer", collapsedShellLines[4], "");
@@ -252,7 +261,7 @@ for (const status of ["completed", "failed", "stopped"] as const) {
 		},
 	} as unknown as Theme;
 	const statusMessage = { ...message, details: details(status) };
-	renderer?.(statusMessage, { expanded: false }, statusTheme)?.render(120);
+	renderMessage(statusMessage, false, statusTheme)?.render(120);
 	const expectedBackground =
 		status === "completed" ? "toolSuccessBg" : status === "stopped" ? "customMessageBg" : "toolErrorBg";
 	eq(`${status} uses ${expectedBackground}`, usedBackgrounds.includes(expectedBackground), true);
@@ -264,7 +273,7 @@ const markedTheme = {
 } as unknown as Theme;
 for (const status of ["completed", "failed", "stopped"] as const) {
 	const styledMessage = { ...message, details: details(status) };
-	const styledOutput = renderer?.(styledMessage, { expanded: false }, markedTheme)?.render(500).join("") ?? "";
+	const styledOutput = renderMessage(styledMessage, false, markedTheme)?.render(500).join("") ?? "";
 	eq(`${status} uses tool-title styling`, styledOutput.includes("<toolTitle>subagent result</toolTitle>"), true);
 	eq(`${status} uses accent styling for the task name`, styledOutput.includes("<accent>API review</accent>"), true);
 	eq(`${status} uses muted separator and agent metadata`, styledOutput.includes("<muted> · </muted><muted>code-reviewer</muted><muted> · </muted>"), true);
@@ -308,7 +317,7 @@ eq("expanded result has no expansion hint", expandedText.includes("to expand"), 
 eq("expanded result strips terminal controls", expandedLines.join("").includes("\x1b]52"), false);
 eq("expanded rendering does not mutate model-facing content", message.content, originalContent);
 
-const structuredMarked = renderer?.(message, { expanded: true }, markedTheme)?.render(500).join("") ?? "";
+const structuredMarked = renderMessage(message, true, markedTheme)?.render(500).join("") ?? "";
 eq("expanded result styles its title as a tool title",
 	structuredMarked.includes("<toolTitle>subagent result</toolTitle>"), true);
 eq("expanded result styles session paths as accents",
@@ -347,7 +356,7 @@ const failedStructuredMessage = {
 		},
 	},
 };
-const failedStructuredText = renderer?.(failedStructuredMessage, { expanded: true }, theme)?.render(100).map(plain).join("\n") ?? "";
+const failedStructuredText = renderMessage(failedStructuredMessage, true, theme)?.render(100).map(plain).join("\n") ?? "";
 eq("expanded failed result shows its failure reason", failedStructuredText.includes("failure · exit code 1"), true);
 eq("expanded failed result labels partial output", failedStructuredText.includes("last output"), true);
 eq("expanded failed result shows retry guidance", failedStructuredText.includes("retry subagent_resume"), true);
@@ -377,7 +386,7 @@ const stoppedStructuredMessage = {
 		expanded: { version: 1 as const, notice: stoppedNotice },
 	},
 };
-const stoppedStructuredText = renderer?.(stoppedStructuredMessage, { expanded: true }, theme)?.render(100).map(plain).join("\n") ?? "";
+const stoppedStructuredText = renderMessage(stoppedStructuredMessage, true, theme)?.render(100).map(plain).join("\n") ?? "";
 eq("expanded stopped result shows its notice", stoppedStructuredText.includes(stoppedNotice), true);
 eq("expanded stopped footer includes only available run metrics",
 	stoppedStructuredText.includes("context 84k · cost this run $0.02") && !stoppedStructuredText.includes("result ~"), true);
@@ -387,13 +396,13 @@ for (const width of [1, 2, 8, 20, 60]) {
 	const lines = expandedComponent?.render(width) ?? [];
 	eq(`expanded width ${width} stays within terminal columns`, lines.every((line) => visibleWidth(line) <= width), true);
 }
-const collapsedAgain = renderer?.(message, { expanded: false }, theme)?.render(80).map(plain);
+const collapsedAgain = renderMessage(message, false, theme)?.render(80).map(plain);
 eq("collapse is stable after expansion", collapsedAgain, collapsedComponent?.render(80).map(plain));
 const restored = JSON.parse(JSON.stringify(message)) as typeof message;
 eq("persisted current message restores identically",
-	renderer?.(restored, { expanded: false }, theme)?.render(80).map(plain), collapsedAgain);
+	renderMessage(restored, false, theme)?.render(80).map(plain), collapsedAgain);
 
-eq("non-current details defer to Pi's renderer", renderer?.({ ...message, details: null }, { expanded: false }, theme), undefined);
+eq("non-current details defer to Pi's renderer", renderMessage({ ...message, details: null }, false, theme), undefined);
 
 const directory = fileURLToPath(new URL("..", import.meta.url));
 const watcherSource = readFileSync(`${directory}/watcher.ts`, "utf8");
