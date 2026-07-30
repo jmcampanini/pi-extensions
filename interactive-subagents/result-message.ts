@@ -334,8 +334,12 @@ function widthSafe(component: Component): Component {
 	};
 }
 
-function nativeMessageShell(component: Component, background: (text: string) => string): Component {
-	const box = new Box(1, 1, background);
+function nativeMessageShell(
+	component: Component,
+	background: (text: string) => string,
+	outputPad: number,
+): Component {
+	const box = new Box(outputPad, 1, background);
 	box.addChild(component);
 	return widthSafe(box);
 }
@@ -405,14 +409,14 @@ function structuredExpandedResult(
 }
 
 export function registerSubagentResultRenderer(pi: ExtensionAPI): void {
-	pi.registerMessageRenderer("subagent_result", (message, { expanded }, theme) => {
+	pi.registerMessageRenderer("subagent_result", (message, { expanded, outputPad = 1 }, theme) => {
 		const details = parseSubagentResultDetails(message.details);
 		if (details === undefined) return undefined;
 		// A stop the user or parent asked for is not a failure — red stays
 		// reserved for runs that actually failed.
 		const background = STATUS_BACKGROUNDS[details.presentation.status];
 		const shell = (component: Component): Component =>
-			nativeMessageShell(component, (text) => theme.bg(background, text));
+			nativeMessageShell(component, (text) => theme.bg(background, text), outputPad);
 		const style: ResultStyle = {
 			title: (text) => theme.fg("toolTitle", theme.bold(text)),
 			name: (text) => theme.fg("accent", text),
