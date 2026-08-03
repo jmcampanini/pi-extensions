@@ -38,7 +38,7 @@ subagent_spawn({
   context: "new",
   autoExit: true,
   worktree: false,
-})
+});
 ```
 
 This uses the listed `worker` in the parent's working directory with explicit new context, automatic exit, and no worktree. It returns `started`; the answer arrives automatically.
@@ -46,7 +46,7 @@ This uses the listed `worker` in the parent's working directory with explicit ne
 ## Choose where context comes from
 
 | Need | Choice |
-|---|---|
+| --- | --- |
 | A self-contained task | Use `context: "new"`, the default. Project files and instructions still load. Include the objective, paths, facts, constraints, edit permission, output, and verification in the task. |
 | Parent discussion or decisions would be difficult or lossy to restate | Use `context: "forked"`. It copies completed parent history as of the moment the child launches — immediately when a concurrency slot is free, or when a queued launch starts. That history goes to the child's selected model and provider, so do not fork unnecessary or sensitive context. A first-turn fork may fail before the parent session is written. |
 | Follow-up depends on a child's findings or tool history | Use `subagent_resume` to continue that child's conversation. |
@@ -94,6 +94,7 @@ thinking: medium
 tools: Read,Edit,Write,Bash
 harness-pass-through: --permission-mode acceptEdits
 ---
+
 You are a careful worker. Verify your changes before reporting.
 ```
 
@@ -128,7 +129,7 @@ The live display and `subagent_status` expose exact lifecycle states. Running ch
 Cancellation resolves the id's state when the action executes; callers do not choose between cancel and stop variants:
 
 | State at cancellation | Behavior | Result word |
-|---|---|---|
+| --- | --- | --- |
 | `queued` | Remove the launch before it has side effects. | `cancelled` |
 | `starting` | Prevent and unwind a launch that has not registered; if its child process is already registered, ask it to stop instead. | `cancelled`, or `stopping` if already running |
 | `active`, `waiting`, or `stalled` | Ask the running child to stop; a repeated request is a successful no-op while it is stopping. | `stopping` |
@@ -156,7 +157,7 @@ A successful `/reload` preserves running children, pending cleanup and delivery,
 Settings resolve from built-in defaults, then `$PI_CODING_AGENT_DIR/subagents.json`, then environment overrides. Invalid files or configured values prevent the extension from loading; fix the reported problem and run `/reload`.
 
 | Key | Default |
-|---|---|
+| --- | --- |
 | `layout` | `window` (`main` and `off` are also valid) |
 | `mainWidth` | `60%` |
 | `maxConcurrentSubagents` | `9` (`1` through `9`; further launches queue) |
