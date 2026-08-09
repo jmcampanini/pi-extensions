@@ -365,9 +365,6 @@ export function fitRepositoryLayout(input: RepositoryLayoutInput, width: number)
 		if (fitted) return fitted;
 	}
 
-	states.session = "hidden";
-	states.issue = "hidden";
-	states.pr = "hidden";
 	if (!branchText) {
 		states.cwd = "clamped";
 		cwdText = fitTail(cwdText, safeWidth);
