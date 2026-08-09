@@ -190,6 +190,14 @@ export type RepositoryReductionStage =
 	| "local-clamped"
 	| "branch-only";
 
+const REPOSITORY_REDUCTION_STEPS = [
+	["session", "hidden", "session-hidden"],
+	["issue", "compact", "issue-compact"],
+	["pr", "compact", "pr-compact"],
+	["issue", "hidden", "issue-hidden"],
+	["pr", "hidden", "pr-hidden"],
+] as const;
+
 export interface CwdVariants {
 	full: string;
 	compact: string;
@@ -350,33 +358,10 @@ export function fitRepositoryLayout(input: RepositoryLayoutInput, width: number)
 	fitted = resultIfFit("cwd-compact");
 	if (fitted) return fitted;
 
-	if (states.session !== "hidden") {
-		states.session = "hidden";
-		fitted = resultIfFit("session-hidden");
-		if (fitted) return fitted;
-	}
-
-	if (states.issue !== "hidden") {
-		states.issue = "compact";
-		fitted = resultIfFit("issue-compact");
-		if (fitted) return fitted;
-	}
-
-	if (states.pr !== "hidden") {
-		states.pr = "compact";
-		fitted = resultIfFit("pr-compact");
-		if (fitted) return fitted;
-	}
-
-	if (states.issue !== "hidden") {
-		states.issue = "hidden";
-		fitted = resultIfFit("issue-hidden");
-		if (fitted) return fitted;
-	}
-
-	if (states.pr !== "hidden") {
-		states.pr = "hidden";
-		fitted = resultIfFit("pr-hidden");
+	for (const [component, state, stage] of REPOSITORY_REDUCTION_STEPS) {
+		if (states[component] === "hidden") continue;
+		states[component] = state;
+		fitted = resultIfFit(stage);
 		if (fitted) return fitted;
 	}
 

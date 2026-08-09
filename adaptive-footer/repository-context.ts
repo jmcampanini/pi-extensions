@@ -78,12 +78,16 @@ function matchIssueNumber(text: string, patterns: readonly string[]): number | u
 	return undefined;
 }
 
+function isAttachedBranch(branch: string | null | undefined): branch is string {
+	return Boolean(branch && branch !== "detached");
+}
+
 export function inferIssueNumber(
 	branch: string | null | undefined,
 	cwd: string,
 	patterns: readonly string[],
 ): number | undefined {
-	if (branch && branch !== "detached") {
+	if (isAttachedBranch(branch)) {
 		const branchNumber = matchIssueNumber(branch, patterns);
 		if (branchNumber !== undefined) return branchNumber;
 	}
@@ -147,7 +151,7 @@ export async function discoverRepositoryContext(
 	signal?: AbortSignal,
 ): Promise<RepositoryContext> {
 	const issueNumber = inferIssueNumber(input.branch, input.cwd, input.issuePatterns);
-	const prPromise = input.branch && input.branch !== "detached"
+	const prPromise = isAttachedBranch(input.branch)
 		? runGhJson(run, ["pr", "view", "--json", "number,url,state,isDraft"], input.cwd, signal)
 		: Promise.resolve(undefined);
 	const issuePromise = issueNumber === undefined
@@ -214,10 +218,9 @@ export function createRepositoryContextRefresher(
 			if (disposed) return Promise.resolve();
 			pending = true;
 			if (!active) {
-				const started = drain().finally(() => {
-					if (active === started) active = undefined;
+				active = drain().finally(() => {
+					active = undefined;
 				});
-				active = started;
 			}
 			return active;
 		},
