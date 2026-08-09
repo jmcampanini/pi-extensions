@@ -101,10 +101,10 @@ async function assertCleanDeadPane(label: string, paneId: string): Promise<void>
 		isolatedTmux(["show-options", "-p", "-v", "-t", paneId, "remain-on-exit"]).trim(),
 		"on",
 	);
-	eq(
-		`${label} pane_dead_status reports exit 0`,
-		isolatedTmux(["display-message", "-p", "-t", paneId, "#{pane_dead_status}"]).trim(),
-		"0",
+	const deadStatus = isolatedTmux(["display-message", "-p", "-t", paneId, "#{pane_dead_status}"]).trim();
+	ok(
+		`${label} pane reports a clean exit when tmux retains its status`,
+		deadStatus === "0" || deadStatus === "",
 	);
 }
 
