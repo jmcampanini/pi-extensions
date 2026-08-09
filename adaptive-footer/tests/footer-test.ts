@@ -1,4 +1,4 @@
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { hyperlink, visibleWidth } from "@earendil-works/pi-tui";
 import {
 	cacheVariants,
 	compactTargetVariants,
@@ -10,11 +10,15 @@ import {
 	tokenFlowVariants,
 } from "../index.ts";
 import {
+	cwdVariants,
 	DISPLAY_ORDER,
 	fitFooterLayout,
+	fitRepositoryLayout,
 	REDUCTION_ORDER,
 	styleFooterSpans,
+	styleRepositorySpans,
 	type FooterComponent,
+	type FittedRepositoryLayout,
 } from "../layout.ts";
 
 let pass = 0;
@@ -199,6 +203,68 @@ for (let width = 0; width <= 120; width++) {
 
 eq("extreme width can hide every component", fitFooterLayout(components, 0).line, "");
 eq("a wider rerender restores full variants", fitFooterLayout(components, 100).states.cost, "full");
+
+const repositoryInput = {
+	cwd: cwdVariants("/Users/dev/Code/acme/payments/main", "/Users/dev"),
+	session: "footer links",
+	branch: "feature/issue-456",
+	context: {
+		issue: { number: 456, url: "https://git.acme.test/acme/payments/issues/456", state: "c" as const },
+		pr: { number: 123, url: "https://git.acme.test/acme/payments/pull/123", state: "m" as const },
+	},
+};
+
+function repositoryRequiredWidth(layout: FittedRepositoryLayout): number {
+	return visibleWidth(layout.left) + visibleWidth(layout.right) + (layout.left && layout.right ? 2 : 0);
+}
+
+const repositoryFull = fitRepositoryLayout(repositoryInput, 200);
+eq("repository context puts cwd before session", repositoryFull.left,
+	"~/Code/acme/payments/main • footer links");
+eq("repository context puts issue and PR before branch", repositoryFull.right,
+	"is#456 c • pr#123 m • feature/issue-456");
+eq("wide repository context uses full forms", repositoryFull.stage, "full");
+
+const repositoryStages = [
+	"cwd-compact",
+	"session-hidden",
+	"issue-compact",
+	"pr-compact",
+	"issue-hidden",
+	"pr-hidden",
+] as const;
+let previousRepositoryLayout = repositoryFull;
+let issueCompactLayout: FittedRepositoryLayout | undefined;
+for (const stage of repositoryStages) {
+	const layout = fitRepositoryLayout(repositoryInput, repositoryRequiredWidth(previousRepositoryLayout) - 1);
+	eq(`repository reduction advances to ${stage}`, layout.stage, stage);
+	if (stage === "issue-compact") issueCompactLayout = layout;
+	previousRepositoryLayout = layout;
+}
+eq("compact issue label is lowercase and omits state", issueCompactLayout?.right,
+	"i456 • pr#123 m • feature/issue-456");
+
+const repositoryOverflowWidth = Array.from({ length: 201 }, (_, width) => width)
+	.find((width) => visibleWidth(fitRepositoryLayout(repositoryInput, width).line) > width);
+eq("repository layout never overflows from width 0 through 200", repositoryOverflowWidth, undefined);
+const branchOnly = fitRepositoryLayout(repositoryInput, 5);
+eq("branch survives when only one local chunk can remain", branchOnly.stage, "branch-only");
+eq("branch-only extreme uses the branch prefix", branchOnly.right, "feat…");
+
+const styledRepository = styleRepositorySpans(
+	repositoryFull.spans,
+	(text) => `\x1b[2m${text}\x1b[22m`,
+	(text, url) => hyperlink(`\x1b[4;36m${text}\x1b[24;39m`, url),
+);
+eq("repository styling preserves fitted terminal width", visibleWidth(styledRepository), 200);
+ok("issue token carries its canonical OSC 8 URL",
+	styledRepository.includes("\x1b]8;;https://git.acme.test/acme/payments/issues/456\x1b\\\x1b[4;36mis#456 c"));
+ok("PR token carries its canonical OSC 8 URL",
+	styledRepository.includes("\x1b]8;;https://git.acme.test/acme/payments/pull/123\x1b\\\x1b[4;36mpr#123 m"));
+
+eq("home shortening requires a path boundary", cwdVariants("/Users/developer/project", "/Users/dev").full,
+	"/Users/developer/project");
+eq("compact cwd keeps the final two path components", cwdVariants("/a/b/c/d", undefined).compact, "…/c/d");
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

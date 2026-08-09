@@ -1,9 +1,23 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
-import { config, type AutoCompactConfig } from "../auto-compact/config.ts";
+import { hyperlink } from "@earendil-works/pi-tui";
+import { config as autoCompactConfig, type AutoCompactConfig } from "../auto-compact/config.ts";
 import { ELAPSED_TIME_STATUS_KEY } from "../elapsed-time/index.ts";
-import { fitFooterLayout, styleFooterSpans, type FooterComponent } from "./layout.ts";
+import { clampStyled, fitText } from "../interactive-subagents/text-fit.ts";
+import { config as adaptiveFooterConfig } from "./config.ts";
+import {
+	cwdVariants,
+	fitFooterLayout,
+	fitRepositoryLayout,
+	styleFooterSpans,
+	styleRepositorySpans,
+	type FooterComponent,
+} from "./layout.ts";
+import {
+	createRepositoryContextRefresher,
+	discoverRepositoryContext,
+	type RepositoryContextDiscovery,
+} from "./repository-context.ts";
 
 type ContextColorBand = "error" | "warning";
 type FooterAutoCompactConfig = Pick<AutoCompactConfig, "enabled" | "thresholdPercent">;
@@ -122,15 +136,67 @@ export function runtimeIdentityVariants(
 	};
 }
 
-export default function adaptiveFooter(pi: ExtensionAPI): void {
+export interface AdaptiveFooterDependencies {
+	issuePatterns?: readonly string[];
+	discover?: RepositoryContextDiscovery;
+}
+
+export function registerAdaptiveFooter(
+	pi: ExtensionAPI,
+	dependencies: AdaptiveFooterDependencies = {},
+): void {
+	let activeSession: { refresh(): Promise<void>; dispose(): void } | undefined;
+
+	pi.on("agent_settled", () => {
+		void activeSession?.refresh();
+	});
+
+	pi.on("session_shutdown", () => {
+		activeSession?.dispose();
+		activeSession = undefined;
+	});
+
 	pi.on("session_start", (_event, ctx) => {
+		activeSession?.dispose();
+		activeSession = undefined;
 		if (!ctx.hasUI) return;
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
-			const unsubscribeBranch = footerData.onBranchChange(() => tui.requestRender());
+			const discover = dependencies.discover ?? ((input, signal) => discoverRepositoryContext(
+				(command, args, options) => pi.exec(command, args, options),
+				input,
+				signal,
+			));
+			const refresher = createRepositoryContextRefresher(
+				() => ({
+					cwd: ctx.sessionManager.getCwd(),
+					branch: footerData.getGitBranch(),
+					issuePatterns: dependencies.issuePatterns ?? adaptiveFooterConfig.issuePatterns,
+				}),
+				discover,
+				() => tui.requestRender(),
+			);
+			const unsubscribeBranch = footerData.onBranchChange(() => {
+				refresher.clear();
+				void refresher.refresh();
+			});
+			let disposed = false;
+			const session = {
+				refresh: () => refresher.refresh(),
+				dispose(): void {
+					if (disposed) return;
+					disposed = true;
+					unsubscribeBranch();
+					refresher.dispose();
+					if (activeSession === session) activeSession = undefined;
+				},
+			};
+			activeSession?.dispose();
+			activeSession = session;
+			void session.refresh();
 
 			return {
-				dispose: unsubscribeBranch,
+				dispose: session.dispose,
 				invalidate() {},
 				render(width: number): string[] {
 					let totalInput = 0;
@@ -159,7 +225,7 @@ export default function adaptiveFooter(pi: ExtensionAPI): void {
 					const contextUsage = ctx.getContextUsage();
 					const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
 					const contextPercent = contextUsage?.percent;
-					const contextColorBand = selectContextColorBand(contextPercent, config);
+					const contextColorBand = selectContextColorBand(contextPercent, autoCompactConfig);
 					const footerStatuses = partitionFooterStatuses(footerData.getExtensionStatuses());
 					const components: FooterComponent[] = [];
 
@@ -176,7 +242,7 @@ export default function adaptiveFooter(pi: ExtensionAPI): void {
 					const context = contextVariants(contextPercent, contextUsage?.tokens, contextWindow);
 					components.push({ id: "context", alignment: "left", ...context });
 
-					const compactTarget = compactTargetVariants(config);
+					const compactTarget = compactTargetVariants(autoCompactConfig);
 					if (compactTarget) {
 						components.push({ id: "compact-target", alignment: "left", ...compactTarget });
 					}
@@ -204,16 +270,18 @@ export default function adaptiveFooter(pi: ExtensionAPI): void {
 						...runtimeIdentityVariants(modelName, thinking, provider),
 					});
 
-					let pwd = ctx.sessionManager.getCwd();
 					const home = process.env.HOME || process.env.USERPROFILE;
-					if (home && pwd.startsWith(home)) pwd = `~${pwd.slice(home.length)}`;
-
-					const branch = footerData.getGitBranch();
-					if (branch) pwd = `${pwd} (${branch})`;
-
-					const sessionName = ctx.sessionManager.getSessionName();
-					if (sessionName) pwd = `${pwd} • ${sessionName}`;
-
+					const repositoryLayout = fitRepositoryLayout({
+						cwd: cwdVariants(ctx.sessionManager.getCwd(), home),
+						session: ctx.sessionManager.getSessionName(),
+						branch: footerData.getGitBranch(),
+						context: refresher.get(),
+					}, width);
+					const repositoryLine = styleRepositorySpans(
+						repositoryLayout.spans,
+						(text) => theme.fg("dim", text),
+						(text, url) => hyperlink(theme.fg("accent", theme.underline(text)), url),
+					);
 					const fitted = fitFooterLayout(components, width);
 					const statsLine = styleFooterSpans(
 						fitted.spans,
@@ -223,11 +291,10 @@ export default function adaptiveFooter(pi: ExtensionAPI): void {
 								? theme.fg(contextColorBand, text)
 								: theme.fg("dim", text),
 					);
-					const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
-					const lines = [pwdLine, statsLine];
+					const lines = [clampStyled(repositoryLine, width), clampStyled(statsLine, width)];
 
 					if (footerStatuses.statusLine) {
-						lines.push(truncateToWidth(footerStatuses.statusLine, width, theme.fg("dim", "...")));
+						lines.push(fitText(footerStatuses.statusLine, width, "..."));
 					}
 
 					return lines;
@@ -235,4 +302,8 @@ export default function adaptiveFooter(pi: ExtensionAPI): void {
 			};
 		});
 	});
+}
+
+export default function adaptiveFooter(pi: ExtensionAPI): void {
+	registerAdaptiveFooter(pi);
 }
