@@ -147,10 +147,9 @@ ok("description says lifecycle state is resolved at execution time",
 	description.includes("do not choose a cancel/stop variant"));
 ok("description defines cancelled as no eventual result",
 	description.includes("Result `cancelled`") && description.includes("no result will ever arrive"));
-ok("description defines stopping as asynchronous and non-polling",
+ok("description defines stopping as asynchronous with self-arriving notice",
 	description.includes("Result `stopping`") &&
-	description.includes("stopped notice still arrives asynchronously") &&
-	description.includes("do not poll or wait"));
+	description.includes("stopped notice arrives on its own like any result"));
 ok("description warns about partial work, kept worktrees, and interactive humans",
 	description.includes("leave partial work") && description.includes("worktrees are kept") &&
 	description.includes("autoExit: false") && description.includes("human working in their pane"));
@@ -201,7 +200,7 @@ eq("running result explains asynchronous notice and retained partial work",
 	stoppingResult.content, [{
 		type: "text",
 		text: "Sub-agent \"Running task\" (id running1, agent worker) was asked to stop. Result: stopping. " +
-			"Its stopped notice will arrive asynchronously; do not poll or wait for it. Partial work may remain.",
+			"Its stopped notice will arrive on its own. Partial work may remain.",
 	}]);
 eq("execute performs the immediate model-attributed stop",
 	[running.stopRequester, running.abort.signal.aborted], ["model", true]);
@@ -211,11 +210,11 @@ eq("idempotent repeat remains a stopping success", repeatResult.details, {
 	status: "stopping",
 	outcome: "already-stopping",
 });
-eq("repeat prose says the stopped notice still arrives and forbids polling",
+eq("repeat prose says the stopped notice still arrives on its own",
 	repeatResult.content, [{
 		type: "text",
 		text: "Sub-agent \"Running task\" (id running1, agent worker) is already being stopped. Result: stopping. " +
-			"Its stopped notice will still arrive asynchronously; do not poll or wait for it. Partial work may remain.",
+			"Its stopped notice will still arrive on its own. Partial work may remain.",
 	}]);
 
 reset();

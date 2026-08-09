@@ -5,7 +5,7 @@
  * `description`, `promptGuidelines`, and every `parameters` field description
  * are read by the model when it decides whether and how to call the tool —
  * they are prompts, not documentation, so they carry behavioral instructions
- * ("do not poll").
+ * ("ending your turn is how you wait").
  * `execute(toolCallId, params, signal, onUpdate, ctx)` runs when the model
  * calls it; whatever `content` it returns (or the message of whatever it
  * throws) goes straight back into the model's context as the tool result.
@@ -214,14 +214,14 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			"Spawn a sub-agent in a tmux pane to work on a task. ASYNC — this returns " +
 			"immediately with status 'started', or status 'queued' when " +
 			`${config.maxConcurrentSubagents} sub-agents (the concurrency limit, shared ` +
-			"with subagent_resume) are already running. Queued sub-agents start " +
-			"automatically, in order, as running ones finish — never re-issue a queued " +
-			"spawn. Either way the sub-agent's result is automatically " +
-			"steered into this conversation when it finishes. NEVER poll for results: " +
-			"do not sleep, do not read the child session file, do not check panes. " +
-			"Just continue with other work or end your turn — you will be woken with " +
-			"the result. Call this multiple times only when tasks " +
-			"are independent, bounded, and able to proceed concurrently.",
+			"with subagent_resume) are already running. Issue each spawn once: queued " +
+			"sub-agents start automatically, in order, as running ones finish. Either " +
+			"way the sub-agent's result is automatically steered into this conversation " +
+			"when it finishes, waking you in a new turn. Ending your turn is how you " +
+			"wait — it never abandons the work. While children run, work only on tasks " +
+			"that need nothing from them; when your next step depends on a result, tell " +
+			"the user in one line what you are waiting on and end your turn. Call this " +
+			"multiple times only when tasks are independent, bounded, and able to proceed concurrently.",
 		promptGuidelines: [
 			"Use subagent_spawn with context 'new' by default for self-contained work; put all needed facts, constraints, and expected output in `task`. Use 'forked' only when the task materially depends on accumulated parent discussion, reads, or decisions that would be difficult or lossy to restate, and remember that the copied history goes to the child's selected model/provider — 'forked' requires the Pi harness; external sub-agents are new-only. Use subagent_resume instead when a follow-up depends on the child's own prior context.",
 			"Use subagent_spawn only for concrete, bounded tasks that can proceed independently. Keep trivial tasks, tightly coupled or sequential work, and critical-path blockers in the parent. Never give parallel sub-agents overlapping write scopes in the same checkout; use disjoint scopes or worktree isolation.",
@@ -442,8 +442,10 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 							text:
 								`Sub-agent "${params.name}" queued (id ${id}, ${context} context): all ` +
 								`${config.maxConcurrentSubagents} concurrency slots are busy${ahead}. ` +
-								"It starts automatically when a slot frees, and its result arrives like " +
-								`any other sub-agent's — do not poll, and do not re-issue this spawn.${forkNote}`,
+								"The spawn is already registered: it starts automatically when a slot " +
+								"frees, and its result arrives on its own like any other sub-agent's. " +
+								"Continue work that needs nothing from it, or tell the user what you are " +
+								`waiting on and end your turn.${forkNote}`,
 						},
 					],
 					details: { id, status: "queued", ahead: admission.ahead, presentation },
@@ -492,7 +494,8 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 						type: "text",
 						text:
 							`Sub-agent "${params.name}" started (id ${id}, ${context} context)${where}. ` +
-							"Its result will arrive automatically — do not poll; continue with other work or end your turn.",
+							"Its result arrives on its own in a new turn. Continue work that needs " +
+							"nothing from it, or tell the user what you are waiting on and end your turn.",
 					},
 				],
 				details: {

@@ -457,18 +457,17 @@ const queuedEntry = entries.find((entry) => entry.state === "queued");
 ok("stopped delivery stays model-facing delivering and queues its stopped notice",
 	Boolean(deliveringEntry?.state === "delivering" &&
 	deliveringEntry.description.includes("stopped after 1m 35s") &&
-	deliveringEntry.description.includes("its stopped notice is queued and will arrive automatically; do not poll or respawn")));
+	deliveringEntry.description.includes("its stopped notice is queued and arrives on its own — end your turn to receive it")));
 ok("stalled guidance prevents false failure conclusions and offers cancellation",
 	Boolean(stalledEntry?.description.includes("this is a warning, not a failure") &&
 	stalledEntry.description.includes("inspect its pane through /subagent-status") &&
 	stalledEntry.description.includes("subagent_cancel")));
-ok("starting and queued guidance says work proceeds without reissuing or can be cancelled",
+ok("starting and queued guidance says work proceeds on its own or can be cancelled",
 	Boolean(startingEntry?.description.includes("subagent_cancel") &&
-	startingEntry.description.includes("do not poll or reissue") &&
+	startingEntry.description.includes("it proceeds on its own") &&
 	queuedEntry?.description.includes("position 1 of 1") &&
 	queuedEntry.description.includes("starts automatically when capacity frees") &&
-	queuedEntry.description.includes("subagent_cancel") &&
-	queuedEntry.description.includes("do not poll or reissue")));
+	queuedEntry.description.includes("subagent_cancel")));
 eq("queued status carries its machine-readable queue position", queuedEntry?.queuePosition, 1);
 
 eq("model-facing status format remains byte-for-byte unchanged", status.formatStatusModelText([{
@@ -483,14 +482,20 @@ eq("model-facing status format remains byte-for-byte unchanged", status.formatSt
 	contextWindow: null,
 	costUsd: null,
 	queuePosition: null,
-}]), "• id agent 01 | agent worker | name \"Fix \\\"parser\\\"\" | active — working now");
+}]), "• id agent 01 | agent worker | name \"Fix \\\"parser\\\"\" | active — working now" +
+	"\n\nResults arrive on their own; if you are only waiting, end your turn.");
 const statusText = status.formatStatusModelText(entries);
-const statusLines = statusText.split("\n");
+const [statusRowsBlock, statusReminder] = statusText.split("\n\n");
+const statusLines = statusRowsBlock.split("\n");
 eq("flat status emits exactly one ungrouped row per unresolved id", statusLines.length, entries.length);
 ok("every flat status row is ID-first with agent, name, and exact state in order",
 	statusLines.every((line, index) => line.startsWith(
 		`• id ${entries[index].id} | agent ${entries[index].agent} | name "${entries[index].name}" | ${entries[index].state} — `,
 	)));
+eq("unresolved status ends with the standing end-your-turn reminder",
+	statusReminder, "Results arrive on their own; if you are only waiting, end your turn.");
+eq("empty status reports no unresolved subagents without the reminder",
+	status.formatStatusModelText([]), "No unresolved subagents.");
 ok("flat status contains no aggregate summary or lifecycle group headings",
 	statusLines.every((line) => line.startsWith("• id ")) &&
 	!["Summary:", "Total:", "Running subagents:", "Queued subagents:", "Unresolved subagents:"].some((heading) =>
@@ -507,7 +512,7 @@ const liveStatusText = liveStatusResult.content.find((part) => part.type === "te
 eq("registered status content is exactly the unchanged model formatter output",
 	liveStatusText, status.formatStatusModelText(liveStatusDetails.presentation.entries));
 ok("registered status execution keeps the same ID-first flat model format",
-	liveStatusText.split("\n").every((line) => line.startsWith("• id ")));
+	liveStatusText.split("\n\n")[0].split("\n").every((line) => line.startsWith("• id ")));
 const statusRenderResult = {
 	...liveStatusResult,
 	content: [{ type: "text" as const, text: statusText }],
@@ -542,7 +547,7 @@ eq("collapsed status uses concise unlabeled ID-first dot grammar",
 ok("collapsed status shows every concise row while hiding verbose guidance",
 	entries.every((entry) => collapsedStatusPlain.includes(entry.id)) &&
 	collapsedStatusPlain.split("\n").length === entries.length + 1 &&
-	!collapsedStatusPlain.includes("will arrive automatically") &&
+	!collapsedStatusPlain.includes("arrives on its own") &&
 	!collapsedStatusPlain.includes("id delivery1") &&
 	!collapsedStatusPlain.includes("agent reviewer") &&
 	!collapsedStatusPlain.includes("|"));
