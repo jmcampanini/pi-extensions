@@ -1,5 +1,8 @@
 // Unit tests for agents.ts — definition parsing, project-shadows-global
-// loading, and the inventory (including how model problems are reported).
+// loading, and the inventory (including how model problems are reported) —
+// plus catalogue.ts's system-prompt injection of the catalogue and the
+// waiting contract.
+import { registerCatalogue, updateCatalogue, WAITING_CONTRACT } from "../catalogue.ts";
 import {
 	CATALOGUE_DESCRIPTION_MAX_CHARS,
 	collectAgentInventory,
@@ -420,6 +423,32 @@ const hostileOverview = formatAgentOverviewLines(
 );
 ok("hostile overview text fits the width", hostileOverview.every((l) => visibleWidth(l) <= 50));
 ok("no escape byte survives into the overview", !hostileOverview.join("\n").includes("\u001b"));
+
+// The system-prompt injection: catalogue and waiting contract ride together,
+// and only when spawning is actually possible.
+const handlers = new Map<string, (event: { systemPrompt: string }) => { systemPrompt: string } | undefined>();
+let activeTools = ["subagent_spawn"];
+registerCatalogue({
+	on(event: string, handler: unknown) {
+		handlers.set(event, handler as (event: { systemPrompt: string }) => { systemPrompt: string } | undefined);
+	},
+	getActiveTools: () => activeTools,
+} as unknown as Parameters<typeof registerCatalogue>[0]);
+const beforeAgentStart = handlers.get("before_agent_start")!;
+updateCatalogue([info({ name: "worker", description: "W." })]);
+const injected = beforeAgentStart({ systemPrompt: "BASE" });
+ok("catalogue and waiting contract are appended to the system prompt",
+	Boolean(injected?.systemPrompt.startsWith("BASE\n\n") &&
+	injected.systemPrompt.includes("- worker (default): W.") &&
+	injected.systemPrompt.endsWith(WAITING_CONTRACT)));
+ok("waiting contract prescribes the action instead of prohibiting",
+	WAITING_CONTRACT.includes("Ending your turn is how you wait") &&
+	WAITING_CONTRACT.includes("tell the user in one line what you are waiting on and end your turn"));
+activeTools = [];
+eq("nothing is injected while subagent_spawn is inactive", beforeAgentStart({ systemPrompt: "BASE" }), undefined);
+activeTools = ["subagent_spawn"];
+updateCatalogue([]);
+eq("nothing is injected while no agents exist", beforeAgentStart({ systemPrompt: "BASE" }), undefined);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -106,7 +106,8 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			"result/ping message (preferred), or `sessionPath` if the id is no longer known (e.g. after a restart). " +
 			"ASYNC — returns immediately with status 'started', or 'queued' when the concurrency limit of " +
 			`${config.maxConcurrentSubagents} sub-agents (shared with subagent_spawn) is reached; a queued ` +
-			"resume starts automatically as slots free. The result steers back automatically. Do not poll.",
+			"resume starts automatically as slots free. The result steers back automatically in a new " +
+			"turn — ending your turn is how you wait.",
 		parameters: ResumeParams,
 		renderCall(args, theme, context) {
 			const presentation = resumeCallPresentation(args);
@@ -326,8 +327,10 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 							text:
 								`Resume of sub-agent "${name}" queued (id ${id}): all ` +
 								`${config.maxConcurrentSubagents} concurrency slots are busy${ahead}. ` +
-								"It starts automatically when a slot frees, and its result arrives like " +
-								"any other sub-agent's — do not poll, and do not re-issue this resume.",
+								"The resume is already registered: it starts automatically when a slot " +
+								"frees, and its result arrives on its own like any other sub-agent's. " +
+								"Continue work that needs nothing from it, or tell the user what you are " +
+								"waiting on and end your turn.",
 						},
 					],
 					details: { id, sessionFile: sessionPath, status: "queued", ahead: admission.ahead },
@@ -366,7 +369,9 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				content: [
 					{
 						type: "text",
-						text: `Resumed sub-agent "${name}" (id ${id}). Its result will arrive automatically — do not poll.`,
+						text:
+							`Resumed sub-agent "${name}" (id ${id}). Its result arrives on its own in a new turn. ` +
+							"Continue work that needs nothing from it, or tell the user what you are waiting on and end your turn.",
 					},
 				],
 				details: { id, sessionFile: sessionPath, paneId: launched.paneId },

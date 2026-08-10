@@ -45,7 +45,7 @@ function successText(outcome: Extract<CancelOutcome, {
 			status: "stopping",
 			text:
 				`${identity(outcome.target)} is already being stopped. Result: stopping. ` +
-				"Its stopped notice will still arrive asynchronously; do not poll or wait for it. Partial work may remain.",
+				"Its stopped notice will still arrive on its own. Partial work may remain.",
 		};
 	}
 	const worktree = outcome.target.worktree
@@ -55,7 +55,7 @@ function successText(outcome: Extract<CancelOutcome, {
 		status: "stopping",
 		text:
 			`${identity(outcome.target)} was asked to stop. Result: stopping. ` +
-			"Its stopped notice will arrive asynchronously; do not poll or wait for it. " +
+			"Its stopped notice will arrive on its own. " +
 			`Partial work may remain.${worktree}`,
 	};
 }
@@ -83,7 +83,7 @@ export function registerSubagentCancelTool(pi: ExtensionAPI): void {
 		label: "Cancel Subagent",
 		description:
 			"Cancel one unresolved sub-agent by id. Its lifecycle state is resolved at execution time; do not choose a cancel/stop variant. " +
-			"Result `cancelled` means the work never ran or was fully prevented and no result will ever arrive. Result `stopping` means a running child was asked to stop; its stopped notice still arrives asynchronously, so do not poll or wait for it. " +
+			"Result `cancelled` means the work never ran or was fully prevented and no result will ever arrive. Result `stopping` means a running child was asked to stop; its stopped notice arrives on its own like any result. " +
 			"A running stop may leave partial work, and stopped worktrees are kept for inspection or resume. Interactive (`autoExit: false`) children may have a human working in their pane; cancel one only when the user clearly wants that.",
 		parameters: CancelParams,
 		renderCall(args, theme) {

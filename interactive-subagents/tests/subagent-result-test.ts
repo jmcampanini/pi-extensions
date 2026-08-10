@@ -10,7 +10,7 @@ function eq(label: string, got: unknown, want: unknown): void {
 }
 
 const started = {
-	content: [{ type: "text", text: "Sub-agent started. Its result will arrive automatically - do not poll." }],
+	content: [{ type: "text", text: "Sub-agent started. Its result arrives on its own in a new turn." }],
 };
 for (const tool of ["subagent_spawn", "subagent_resume"]) {
 	let renderedError = false;
@@ -70,12 +70,14 @@ eq(
 );
 eq(
 	"subagent_spawn model-facing launch instruction remains in execute",
-	spawnSource.includes('"Its result will arrive automatically \u2014 do not poll; continue with other work or end your turn."'),
+	spawnSource.includes('"Its result arrives on its own in a new turn. Continue work that needs "')
+		&& spawnSource.includes('"nothing from it, or tell the user what you are waiting on and end your turn."'),
 	true,
 );
 eq(
 	"subagent_resume model-facing launch instruction remains in execute",
-	resumeSource.includes('text: `Resumed sub-agent "${name}" (id ${id}). Its result will arrive automatically \u2014 do not poll.`'),
+	resumeSource.includes('`Resumed sub-agent "${name}" (id ${id}). Its result arrives on its own in a new turn. `')
+		&& resumeSource.includes('"Continue work that needs nothing from it, or tell the user what you are waiting on and end your turn."'),
 	true,
 );
 
