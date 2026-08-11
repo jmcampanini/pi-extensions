@@ -1,13 +1,9 @@
-import type { AutoCompactConfig, ThresholdSpec } from "./config.ts";
-
-function specTokens(spec: ThresholdSpec, contextWindow: number): number {
-	if (spec.thresholdTokens !== undefined) return spec.thresholdTokens;
-	return Math.round((contextWindow * spec.thresholdPercent) / 100);
-}
+import type { AutoCompactConfig } from "./config.ts";
 
 export function resolveThresholdTokens(config: AutoCompactConfig, contextWindow: number): number {
 	const spec = config.classes.find((windowClass) => contextWindow <= windowClass.windowMax) ?? config.default;
-	return specTokens(spec, contextWindow);
+	if (spec.thresholdTokens !== undefined) return spec.thresholdTokens;
+	return Math.round((contextWindow * spec.thresholdPercent) / 100);
 }
 
 export function formatTokens(count: number): string {
