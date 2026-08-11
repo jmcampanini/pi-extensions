@@ -1,12 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { config, type AutoCompactConfig } from "./config.ts";
-import { formatTokens, isNativeFirst, nativeCompactionTokens, resolveThresholdTokens } from "./threshold.ts";
-
-interface ActiveModel {
-	id: string;
-	provider: string;
-	contextWindow: number;
-}
+import { formatTokens, resolveThresholdTokens } from "./threshold.ts";
 
 export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompactConfig): void {
 	let inFlight = false;
@@ -14,23 +8,6 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 	let lastRunAborted = false;
 	let active = true;
 	const warnedModels = new Set<string>();
-
-	function warnWhenNativeFirst(model: ActiveModel | undefined, notify: (message: string) => void): void {
-		if (!resolvedConfig.enabled || !model) return;
-		const contextWindow = model.contextWindow ?? 0;
-		if (contextWindow <= 0 || !isNativeFirst(resolvedConfig, contextWindow)) return;
-
-		const key = `${model.provider}/${model.id}`;
-		if (warnedModels.has(key)) return;
-		warnedModels.add(key);
-		notify(
-			`Auto-compact: threshold ${formatTokens(resolveThresholdTokens(resolvedConfig, contextWindow))} for ${model.id} is at or past Pi's native compaction point (${formatTokens(nativeCompactionTokens(contextWindow))}) — native compaction will fire first.`,
-		);
-	}
-
-	pi.on("session_start", (_event, ctx) => {
-		warnWhenNativeFirst(ctx.model, (message) => ctx.ui.notify(message, "warning"));
-	});
 
 	pi.on("agent_end", (event) => {
 		const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
@@ -44,10 +21,6 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 		if (usage == null || usage.tokens == null || usage.contextWindow <= 0) return;
 
 		const thresholdTokens = resolveThresholdTokens(resolvedConfig, usage.contextWindow);
-		if (thresholdTokens >= nativeCompactionTokens(usage.contextWindow)) {
-			warnWhenNativeFirst(ctx.model, (message) => ctx.ui.notify(message, "warning"));
-			return;
-		}
 		if (usage.tokens < thresholdTokens) return;
 
 		const percent = Math.round((usage.tokens / usage.contextWindow) * 100);
@@ -85,13 +58,27 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 		});
 	});
 
-	pi.on("session_compact", () => {
+	pi.on("session_compact", (event, ctx) => {
+		const wasFailed = failed;
 		failed = false;
+		if (!resolvedConfig.enabled || wasFailed || event.reason !== "threshold") return;
+
+		const model = ctx.model;
+		const contextWindow = model?.contextWindow ?? 0;
+		if (!model || contextWindow <= 0) return;
+
+		const key = `${model.provider}/${model.id}`;
+		if (warnedModels.has(key)) return;
+		warnedModels.add(key);
+		const threshold = formatTokens(resolveThresholdTokens(resolvedConfig, contextWindow));
+		ctx.ui.notify(
+			`Auto-compact: Pi's native compaction ran before Auto Compact could evaluate the ${threshold} threshold for ${model.id}. If this happens repeatedly, the threshold may be at or past Pi's native compaction point.`,
+			"warning",
+		);
 	});
 
-	pi.on("model_select", (event, ctx) => {
+	pi.on("model_select", () => {
 		failed = false;
-		warnWhenNativeFirst(event.model, (message) => ctx.ui.notify(message, "warning"));
 	});
 
 	pi.on("session_shutdown", () => {

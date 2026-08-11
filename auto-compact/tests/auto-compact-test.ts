@@ -60,7 +60,6 @@ interface Harness {
 	settle: () => void;
 	settleAsync: () => Promise<void>;
 	endRun: (stopReason: string) => void;
-	startSession: () => void;
 	selectModel: (model: FakeModel | undefined) => void;
 }
 
@@ -121,7 +120,6 @@ function harness(options: {
 				},
 				ctx,
 			),
-		startSession: () => pi.emit("session_start", { type: "session_start", reason: "startup" }, ctx),
 		selectModel: (model) => {
 			state.model = model;
 			pi.emit("model_select", { type: "model_select", model }, ctx);
@@ -161,38 +159,61 @@ eq("unknown usage never triggers", unknown.compactions.length, 0);
 eq("unknown usage stays silent", unknown.notifications, []);
 
 const tiny: FakeModel = { id: "tiny-model", provider: "openai", contextWindow: 128_000 };
-const unreachable = harness({
+const nativeDidNotCompact = harness({
 	usage: { tokens: 120_000, contextWindow: 128_000, percent: 93.75 },
 	model: tiny,
 });
-unreachable.settle();
-unreachable.settle();
-eq("native-first threshold never compacts", unreachable.compactions.length, 0);
-eq("native-first threshold warns once", unreachable.notifications, [
+nativeDidNotCompact.settle();
+nativeDidNotCompact.settle();
+eq("high settled usage compacts even when pi was expected to compact first", nativeDidNotCompact.compactions.length, 1);
+eq("high settled usage does not post a speculative native warning", nativeDidNotCompact.notifications, [
+	{ message: "Context at 120k/128k (94%) — auto-compacting.", level: "info" },
+]);
+
+const nativeWarn = harness({
+	usage: { tokens: null, contextWindow: 128_000, percent: null },
+	model: tiny,
+});
+nativeWarn.pi.emit(
+	"session_compact",
+	{ type: "session_compact", reason: "threshold", fromExtension: false },
+	nativeWarn.ctx,
+);
+nativeWarn.settle();
+eq("post-native unknown usage does not duplicate compaction", nativeWarn.compactions.length, 0);
+eq("an observed native threshold compaction warns once", nativeWarn.notifications, [
 	{
 		message:
-			"Auto-compact: threshold 115k for tiny-model is at or past Pi's native compaction point (112k) — native compaction will fire first.",
+			"Auto-compact: Pi's native compaction ran before Auto Compact could evaluate the 115k threshold for tiny-model. If this happens repeatedly, the threshold may be at or past Pi's native compaction point.",
 		level: "warning",
 	},
 ]);
+nativeWarn.pi.emit(
+	"session_compact",
+	{ type: "session_compact", reason: "threshold", fromExtension: false },
+	nativeWarn.ctx,
+);
+eq("repeated native compaction for the same model stays quiet", nativeWarn.notifications.length, 1);
+nativeWarn.selectModel({ id: "tiny-sibling", provider: "openai", contextWindow: 128_000 });
+nativeWarn.pi.emit(
+	"session_compact",
+	{ type: "session_compact", reason: "threshold", fromExtension: true },
+	nativeWarn.ctx,
+);
+eq("each model warns independently regardless of who supplied the summary", nativeWarn.notifications.length, 2);
 
-const startWarn = harness({ model: tiny });
-startWarn.startSession();
-startWarn.startSession();
-eq("session start warns once for a native-first model", startWarn.notifications.length, 1);
-startWarn.state.usage = { tokens: 120_000, contextWindow: 128_000, percent: 93.75 };
-startWarn.settle();
-eq("settlement does not repeat the session-start warning", startWarn.notifications.length, 1);
-
-const switchWarn = harness();
-switchWarn.selectModel(tiny);
-eq("model switch warns for a native-first model", switchWarn.notifications.length, 1);
-switchWarn.selectModel({ id: "tiny-sibling", provider: "openai", contextWindow: 128_000 });
-eq("each native-first model warns separately", switchWarn.notifications.length, 2);
-switchWarn.selectModel(tiny);
-eq("returning to a warned model stays quiet", switchWarn.notifications.length, 2);
-switchWarn.selectModel({ id: "big-model", provider: "anthropic", contextWindow: 1_000_000 });
-eq("reachable models never warn", switchWarn.notifications.length, 2);
+const nonThresholdCompact = harness({ model: tiny });
+nonThresholdCompact.pi.emit(
+	"session_compact",
+	{ type: "session_compact", reason: "manual", fromExtension: false },
+	nonThresholdCompact.ctx,
+);
+nonThresholdCompact.pi.emit(
+	"session_compact",
+	{ type: "session_compact", reason: "overflow", fromExtension: false },
+	nonThresholdCompact.ctx,
+);
+eq("manual and overflow compactions do not imply native threshold preemption", nonThresholdCompact.notifications, []);
 
 const workflow = harness();
 workflow.pi.emit("turn_end", { type: "turn_end" }, workflow.ctx);
@@ -279,7 +300,7 @@ aborted.endRun("stop");
 aborted.settle();
 eq("next completed run compacts normally", aborted.compactions.length, 1);
 
-const latch = harness();
+const latch = harness({ model: { id: "regular-model", provider: "openai", contextWindow: 200_000 } });
 latch.settle();
 latch.compactions[0]?.onError?.(new Error("Nothing to compact"));
 eq("failure is surfaced and latches auto-compaction off", latch.notifications.at(-1), {
@@ -289,11 +310,16 @@ eq("failure is surfaced and latches auto-compaction off", latch.notifications.at
 });
 latch.settle();
 eq("failure latch prevents a retry loop", latch.compactions.length, 1);
-latch.pi.emit("session_compact", { type: "session_compact", reason: "manual" }, latch.ctx);
+latch.pi.emit(
+	"session_compact",
+	{ type: "session_compact", reason: "threshold", fromExtension: false },
+	latch.ctx,
+);
+eq("native fallback after an extension failure does not warn", latch.notifications.filter(({ level }) => level === "warning"), []);
 latch.settle();
 eq("any successful compaction clears the failure latch", latch.compactions.length, 2);
 latch.compactions[1]?.onError?.(new Error("failed again"));
-latch.pi.emit("model_select", { type: "model_select" }, latch.ctx);
+latch.pi.emit("model_select", { type: "model_select", model: tiny }, latch.ctx);
 latch.settle();
 eq("model switch clears the failure latch", latch.compactions.length, 3);
 
@@ -310,7 +336,11 @@ eq("late compaction failure after shutdown does not use stale context", postShut
 eq("late compaction failure after shutdown adds no notification", shutdown.notifications.length, 1);
 
 const disabled = harness({ config: { enabled: false }, model: tiny });
-disabled.startSession();
+disabled.pi.emit(
+	"session_compact",
+	{ type: "session_compact", reason: "threshold", fromExtension: false },
+	disabled.ctx,
+);
 disabled.endRun("aborted");
 disabled.settle();
 eq("disabled extension never compacts", disabled.compactions.length, 0);

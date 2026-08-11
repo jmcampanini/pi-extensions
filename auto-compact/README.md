@@ -26,7 +26,7 @@ Effect of the defaults across common context windows:
 
 | Context window | Compacts at | Rule |
 | --- | --- | --- |
-| 128k | — (native compacts at ~112k first) | 90% class, unreachable |
+| 128k | 115.2k | 90% class |
 | 200k | 180k | 90% class |
 | 272k | 244.8k | 90% class |
 | 372k | 260.4k | 70% class |
@@ -35,13 +35,15 @@ Effect of the defaults across common context windows:
 
 ## Interplay with Pi's native compaction
 
-Pi's native compaction fires between turns once context tokens exceed `contextWindow - 16384` (`compaction.reserveTokens` in Pi's settings). A class threshold at or past that point can never fire first: the extension posts a one-time warning per model when that model becomes active and leaves compaction to Pi. The adaptive-footer `compact @` chip always shows the effective compaction point — the lower of the class threshold and the native point.
+Pi performs its native compaction check before the extension evaluates usage at `agent_settled`. Native compaction can be disabled and its reserved-token setting is configurable, but those effective settings are not exposed to extensions. Auto Compact therefore does not predict Pi's threshold: when native compaction runs, the resulting unknown or reduced usage prevents a duplicate request; when usage remains at or above the configured Auto Compact threshold, the extension compacts it.
+
+When Pi reports an actual native threshold compaction, the extension posts a one-time warning for that model. A single large run can cross both thresholds, so repeated warnings—not one occurrence—suggest that the configured threshold is at or past Pi's native point. The adaptive-footer `compact @` chip and context color bands show the configured Auto Compact threshold; Pi may compact earlier according to its own settings.
 
 ## When compaction runs
 
 The threshold is evaluated at `agent_settled`, after the current agent workflow and all automatic retries, native compaction, queued steering messages, and follow-up messages have finished. Auto Compact does not interrupt an active tool-driven workflow or evaluate the threshold after each turn.
 
-The extension observes `agent_end` only to detect an aborted run. If the run was aborted, threshold compaction is deferred until the next completed workflow. Pi's native compaction and overflow recovery remain independent backstops during agent operation.
+The extension observes `agent_end` only to detect an aborted run. If the run was aborted, threshold compaction is deferred until the next completed workflow. Pi retains its own native compaction and overflow behavior according to its settings.
 
 Unknown context usage never triggers compaction. A compaction already in progress is not duplicated. After a threshold compaction failure, further attempts are disabled until a successful compaction or model switch prevents a retry loop.
 

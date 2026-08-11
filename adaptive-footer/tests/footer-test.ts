@@ -57,9 +57,9 @@ eq("compact target shows the resolved token point", compactTargetVariants(enable
 	full: "compact @260k",
 	compact: "C@260k",
 });
-eq("compact target is capped at pi's native point", compactTargetVariants(enabled, 128_000), {
-	full: "compact @112k",
-	compact: "C@112k",
+eq("compact target shows the configured point when pi may compact first", compactTargetVariants(enabled, 128_000), {
+	full: "compact @115k",
+	compact: "C@115k",
 });
 eq("compact target uses the token default for large windows", compactTargetVariants(enabled, 1_000_000), {
 	full: "compact @400k",
@@ -72,9 +72,9 @@ eq("enabled warning lower bound is inclusive", selectContextColorBand(60, enable
 eq("enabled threshold is error", selectContextColorBand(70, enabled, 372_000), "error");
 eq("below the warning band is uncolored", selectContextColorBand(59.9, enabled, 372_000), undefined);
 eq("enabled unknown percent is uncolored", selectContextColorBand(null, enabled, 372_000), undefined);
-eq("native-capped error band follows the effective point", selectContextColorBand(88, enabled, 128_000), "error");
-eq("native-capped warning band follows the effective point", selectContextColorBand(78, enabled, 128_000), "warning");
-eq("native-capped band stays uncolored below the margin", selectContextColorBand(77, enabled, 128_000), undefined);
+eq("configured error band is independent of pi's native point", selectContextColorBand(90, enabled, 128_000), "error");
+eq("configured warning band is independent of pi's native point", selectContextColorBand(80, enabled, 128_000), "warning");
+eq("configured band stays uncolored below the margin", selectContextColorBand(79.9, enabled, 128_000), undefined);
 eq("unknown window falls back to static bands", selectContextColorBand(80, enabled, 0), "warning");
 eq("disabled keeps exact 70 boundary uncolored", selectContextColorBand(70, disabled, 372_000), undefined);
 eq("disabled keeps greater-than-70 warning boundary", selectContextColorBand(70.1, disabled, 372_000), "warning");

@@ -1,11 +1,5 @@
 import type { AutoCompactConfig } from "../config.ts";
-import {
-	effectiveCompactionTokens,
-	formatTokens,
-	isNativeFirst,
-	nativeCompactionTokens,
-	resolveThresholdTokens,
-} from "../threshold.ts";
+import { formatTokens, resolveThresholdTokens } from "../threshold.ts";
 
 let pass = 0;
 let fail = 0;
@@ -46,12 +40,6 @@ eq("percent default resolves against the window", resolveThresholdTokens(tokenCl
 
 const defaultOnly: AutoCompactConfig = { enabled: true, classes: [], default: { thresholdPercent: 50 } };
 eq("empty classes fall through to the default", resolveThresholdTokens(defaultOnly, 200_000), 100_000);
-
-eq("native compaction point subtracts pi's reserve", nativeCompactionTokens(200_000), 183_616);
-eq("effective point is capped by the native point", effectiveCompactionTokens(defaults, 128_000), 111_616);
-eq("effective point is the class threshold when reachable", effectiveCompactionTokens(defaults, 372_000), 260_400);
-eq("a 90% class on a 128k window is native-first", isNativeFirst(defaults, 128_000), true);
-eq("a 90% class on a 200k window beats native", isNativeFirst(defaults, 200_000), false);
 
 eq("small counts print verbatim", formatTokens(999), "999");
 eq("thousands keep one decimal", formatTokens(1_500), "1.5k");

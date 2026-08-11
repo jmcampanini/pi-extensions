@@ -2,7 +2,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { hyperlink } from "@earendil-works/pi-tui";
 import { config as autoCompactConfig, type AutoCompactConfig } from "../auto-compact/config.ts";
-import { effectiveCompactionTokens } from "../auto-compact/threshold.ts";
+import { resolveThresholdTokens } from "../auto-compact/threshold.ts";
 import { ELAPSED_TIME_STATUS_KEY } from "../elapsed-time/index.ts";
 import { clampStyled, fitText } from "../interactive-subagents/text-fit.ts";
 import { config as adaptiveFooterConfig } from "./config.ts";
@@ -32,7 +32,7 @@ export function compactTargetVariants(
 	contextWindow: number,
 ): ComponentVariants | undefined {
 	if (!autoCompactConfig.enabled || contextWindow <= 0) return undefined;
-	const target = formatTokens(effectiveCompactionTokens(autoCompactConfig, contextWindow));
+	const target = formatTokens(resolveThresholdTokens(autoCompactConfig, contextWindow));
 	return {
 		full: `compact @${target}`,
 		compact: `C@${target}`,
@@ -52,7 +52,7 @@ export function selectContextColorBand(
 		return undefined;
 	}
 
-	const targetPercent = (effectiveCompactionTokens(autoCompactConfig, contextWindow) / contextWindow) * 100;
+	const targetPercent = (resolveThresholdTokens(autoCompactConfig, contextWindow) / contextWindow) * 100;
 	if (percent >= targetPercent) return "error";
 	if (percent >= targetPercent - 10) return "warning";
 	return undefined;
