@@ -1,11 +1,13 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { config, type AutoCompactConfig } from "./config.ts";
+import { formatTokens, resolveThresholdTokens } from "./threshold.ts";
 
 export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompactConfig): void {
 	let inFlight = false;
 	let failed = false;
 	let lastRunAborted = false;
 	let active = true;
+	const warnedModels = new Set<string>();
 
 	pi.on("agent_end", (event) => {
 		const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
@@ -16,12 +18,16 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 		if (!resolvedConfig.enabled || failed || inFlight) return;
 
 		const usage = ctx.getContextUsage();
-		if (usage?.percent == null || usage.percent < resolvedConfig.thresholdPercent) return;
+		if (usage == null || usage.tokens == null || usage.contextWindow <= 0) return;
 
-		const percent = `${Math.round(usage.percent)}%`;
+		const thresholdTokens = resolveThresholdTokens(resolvedConfig, usage.contextWindow);
+		if (usage.tokens < thresholdTokens) return;
+
+		const percent = Math.round((usage.tokens / usage.contextWindow) * 100);
+		const status = `${formatTokens(usage.tokens)}/${formatTokens(usage.contextWindow)} (${percent}%)`;
 		if (lastRunAborted) {
 			ctx.ui.notify(
-				`Context at ${percent} — auto-compaction deferred after the aborted run; it will run after the next completed run.`,
+				`Context at ${status} — auto-compaction deferred after the aborted run; it will run after the next completed run.`,
 				"info",
 			);
 			return;
@@ -30,7 +36,7 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 		if (!ctx.isIdle() || ctx.hasPendingMessages()) return;
 
 		inFlight = true;
-		ctx.ui.notify(`Context at ${percent} — auto-compacting.`, "info");
+		ctx.ui.notify(`Context at ${status} — auto-compacting.`, "info");
 		return new Promise<void>((resolve) => {
 			const finishCompaction = () => {
 				inFlight = false;
@@ -43,7 +49,7 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 					finishCompaction();
 					if (active) {
 						ctx.ui.notify(
-							`Auto-compaction failed: ${error.message}. Percentage auto-compaction is disabled until the next successful compaction or model switch.`,
+							`Auto-compaction failed: ${error.message}. Auto-compaction is disabled until the next successful compaction or model switch.`,
 							"error",
 						);
 					}
@@ -52,8 +58,25 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 		});
 	});
 
-	pi.on("session_compact", () => {
-		failed = false;
+	pi.on("session_compact", (event, ctx) => {
+		if (failed) {
+			failed = false;
+			return;
+		}
+		if (!resolvedConfig.enabled || event.reason !== "threshold") return;
+
+		const model = ctx.model;
+		const contextWindow = model?.contextWindow ?? 0;
+		if (!model || contextWindow <= 0) return;
+
+		const key = `${model.provider}/${model.id}`;
+		if (warnedModels.has(key)) return;
+		warnedModels.add(key);
+		const threshold = formatTokens(resolveThresholdTokens(resolvedConfig, contextWindow));
+		ctx.ui.notify(
+			`Auto-compact: Pi's native compaction ran before Auto Compact could evaluate the ${threshold} threshold for ${model.id}. If this happens repeatedly, the threshold may be at or past Pi's native compaction point.`,
+			"warning",
+		);
 	});
 
 	pi.on("model_select", () => {

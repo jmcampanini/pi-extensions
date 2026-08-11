@@ -46,20 +46,39 @@ function ok(label: string, condition: boolean): void {
 	}
 }
 
-const enabled = { enabled: true, thresholdPercent: 70 };
-const disabled = { enabled: false, thresholdPercent: 85 };
+const classes = [
+	{ windowMax: 300_000, thresholdPercent: 90 },
+	{ windowMax: 500_000, thresholdPercent: 70 },
+];
+const enabled = { enabled: true, classes, default: { thresholdTokens: 400_000 } };
+const disabled = { enabled: false, classes, default: { thresholdTokens: 400_000 } };
 
-eq("compact target variants", compactTargetVariants(enabled), {
-	full: "compact @70%",
-	compact: "C@70%",
+eq("compact target shows the resolved token point", compactTargetVariants(enabled, 372_000), {
+	full: "compact @260k",
+	compact: "C@260k",
 });
-eq("disabled compact target is absent", compactTargetVariants(disabled), undefined);
-eq("enabled warning lower bound is inclusive", selectContextColorBand(60, enabled), "warning");
-eq("enabled threshold is error", selectContextColorBand(70, enabled), "error");
-eq("enabled unknown percent is uncolored", selectContextColorBand(null, enabled), undefined);
-eq("disabled keeps exact 70 boundary uncolored", selectContextColorBand(70, disabled), undefined);
-eq("disabled keeps greater-than-70 warning boundary", selectContextColorBand(70.1, disabled), "warning");
-eq("disabled keeps greater-than-90 error boundary", selectContextColorBand(90.1, disabled), "error");
+eq("compact target shows the configured point when pi may compact first", compactTargetVariants(enabled, 128_000), {
+	full: "compact @115k",
+	compact: "C@115k",
+});
+eq("compact target uses the token default for large windows", compactTargetVariants(enabled, 1_000_000), {
+	full: "compact @400k",
+	compact: "C@400k",
+});
+eq("disabled compact target is absent", compactTargetVariants(disabled, 372_000), undefined);
+eq("unknown window compact target is absent", compactTargetVariants(enabled, 0), undefined);
+
+eq("enabled warning lower bound is inclusive", selectContextColorBand(60, enabled, 372_000), "warning");
+eq("enabled threshold is error", selectContextColorBand(70, enabled, 372_000), "error");
+eq("below the warning band is uncolored", selectContextColorBand(59.9, enabled, 372_000), undefined);
+eq("enabled unknown percent is uncolored", selectContextColorBand(null, enabled, 372_000), undefined);
+eq("configured error band is independent of pi's native point", selectContextColorBand(90, enabled, 128_000), "error");
+eq("configured warning band is independent of pi's native point", selectContextColorBand(80, enabled, 128_000), "warning");
+eq("configured band stays uncolored below the margin", selectContextColorBand(79.9, enabled, 128_000), undefined);
+eq("unknown window falls back to static bands", selectContextColorBand(80, enabled, 0), "warning");
+eq("disabled keeps exact 70 boundary uncolored", selectContextColorBand(70, disabled, 372_000), undefined);
+eq("disabled keeps greater-than-70 warning boundary", selectContextColorBand(70.1, disabled, 372_000), "warning");
+eq("disabled keeps greater-than-90 error boundary", selectContextColorBand(90.1, disabled, 372_000), "error");
 
 eq("token flow has no shorter representation", tokenFlowVariants(305_000, 31_000), {
 	full: "↑305k ↓31k",

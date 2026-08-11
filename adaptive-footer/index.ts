@@ -2,6 +2,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { hyperlink } from "@earendil-works/pi-tui";
 import { config as autoCompactConfig, type AutoCompactConfig } from "../auto-compact/config.ts";
+import { formatTokens, resolveThresholdTokens } from "../auto-compact/threshold.ts";
 import { ELAPSED_TIME_STATUS_KEY } from "../elapsed-time/index.ts";
 import { clampStyled, fitText } from "../interactive-subagents/text-fit.ts";
 import { config as adaptiveFooterConfig } from "./config.ts";
@@ -20,35 +21,40 @@ import {
 } from "./repository-context.ts";
 
 type ContextColorBand = "error" | "warning";
-type FooterAutoCompactConfig = Pick<AutoCompactConfig, "enabled" | "thresholdPercent">;
 
 export interface ComponentVariants {
 	full: string;
 	compact: string;
 }
 
-export function compactTargetVariants(autoCompactConfig: FooterAutoCompactConfig): ComponentVariants | undefined {
-	if (!autoCompactConfig.enabled) return undefined;
+export function compactTargetVariants(
+	autoCompactConfig: AutoCompactConfig,
+	contextWindow: number,
+): ComponentVariants | undefined {
+	if (!autoCompactConfig.enabled || contextWindow <= 0) return undefined;
+	const target = formatTokens(resolveThresholdTokens(autoCompactConfig, contextWindow));
 	return {
-		full: `compact @${autoCompactConfig.thresholdPercent}%`,
-		compact: `C@${autoCompactConfig.thresholdPercent}%`,
+		full: `compact @${target}`,
+		compact: `C@${target}`,
 	};
 }
 
 export function selectContextColorBand(
 	percent: number | null | undefined,
-	autoCompactConfig: FooterAutoCompactConfig,
+	autoCompactConfig: AutoCompactConfig,
+	contextWindow: number,
 ): ContextColorBand | undefined {
 	if (percent == null) return undefined;
 
-	if (!autoCompactConfig.enabled) {
+	if (!autoCompactConfig.enabled || contextWindow <= 0) {
 		if (percent > 90) return "error";
 		if (percent > 70) return "warning";
 		return undefined;
 	}
 
-	if (percent >= autoCompactConfig.thresholdPercent) return "error";
-	if (percent >= autoCompactConfig.thresholdPercent - 10) return "warning";
+	const targetPercent = (resolveThresholdTokens(autoCompactConfig, contextWindow) / contextWindow) * 100;
+	if (percent >= targetPercent) return "error";
+	if (percent >= targetPercent - 10) return "warning";
 	return undefined;
 }
 
@@ -73,14 +79,6 @@ export function partitionFooterStatuses(statuses: ReadonlyMap<string, string>): 
 		elapsedTime: elapsedTime === undefined ? undefined : sanitizeStatusText(elapsedTime),
 		statusLine: statusLine || undefined,
 	};
-}
-
-function formatTokens(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
-	return `${Math.round(count / 1000000)}M`;
 }
 
 export function tokenFlowVariants(input: number, output: number): ComponentVariants | undefined {
@@ -225,7 +223,7 @@ export function registerAdaptiveFooter(
 					const contextUsage = ctx.getContextUsage();
 					const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
 					const contextPercent = contextUsage?.percent;
-					const contextColorBand = selectContextColorBand(contextPercent, autoCompactConfig);
+					const contextColorBand = selectContextColorBand(contextPercent, autoCompactConfig, contextWindow);
 					const footerStatuses = partitionFooterStatuses(footerData.getExtensionStatuses());
 					const components: FooterComponent[] = [];
 
@@ -242,7 +240,7 @@ export function registerAdaptiveFooter(
 					const context = contextVariants(contextPercent, contextUsage?.tokens, contextWindow);
 					components.push({ id: "context", alignment: "left", ...context });
 
-					const compactTarget = compactTargetVariants(autoCompactConfig);
+					const compactTarget = compactTargetVariants(autoCompactConfig, contextWindow);
 					if (compactTarget) {
 						components.push({ id: "compact-target", alignment: "left", ...compactTarget });
 					}
