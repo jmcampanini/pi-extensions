@@ -46,21 +46,11 @@ interface FakeModel {
 	contextWindow: number;
 }
 
-interface Harness {
-	pi: ReturnType<typeof fakePi>;
-	state: {
-		usage: ContextUsage | undefined;
-		idle: boolean;
-		pending: boolean;
-		model: FakeModel | undefined;
-	};
-	ctx: unknown;
-	compactions: CompactOptions[];
-	notifications: Array<{ message: string; level: string }>;
-	settle: () => void;
-	settleAsync: () => Promise<void>;
-	endRun: (stopReason: string) => void;
-	selectModel: (model: FakeModel | undefined) => void;
+interface HarnessState {
+	usage: ContextUsage | undefined;
+	idle: boolean;
+	pending: boolean;
+	model: FakeModel | undefined;
 }
 
 const DEFAULT_CONFIG: AutoCompactConfig = {
@@ -74,12 +64,12 @@ const DEFAULT_CONFIG: AutoCompactConfig = {
 
 function harness(options: {
 	config?: Partial<AutoCompactConfig>;
-	usage?: ContextUsage | undefined;
+	usage?: ContextUsage;
 	model?: FakeModel;
 	mode?: "tui" | "rpc" | "json" | "print";
-} = {}): Harness {
+} = {}) {
 	const pi = fakePi();
-	const state = {
+	const state: HarnessState = {
 		usage: options.usage ?? { tokens: 180_000, contextWindow: 200_000, percent: 90 },
 		idle: true,
 		pending: false,
@@ -111,7 +101,7 @@ function harness(options: {
 		notifications,
 		settle: () => pi.emit("agent_settled", { type: "agent_settled" }, ctx),
 		settleAsync: () => pi.emitAsync("agent_settled", { type: "agent_settled" }, ctx),
-		endRun: (stopReason) =>
+		endRun: (stopReason: string) =>
 			pi.emit(
 				"agent_end",
 				{
@@ -120,7 +110,7 @@ function harness(options: {
 				},
 				ctx,
 			),
-		selectModel: (model) => {
+		selectModel: (model: FakeModel | undefined) => {
 			state.model = model;
 			pi.emit("model_select", { type: "model_select", model }, ctx);
 		},
