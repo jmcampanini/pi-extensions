@@ -2,14 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export interface ThresholdSpec {
-	thresholdTokens?: number;
-	thresholdPercent?: number;
-}
+export type ThresholdSpec =
+	| { thresholdTokens: number; thresholdPercent?: never }
+	| { thresholdTokens?: never; thresholdPercent: number };
 
-export interface WindowClass extends ThresholdSpec {
-	windowMax: number;
-}
+export type WindowClass = ThresholdSpec & { windowMax: number };
 
 export interface AutoCompactConfig {
 	enabled: boolean;
@@ -90,13 +87,11 @@ function requireClasses(value: unknown, source: string): WindowClass[] {
 		const raw = requireObject(entry, entrySource, '{"windowMax": 300000, "thresholdPercent": 90}');
 		rejectUnknownKeys(raw, entrySource, ["windowMax", "thresholdTokens", "thresholdPercent"]);
 
-		const windowMax = raw.windowMax;
+		const { windowMax, ...spec } = raw;
 		if (typeof windowMax !== "number" || !Number.isInteger(windowMax) || windowMax < 1) {
 			throw new Error(`${entrySource}: invalid windowMax ${JSON.stringify(windowMax)} — use a positive integer`);
 		}
 
-		const spec: Record<string, unknown> = { ...raw };
-		delete spec.windowMax;
 		return { windowMax, ...requireThresholdSpec(spec, entrySource) };
 	});
 

@@ -59,9 +59,11 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 	});
 
 	pi.on("session_compact", (event, ctx) => {
-		const wasFailed = failed;
-		failed = false;
-		if (!resolvedConfig.enabled || wasFailed || event.reason !== "threshold") return;
+		if (failed) {
+			failed = false;
+			return;
+		}
+		if (!resolvedConfig.enabled || event.reason !== "threshold") return;
 
 		const model = ctx.model;
 		const contextWindow = model?.contextWindow ?? 0;

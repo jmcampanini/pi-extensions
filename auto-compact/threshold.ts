@@ -2,7 +2,7 @@ import type { AutoCompactConfig, ThresholdSpec } from "./config.ts";
 
 function specTokens(spec: ThresholdSpec, contextWindow: number): number {
 	if (spec.thresholdTokens !== undefined) return spec.thresholdTokens;
-	return Math.round((contextWindow * (spec.thresholdPercent ?? 0)) / 100);
+	return Math.round((contextWindow * spec.thresholdPercent) / 100);
 }
 
 export function resolveThresholdTokens(config: AutoCompactConfig, contextWindow: number): number {
