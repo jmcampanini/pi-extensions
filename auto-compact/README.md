@@ -37,7 +37,7 @@ Effect of the defaults across common context windows:
 
 Pi performs its native compaction check before the extension evaluates usage at `agent_settled`. Native compaction can be disabled and its reserved-token setting is configurable, but those effective settings are not exposed to extensions. Auto Compact therefore does not predict Pi's threshold: when native compaction runs, the resulting unknown or reduced usage prevents a duplicate request; when usage remains at or above the configured Auto Compact threshold, the extension compacts it.
 
-When Pi reports an actual native threshold compaction, the extension posts a one-time warning for that model. A single large run can cross both thresholds, so repeated warnings—not one occurrence—suggest that the configured threshold is at or past Pi's native point. The adaptive-footer `compact @` chip and context color bands show the configured Auto Compact threshold; Pi may compact earlier according to its own settings.
+When Pi reports an actual native threshold compaction, the extension posts a one-time warning for that model. A single large run can cross both thresholds, so repeated warnings—not one occurrence—suggest that the configured threshold is at or past Pi's native point. The adaptive-footer `compact @` chip shows the configured Auto Compact threshold followed by current progress toward it, and its context color bands also follow that target. Pi may compact earlier according to its own settings.
 
 ## When compaction runs
 

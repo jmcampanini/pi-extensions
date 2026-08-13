@@ -53,20 +53,24 @@ const classes = [
 const enabled = { enabled: true, classes, default: { thresholdTokens: 400_000 } };
 const disabled = { enabled: false, classes, default: { thresholdTokens: 400_000 } };
 
-eq("compact target shows the resolved token point", compactTargetVariants(enabled, 372_000), {
+eq("compact target shows progress toward the resolved token point", compactTargetVariants(enabled, 372_000, 140_000), {
+	full: "compact @260k 54%",
+	compact: "C54%",
+});
+eq("compact target shows progress when pi may compact first", compactTargetVariants(enabled, 128_000, 100_000), {
+	full: "compact @115k 87%",
+	compact: "C87%",
+});
+eq("compact target uses the token default for large windows", compactTargetVariants(enabled, 1_000_000, 200_000), {
+	full: "compact @400k 50%",
+	compact: "C50%",
+});
+eq("unknown progress preserves the resolved token point", compactTargetVariants(enabled, 372_000, null), {
 	full: "compact @260k",
 	compact: "C@260k",
 });
-eq("compact target shows the configured point when pi may compact first", compactTargetVariants(enabled, 128_000), {
-	full: "compact @115k",
-	compact: "C@115k",
-});
-eq("compact target uses the token default for large windows", compactTargetVariants(enabled, 1_000_000), {
-	full: "compact @400k",
-	compact: "C@400k",
-});
-eq("disabled compact target is absent", compactTargetVariants(disabled, 372_000), undefined);
-eq("unknown window compact target is absent", compactTargetVariants(enabled, 0), undefined);
+eq("disabled compact target is absent", compactTargetVariants(disabled, 372_000, 140_000), undefined);
+eq("unknown window compact target is absent", compactTargetVariants(enabled, 0, 140_000), undefined);
 
 eq("enabled warning lower bound is inclusive", selectContextColorBand(60, enabled, 372_000), "warning");
 eq("enabled threshold is error", selectContextColorBand(70, enabled, 372_000), "error");
