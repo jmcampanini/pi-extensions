@@ -30,7 +30,7 @@ export interface ComponentVariants {
 export function compactTargetVariants(
 	autoCompactConfig: AutoCompactConfig,
 	contextWindow: number,
-	contextTokens: number | null | undefined,
+	contextTokens?: number | null,
 ): ComponentVariants | undefined {
 	if (!autoCompactConfig.enabled || contextWindow <= 0) return undefined;
 	const thresholdTokens = resolveThresholdTokens(autoCompactConfig, contextWindow);

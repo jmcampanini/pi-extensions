@@ -65,7 +65,7 @@ eq("compact target uses the token default for large windows", compactTargetVaria
 	full: "compact @400k 50%",
 	compact: "C50%",
 });
-eq("unknown progress preserves the resolved token point", compactTargetVariants(enabled, 372_000, null), {
+eq("unknown progress preserves the resolved token point", compactTargetVariants(enabled, 372_000), {
 	full: "compact @260k",
 	compact: "C@260k",
 });
