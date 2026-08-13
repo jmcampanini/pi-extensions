@@ -165,7 +165,9 @@ function plain(line: string): string {
 		.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
-const initialLine = component.render(120)[0] ?? "";
+const initialRender = component.render(120);
+const initialLine = initialRender[0] ?? "";
+const initialStats = plain(initialRender[1] ?? "").trimStart().split(/ {2,}/)[0];
 ok("startup discovery requests a footer rerender", renders > 0);
 eq("startup discovery runs once", discoveryCalls, 1);
 eq("extension render keeps the approved left ordering", plain(initialLine).trimStart().split(/ {2,}/)[0],
@@ -178,6 +180,12 @@ ok("extension render emits clickable issue and PR URLs",
 ok("issue and PR links share the underlined accent treatment",
 	initialLine.includes("\x1b[36m\x1b[4mis#456 o")
 		&& initialLine.includes("\x1b[36m\x1b[4mpr#123 d"));
+eq("extension wires context usage into compact-target progress", initialStats,
+	"51% 140k/272k • compact @245k 57%");
+const responsiveStats = Array.from({ length: 121 }, (_, width) =>
+	plain(component.render(width)[1] ?? ""));
+ok("responsive footer uses compact progress form",
+	responsiveStats.some((line) => line.includes("C57%")));
 
 branch = "feature/issue-789";
 branchChanged?.();

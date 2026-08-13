@@ -10,6 +10,14 @@ Issue and pull-request labels are OSC 8 links when the terminal supports them. F
 
 PR states are `o` (open), `d` (draft), `c` (closed), and `m` (merged). Issue states are `o` (open) and `c` (closed).
 
+The second row includes context and compaction progress:
+
+```text
+51% 140k/272k • compact @245k 57%
+```
+
+The context component reports current usage against the model's full context window. The separate compact-target component reports the configured Auto Compact threshold followed by progress toward it. At constrained widths, `compact @245k 57%` reduces to `C57%`. When current usage is unknown, the known target remains as `compact @245k` or `C@245k`.
+
 ## Issue inference
 
 The footer checks explicit issue markers in the current branch, then the cwd basename. A candidate is displayed only after `gh issue view` verifies it.

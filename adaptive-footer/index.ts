@@ -30,12 +30,21 @@ export interface ComponentVariants {
 export function compactTargetVariants(
 	autoCompactConfig: AutoCompactConfig,
 	contextWindow: number,
+	contextTokens?: number | null,
 ): ComponentVariants | undefined {
 	if (!autoCompactConfig.enabled || contextWindow <= 0) return undefined;
-	const target = formatTokens(resolveThresholdTokens(autoCompactConfig, contextWindow));
+	const thresholdTokens = resolveThresholdTokens(autoCompactConfig, contextWindow);
+	const target = formatTokens(thresholdTokens);
+	if (contextTokens == null) {
+		return {
+			full: `compact @${target}`,
+			compact: `C@${target}`,
+		};
+	}
+	const percent = Math.round((contextTokens / thresholdTokens) * 100);
 	return {
-		full: `compact @${target}`,
-		compact: `C@${target}`,
+		full: `compact @${target} ${percent}%`,
+		compact: `C${percent}%`,
 	};
 }
 
@@ -240,7 +249,11 @@ export function registerAdaptiveFooter(
 					const context = contextVariants(contextPercent, contextUsage?.tokens, contextWindow);
 					components.push({ id: "context", alignment: "left", ...context });
 
-					const compactTarget = compactTargetVariants(autoCompactConfig, contextWindow);
+					const compactTarget = compactTargetVariants(
+						autoCompactConfig,
+						contextWindow,
+						contextUsage?.tokens,
+					);
 					if (compactTarget) {
 						components.push({ id: "compact-target", alignment: "left", ...compactTarget });
 					}
