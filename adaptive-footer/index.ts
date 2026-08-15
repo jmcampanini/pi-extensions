@@ -4,6 +4,7 @@ import { hyperlink } from "@earendil-works/pi-tui";
 import { config as autoCompactConfig, type AutoCompactConfig } from "../auto-compact/config.ts";
 import { formatTokens, resolveThresholdTokens } from "../auto-compact/threshold.ts";
 import { ELAPSED_TIME_STATUS_KEY } from "../elapsed-time/index.ts";
+import { FAST_OPENAI_STATUS_KEY } from "../fast-openai/index.ts";
 import { clampStyled, fitText } from "../interactive-subagents/text-fit.ts";
 import { config as adaptiveFooterConfig } from "./config.ts";
 import {
@@ -76,16 +77,18 @@ function sanitizeStatusText(text: string): string {
 
 export function partitionFooterStatuses(statuses: ReadonlyMap<string, string>): {
 	elapsedTime: string | undefined;
+	fastMode: boolean;
 	statusLine: string | undefined;
 } {
 	const elapsedTime = statuses.get(ELAPSED_TIME_STATUS_KEY);
 	const statusLine = Array.from(statuses.entries())
-		.filter(([key]) => key !== ELAPSED_TIME_STATUS_KEY)
+		.filter(([key]) => key !== ELAPSED_TIME_STATUS_KEY && key !== FAST_OPENAI_STATUS_KEY)
 		.sort(([a], [b]) => a.localeCompare(b))
 		.map(([, text]) => sanitizeStatusText(text))
 		.join(" ");
 	return {
 		elapsedTime: elapsedTime === undefined ? undefined : sanitizeStatusText(elapsedTime),
+		fastMode: statuses.has(FAST_OPENAI_STATUS_KEY),
 		statusLine: statusLine || undefined,
 	};
 }
@@ -135,10 +138,12 @@ export function runtimeIdentityVariants(
 	modelName: string,
 	thinking: string | undefined,
 	provider: string | undefined,
+	fastMode = false,
 ): ComponentVariants {
-	const compact = thinking ? `${modelName} • ${thinking}` : modelName;
+	const full = [modelName, fastMode ? "fast" : undefined, thinking].filter(Boolean).join(" • ");
+	const compact = [modelName, fastMode ? "f" : undefined, thinking].filter(Boolean).join(" • ");
 	return {
-		full: provider ? `(${provider}) ${compact}` : compact,
+		full: provider ? `(${provider}) ${full}` : full,
 		compact,
 	};
 }
@@ -278,7 +283,7 @@ export function registerAdaptiveFooter(
 					components.push({
 						id: "runtime-identity",
 						alignment: "right",
-						...runtimeIdentityVariants(modelName, thinking, provider),
+						...runtimeIdentityVariants(modelName, thinking, provider, footerStatuses.fastMode),
 					});
 
 					const home = process.env.HOME || process.env.USERPROFILE;

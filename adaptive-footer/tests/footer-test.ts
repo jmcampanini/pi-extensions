@@ -123,27 +123,48 @@ eq("unknown context remains explicit", contextVariants(null, null, 272_000), {
 	compact: "?/272k",
 });
 
-eq("runtime compact form drops provider", runtimeIdentityVariants("gpt-5.6-sol", "xhigh", "openai-codex"), {
-	full: "(openai-codex) gpt-5.6-sol • xhigh",
-	compact: "gpt-5.6-sol • xhigh",
+eq("runtime compact form shortens fast and drops provider", runtimeIdentityVariants(
+	"gpt-5.6-sol",
+	"xhigh",
+	"openai-codex",
+	true,
+), {
+	full: "(openai-codex) gpt-5.6-sol • fast • xhigh",
+	compact: "gpt-5.6-sol • f • xhigh",
 });
-eq("runtime without provider has equal variants", runtimeIdentityVariants("gpt-5.6-sol", "xhigh", undefined), {
+eq("runtime without fast keeps the existing identity", runtimeIdentityVariants(
+	"gpt-5.6-sol",
+	"xhigh",
+	undefined,
+), {
 	full: "gpt-5.6-sol • xhigh",
 	compact: "gpt-5.6-sol • xhigh",
 });
+eq("runtime fast mode has no dangling thinking separator", runtimeIdentityVariants(
+	"gpt-5.6-sol",
+	undefined,
+	undefined,
+	true,
+), {
+	full: "gpt-5.6-sol • fast",
+	compact: "gpt-5.6-sol • f",
+});
 
-eq("elapsed is removed from generic statuses", partitionFooterStatuses(new Map([
+eq("owned statuses are removed from the generic line", partitionFooterStatuses(new Map([
 	["z-status", "  zeta\nvalue  "],
 	["elapsed-time", "  ◷ 00:42  "],
+	["fast-openai", "fast"],
 	["a-status", "alpha\tvalue"],
 ])), {
 	elapsedTime: "◷ 00:42",
+	fastMode: true,
 	statusLine: "alpha value zeta value",
 });
-eq("elapsed alone does not create a third line", partitionFooterStatuses(new Map([
+eq("elapsed alone does not create a third line or fast mode", partitionFooterStatuses(new Map([
 	["elapsed-time", "✓ 00:42"],
 ])), {
 	elapsedTime: "✓ 00:42",
+	fastMode: false,
 	statusLine: undefined,
 });
 

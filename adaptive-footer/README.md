@@ -18,6 +18,14 @@ The second row includes context and compaction progress:
 
 The context component reports current usage against the model's full context window. The separate compact-target component reports the configured Auto Compact threshold followed by progress toward it. At constrained widths, `compact @245k 57%` reduces to `C57%`. When current usage is unknown, the known target remains as `compact @245k` or `C@245k`.
 
+The right side ends with the current model and thinking level. When OpenAI Codex Fast mode is enabled, its indicator appears between them as `fast`, reducing to `f` in the compact layout:
+
+```text
+gpt-5.6-sol • fast • xhigh
+gpt-5.6-sol • f • xhigh
+gpt-5.6-sol • xhigh          # Fast mode disabled
+```
+
 ## Issue inference
 
 The footer checks explicit issue markers in the current branch, then the cwd basename. A candidate is displayed only after `gh issue view` verifies it.
