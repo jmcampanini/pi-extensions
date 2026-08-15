@@ -45,7 +45,7 @@ The threshold is evaluated at `agent_settled`, after the current agent workflow 
 
 The extension observes `agent_end` only to detect an aborted run. If the run was aborted, threshold compaction is deferred until the next completed workflow. Pi retains its own native compaction and overflow behavior according to its settings.
 
-Unknown context usage never triggers compaction. A compaction already in progress is not duplicated. After a threshold compaction failure, further attempts are disabled until a successful compaction or model switch prevents a retry loop.
+Unknown context usage never triggers compaction. A compaction already in progress is not duplicated. After a threshold compaction failure, further attempts are disabled until a successful compaction or model switch prevents a retry loop. Cancelling an in-progress auto-compaction engages the same latch — reported as an informational pause rather than an error — so a declined compaction is not immediately re-requested. While the latch is engaged, the extension publishes an `auto-compact` status entry, which the adaptive-footer compact chip renders as paused.
 
 ## Configuration
 

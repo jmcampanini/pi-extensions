@@ -1,6 +1,8 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { config, type AutoCompactConfig } from "./config.ts";
 import { formatTokens, resolveThresholdTokens } from "./threshold.ts";
+
+export const AUTO_COMPACT_STATUS_KEY = "auto-compact";
 
 export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompactConfig): void {
 	let inFlight = false;
@@ -8,6 +10,12 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 	let lastRunAborted = false;
 	let active = true;
 	const warnedModels = new Set<string>();
+
+	const releaseLatch = (ctx: ExtensionContext) => {
+		if (!failed) return;
+		failed = false;
+		if (ctx.hasUI) ctx.ui.setStatus(AUTO_COMPACT_STATUS_KEY, undefined);
+	};
 
 	pi.on("agent_end", (event) => {
 		const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
@@ -47,7 +55,14 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 				onError: (error) => {
 					failed = true;
 					finishCompaction();
-					if (active) {
+					if (!active) return;
+					if (ctx.hasUI) ctx.ui.setStatus(AUTO_COMPACT_STATUS_KEY, "auto-compact paused");
+					if (/cancelled/i.test(error.message)) {
+						ctx.ui.notify(
+							"Compaction cancelled — auto-compaction paused until the next successful compaction or model switch.",
+							"info",
+						);
+					} else {
 						ctx.ui.notify(
 							`Auto-compaction failed: ${error.message}. Auto-compaction is disabled until the next successful compaction or model switch.`,
 							"error",
@@ -60,13 +75,13 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 
 	pi.on("session_compact", (event, ctx) => {
 		if (failed) {
-			failed = false;
+			releaseLatch(ctx);
 			return;
 		}
 		if (!resolvedConfig.enabled || event.reason !== "threshold") return;
 
 		const model = ctx.model;
-		const contextWindow = model?.contextWindow ?? 0;
+		const contextWindow = ctx.getContextUsage()?.contextWindow ?? 0;
 		if (!model || contextWindow <= 0) return;
 
 		const key = `${model.provider}/${model.id}`;
@@ -79,8 +94,8 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 		);
 	});
 
-	pi.on("model_select", () => {
-		failed = false;
+	pi.on("model_select", (_event, ctx) => {
+		releaseLatch(ctx);
 	});
 
 	pi.on("session_shutdown", () => {

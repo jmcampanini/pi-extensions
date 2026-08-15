@@ -16,7 +16,7 @@ The second row includes context and compaction progress:
 51% 140k/272k • compact @245k 57%
 ```
 
-The context component reports current usage against the model's full context window. The separate compact-target component reports the configured Auto Compact threshold followed by progress toward it. At constrained widths, `compact @245k 57%` reduces to `C57%`. When current usage is unknown, the known target remains as `compact @245k` or `C@245k`.
+The context component reports current usage against the model's full context window. The separate compact-target component reports the configured Auto Compact threshold followed by progress toward it. At constrained widths, `compact @245k 57%` reduces to `C57%`. When current usage is unknown, the known target remains as `compact @245k` or `C@245k`. While Auto Compact is paused by its failure latch (published as the `auto-compact` status), the component renders `compact ⏸` (reducing to `C⏸`) and the context color bands fall back to the static 70/90 thresholds.
 
 The right side ends with the current model and thinking level. When OpenAI Codex Fast mode is enabled, its indicator appears between them as `fast`, reducing to `f` in the compact layout:
 
