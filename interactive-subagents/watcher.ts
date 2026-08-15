@@ -419,11 +419,35 @@ function hasFailureMessage(result: ExitResult): result is Extract<ExitResult, { 
 	return result.reason === "error" || result.reason === "pane-closed" || result.reason === "killed";
 }
 
+function resultMessageBase(record: DeliveryRecord, obs: ActivityObservation, costUsd: number | undefined) {
+	const child = record.child;
+	return {
+		name: child.name,
+		agent: child.agent,
+		harness: child.harness,
+		id: child.id,
+		model: obs.snapshot?.modelId ?? child.model,
+		effort: child.thinking,
+		forked: record.forked,
+		interactive: record.interactive,
+		worktree: record.worktree,
+		tools: child.tools,
+		elapsedSeconds: record.elapsedSeconds,
+		contextTokens: obs.snapshot?.context?.tokens,
+		contextWindow: obs.snapshot?.context?.window,
+		costUsd,
+		exitCode: record.exit.exitCode,
+		reason: record.exit.reason,
+		sessionFile: child.sessionFile,
+		worktreeDir: child.worktree?.dir,
+		worktreeBranch: child.worktree?.branch,
+	};
+}
+
 async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, generation: number): Promise<void> {
 	const child = record.child;
 	const result = record.exit;
 	const obs = child.activity ?? newActivityObservation(Date.now());
-	const exitElapsedSeconds = record.elapsedSeconds;
 
 	// External snapshots carry no cost telemetry (their costUsd is a schema
 	// filler, not a measurement) - report nothing rather than a misleading $0.
@@ -442,26 +466,9 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 				? `Worktree: kept at ${child.worktree.dir} because the work may be incomplete.`
 				: undefined;
 			const message = buildSubagentResultMessage({
+				...resultMessageBase(record, obs, costUsd),
 				status: "stopped",
-				name: child.name,
-				agent: child.agent,
-				harness: child.harness,
-				id: child.id,
-				model: obs.snapshot?.modelId ?? child.model,
-				effort: child.thinking,
-				forked: record.forked,
-				interactive: record.interactive,
-				worktree: record.worktree,
-				tools: child.tools,
-				elapsedSeconds: exitElapsedSeconds,
-				contextTokens: obs.snapshot?.context?.tokens,
-				contextWindow: obs.snapshot?.context?.window,
-				costUsd,
-				exitCode: result.exitCode,
 				reason: "stopped",
-				sessionFile: child.sessionFile,
-				worktreeDir: child.worktree?.dir,
-				worktreeBranch: child.worktree?.branch,
 				worktreeStatus: child.worktree ? "kept" : undefined,
 				worktreeNote: stoppedWorktreeNote,
 				notice,
@@ -528,26 +535,8 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		? worktreeNote(child.worktree, worktreeOutcome)
 		: undefined;
 	const common = {
-		name: child.name,
-		agent: child.agent,
-		harness: child.harness,
-		id: child.id,
-		model: obs.snapshot?.modelId ?? child.model,
-		effort: child.thinking,
-		forked: record.forked,
-		interactive: record.interactive,
-		worktree: record.worktree,
-		tools: child.tools,
-		elapsedSeconds: exitElapsedSeconds,
-		contextTokens: obs.snapshot?.context?.tokens,
-		contextWindow: obs.snapshot?.context?.window,
+		...resultMessageBase(record, obs, costUsd),
 		resultTokens,
-		costUsd,
-		exitCode: result.exitCode,
-		reason: result.reason,
-		sessionFile: child.sessionFile,
-		worktreeDir: child.worktree?.dir,
-		worktreeBranch: child.worktree?.branch,
 		worktreeStatus: worktreeOutcome?.status,
 		worktreeNote: note,
 	};

@@ -244,12 +244,15 @@ export function buildSubagentResultMessage(input: SubagentResultMessageInput): S
 		sessionFile: input.sessionFile,
 		worktreeNote: input.worktreeNote,
 	});
-	const preview = input.status === "completed"
-		? input.response
-		: input.status === "failed"
-		? input.response ?? input.failureReason
-		: (input.stopRequester === "user" ? "Stopped by the user" : "Stopped by the parent agent") +
+	let preview: string;
+	if (input.status === "completed") {
+		preview = input.response;
+	} else if (input.status === "failed") {
+		preview = input.response ?? input.failureReason;
+	} else {
+		preview = (input.stopRequester === "user" ? "Stopped by the user" : "Stopped by the parent agent") +
 			" — no final result. Partial work may remain; expand for resume and worktree details.";
+	}
 
 	return {
 		content: envelope.content,
