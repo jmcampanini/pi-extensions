@@ -14,6 +14,8 @@ type FastOpenAIConfig = {
 
 type FastAction = "on" | "off";
 
+export const FAST_OPENAI_STATUS_KEY = "fast-openai";
+
 type ConfigDiagnostic = {
 	path: string;
 	message: string;
@@ -59,6 +61,14 @@ const SUPPORTED_MODELS = new Set([
 const PRIORITY_SERVICE_TIER = "priority" as const;
 const COST_ACCOUNTING_WARNING =
 	"warning: raw service_tier injection may not apply Pi's native priority cost multiplier; actual billed cost can be higher than Pi displays";
+
+function publishFastStatus(
+	ctx: Pick<ExtensionContext, "hasUI" | "ui">,
+	enabled: boolean,
+): void {
+	if (!ctx.hasUI) return;
+	ctx.ui.setStatus(FAST_OPENAI_STATUS_KEY, enabled ? "fast" : undefined);
+}
 
 function defaultProviders(): string[] {
 	return [...DEFAULT_CONFIG.providers];
@@ -294,6 +304,7 @@ function setFastMode(action: FastAction, ctx: ExtensionCommandContext): void {
 		return;
 	}
 
+	publishFastStatus(ctx, nextConfig.enabled);
 	if (previousDiagnostic) {
 		ctx.ui.notify(
 			[
@@ -315,6 +326,14 @@ function showFastStatus(ctx: ExtensionCommandContext): void {
 }
 
 export default function (pi: ExtensionAPI): void {
+	pi.on("session_start", (_event, ctx) => {
+		publishFastStatus(ctx, loadConfigResult().config.enabled);
+	});
+
+	pi.on("session_shutdown", (_event, ctx) => {
+		publishFastStatus(ctx, false);
+	});
+
 	pi.on("agent_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		const model = ctx.model;
