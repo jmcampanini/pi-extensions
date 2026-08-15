@@ -8,7 +8,11 @@ import { stripVTControlCharacters } from "node:util";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Text, visibleWidth } from "@earendil-works/pi-tui";
-import { buildSubagentResultEnvelope } from "../result-content.ts";
+import {
+	buildSubagentResultEnvelope,
+	buildSubagentResultMessage,
+	parseSubagentResultEnvelope,
+} from "../result-content.ts";
 import { clampStyled, fitText } from "../text-fit.ts";
 import {
 	estimateResultTokens,
@@ -142,8 +146,81 @@ for (const width of [0, 1, 2, 8, 20, 40, 80]) {
 }
 
 const current = details("completed");
-eq("current structured details parse", parseSubagentResultDetails(current)?.presentation.status, "completed");
-eq("current structured details preserve sizes", parseSubagentResultDetails(current), current);
+eq("old-shape structured details parse", parseSubagentResultDetails(current)?.presentation.status, "completed");
+eq("old-shape structured details preserve sizes", parseSubagentResultDetails(current), current);
+const widened = {
+	...current,
+	harness: "claude-code",
+	model: "provider/model",
+	effort: "high",
+	tools: "read,edit,bash",
+	forked: true,
+	interactive: false,
+	worktree: true,
+	exitCode: 23,
+	reason: "exited",
+	sessionFile: "/sessions/child.jsonl",
+	worktreeDir: "/repo/worktree",
+	worktreeBranch: "pi/check",
+	worktreeStatus: "kept",
+	contextWindow: 200_000,
+};
+const parsedWidened = parseSubagentResultDetails(widened);
+eq("widened structured details retain display and machine-only fields", {
+	harness: parsedWidened?.harness,
+	model: parsedWidened?.model,
+	effort: parsedWidened?.effort,
+	tools: parsedWidened?.tools,
+	forked: parsedWidened?.forked,
+	interactive: parsedWidened?.interactive,
+	worktree: parsedWidened?.worktree,
+	exitCode: parsedWidened?.exitCode,
+	reason: parsedWidened?.reason,
+	worktreeDir: parsedWidened?.worktreeDir,
+	worktreeBranch: parsedWidened?.worktreeBranch,
+	worktreeStatus: parsedWidened?.worktreeStatus,
+	contextWindow: parsedWidened?.contextWindow,
+}, {
+	harness: "claude-code",
+	model: "provider/model",
+	effort: "high",
+	tools: "read,edit,bash",
+	forked: true,
+	interactive: false,
+	worktree: true,
+	exitCode: 23,
+	reason: "exited",
+	worktreeDir: "/repo/worktree",
+	worktreeBranch: "pi/check",
+	worktreeStatus: "kept",
+	contextWindow: 200_000,
+});
+eq("malformed optional root fields are omitted individually", parseSubagentResultDetails({
+	...current,
+	model: 42,
+	effort: false,
+	tools: [],
+	forked: "yes",
+	contextWindow: 0,
+	exitCode: 1.5,
+}), {
+	...current,
+	model: undefined,
+	effort: undefined,
+	tools: undefined,
+	forked: undefined,
+	contextWindow: undefined,
+	exitCode: undefined,
+});
+const compactedDetails = parseSubagentResultDetails({
+	...current,
+	contextTokens: null,
+	contextWindow: 200_000,
+});
+eq("compacted context null sentinel survives parsing", compactedDetails?.contextTokens, null);
+eq("compacted context null sentinel is omitted from the collapsed display",
+	compactedDetails && formatCollapsedSubagentResult(compactedDetails, 120, 0, "Ctrl+O").map(plain).at(-1),
+	"~1.8k result (Ctrl+O to expand)");
 eq("persisted result rejects an invalid agent identifier", parseSubagentResultDetails({
 	...current,
 	agent: "code reviewer",
@@ -210,8 +287,14 @@ const envelope = buildSubagentResultEnvelope({
 	agent: current.agent ?? "worker",
 	id: current.id,
 	elapsed: "2m 14s",
-	contextTokens: current.contextTokens,
+	contextTokens: current.contextTokens ?? undefined,
 	resultTokens: current.resultTokens,
+	model: "provider/model",
+	effort: "high",
+	forked: true,
+	interactive: true,
+	worktree: true,
+	tools: "read,edit,bash",
 	costUsd: 0.31,
 	response: responseMarkdown,
 	action: "Resume",
@@ -221,8 +304,20 @@ const envelope = buildSubagentResultEnvelope({
 });
 const messageDetails: SubagentResultDetails = {
 	...current,
+	model: "provider/model",
+	effort: "high",
+	tools: "read,edit,bash",
+	forked: true,
+	interactive: true,
+	worktree: true,
+	exitCode: 0,
+	reason: "done",
+	contextWindow: 200_000,
 	costUsd: 0.31,
 	sessionFile: "/sessions/child.jsonl",
+	worktreeDir: "/repo/worktree",
+	worktreeBranch: "pi/api-review",
+	worktreeStatus: "kept",
 	expanded: { version: 1, response: envelope.response, worktreeNote },
 };
 const message = {
@@ -297,22 +392,29 @@ eq("expanded result omits size metrics from its header",
 eq("expanded result renders the complete child response", expandedText.includes("TAIL_SENTINEL"), true);
 eq("expanded result does not render envelope labels", expandedText.includes("Status: completed"), false);
 eq("expanded result does not render response delimiters", expandedText.includes("<result>"), false);
+const responseLineIndex = expandedWideLines.findIndex((line) => line.includes("TAIL_SENTINEL"));
+const statusLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("status   completed"));
+const nameLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("name     API review"));
+const modelLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("model    provider/model"));
+const effortLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("effort   high"));
+const contextLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("context  84k / 200k tokens"));
+const costLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("cost     $0.31"));
+const worktreeLineIndex = expandedWideLines.findIndex((line) => line.includes("Worktree: kept"));
 const sessionLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("session "));
 const resumeLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("resume "));
-const metricsLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("context 84k"));
-eq("expanded footer orders session and resume above the final run metrics",
-	sessionLineIndex > 0 && resumeLineIndex === sessionLineIndex + 1 && metricsLineIndex === resumeLineIndex + 2, true);
-eq("expanded footer separates resume guidance from final run metrics",
-	expandedWideLines[resumeLineIndex + 1], "");
-eq("expanded footer ends with context, result, and cost metrics",
-	metricsLineIndex === expandedWideLines.length - 2 &&
-	expandedWideLines[metricsLineIndex]?.trimStart() === "context 84k · result ~1.8k · cost this run $0.31", true);
+eq("expanded layout puts response before the canonical metadata table",
+	responseLineIndex > 0 && responseLineIndex < statusLineIndex && statusLineIndex < nameLineIndex &&
+	nameLineIndex < modelLineIndex && modelLineIndex < effortLineIndex && effortLineIndex < contextLineIndex &&
+	contextLineIndex < costLineIndex, true);
+eq("expanded layout puts the action tail after the metadata table",
+	costLineIndex < worktreeLineIndex && sessionLineIndex === worktreeLineIndex + 1 &&
+	resumeLineIndex === sessionLineIndex + 1, true);
+eq("expanded context row includes the known context window",
+	expandedWideLines[contextLineIndex]?.trimStart(), "context  84k / 200k tokens");
 eq("expanded result shows the session path", expandedWideLines[sessionLineIndex]?.trimStart(),
 	"session /sessions/child.jsonl");
 eq("expanded result shows resume guidance", expandedWideLines[resumeLineIndex]?.trimStart(),
 	'resume subagent_resume({ id: "abc12345", message: "..." })');
-eq("expanded result shows the worktree outcome before session metadata",
-	expandedWideLines.findIndex((line) => line.includes("Worktree: kept")) < sessionLineIndex, true);
 eq("expanded result has no expansion hint", expandedText.includes("to expand"), false);
 eq("expanded result strips terminal controls", expandedLines.join("").includes("\x1b]52"), false);
 eq("expanded rendering does not mutate model-facing content", message.content, originalContent);
@@ -322,8 +424,10 @@ eq("expanded result styles its title as a tool title",
 	structuredMarked.includes("<toolTitle>subagent result</toolTitle>"), true);
 eq("expanded result styles session paths as accents",
 	structuredMarked.includes("<accent>/sessions/child.jsonl</accent>"), true);
-eq("expanded result styles footer metrics as metadata",
-	structuredMarked.includes("<muted>context 84k · result ~1.8k · cost this run $0.31</muted>"), true);
+eq("expanded result styles table keys as metadata and values as tool output",
+	structuredMarked.includes("<muted>context  </muted><toolOutput>84k / 200k tokens</toolOutput>") &&
+	structuredMarked.includes("<muted>model    </muted><toolOutput>provider/model</toolOutput>") &&
+	structuredMarked.includes("<muted>effort   </muted><toolOutput>high</toolOutput>"), true);
 
 const failedResponse = "The provider returned partial output.";
 const failedEnvelope = buildSubagentResultEnvelope({
@@ -388,8 +492,9 @@ const stoppedStructuredMessage = {
 };
 const stoppedStructuredText = renderMessage(stoppedStructuredMessage, true, theme)?.render(100).map(plain).join("\n") ?? "";
 eq("expanded stopped result shows its notice", stoppedStructuredText.includes(stoppedNotice), true);
-eq("expanded stopped footer includes only available run metrics",
-	stoppedStructuredText.includes("context 84k · cost this run $0.02") && !stoppedStructuredText.includes("result ~"), true);
+eq("expanded stopped table includes only available run metrics",
+	stoppedStructuredText.includes("context  84k tokens") && stoppedStructuredText.includes("cost     $0.02") &&
+	!stoppedStructuredText.includes("result   ~"), true);
 eq("expanded stopped result shows resume guidance", stoppedStructuredText.includes("resume subagent_resume"), true);
 
 for (const width of [1, 2, 8, 20, 60]) {
@@ -404,21 +509,50 @@ eq("persisted current message restores identically",
 
 eq("non-current details defer to Pi's renderer", renderMessage({ ...message, details: null }, false, theme), undefined);
 
+const pipeline = buildSubagentResultMessage({
+	status: "completed",
+	name: "pipeline proof",
+	agent: "worker",
+	id: "pipe1234",
+	model: "provider/pipeline-model",
+	effort: "high",
+	forked: true,
+	interactive: false,
+	worktree: false,
+	tools: "read,bash",
+	elapsedSeconds: 183,
+	contextTokens: 78_000,
+	contextWindow: 200_000,
+	resultTokens: 12,
+	costUsd: 0.08,
+	exitCode: 0,
+	reason: "done",
+	sessionFile: "/sessions/pipeline.jsonl",
+	response: "PIPELINE RESPONSE",
+});
+const pipelineEnvelope = parseSubagentResultEnvelope(pipeline.content);
+eq("unified pipeline envelope exposes model and effort in canonical order",
+	pipelineEnvelope?.fields.map((field) => field.key).slice(0, 9),
+	["status", "name", "agent", "id", "model", "effort", "mode", "tools", "elapsed"]);
+const pipelineMessage = {
+	role: "custom" as const,
+	customType: "subagent_result",
+	content: pipeline.content,
+	display: true,
+	details: pipeline.details,
+	timestamp: 1,
+};
+const pipelineLines = renderMessage(pipelineMessage, true, theme)?.render(120).map(plain) ?? [];
+const pipelineResponseIndex = pipelineLines.findIndex((line) => line.includes("PIPELINE RESPONSE"));
+const pipelineStatusIndex = pipelineLines.findIndex((line) => line.trimStart().startsWith("status   completed"));
+eq("unified pipeline renders response before its complete TUI table",
+	pipelineResponseIndex > 0 && pipelineResponseIndex < pipelineStatusIndex &&
+	pipelineLines.some((line) => line.trimStart().startsWith("model    provider/pipeline-model")) &&
+	pipelineLines.some((line) => line.trimStart().startsWith("effort   high")), true);
+
 const directory = fileURLToPath(new URL("..", import.meta.url));
-const watcherSource = readFileSync(`${directory}/watcher.ts`, "utf8");
 const indexSource = readFileSync(`${directory}/index.ts`, "utf8");
 const resultMessageSource = readFileSync(`${directory}/result-message.ts`, "utf8");
-eq("watcher emits completed presentation details", watcherSource.includes('resultPresentation("completed"'), true);
-eq("watcher emits failed presentation details", watcherSource.includes('resultPresentation("failed"'), true);
-eq("watcher emits stopped presentation details", watcherSource.includes('"stopped",\n'), true);
-eq("watcher's stopped preview leads with the requester",
-	watcherSource.includes('child.stopRequester === "user" ? "Stopped by the user" : "Stopped by the parent agent"'), true);
-eq("watcher estimates extracted result tokens", watcherSource.includes("estimateResultTokens(generatedSummary)"), true);
-eq("watcher emits result token details", watcherSource.includes("resultTokens,\n"), true);
-eq("watcher builds labeled model-facing envelopes", watcherSource.includes("buildSubagentResultEnvelope({"), true);
-eq("watcher passes envelope response boundaries to the TUI", watcherSource.includes("response: envelope.response"), true);
-eq("watcher keeps structured expanded details out of model-facing content",
-	watcherSource.includes("expanded,\n\t\t\tpresentation,"), true);
 eq("result renderer resolves the configured expansion binding",
 	resultMessageSource.includes('keyText("app.tools.expand")'), true);
 eq("parent extension registers the result renderer", indexSource.includes("registerSubagentResultRenderer(pi)"), true);

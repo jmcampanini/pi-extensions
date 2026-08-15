@@ -3,42 +3,25 @@ import { Box, Markdown, Text, visibleWidth, type Component } from "@earendil-wor
 import { isValidAgentIdentifier } from "./agent-identifier.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
+import {
+	humanElapsed,
+	resultPresentation,
+	resultPreview,
+	type SubagentExpandedResultPresentation,
+	type SubagentResultContentRange,
+	type SubagentResultDetails,
+} from "./result-content.ts";
 import { clampStyled, fitText } from "./text-fit.ts";
 import { formatCost, formatTokens } from "./widget.ts";
 
-export type SubagentResultStatus = "completed" | "failed" | "stopped";
-
-export interface SubagentResultPresentation {
-	version: 2;
-	status: SubagentResultStatus;
-	elapsedSeconds: number;
-	preview: string;
-}
-
-export interface SubagentResultContentRange {
-	start: number;
-	end: number;
-}
-
-export interface SubagentExpandedResultPresentation {
-	version: 1;
-	response?: SubagentResultContentRange;
-	notice?: string;
-	failureReason?: string;
-	worktreeNote?: string;
-}
-
-export interface SubagentResultDetails {
-	id: string;
-	name: string;
-	agent?: string;
-	contextTokens?: number;
-	resultTokens?: number;
-	costUsd?: number;
-	sessionFile?: string;
-	expanded: SubagentExpandedResultPresentation;
-	presentation: SubagentResultPresentation;
-}
+export { humanElapsed, resultPresentation, resultPreview } from "./result-content.ts";
+export type {
+	SubagentExpandedResultPresentation,
+	SubagentResultContentRange,
+	SubagentResultDetails,
+	SubagentResultPresentation,
+	SubagentResultStatus,
+} from "./result-content.ts";
 
 interface ResultStyle {
 	title: (text: string) => string;
@@ -61,8 +44,6 @@ const METRICS: ResultMetrics = {
 	clampStyled,
 	renderText: (text, width) => new Text(text, 0, 0).render(width),
 };
-
-const MAX_STORED_PREVIEW_CODE_POINTS = 2000;
 
 const STATUS_COPY = {
 	completed: "done",
@@ -88,16 +69,6 @@ function inline(text: string): string {
 	return sanitizeDisplayText(text).replace(/\s+/g, " ").trim();
 }
 
-export function humanElapsed(totalSeconds: number): string {
-	const seconds = Math.max(0, Math.floor(totalSeconds));
-	if (seconds < 60) return `${seconds}s`;
-	return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-}
-
-export function resultPreview(text: string): string {
-	return inline(text);
-}
-
 export function estimateResultTokens(text: string): number | undefined {
 	const safeText = sanitizeDisplayText(text);
 	if (safeText.trim() === "") return undefined;
@@ -110,23 +81,6 @@ export function estimateResultTokens(text: string): number | undefined {
 	});
 }
 
-export function resultPresentation(
-	status: SubagentResultStatus,
-	elapsedSeconds: number,
-	preview: string,
-): SubagentResultPresentation {
-	const normalizedPreview = resultPreview(preview);
-	const codePoints = Array.from(normalizedPreview);
-	return {
-		version: 2,
-		status,
-		elapsedSeconds: Math.max(0, Math.floor(elapsedSeconds)),
-		preview: codePoints.length > MAX_STORED_PREVIEW_CODE_POINTS
-			? `${codePoints.slice(0, MAX_STORED_PREVIEW_CODE_POINTS).join("")}…`
-			: normalizedPreview,
-	};
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
@@ -135,6 +89,27 @@ function optionalTokenCount(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 0
 		? value
 		: undefined;
+}
+
+function optionalNullableTokenCount(value: unknown): number | null | undefined {
+	return value === null ? null : optionalTokenCount(value);
+}
+
+function optionalPositiveTokenCount(value: unknown): number | undefined {
+	const count = optionalTokenCount(value);
+	return count !== undefined && count > 0 ? count : undefined;
+}
+
+function optionalInteger(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) ? value : undefined;
+}
+
+function optionalString(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+	return typeof value === "boolean" ? value : undefined;
 }
 
 function parseExpandedPresentation(value: unknown): SubagentExpandedResultPresentation | undefined {
@@ -187,12 +162,25 @@ export function parseSubagentResultDetails(value: unknown): SubagentResultDetail
 		id: value.id,
 		name: value.name,
 		agent: value.agent,
-		contextTokens: optionalTokenCount(value.contextTokens),
+		harness: optionalString(value.harness),
+		model: optionalString(value.model),
+		effort: optionalString(value.effort),
+		tools: optionalString(value.tools),
+		forked: optionalBoolean(value.forked),
+		interactive: optionalBoolean(value.interactive),
+		worktree: optionalBoolean(value.worktree),
+		exitCode: optionalInteger(value.exitCode),
+		reason: optionalString(value.reason),
+		sessionFile: optionalString(value.sessionFile),
+		worktreeDir: optionalString(value.worktreeDir),
+		worktreeBranch: optionalString(value.worktreeBranch),
+		worktreeStatus: optionalString(value.worktreeStatus),
+		contextTokens: optionalNullableTokenCount(value.contextTokens),
+		contextWindow: optionalPositiveTokenCount(value.contextWindow),
 		resultTokens: optionalTokenCount(value.resultTokens),
 		costUsd: typeof value.costUsd === "number" && Number.isFinite(value.costUsd) && value.costUsd >= 0
 			? value.costUsd
 			: undefined,
-		sessionFile: typeof value.sessionFile === "string" ? value.sessionFile : undefined,
 		expanded,
 		presentation: {
 			version: 2,
@@ -259,7 +247,7 @@ function formatCollapsedFooter(
 	style: ResultStyle,
 ): string {
 	const sizeParts: string[] = [];
-	if (details.contextTokens !== undefined) sizeParts.push(`${formatTokens(details.contextTokens)} ctx`);
+	if (typeof details.contextTokens === "number") sizeParts.push(`${formatTokens(details.contextTokens)} ctx`);
 	if (details.resultTokens !== undefined) sizeParts.push(`~${formatTokens(details.resultTokens)} result`);
 	const sizeRaw = sizeParts.join(" · ");
 	const sizeText = sizeRaw ? style.metadata(sizeRaw) : "";
@@ -344,6 +332,70 @@ function nativeMessageShell(
 	return widthSafe(box);
 }
 
+interface MetadataRow {
+	key: string;
+	value: string;
+}
+
+function metadataRows(details: SubagentResultDetails): MetadataRow[] {
+	const modes = [
+		...(details.forked ? ["forked"] : []),
+		...(details.interactive ? ["interactive"] : []),
+		...(details.worktree ? ["worktree"] : []),
+	];
+	const rows: Array<MetadataRow | undefined> = [
+		{ key: "status", value: details.presentation.status },
+		{ key: "name", value: details.name },
+		{ key: "agent", value: details.agent ?? "worker" },
+		details.harness === undefined ? undefined : { key: "harness", value: details.harness },
+		{ key: "id", value: details.id },
+		details.model === undefined ? undefined : { key: "model", value: details.model },
+		details.effort === undefined ? undefined : { key: "effort", value: details.effort },
+		modes.length === 0 ? undefined : { key: "mode", value: modes.join(" · ") },
+		details.tools === undefined ? undefined : { key: "tools", value: details.tools },
+		{ key: "elapsed", value: humanElapsed(details.presentation.elapsedSeconds) },
+		typeof details.contextTokens !== "number"
+			? undefined
+			: {
+				key: "context",
+				value: details.contextWindow === undefined
+					? `${formatTokens(details.contextTokens)} tokens`
+					: `${formatTokens(details.contextTokens)} / ${formatTokens(details.contextWindow)} tokens`,
+			},
+		details.resultTokens === undefined
+			? undefined
+			: { key: "result", value: `~${formatTokens(details.resultTokens)} tokens` },
+		details.costUsd === undefined ? undefined : { key: "cost", value: formatCost(details.costUsd) },
+	];
+	return rows.filter((row): row is MetadataRow => row !== undefined);
+}
+
+function renderMetadataTable(
+	rows: readonly MetadataRow[],
+	width: number,
+	style: ResultStyle,
+	output: (text: string) => string,
+): string[] {
+	if (rows.length === 0 || width === 0) return [];
+	const keyWidth = Math.max(...rows.map((row) => visibleWidth(row.key)));
+	const prefixWidth = keyWidth + 2;
+	const lines: string[] = [];
+	for (const row of rows) {
+		const value = inline(row.value);
+		if (prefixWidth >= width) {
+			lines.push(style.metadata(fitText(row.key, width)));
+			lines.push(...new Text(output(value), 0, 0).render(width));
+			continue;
+		}
+		const valueLines = new Text(output(value), 0, 0).render(width - prefixWidth);
+		const prefix = style.metadata(row.key.padEnd(keyWidth) + "  ");
+		for (let index = 0; index < valueLines.length; index++) {
+			lines.push((index === 0 ? prefix : " ".repeat(prefixWidth)) + valueLines[index]);
+		}
+	}
+	return lines;
+}
+
 function structuredExpandedResult(
 	details: SubagentResultDetails,
 	content: string,
@@ -370,20 +422,25 @@ function structuredExpandedResult(
 			const maxWidth = availableWidth(width);
 			if (maxWidth === 0) return [];
 			const lines = [formatHeader(details, maxWidth, METRICS, style)];
-			const appendText = (text: string): void => {
+			const appendLines = (next: string[]): void => {
+				if (next.length === 0) return;
 				if (lines.at(-1) !== "") lines.push("");
-				lines.push(...new Text(text, 0, 0).render(maxWidth));
+				lines.push(...next);
 			};
+			const appendText = (text: string): void => appendLines(new Text(text, 0, 0).render(maxWidth));
 
 			if (expanded.notice) appendText(output(safeMarkdown(expanded.notice)));
 			if (expanded.failureReason) {
 				appendText(style.metadata("failure · ") + output(safeMarkdown(expanded.failureReason)));
 			}
 			if (markdown) {
-				if (lines.at(-1) !== "") lines.push("");
-				if (details.presentation.status === "failed") lines.push(style.metadata("last output"));
-				lines.push(...markdown.render(maxWidth));
+				const responseLines = details.presentation.status === "failed"
+					? [style.metadata("last output"), ...markdown.render(maxWidth)]
+					: markdown.render(maxWidth);
+				appendLines(responseLines);
 			}
+
+			appendLines(renderMetadataTable(metadataRows(details), maxWidth, style, output));
 
 			const detailsFooter: string[] = [];
 			if (expanded.worktreeNote) detailsFooter.push(style.metadata(safeMarkdown(expanded.worktreeNote)));
@@ -397,12 +454,6 @@ function structuredExpandedResult(
 				accent(`subagent_resume({ id: "${sanitizeDisplayText(details.id)}", message: "${message}" })`),
 			);
 			appendText(detailsFooter.join("\n"));
-
-			const runMetrics: string[] = [];
-			if (details.contextTokens !== undefined) runMetrics.push(`context ${formatTokens(details.contextTokens)}`);
-			if (details.resultTokens !== undefined) runMetrics.push(`result ~${formatTokens(details.resultTokens)}`);
-			if (details.costUsd !== undefined) runMetrics.push(`cost this run ${formatCost(details.costUsd)}`);
-			if (runMetrics.length > 0) appendText(style.metadata(runMetrics.join(" · ")));
 			return lines.map((line) => clampStyled(line, maxWidth));
 		},
 	};

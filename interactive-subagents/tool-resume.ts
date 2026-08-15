@@ -532,6 +532,7 @@ export async function runResumeLaunch(pi: ExtensionAPI, spec: ResumeSpec): Promi
 		skipEntries,
 		tools: spec.tools,
 		model: spec.model,
+		thinking: spec.thinking,
 		autoExit: spec.autoExit,
 		context: spec.context,
 		// The ORIGINAL worktree snapshot rides along unchanged: keeping

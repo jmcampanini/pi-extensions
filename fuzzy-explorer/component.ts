@@ -6,6 +6,7 @@ import {
 	Markdown,
 	matchesKey,
 	truncateToWidth,
+	wrapTextWithAnsi,
 	type Component,
 	type Focusable,
 	type MarkdownTheme,
@@ -22,6 +23,7 @@ import {
 	formatPreviewIdentity,
 	formatPreviewLines,
 	formatResultRow,
+	formatSubagentTable,
 	formatTruncationMarker,
 	PLAIN_MARKDOWN_THEME,
 	rendersMarkdownByDefault,
@@ -283,15 +285,23 @@ export class ExplorerComponent implements Component, Focusable {
 			return formatDetailLines(selected, innerWidth, this.styles(), existsSync);
 		}
 
-		// Rendered markdown shows parsed content only; copy and open keep the raw
-		// text. Subagent blocks lead with their metadata fields.
+		// Rendered markdown shows parsed content only; copy and open keep the raw text.
 		const styles = this.styles();
 		const view = subagentView(selected.block);
 		const text = sanitizeTerminalText(view === undefined ? selected.block.body : view.content);
 		const lines: string[] = [];
-		for (const field of view?.fields ?? []) {
-			lines.push(truncateToWidth(styles.muted(sanitizeTerminalText(`${field.key}=${field.value}`)), innerWidth, ""));
-		}
+		const appendFields = (): void => {
+			if (view?.result) {
+				for (const line of formatSubagentTable(view).split("\n")) {
+					lines.push(...wrapTextWithAnsi(sanitizeTerminalText(line), innerWidth).map(styles.muted));
+				}
+				return;
+			}
+			for (const field of view?.fields ?? []) {
+				lines.push(truncateToWidth(styles.muted(sanitizeTerminalText(`${field.key}=${field.value}`)), innerWidth, ""));
+			}
+		};
+		if (!view?.result) appendFields();
 		if (lines.length > 0 && text !== "") lines.push("");
 		if (text !== "") {
 			if (text !== this.lastMarkdownText) {
@@ -299,6 +309,10 @@ export class ExplorerComponent implements Component, Focusable {
 				this.lastMarkdownText = text;
 			}
 			lines.push(...this.markdown.render(innerWidth).map((line) => truncateToWidth(line, innerWidth, "")));
+		}
+		if (view?.result && view.fields.length > 0) {
+			if (text !== "") lines.push("");
+			appendFields();
 		}
 		const marker = formatTruncationMarker(selected.block.truncation, existsSync);
 		if (marker !== undefined) lines.push(truncateToWidth(styles.dim(marker), innerWidth, ""));

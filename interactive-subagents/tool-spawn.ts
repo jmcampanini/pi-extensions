@@ -735,6 +735,7 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 			skipEntries,
 			tools: spec.tools,
 			model: spec.model,
+			thinking: spec.thinking,
 			autoExit: spec.autoExit,
 			context: spec.context,
 			worktree,

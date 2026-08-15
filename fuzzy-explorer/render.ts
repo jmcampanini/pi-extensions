@@ -400,13 +400,23 @@ function firstBodyLine(body: string): string {
 }
 
 export function formatSubagentFields(view: SubagentView): string {
-	return view.fields.map((field) => `${field.key}=${field.value}`).join(" ");
+	return (view.rowFields ?? view.fields).map((field) => `${field.key}=${field.value}`).join(" ");
 }
 
-/** Displayed preview/detail text: subagent blocks show fields + parsed content. */
+export function formatSubagentTable(view: SubagentView): string {
+	const keyWidth = Math.max(0, ...view.fields.map((field) => visibleWidth(field.key)));
+	return view.fields
+		.map((field) => `${field.key}${" ".repeat(keyWidth - visibleWidth(field.key) + 2)}${field.value}`)
+		.join("\n");
+}
+
+/** Displayed preview/detail text: parsed result responses precede their canonical metadata table. */
 export function displayContent(block: Block): string {
 	const view = subagentView(block);
 	if (view !== undefined) {
+		if (view.result) {
+			return [view.content, formatSubagentTable(view)].filter((text) => text !== "").join("\n\n");
+		}
 		return [formatSubagentFields(view), view.content].filter((text) => text !== "").join("\n\n");
 	}
 	return block.body !== "" ? block.body : block.canonicalText;
