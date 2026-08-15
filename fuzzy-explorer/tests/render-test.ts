@@ -222,6 +222,37 @@ ok(
 );
 ok("preview carries no match metadata line", !formatPreviewLines(result, 200, 8).join("\n").includes("match ·"));
 
+const subagentResultBlock = makeBlock({
+	kind: "custom",
+	title: "subagent_result",
+	body: `Subagent result
+Status: completed
+Name: layout check
+Agent: scout
+ID: abc12345
+Elapsed: 2s
+
+<result>
+response one
+response \x1b[2Jneedle
+response three
+</result>
+
+Resume: subagent_resume({ id: "abc12345", message: "..." })
+Session: /sessions/child.jsonl`,
+});
+const subagentResult: SearchResult = {
+	block: subagentResultBlock,
+	match: { matches: true, score: 0, keyTokens: [], bodyTokens: ["needle"] },
+};
+const boundedResultPreview = formatPreviewLines(subagentResult, 100, 6, markedStyles).join("\n");
+ok("bounded result preview keeps the response and labeled divider while clipping the trailing table",
+	boundedResultPreview.includes("response one") && boundedResultPreview.includes("response three")
+	&& boundedResultPreview.includes("─ result details ─")
+	&& boundedResultPreview.includes("preview clipped") && !boundedResultPreview.includes("session"));
+ok("response-first transformation sanitizes and preserves body-match highlights",
+	boundedResultPreview.includes("response ⟦needle⟧") && !boundedResultPreview.includes("\x1b[2J"));
+
 // Stored truncation is honest about both line counts and temp-file survival.
 
 const truncation = {

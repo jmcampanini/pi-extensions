@@ -310,8 +310,34 @@ eq("normal classifier rejects a run without an assistant", agentEndWasNormal({ m
 	const pi = beginScenario();
 	startRun(pi);
 	const completed = completedRecord("racecomp", "/missing/completed-session.jsonl");
+	completed.child.model = "spawn/model";
+	completed.child.thinking = "high";
+	completed.child.activity = {
+		watchdogStartMs: 0,
+		snapshot: {
+			version: 1,
+			runId: completed.id,
+			pid: 1,
+			sequence: 1,
+			updatedAt: 1,
+			inRun: false,
+			runsCompleted: 1,
+			activeTools: [],
+			modelId: "actual/model",
+			context: { tokens: null, window: 200_000, percent: null },
+			costUsd: 0,
+		},
+	};
 	seed(completed);
 	startFinalizer(pi.api, completed);
+	eq("race: liveness telemetry overrides the spawn model and preserves compacted context", {
+		model: pi.calls[0]?.message.details.model,
+		effort: pi.calls[0]?.message.details.effort,
+		contextTokens: pi.calls[0]?.message.details.contextTokens,
+		contextWindow: pi.calls[0]?.message.details.contextWindow,
+	}, { model: "actual/model", effort: "high", contextTokens: null, contextWindow: 200_000 });
+	eq("race: compacted context is omitted from the prose envelope",
+	pi.calls[0]?.message.content.includes("Context:"), false);
 	completed.child.stopRequester = "user";
 	completed.finalizerGeneration = undefined;
 	startFinalizer(pi.api, completed);

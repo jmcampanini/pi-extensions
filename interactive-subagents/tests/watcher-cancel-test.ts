@@ -23,9 +23,21 @@ function ok(label: string, condition: boolean): void {
 	else { fail++; console.log(`  FAIL ${label}`); }
 }
 
-const sent: Array<{ customType?: string; content?: string; details?: { id?: string; reason?: string } }> = [];
+interface SentDetails {
+	id?: string;
+	reason?: string;
+	exitCode?: number;
+	model?: string;
+	effort?: string;
+	tools?: string;
+	forked?: boolean;
+	interactive?: boolean;
+	worktree?: boolean;
+	worktreeStatus?: string;
+}
+const sent: Array<{ customType?: string; content?: string; details?: SentDetails }> = [];
 const pi = {
-	sendMessage(message: { customType?: string; content?: string; details?: { id?: string; reason?: string } }): void {
+	sendMessage(message: { customType?: string; content?: string; details?: SentDetails }): void {
 		sent.push(message);
 	},
 } as unknown as ExtensionAPI;
@@ -39,7 +51,11 @@ function stoppedChild(id: string, requester: "user" | "model"): RunningSubagent 
 		sessionFile: `/missing/${id}.jsonl`,
 		startTime: Date.now() - 1_000,
 		skipEntries: 0,
-		autoExit: true,
+		tools: "read,bash",
+		model: "configured/model",
+		thinking: "high",
+		autoExit: false,
+		context: "forked",
 		abort: new AbortController(),
 		stopRequester: requester,
 		expectsRun: true,
@@ -52,12 +68,40 @@ ledger.clear();
 clearQueueForShutdown();
 
 const model = stoppedChild("model001", "model");
+model.worktree = {
+	dir: "/missing/model001-worktree",
+	branch: "pi/model001",
+	baseCommit: "fixture",
+	parentCwd: process.cwd(),
+};
 eq("model-stopped child registers before its pending exit is consumed", trackChild(pi, model).status, "tracked");
 eq("model stop emits one result", sent.map((message) => [message.customType, message.details?.id, message.details?.reason]), [
 	["subagent_result", "model001", "stopped"],
 ]);
 ok("model stop notice attributes the model request",
 	sent[0]?.content?.includes("Stopped because you cancelled it") === true);
+eq("stopped result has completion-path capability and exit parity", {
+	exitCode: sent[0]?.details?.exitCode,
+	model: sent[0]?.details?.model,
+	effort: sent[0]?.details?.effort,
+	tools: sent[0]?.details?.tools,
+	forked: sent[0]?.details?.forked,
+	interactive: sent[0]?.details?.interactive,
+	worktree: sent[0]?.details?.worktree,
+	worktreeStatus: sent[0]?.details?.worktreeStatus,
+}, {
+	exitCode: 130,
+	model: "configured/model",
+	effort: "high",
+	tools: "read,bash",
+	forked: true,
+	interactive: true,
+	worktree: true,
+	worktreeStatus: "kept",
+});
+ok("stopped envelope carries the same capability metadata",
+	["Model: configured/model", "Effort: high", "Mode: forked · interactive · worktree", "Tools: read,bash"]
+		.every((line) => sent[0]?.content?.includes(line) === true));
 eq("model stop parks a stopped delivery record", deliveryRecord(model.id)?.stopped, true);
 
 adoptRunningChildren(pi);

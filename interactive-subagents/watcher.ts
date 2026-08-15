@@ -44,7 +44,7 @@ import {
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { readExternalResult } from "./harnesses.ts";
-import { buildSubagentResultEnvelope } from "./result-content.ts";
+import { buildSubagentResultMessage, humanElapsed } from "./result-content.ts";
 import { computeStatus, STALL_AFTER_MS, type SubagentStatus } from "./status.ts";
 import { closePane, pollForExit, refreshLayout, type ExitResult } from "./tmux.ts";
 import { extractSummary } from "./session.ts";
@@ -62,13 +62,7 @@ import {
 	type RunningSubagent,
 } from "./state.ts";
 import { ensureWidgetTimer, updateRunningWidget } from "./running-widget.ts";
-import {
-	estimateResultTokens,
-	humanElapsed,
-	resultPresentation,
-	type SubagentExpandedResultPresentation,
-	type SubagentResultPresentation,
-} from "./result-message.ts";
+import { estimateResultTokens } from "./result-message.ts";
 import { finishWorktree, type WorktreeInfo, type WorktreeOutcome } from "./worktree.ts";
 
 /**
@@ -425,13 +419,36 @@ function hasFailureMessage(result: ExitResult): result is Extract<ExitResult, { 
 	return result.reason === "error" || result.reason === "pane-closed" || result.reason === "killed";
 }
 
+function resultMessageBase(record: DeliveryRecord, obs: ActivityObservation, costUsd: number | undefined) {
+	const child = record.child;
+	return {
+		name: child.name,
+		agent: child.agent,
+		harness: child.harness,
+		id: child.id,
+		model: obs.snapshot?.modelId ?? child.model,
+		effort: child.thinking,
+		forked: record.forked,
+		interactive: record.interactive,
+		worktree: record.worktree,
+		tools: child.tools,
+		elapsedSeconds: record.elapsedSeconds,
+		contextTokens: obs.snapshot?.context?.tokens,
+		contextWindow: obs.snapshot?.context?.window,
+		costUsd,
+		exitCode: record.exit.exitCode,
+		reason: record.exit.reason,
+		sessionFile: child.sessionFile,
+		worktreeDir: child.worktree?.dir,
+		worktreeBranch: child.worktree?.branch,
+	};
+}
+
 async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, generation: number): Promise<void> {
 	const child = record.child;
 	const result = record.exit;
 	const obs = child.activity ?? newActivityObservation(Date.now());
-	const exitElapsedSeconds = record.elapsedSeconds;
 
-	const elapsed = humanElapsed(exitElapsedSeconds);
 	// External snapshots carry no cost telemetry (their costUsd is a schema
 	// filler, not a measurement) - report nothing rather than a misleading $0.
 	// Cost reporting for external tools is intentionally deferred.
@@ -448,46 +465,20 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 			const stoppedWorktreeNote = child.worktree
 				? `Worktree: kept at ${child.worktree.dir} because the work may be incomplete.`
 				: undefined;
-			const envelope = buildSubagentResultEnvelope({
+			const message = buildSubagentResultMessage({
+				...resultMessageBase(record, obs, costUsd),
 				status: "stopped",
-				name: child.name,
-				agent: child.agent ?? "worker",
-				harness: child.harness,
-				id: child.id,
-				elapsed,
-				contextTokens: obs.snapshot?.context?.tokens ?? undefined,
-				costUsd,
-				notice,
-				action: "Resume",
-				actionMessage: "...",
-				sessionFile: child.sessionFile,
+				reason: "stopped",
+				worktreeStatus: child.worktree ? "kept" : undefined,
 				worktreeNote: stoppedWorktreeNote,
+				notice,
+				stopRequester: child.stopRequester,
 			});
 			sendDelivery(pi, record, generation, {
 				customType: "subagent_result",
-				content: envelope.content,
+				content: message.content,
 				display: true,
-				details: {
-					id: child.id,
-					name: child.name,
-					agent: child.agent,
-					harness: child.harness,
-					reason: "stopped",
-					sessionFile: child.sessionFile,
-					contextTokens: obs.snapshot?.context?.tokens,
-					costUsd,
-					expanded: {
-						version: 1,
-						notice,
-						worktreeNote: stoppedWorktreeNote,
-					} satisfies SubagentExpandedResultPresentation,
-					presentation: resultPresentation(
-						"stopped",
-						exitElapsedSeconds,
-						(child.stopRequester === "user" ? "Stopped by the user" : "Stopped by the parent agent") +
-							" — no final result. Partial work may remain; expand for resume and worktree details.",
-					),
-				},
+				details: message.details,
 			});
 		}
 		return;
@@ -540,77 +531,36 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		if (!ownsFinalizer(record, generation)) return;
 	}
 
-	let response: string | undefined;
-	let failureReason: string | undefined;
-	let presentation: SubagentResultPresentation;
-	if (!failed) {
-		response = generatedSummary ?? "(the subagent produced no final message)";
-		presentation = resultPresentation("completed", exitElapsedSeconds, response);
-	} else {
-		if (result.reason === "error") {
-			failureReason = `provider/agent error: ${result.errorMessage}`;
-		} else if (failureHasMessage) {
-			failureReason = result.errorMessage;
-		} else {
-			failureReason = `exit code ${result.exitCode}`;
-		}
-		response = generatedSummary ?? undefined;
-		presentation = resultPresentation("failed", exitElapsedSeconds, response ?? failureReason);
-	}
-
 	const note = child.worktree && worktreeOutcome
 		? worktreeNote(child.worktree, worktreeOutcome)
 		: undefined;
-	const envelope = buildSubagentResultEnvelope({
-		status: failed ? "failed" : "completed",
-		name: child.name,
-		agent: child.agent ?? "worker",
-		harness: child.harness,
-		id: child.id,
-		elapsed,
-		contextTokens: obs.snapshot?.context?.tokens ?? undefined,
+	const common = {
+		...resultMessageBase(record, obs, costUsd),
 		resultTokens,
-		costUsd,
-		response,
-		failureReason,
-		action: failed ? "Retry" : "Resume",
-		actionMessage: failed ? "<guidance>" : "...",
-		sessionFile: child.sessionFile,
-		worktreeNote: note,
-	});
-	const content = envelope.content;
-	const expanded: SubagentExpandedResultPresentation = {
-		version: 1,
-		response: envelope.response,
-		failureReason,
+		worktreeStatus: worktreeOutcome?.status,
 		worktreeNote: note,
 	};
+	const message = failed
+		? buildSubagentResultMessage({
+			...common,
+			status: "failed",
+			response: generatedSummary ?? undefined,
+			failureReason: result.reason === "error"
+				? `provider/agent error: ${result.errorMessage}`
+				: failureHasMessage
+				? result.errorMessage
+				: `exit code ${result.exitCode}`,
+		})
+		: buildSubagentResultMessage({
+			...common,
+			status: "completed",
+			response: generatedSummary ?? "(the subagent produced no final message)",
+		});
 
 	sendDelivery(pi, record, generation, {
 		customType: "subagent_result",
-		content,
+		content: message.content,
 		display: true,
-		details: {
-			id: child.id,
-			name: child.name,
-			agent: child.agent,
-			harness: child.harness,
-			exitCode: result.exitCode,
-			reason: result.reason,
-			sessionFile: child.sessionFile,
-			tools: child.tools,
-			model: child.model,
-			worktreeDir: child.worktree?.dir,
-			worktreeBranch: child.worktree?.branch,
-			worktreeStatus: worktreeOutcome?.status,
-			// Raw context telemetry remains available to the TUI and tooling
-			// (undefined without a snapshot; null just after compaction).
-			contextTokens: obs.snapshot?.context?.tokens,
-			contextWindow: obs.snapshot?.context?.window,
-			resultTokens,
-			costUsd,
-			expanded,
-			presentation,
-		},
+		details: message.details,
 	});
 }

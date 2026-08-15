@@ -27,6 +27,7 @@ export interface RunningSubagent {
 	skipEntries: number;
 	tools?: string;
 	model?: string;
+	thinking?: string;
 	autoExit: boolean;
 	context?: "new" | "forked";
 	worktree?: WorktreeInfo;

@@ -1,7 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
-import { buildSubagentResultEnvelope } from "../../interactive-subagents/result-content.ts";
+import { buildSubagentResultMessage } from "../../interactive-subagents/result-content.ts";
 import { ExplorerComponent } from "../component.ts";
 import { formatPreviewLines, formatResultRow } from "../render.ts";
 import { ExplorerState } from "../state.ts";
@@ -48,19 +48,30 @@ const pendingSpawnBlock = makeBlock({
 	body: "",
 	canonicalText: spawnInvocation,
 });
-const envelope = buildSubagentResultEnvelope({
+const envelope = buildSubagentResultMessage({
 	status: "completed",
 	name: "Message type recon",
 	agent: "scout",
 	id: "c853bdcf",
-	elapsed: "45s",
+	model: "claude-sonnet-5",
+	effort: "high",
+	forked: true,
+	interactive: true,
+	worktree: true,
+	tools: "read,edit,bash",
+	elapsedSeconds: 45,
 	contextTokens: 66_000,
+	contextWindow: 200_000,
 	resultTokens: 951,
 	costUsd: 0.13,
+	exitCode: 0,
+	reason: "done",
 	response: "## Relevant Files\n\n- `render.ts` — **tag** logic",
-	action: "Resume",
-	actionMessage: "...",
 	sessionFile: "/sessions/child.jsonl",
+	worktreeDir: "/repo/worktree",
+	worktreeBranch: "pi/message-types",
+	worktreeStatus: "kept",
+	worktreeNote: "Worktree: kept at /repo/worktree on branch pi/message-types.",
 });
 const resultBlock = makeBlock({
 	id: "result-1",
@@ -83,8 +94,11 @@ ok("spawn content is the task prompt followed by the ack",
 ok("pending spawn without a result still exposes the prompt",
 	subagentView(pendingSpawnBlock)?.content.startsWith("## Goal") === true);
 const resultView = subagentView(resultBlock);
-eq("result metadata leads with name, agent, and status",
-	resultView?.fields.slice(0, 3).map((field) => field.key), ["name", "agent", "status"]);
+eq("result fields retain canonical parsed order",
+	resultView?.fields.map((field) => field.key), [
+		"status", "name", "agent", "id", "model", "effort", "mode", "tools", "elapsed",
+		"context", "result", "cost", "resume", "session", "worktree",
+	]);
 ok("result content is the unwrapped response",
 	resultView?.content.startsWith("## Relevant Files") === true && resultView?.content.includes("<result>") === false);
 eq("non-subagent blocks have no view", [
@@ -97,18 +111,20 @@ eq("non-subagent blocks have no view", [
 const spawnRow = stripVTControlCharacters(formatResultRow(spawnBlock, false, 120, 16));
 ok("spawn rows show metadata fields without the prompt",
 	spawnRow.includes("name=Message type recon agent=scout context=new") && !spawnRow.includes("task="));
-const resultRow = stripVTControlCharacters(formatResultRow(resultBlock, false, 120, 16));
-ok("result rows lead with name, agent, and status fields",
-	resultRow.includes("name=Message type recon agent=scout status=completed"));
+const resultRow = stripVTControlCharacters(formatResultRow(resultBlock, false, 500, 16));
+ok("result rows lead with identity then retain canonical remaining fields",
+	resultRow.includes("name=Message type recon agent=scout status=completed id=c853bdcf "
+		+ "model=claude-sonnet-5 effort=high mode=forked · interactive · worktree tools=read,edit,bash"));
 
-// Preview shows fields plus parsed content instead of the raw envelope.
+// Preview shows parsed content first, followed by the canonical aligned table.
 
 const spawnPreview = formatPreviewLines(spawnBlock, 120, 12).join("\n");
 ok("spawn preview shows the prompt", spawnPreview.includes("## Goal") && spawnPreview.includes("Find **everything**"));
-const resultPreview = formatPreviewLines(resultBlock, 120, 14).join("\n");
-ok("result preview shows fields and response without envelope markers",
-	resultPreview.includes("name=Message type recon") && resultPreview.includes("## Relevant Files")
-	&& !resultPreview.includes("<result>"));
+const resultPreview = formatPreviewLines(resultBlock, 120, 20).join("\n");
+ok("result preview separates the response and aligned table with a labeled rule",
+	resultPreview.includes("**tag** logic\n\n─ result details ─")
+	&& resultPreview.includes("\n\nstatus    completed")
+	&& resultPreview.includes("name      Message type recon") && !resultPreview.includes("<result>"));
 const highlightedPreview = formatPreviewLines(
 	{ block: resultBlock, match: { matches: true, score: 0, keyTokens: [], bodyTokens: ["Relevant"] } },
 	120,
@@ -117,9 +133,9 @@ const highlightedPreview = formatPreviewLines(
 ).join("\n");
 ok("preview highlights re-derive against the parsed content", highlightedPreview.includes("⟦Relevant⟧"));
 
-// Detail renders metadata fields above markdown content.
+// Rendered detail puts markdown content above the complete canonical table.
 
-const tui = { terminal: { rows: 30 }, requestRender(): void {} } as unknown as TUI;
+const tui = { terminal: { rows: 60 }, requestRender(): void {} } as unknown as TUI;
 const theme = {
 	fg: (_token: string, text: string) => text,
 	bg: (_token: string, text: string) => text,
@@ -145,10 +161,23 @@ component.render(90);
 component.handleInput("\r");
 const resultDetail = component.render(90);
 const resultDetailText = resultDetail.join("\n");
-ok("result detail leads with metadata fields", resultDetail[1]?.startsWith("│ name=Message type recon") === true);
+ok("result detail separates the response and complete canonical table with a labeled rule",
+	resultDetailText.indexOf("Relevant Files") < resultDetailText.indexOf("─ result details ─")
+	&& resultDetailText.indexOf("─ result details ─") < resultDetailText.indexOf("status    completed")
+	&& resultDetailText.indexOf("status    completed") < resultDetailText.indexOf("model     claude-sonnet-5")
+	&& resultDetailText.indexOf("model     claude-sonnet-5") < resultDetailText.indexOf("resume    subagent_resume")
+	&& resultDetailText.indexOf("resume    subagent_resume") < resultDetailText.indexOf("session   /sessions/child.jsonl")
+	&& resultDetailText.indexOf("session   /sessions/child.jsonl")
+		< resultDetailText.indexOf("worktree  kept at /repo/worktree"));
 ok("result detail renders the response as markdown",
 	resultDetailText.includes("Relevant Files") && !resultDetailText.includes("## Relevant Files")
 	&& !resultDetailText.includes("<result>"));
+component.handleInput("m");
+const rawResultDetail = component.render(90).join("\n");
+ok("m still reveals the raw result envelope without the rendered divider", rawResultDetail.includes("Subagent result")
+	&& rawResultDetail.includes("<result>") && rawResultDetail.includes("Status: completed")
+	&& !rawResultDetail.includes("result details"));
+component.handleInput("m");
 component.handleInput("K");
 const spawnDetail = component.render(90);
 const spawnDetailText = spawnDetail.join("\n");

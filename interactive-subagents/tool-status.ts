@@ -9,7 +9,7 @@ import { oldestActiveTool, toolElapsedSeconds, type ActivityObservation } from "
 import { pendingLaunches, queuedEntries, specDisplay, type LaunchSpec } from "./capacity.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { clampStyled } from "./text-fit.ts";
-import { humanElapsed } from "./result-message.ts";
+import { humanElapsed } from "./result-content.ts";
 import { collectLifecycleWidgetRows } from "./running-widget.ts";
 import { delivering, running } from "./state.ts";
 import { STALL_AFTER_MS } from "./status.ts";

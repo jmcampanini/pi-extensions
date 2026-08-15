@@ -22,6 +22,8 @@ export interface SubagentField {
 export interface SubagentView {
 	fields: SubagentField[];
 	content: string;
+	rowFields?: SubagentField[];
+	result?: true;
 }
 
 const PRIORITY_KEYS = ["name", "agent", "status"];
@@ -70,7 +72,12 @@ function toolView(block: Block): SubagentView | undefined {
 function resultView(block: Block): SubagentView | undefined {
 	const envelope = parseSubagentResultEnvelope(block.body);
 	if (envelope === undefined) return undefined;
-	return { fields: prioritized(envelope.fields), content: envelope.response };
+	return {
+		fields: envelope.fields,
+		content: envelope.response,
+		rowFields: prioritized(envelope.fields),
+		result: true,
+	};
 }
 
 export function subagentView(block: Block): SubagentView | undefined {
