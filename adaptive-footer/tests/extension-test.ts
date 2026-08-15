@@ -153,7 +153,7 @@ const component = footerFactory(
 			branchChanged = callback;
 			return () => unsubscribed++;
 		},
-		getExtensionStatuses: () => new Map(),
+		getExtensionStatuses: () => new Map([["fast-openai", "fast"]]),
 		getAvailableProviderCount: () => 1,
 	},
 );
@@ -182,10 +182,14 @@ ok("issue and PR links share the underlined accent treatment",
 		&& initialLine.includes("\x1b[36m\x1b[4mpr#123 d"));
 eq("extension wires context usage into compact-target progress", initialStats,
 	"51% 140k/272k • compact @245k 57%");
+ok("extension places enabled fast mode after the model",
+	plain(initialRender[1] ?? "").endsWith("no-model • fast"));
 const responsiveStats = Array.from({ length: 121 }, (_, width) =>
 	plain(component.render(width)[1] ?? ""));
 ok("responsive footer uses compact progress form",
 	responsiveStats.some((line) => line.includes("C57%")));
+ok("responsive footer shortens fast mode",
+	responsiveStats.some((line) => line.endsWith("no-model • f")));
 
 branch = "feature/issue-789";
 branchChanged?.();
