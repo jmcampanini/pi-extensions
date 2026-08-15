@@ -23,6 +23,7 @@ import {
 	formatPreviewIdentity,
 	formatPreviewLines,
 	formatResultRow,
+	formatSubagentResultDivider,
 	formatSubagentTable,
 	formatTruncationMarker,
 	PLAIN_MARKDOWN_THEME,
@@ -311,7 +312,7 @@ export class ExplorerComponent implements Component, Focusable {
 			lines.push(...this.markdown.render(innerWidth).map((line) => truncateToWidth(line, innerWidth, "")));
 		}
 		if (view?.result && view.fields.length > 0) {
-			if (text !== "") lines.push("");
+			if (text !== "") lines.push("", styles.muted(formatSubagentResultDivider(innerWidth)), "");
 			appendFields();
 		}
 		const marker = formatTruncationMarker(selected.block.truncation, existsSync);

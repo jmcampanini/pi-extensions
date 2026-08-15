@@ -121,8 +121,9 @@ ok("result rows lead with identity then retain canonical remaining fields",
 const spawnPreview = formatPreviewLines(spawnBlock, 120, 12).join("\n");
 ok("spawn preview shows the prompt", spawnPreview.includes("## Goal") && spawnPreview.includes("Find **everything**"));
 const resultPreview = formatPreviewLines(resultBlock, 120, 20).join("\n");
-ok("result preview puts one blank line between the response and aligned table",
-	resultPreview.includes("**tag** logic\n\nstatus    completed")
+ok("result preview separates the response and aligned table with a labeled rule",
+	resultPreview.includes("**tag** logic\n\n─ result details ─")
+	&& resultPreview.includes("\n\nstatus    completed")
 	&& resultPreview.includes("name      Message type recon") && !resultPreview.includes("<result>"));
 const highlightedPreview = formatPreviewLines(
 	{ block: resultBlock, match: { matches: true, score: 0, keyTokens: [], bodyTokens: ["Relevant"] } },
@@ -160,8 +161,9 @@ component.render(90);
 component.handleInput("\r");
 const resultDetail = component.render(90);
 const resultDetailText = resultDetail.join("\n");
-ok("result detail renders response before the complete canonical table",
-	resultDetailText.indexOf("Relevant Files") < resultDetailText.indexOf("status    completed")
+ok("result detail separates the response and complete canonical table with a labeled rule",
+	resultDetailText.indexOf("Relevant Files") < resultDetailText.indexOf("─ result details ─")
+	&& resultDetailText.indexOf("─ result details ─") < resultDetailText.indexOf("status    completed")
 	&& resultDetailText.indexOf("status    completed") < resultDetailText.indexOf("model     claude-sonnet-5")
 	&& resultDetailText.indexOf("model     claude-sonnet-5") < resultDetailText.indexOf("resume    subagent_resume")
 	&& resultDetailText.indexOf("resume    subagent_resume") < resultDetailText.indexOf("session   /sessions/child.jsonl")
@@ -172,8 +174,9 @@ ok("result detail renders the response as markdown",
 	&& !resultDetailText.includes("<result>"));
 component.handleInput("m");
 const rawResultDetail = component.render(90).join("\n");
-ok("m still reveals the raw result envelope", rawResultDetail.includes("Subagent result")
-	&& rawResultDetail.includes("<result>") && rawResultDetail.includes("Status: completed"));
+ok("m still reveals the raw result envelope without the rendered divider", rawResultDetail.includes("Subagent result")
+	&& rawResultDetail.includes("<result>") && rawResultDetail.includes("Status: completed")
+	&& !rawResultDetail.includes("result details"));
 component.handleInput("m");
 component.handleInput("K");
 const spawnDetail = component.render(90);

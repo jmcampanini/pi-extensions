@@ -393,6 +393,7 @@ eq("expanded result renders the complete child response", expandedText.includes(
 eq("expanded result does not render envelope labels", expandedText.includes("Status: completed"), false);
 eq("expanded result does not render response delimiters", expandedText.includes("<result>"), false);
 const responseLineIndex = expandedWideLines.findIndex((line) => line.includes("TAIL_SENTINEL"));
+const dividerLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("─ result details ─"));
 const statusLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("status   completed"));
 const nameLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("name     API review"));
 const modelLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("model    provider/model"));
@@ -402,8 +403,9 @@ const costLineIndex = expandedWideLines.findIndex((line) => line.trimStart().sta
 const worktreeLineIndex = expandedWideLines.findIndex((line) => line.includes("Worktree: kept"));
 const sessionLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("session "));
 const resumeLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("resume "));
-eq("expanded layout puts response before the canonical metadata table",
-	responseLineIndex > 0 && responseLineIndex < statusLineIndex && statusLineIndex < nameLineIndex &&
+eq("expanded layout separates the response and canonical metadata table with a labeled rule",
+	responseLineIndex > 0 && responseLineIndex < dividerLineIndex && dividerLineIndex < statusLineIndex &&
+	statusLineIndex < nameLineIndex &&
 	nameLineIndex < modelLineIndex && modelLineIndex < effortLineIndex && effortLineIndex < contextLineIndex &&
 	contextLineIndex < costLineIndex, true);
 eq("expanded layout puts the action tail after the metadata table",
@@ -424,7 +426,8 @@ eq("expanded result styles its title as a tool title",
 	structuredMarked.includes("<toolTitle>subagent result</toolTitle>"), true);
 eq("expanded result styles session paths as accents",
 	structuredMarked.includes("<accent>/sessions/child.jsonl</accent>"), true);
-eq("expanded result styles table keys as metadata and values as tool output",
+eq("expanded result styles its details divider and table keys as metadata",
+	structuredMarked.includes("<muted>─ result details ─") &&
 	structuredMarked.includes("<muted>context  </muted><toolOutput>84k / 200k tokens</toolOutput>") &&
 	structuredMarked.includes("<muted>model    </muted><toolOutput>provider/model</toolOutput>") &&
 	structuredMarked.includes("<muted>effort   </muted><toolOutput>high</toolOutput>"), true);

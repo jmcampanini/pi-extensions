@@ -396,6 +396,11 @@ function renderMetadataTable(
 	return lines;
 }
 
+function formatResultDetailsDivider(width: number, style: ResultStyle): string {
+	const prefix = fitText("─ result details ", width, "");
+	return style.metadata(prefix + "─".repeat(Math.max(0, width - visibleWidth(prefix))));
+}
+
 function structuredExpandedResult(
 	details: SubagentResultDetails,
 	content: string,
@@ -438,6 +443,7 @@ function structuredExpandedResult(
 					? [style.metadata("last output"), ...markdown.render(maxWidth)]
 					: markdown.render(maxWidth);
 				appendLines(responseLines);
+				appendLines([formatResultDetailsDivider(maxWidth, style)]);
 			}
 
 			appendLines(renderMetadataTable(metadataRows(details), maxWidth, style, output));

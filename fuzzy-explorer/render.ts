@@ -1,5 +1,6 @@
 import { stripVTControlCharacters } from "node:util";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi, type MarkdownTheme } from "@earendil-works/pi-tui";
+import { fitText } from "../interactive-subagents/text-fit.ts";
 import { SEPARATOR_CLASS, stripSeparators } from "./search.ts";
 import { subagentView, type SubagentView } from "./subagent.ts";
 import type { Block, BlockTruncation, SearchResult } from "./types.ts";
@@ -410,12 +411,22 @@ export function formatSubagentTable(view: SubagentView): string {
 		.join("\n");
 }
 
+export function formatSubagentResultDivider(width: number): string {
+	const maxWidth = safeWidth(width);
+	if (maxWidth === 0) return "";
+	const prefix = fitText("─ result details ", maxWidth, "");
+	return prefix + "─".repeat(Math.max(0, maxWidth - visibleWidth(prefix)));
+}
+
 /** Displayed preview/detail text: parsed result responses precede their canonical metadata table. */
-export function displayContent(block: Block): string {
+export function displayContent(block: Block, width = 80): string {
 	const view = subagentView(block);
 	if (view !== undefined) {
 		if (view.result) {
-			return [view.content, formatSubagentTable(view)].filter((text) => text !== "").join("\n\n");
+			const table = formatSubagentTable(view);
+			return view.content !== "" && table !== ""
+				? [view.content, formatSubagentResultDivider(width), table].join("\n\n")
+				: [view.content, table].filter((text) => text !== "").join("\n\n");
 		}
 		return [formatSubagentFields(view), view.content].filter((text) => text !== "").join("\n\n");
 	}
@@ -571,7 +582,7 @@ export function formatPreviewLines(
 
 	// Matched tokens are re-derived against whatever text is displayed, so the
 	// subagent field/content transformation keeps its highlights.
-	const content = displayContent(block);
+	const content = displayContent(block, maxWidth);
 	const spans = mergeSpans(bodyTokens.flatMap((token) => bodyTokenSpans(content, token, false)));
 	const styledContent = styledHighlightedText(content, spans, styles.body, styles.highlight);
 	const contentLines = wrapStyledText(styledContent, maxWidth);
