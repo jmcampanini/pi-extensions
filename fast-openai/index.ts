@@ -336,11 +336,11 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.on("agent_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
-		const model = ctx.model;
-		if (!model || model.api !== SUPPORTED_API) return;
-
 		const loadResult = loadConfigResult();
-		if (!loadResult.diagnostic) return;
+		publishFastStatus(ctx, loadResult.config.enabled);
+
+		const model = ctx.model;
+		if (!model || model.api !== SUPPORTED_API || !loadResult.diagnostic) return;
 		ctx.ui.notify(`${formatConfigWarning(loadResult.diagnostic)} for ${model.provider}/${model.id}`, "warning");
 	});
 

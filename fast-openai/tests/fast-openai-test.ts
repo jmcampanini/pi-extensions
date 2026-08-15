@@ -90,6 +90,20 @@ eq("session start restores enabled fast status", statuses.at(-1), [FAST_OPENAI_S
 await fastCommand("off", context);
 eq("fast off clears the status", statuses.at(-1), [FAST_OPENAI_STATUS_KEY, undefined]);
 
+const disabledReloadStart = statuses.length;
+await handlers.get("session_start")?.({ type: "session_start", reason: "reload" }, context);
+eq("session start restores persisted disabled status", statuses.slice(disabledReloadStart), [
+	[FAST_OPENAI_STATUS_KEY, undefined],
+]);
+
+writeFileSync(
+	join(testRoot, "extensions", "fast-openai.json"),
+	'{"enabled":true,"providers":["openai-codex"]}',
+	"utf8",
+);
+await handlers.get("agent_start")?.({ type: "agent_start" }, context);
+eq("agent start resyncs an out-of-band config change", statuses.at(-1), [FAST_OPENAI_STATUS_KEY, "fast"]);
+
 writeFileSync(join(testRoot, "extensions", "fast-openai.json"), "{invalid", "utf8");
 await handlers.get("session_start")?.({ type: "session_start", reason: "reload" }, context);
 eq("invalid config uses the disabled status fallback", statuses.at(-1), [FAST_OPENAI_STATUS_KEY, undefined]);
