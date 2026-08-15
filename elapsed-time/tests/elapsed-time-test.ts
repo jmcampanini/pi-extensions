@@ -44,20 +44,21 @@ function fakePi(): {
 
 class FakeClock implements ElapsedTimeClock {
 	nowMs = 0;
+	lastIntervalMs: number | undefined;
 	private nextTimer = 1;
 	private readonly timers = new Map<number, () => void>();
 	readonly clearedTimers: number[] = [];
 
 	now = (): number => this.nowMs;
 
-	setInterval(callback: () => void, milliseconds: number): unknown {
-		eq("refresh interval is one second", milliseconds, 1000);
+	setInterval(callback: () => void, milliseconds: number): number {
+		this.lastIntervalMs = milliseconds;
 		const timer = this.nextTimer++;
 		this.timers.set(timer, callback);
 		return timer;
 	}
 
-	clearInterval(handle: unknown): void {
+	clearInterval(handle: object | number): void {
 		const timer = handle as number;
 		this.clearedTimers.push(timer);
 		this.timers.delete(timer);
@@ -119,6 +120,7 @@ eq("run starts with an immediate zero status", run.statuses, [
 	[ELAPSED_TIME_STATUS_KEY, "◷ 00:00"],
 ]);
 eq("run starts one refresh timer", run.clock.activeTimerCount(), 1);
+eq("refresh interval is one second", run.clock.lastIntervalMs, 1000);
 
 run.clock.nowMs = 62_500;
 run.clock.fireTimers();

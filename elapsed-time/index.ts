@@ -4,8 +4,8 @@ export const ELAPSED_TIME_STATUS_KEY = "elapsed-time";
 
 export interface ElapsedTimeClock {
 	now(): number;
-	setInterval(callback: () => void, milliseconds: number): unknown;
-	clearInterval(handle: unknown): void;
+	setInterval(callback: () => void, milliseconds: number): object | number;
+	clearInterval(handle: object | number): void;
 }
 
 const systemClock: ElapsedTimeClock = {
@@ -27,15 +27,15 @@ export function formatElapsed(milliseconds: number): string {
 
 export function registerElapsedTime(pi: ExtensionAPI, clock: ElapsedTimeClock = systemClock): void {
 	let startedAt: number | undefined;
-	let refreshTimer: unknown;
+	let refreshTimer: object | number | undefined;
 	let activeContext: ExtensionContext | undefined;
 
-	function elapsed(): string {
-		return formatElapsed(clock.now() - (startedAt ?? clock.now()));
+	function elapsed(startedAtMs: number): string {
+		return formatElapsed(clock.now() - startedAtMs);
 	}
 
-	function showRunning(ctx: ExtensionContext): void {
-		ctx.ui.setStatus(ELAPSED_TIME_STATUS_KEY, `◷ ${elapsed()}`);
+	function showRunning(ctx: ExtensionContext, startedAtMs: number): void {
+		ctx.ui.setStatus(ELAPSED_TIME_STATUS_KEY, `◷ ${elapsed(startedAtMs)}`);
 	}
 
 	function stopTimer(): void {
@@ -50,9 +50,9 @@ export function registerElapsedTime(pi: ExtensionAPI, clock: ElapsedTimeClock = 
 		if (startedAt !== undefined) return;
 
 		startedAt = clock.now();
-		showRunning(ctx);
+		showRunning(ctx, startedAt);
 		refreshTimer = clock.setInterval(() => {
-			if (activeContext && startedAt !== undefined) showRunning(activeContext);
+			if (activeContext && startedAt !== undefined) showRunning(activeContext, startedAt);
 		}, 1000);
 	});
 
@@ -60,7 +60,7 @@ export function registerElapsedTime(pi: ExtensionAPI, clock: ElapsedTimeClock = 
 		if (startedAt === undefined) return;
 
 		stopTimer();
-		if (ctx.hasUI) ctx.ui.setStatus(ELAPSED_TIME_STATUS_KEY, `✓ ${elapsed()}`);
+		if (ctx.hasUI) ctx.ui.setStatus(ELAPSED_TIME_STATUS_KEY, `✓ ${elapsed(startedAt)}`);
 		startedAt = undefined;
 		activeContext = undefined;
 	});
