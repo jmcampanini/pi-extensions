@@ -424,9 +424,10 @@ export function displayContent(block: Block, width = 80): string {
 	if (view !== undefined) {
 		if (view.result) {
 			const table = formatSubagentTable(view);
-			return view.content !== "" && table !== ""
-				? [view.content, formatSubagentResultDivider(width), table].join("\n\n")
-				: [view.content, table].filter((text) => text !== "").join("\n\n");
+			const sections = [view.content];
+			if (view.content !== "" && table !== "") sections.push(formatSubagentResultDivider(width));
+			sections.push(table);
+			return sections.filter((text) => text !== "").join("\n\n");
 		}
 		return [formatSubagentFields(view), view.content].filter((text) => text !== "").join("\n\n");
 	}

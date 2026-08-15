@@ -291,18 +291,11 @@ export class ExplorerComponent implements Component, Focusable {
 		const view = subagentView(selected.block);
 		const text = sanitizeTerminalText(view === undefined ? selected.block.body : view.content);
 		const lines: string[] = [];
-		const appendFields = (): void => {
-			if (view?.result) {
-				for (const line of formatSubagentTable(view).split("\n")) {
-					lines.push(...wrapTextWithAnsi(sanitizeTerminalText(line), innerWidth).map(styles.muted));
-				}
-				return;
-			}
-			for (const field of view?.fields ?? []) {
+		if (view !== undefined && !view.result) {
+			for (const field of view.fields) {
 				lines.push(truncateToWidth(styles.muted(sanitizeTerminalText(`${field.key}=${field.value}`)), innerWidth, ""));
 			}
-		};
-		if (!view?.result) appendFields();
+		}
 		if (lines.length > 0 && text !== "") lines.push("");
 		if (text !== "") {
 			if (text !== this.lastMarkdownText) {
@@ -313,7 +306,9 @@ export class ExplorerComponent implements Component, Focusable {
 		}
 		if (view?.result && view.fields.length > 0) {
 			if (text !== "") lines.push("", styles.muted(formatSubagentResultDivider(innerWidth)), "");
-			appendFields();
+			for (const line of formatSubagentTable(view).split("\n")) {
+				lines.push(...wrapTextWithAnsi(sanitizeTerminalText(line), innerWidth).map(styles.muted));
+			}
 		}
 		const marker = formatTruncationMarker(selected.block.truncation, existsSync);
 		if (marker !== undefined) lines.push(truncateToWidth(styles.dim(marker), innerWidth, ""));
