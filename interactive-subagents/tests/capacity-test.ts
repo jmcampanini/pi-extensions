@@ -97,7 +97,7 @@ describe("admission", () => {
 		const invalidAgentSpec = { ...spawnSpec("invalid"), agentName: "code reviewer" };
 		assert.throws(
 			() => capacity.admitLaunch(invalidAgentSpec),
-			(error) => String(error).includes("whitespace"),
+			/whitespace/,
 			"admission rejects an invalid persisted agent identifier",
 		);
 		assert.deepStrictEqual(

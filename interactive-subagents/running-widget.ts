@@ -64,11 +64,7 @@ export function activateRunningWidgetGeneration(generation: number): void {
 	widgetSuspensions.count = 0;
 }
 
-{
-	const previous = currentTimer();
-	if (previous) clearInterval(previous);
-	rememberTimer(null);
-}
+stopWidgetTimer();
 
 function launchWidgetRow(
 	spec: LaunchSpec,

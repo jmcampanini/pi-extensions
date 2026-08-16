@@ -116,14 +116,14 @@ describe("definition parsing", () => {
 	it("explicit whitespace identifier is rejected", () => {
 		assert.throws(
 			() => loadAgentDefinition("code reviewer", cwd),
-			(error) => String(error).includes("whitespace"),
+			/whitespace/,
 		);
 	});
 
 	it("explicit overlong identifier is rejected", () => {
 		assert.throws(
 			() => loadAgentDefinition("abcdefghijklmnopqrstu", cwd),
-			(error) => String(error).includes("20 display columns"),
+			/20 display columns/,
 		);
 	});
 });

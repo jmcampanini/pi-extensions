@@ -121,7 +121,7 @@ describe("config", () => {
 						PI_CODING_AGENT_DIR: dirWith(null),
 						PI_FUZZY_EXPLORER_OPEN_SHORTCUT: shortcut,
 					}),
-				(error) => String(error).includes("PI_FUZZY_EXPLORER_OPEN_SHORTCUT"),
+				/PI_FUZZY_EXPLORER_OPEN_SHORTCUT/,
 				`invalid KeyId ${JSON.stringify(shortcut)}`,
 			);
 		}
@@ -136,7 +136,7 @@ describe("config", () => {
 		]) {
 			assert.throws(
 				() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_FUZZY_EXPLORER_OPEN_SHORTCUT: shortcut }),
-				(error) => String(error).includes("is reserved by Pi's main editor"),
+				/is reserved by Pi's main editor/,
 				`reserved shortcut ${JSON.stringify(shortcut)}`,
 			);
 		}
@@ -153,14 +153,14 @@ describe("config", () => {
 	it("invalid file shortcut explains KeyId", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"control+r"}') }),
-			(error) => String(error).includes("use a Pi KeyId"),
+			/use a Pi KeyId/,
 		);
 	});
 
 	it("invalid file open mode", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openMode":"search"}') }),
-			(error) => String(error).includes("valid values: list, filter"),
+			/valid values: list, filter/,
 		);
 	});
 
@@ -171,7 +171,7 @@ describe("config", () => {
 					PI_CODING_AGENT_DIR: dirWith(null),
 					PI_FUZZY_EXPLORER_OPEN_MODE: "LIST",
 				}),
-			(error) => String(error).includes("PI_FUZZY_EXPLORER_OPEN_MODE"),
+			/PI_FUZZY_EXPLORER_OPEN_MODE/,
 		);
 	});
 
@@ -182,49 +182,49 @@ describe("config", () => {
 					PI_CODING_AGENT_DIR: dirWith(null),
 					PI_FUZZY_EXPLORER_OPEN_MODE: "",
 				}),
-			(error) => String(error).includes('openMode ""'),
+			/openMode ""/,
 		);
 	});
 
 	it("the removed listOrder key is unknown", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"listOrder":"chronological"}') }),
-			(error) => String(error).includes("unknown key(s) listOrder"),
+			/unknown key\(s\) listOrder/,
 		);
 	});
 
 	it("unknown key", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openMod":"filter"}') }),
-			(error) => String(error).includes("unknown key(s) openMod"),
+			/unknown key\(s\) openMod/,
 		);
 	});
 
 	it("inherited object name is still unknown", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"toString":"filter"}') }),
-			(error) => String(error).includes("unknown key(s) toString"),
+			/unknown key\(s\) toString/,
 		);
 	});
 
 	it("malformed JSON", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{broken") }),
-			(error) => String(error).includes("not valid JSON"),
+			/not valid JSON/,
 		);
 	});
 
 	it("array root", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("[]") }),
-			(error) => String(error).includes("must be a JSON object"),
+			/must be a JSON object/,
 		);
 	});
 
 	it("null root", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("null") }),
-			(error) => String(error).includes("must be a JSON object"),
+			/must be a JSON object/,
 		);
 	});
 
@@ -235,7 +235,7 @@ describe("config", () => {
 					PI_CODING_AGENT_DIR: dirWith('{"openMode":"search"}'),
 					PI_FUZZY_EXPLORER_OPEN_MODE: "list",
 				}),
-			(error) => String(error).includes('openMode "search"'),
+			/openMode "search"/,
 		);
 	});
 });

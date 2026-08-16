@@ -605,7 +605,7 @@ describe("registerSubagentSpawnTool", () => {
 				new AbortController().signal,
 				() => {},
 				{} as never,
-			), (error) => String(error).includes("whitespace"));
+			), /whitespace/);
 	});
 
 	it("spawn rejects an explicit agent over 20 display columns", async () => {
@@ -616,7 +616,7 @@ describe("registerSubagentSpawnTool", () => {
 				new AbortController().signal,
 				() => {},
 				{} as never,
-			), (error) => String(error).includes("20 display columns"));
+			), /20 display columns/);
 	});
 
 	// The advertised limit must be the ENFORCED limit: the description is built

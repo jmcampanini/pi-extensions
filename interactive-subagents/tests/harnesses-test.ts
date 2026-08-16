@@ -28,13 +28,6 @@ after(() => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
-function messageIncludes(includes: string): (error: unknown) => boolean {
-	return (error) => {
-		const message = error instanceof Error ? error.message : String(error);
-		return message.includes(includes);
-	};
-}
-
 const ANCHOR = "/tmp/anchor's.jsonl";
 const RUN_ID = "a55ba067";
 const hookCmd = (event: string, extra = "") =>
@@ -76,7 +69,7 @@ describe("harness registry", () => {
 	});
 
 	it("require fails loud on unknown names", () => {
-		assert.throws(() => requireHarnessProfile("codex"), messageIncludes('Unknown harness "codex"'));
+		assert.throws(() => requireHarnessProfile("codex"), /Unknown harness "codex"/);
 	});
 });
 
@@ -111,14 +104,14 @@ describe("claudeCodeProfile.mapEffort", () => {
 	it("off is unmappable", () => {
 		assert.throws(
 			() => claudeCodeProfile.mapEffort("off"),
-			messageIncludes('Thinking level "off" has no claude-code effort mapping'),
+			/Thinking level "off" has no claude-code effort mapping/,
 		);
 	});
 
 	it("unknown levels are unmappable", () => {
 		assert.throws(
 			() => claudeCodeProfile.mapEffort("ultra"),
-			messageIncludes("mappable levels: minimal, low, medium, high, xhigh, max"),
+			/mappable levels: minimal, low, medium, high, xhigh, max/,
 		);
 	});
 });
@@ -203,7 +196,7 @@ describe("claudeCodeProfile.buildLaunchCommand", () => {
 	it("launch without a task file fails loud", () => {
 		assert.throws(
 			() => claudeCodeProfile.buildLaunchCommand({ cwd: "/w", anchor: ANCHOR, runId: RUN_ID, autoExit: true }),
-			messageIncludes("needs a task file"),
+			/needs a task file/,
 		);
 	});
 
@@ -212,7 +205,7 @@ describe("claudeCodeProfile.buildLaunchCommand", () => {
 			() => claudeCodeProfile.buildLaunchCommand({
 				cwd: "/w", anchor: ANCHOR, runId: RUN_ID, autoExit: true, thinking: "off", taskFile: "/t.md",
 			}),
-			messageIncludes("no claude-code effort mapping"),
+			/no claude-code effort mapping/,
 		);
 	});
 });
@@ -259,7 +252,7 @@ describe("claudeCodeProfile.buildResumeCommand", () => {
 	it("resume without a session id fails loud", () => {
 		assert.throws(
 			() => claudeCodeProfile.buildResumeCommand({ cwd: "/w", anchor: ANCHOR, runId: RUN_ID, autoExit: true }),
-			messageIncludes("needs the recorded session id"),
+			/needs the recorded session id/,
 		);
 	});
 });

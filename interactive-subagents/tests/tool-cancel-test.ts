@@ -237,31 +237,41 @@ describe("subagent_cancel", () => {
 	// Wrong lifecycle beliefs are errors with distinct corrective prose.
 	it("finished delivery cannot be revoked", async () => {
 		delivery("deliver1", "Finished task", false);
-		await assert.rejects(() => execute("deliver1"), (error) =>
-			String(error).includes("has already finished. Its result is on its way and cannot be revoked; wait for it."));
+		await assert.rejects(
+			() => execute("deliver1"),
+			/has already finished\. Its result is on its way and cannot be revoked; wait for it\./,
+		);
 	});
 
 	it("stopped delivery names the stopped notice", async () => {
 		delivery("deliver2", "Stopped task", true);
-		await assert.rejects(() => execute("deliver2"), (error) =>
-			String(error).includes("has already stopped. Its stopped notice is on its way and cannot be revoked; wait for it."));
+		await assert.rejects(
+			() => execute("deliver2"),
+			/has already stopped\. Its stopped notice is on its way and cannot be revoked; wait for it\./,
+		);
 	});
 
 	it("tombstoned id says no result will arrive", async () => {
 		capacity.recordCancellation("cancel01", "user");
-		await assert.rejects(() => execute("cancel01"), (error) =>
-			String(error).includes("was already cancelled. No result will arrive for it."));
+		await assert.rejects(
+			() => execute("cancel01"),
+			/was already cancelled\. No result will arrive for it\./,
+		);
 	});
 
 	it("completed id says its result was delivered", async () => {
 		state.ledger.set("complete", { sessionFile: "/sessions/complete.jsonl", name: "Completed task" });
-		await assert.rejects(() => execute("complete"), (error) =>
-			String(error).includes("already finished and its result was delivered; there is nothing to cancel."));
+		await assert.rejects(
+			() => execute("complete"),
+			/already finished and its result was delivered; there is nothing to cancel\./,
+		);
 	});
 
 	it("unknown id points at subagent_status", async () => {
-		await assert.rejects(() => execute("missing1"), (error) =>
-			String(error).includes("No sub-agent with id missing1. Use subagent_status to list unresolved sub-agents."));
+		await assert.rejects(
+			() => execute("missing1"),
+			/No sub-agent with id missing1\. Use subagent_status to list unresolved sub-agents\./,
+		);
 	});
 
 	// Native tool rendering uses only the required semantic tokens.

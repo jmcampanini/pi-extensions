@@ -45,35 +45,35 @@ describe("agent-identifier", () => {
 	it("empty identifiers are rejected", () => {
 		assert.throws(
 			() => assertValidAgentIdentifier(""),
-			(error) => String(error).includes("non-empty"),
+			/non-empty/,
 		);
 	});
 
 	it("spaces are rejected", () => {
 		assert.throws(
 			() => assertValidAgentIdentifier("code reviewer"),
-			(error) => String(error).includes("whitespace"),
+			/whitespace/,
 		);
 	});
 
 	it("tabs are rejected", () => {
 		assert.throws(
 			() => assertValidAgentIdentifier("code\treviewer"),
-			(error) => String(error).includes("whitespace"),
+			/whitespace/,
 		);
 	});
 
 	it("newlines are rejected", () => {
 		assert.throws(
 			() => assertValidAgentIdentifier("code\nreviewer"),
-			(error) => String(error).includes("whitespace"),
+			/whitespace/,
 		);
 	});
 
 	it("non-strings are rejected", () => {
 		assert.throws(
 			() => assertValidAgentIdentifier(20),
-			(error) => String(error).includes("non-empty string"),
+			/non-empty string/,
 		);
 	});
 

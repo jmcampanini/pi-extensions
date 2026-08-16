@@ -139,28 +139,28 @@ describe("auto-compact-config", () => {
 	it("enabled env rejects uppercase", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_AUTO_COMPACT_ENABLED: "TRUE" }),
-			(error) => String(error).includes("PI_AUTO_COMPACT_ENABLED"),
+			/PI_AUTO_COMPACT_ENABLED/,
 		);
 	});
 
 	it("enabled env rejects numeric forms", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_AUTO_COMPACT_ENABLED: "1" }),
-			(error) => String(error).includes("PI_AUTO_COMPACT_ENABLED"),
+			/PI_AUTO_COMPACT_ENABLED/,
 		);
 	});
 
 	it("enabled env rejects padded forms", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_AUTO_COMPACT_ENABLED: " false " }),
-			(error) => String(error).includes('" false "'),
+			/" false "/,
 		);
 	});
 
 	it("malformed JSON", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{nope") }),
-			(error) => String(error).includes("not valid JSON"),
+			/not valid JSON/,
 		);
 	});
 
@@ -172,7 +172,7 @@ describe("auto-compact-config", () => {
 		] as const) {
 			assert.throws(
 				() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(content) }),
-				(error) => String(error).includes("must be a JSON object"),
+				/must be a JSON object/,
 				label,
 			);
 		}
@@ -181,98 +181,98 @@ describe("auto-compact-config", () => {
 	it("unknown root key", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"threshold":70}') }),
-			(error) => String(error).includes("unknown key(s) threshold"),
+			/unknown key\(s\) threshold/,
 		);
 	});
 
 	it("prototype key is unknown", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"toString":70}') }),
-			(error) => String(error).includes("unknown key(s) toString"),
+			/unknown key\(s\) toString/,
 		);
 	});
 
 	it("enabled rejects strings", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"enabled":"false"}') }),
-			(error) => String(error).includes('"false"'),
+			/"false"/,
 		);
 	});
 
 	it("enabled rejects numbers", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"enabled":1}') }),
-			(error) => String(error).includes("enabled"),
+			/enabled/,
 		);
 	});
 
 	it("enabled rejects null", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"enabled":null}') }),
-			(error) => String(error).includes("enabled"),
+			/enabled/,
 		);
 	});
 
 	it("classes rejects non-arrays", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":{}}') }),
-			(error) => String(error).includes("must be an array of classes"),
+			/must be an array of classes/,
 		);
 	});
 
 	it("class entries must be objects", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[42]}') }),
-			(error) => String(error).includes("classes[0]"),
+			/classes\[0\]/,
 		);
 	});
 
 	it("class rejects unknown keys", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":1000,"thresholdPercent":50,"extra":1}]}') }),
-			(error) => String(error).includes("unknown key(s) extra"),
+			/unknown key\(s\) extra/,
 		);
 	});
 
 	it("class requires windowMax", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[{"thresholdPercent":50}]}') }),
-			(error) => String(error).includes("windowMax"),
+			/windowMax/,
 		);
 	});
 
 	it("windowMax rejects zero", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":0,"thresholdPercent":50}]}') }),
-			(error) => String(error).includes("windowMax"),
+			/windowMax/,
 		);
 	});
 
 	it("windowMax rejects fractions", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":1000.5,"thresholdPercent":50}]}') }),
-			(error) => String(error).includes("windowMax"),
+			/windowMax/,
 		);
 	});
 
 	it("windowMax rejects numeric strings", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":"1000","thresholdPercent":50}]}') }),
-			(error) => String(error).includes('"1000"'),
+			/"1000"/,
 		);
 	});
 
 	it("class rejects both threshold kinds", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":1000,"thresholdPercent":50,"thresholdTokens":100}]}') }),
-			(error) => String(error).includes("exactly one of thresholdTokens or thresholdPercent"),
+			/exactly one of thresholdTokens or thresholdPercent/,
 		);
 	});
 
 	it("class requires a threshold kind", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":1000}]}') }),
-			(error) => String(error).includes("exactly one of thresholdTokens or thresholdPercent"),
+			/exactly one of thresholdTokens or thresholdPercent/,
 		);
 	});
 
@@ -283,7 +283,7 @@ describe("auto-compact-config", () => {
 					'{"classes":[{"windowMax":1000,"thresholdPercent":50},{"windowMax":1000,"thresholdPercent":60}]}',
 				),
 			}),
-			(error) => String(error).includes("strictly ascending"),
+			/strictly ascending/,
 		);
 	});
 
@@ -294,35 +294,35 @@ describe("auto-compact-config", () => {
 					'{"classes":[{"windowMax":2000,"thresholdPercent":50},{"windowMax":1000,"thresholdPercent":60}]}',
 				),
 			}),
-			(error) => String(error).includes("strictly ascending"),
+			/strictly ascending/,
 		);
 	});
 
 	it("default must be an object", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":50}') }),
-			(error) => String(error).includes("must be a JSON object"),
+			/must be a JSON object/,
 		);
 	});
 
 	it("default rejects unknown keys", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{"windowMax":1000,"thresholdPercent":50}}') }),
-			(error) => String(error).includes("unknown key(s) windowMax"),
+			/unknown key\(s\) windowMax/,
 		);
 	});
 
 	it("default rejects both threshold kinds", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":50,"thresholdTokens":100}}') }),
-			(error) => String(error).includes("exactly one of thresholdTokens or thresholdPercent"),
+			/exactly one of thresholdTokens or thresholdPercent/,
 		);
 	});
 
 	it("default requires a threshold kind", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{}}') }),
-			(error) => String(error).includes("exactly one of thresholdTokens or thresholdPercent"),
+			/exactly one of thresholdTokens or thresholdPercent/,
 		);
 	});
 
@@ -341,63 +341,63 @@ describe("auto-compact-config", () => {
 	it("percent rejects zero", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":0}}') }),
-			(error) => String(error).includes("integer from 1 through 100"),
+			/integer from 1 through 100/,
 		);
 	});
 
 	it("percent rejects values above 100", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":101}}') }),
-			(error) => String(error).includes("integer from 1 through 100"),
+			/integer from 1 through 100/,
 		);
 	});
 
 	it("percent rejects fractions", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":69.5}}') }),
-			(error) => String(error).includes("integer from 1 through 100"),
+			/integer from 1 through 100/,
 		);
 	});
 
 	it("percent rejects numeric strings", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":"70"}}') }),
-			(error) => String(error).includes('"70"'),
+			/"70"/,
 		);
 	});
 
 	it("percent rejects null", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":null}}') }),
-			(error) => String(error).includes("thresholdPercent"),
+			/thresholdPercent/,
 		);
 	});
 
 	it("tokens reject zero", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdTokens":0}}') }),
-			(error) => String(error).includes("positive integer"),
+			/positive integer/,
 		);
 	});
 
 	it("tokens reject negatives", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdTokens":-1}}') }),
-			(error) => String(error).includes("positive integer"),
+			/positive integer/,
 		);
 	});
 
 	it("tokens reject fractions", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdTokens":1.5}}') }),
-			(error) => String(error).includes("positive integer"),
+			/positive integer/,
 		);
 	});
 
 	it("tokens reject numeric strings", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdTokens":"100"}}') }),
-			(error) => String(error).includes('"100"'),
+			/"100"/,
 		);
 	});
 });

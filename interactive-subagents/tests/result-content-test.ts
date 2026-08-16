@@ -280,7 +280,7 @@ describe("buildSubagentResultEnvelope", () => {
 			action: "Resume",
 			actionMessage: "...",
 			sessionFile: "/sessions/invalid.jsonl",
-		}), (error) => String(error).includes("whitespace"));
+		}), /whitespace/);
 	});
 });
 

@@ -25,10 +25,6 @@ after(() => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
-function stringIncludes(contains: string): (error: unknown) => boolean {
-	return (error) => String(error).includes(contains);
-}
-
 describe("buildChildEnv", () => {
 	it("env prefix, auto-exit on", () => {
 		assert.strictEqual(
@@ -79,7 +75,7 @@ describe("buildChildEnv", () => {
 			PI_SUBAGENT_ID: "a55ba067",
 			PI_SUBAGENT_ACTIVITY_FILE: "/s.activity",
 			PI_SUBAGENT_AGENT: "code reviewer",
-		}), stringIncludes("whitespace"));
+		}), /whitespace/);
 	});
 });
 
@@ -224,14 +220,14 @@ describe("launch meta round trip", () => {
 		assert.throws(() => writeLaunchMeta(invalidSession, {
 			name: "Invalid",
 			agent: "code reviewer",
-		}), stringIncludes("whitespace"));
+		}), /whitespace/);
 		assert.strictEqual(existsSync(`${invalidSession}.meta`), false, "invalid metadata write creates no sidecar");
 	});
 
 	it("tampered metadata agent is rejected on read", () => {
 		const invalidSession = join(dir, "invalid.jsonl");
 		writeFileSync(`${invalidSession}.meta`, JSON.stringify({ name: "Invalid", agent: "code reviewer" }), "utf8");
-		assert.throws(() => readLaunchMeta(invalidSession), stringIncludes("whitespace"));
+		assert.throws(() => readLaunchMeta(invalidSession), /whitespace/);
 	});
 
 	// External children extend the meta with harness identity and the cwd (they

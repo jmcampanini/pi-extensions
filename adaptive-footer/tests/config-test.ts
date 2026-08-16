@@ -108,14 +108,14 @@ describe("config", () => {
 	it("unknown persisted keys are rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"issuePattern":[]}') }),
-			(error) => String(error).includes("unknown key(s) issuePattern"),
+			/unknown key\(s\) issuePattern/,
 		);
 	});
 
 	it("invalid JSON is rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{broken") }),
-			(error) => String(error).includes("not valid JSON"),
+			/not valid JSON/,
 		);
 	});
 
@@ -123,7 +123,7 @@ describe("config", () => {
 		for (const [label, content] of [["null", "null"], ["array", "[]"], ["scalar", "42"]] as const) {
 			assert.throws(
 				() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(content) }),
-				(error) => String(error).includes("must be a JSON object"),
+				/must be a JSON object/,
 				`${label} config root is rejected as a non-object`,
 			);
 		}
@@ -132,35 +132,35 @@ describe("config", () => {
 	it("issuePatterns must be an array", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"issuePatterns":"issue-(?<number>[0-9]+)"}') }),
-			(error) => String(error).includes("must be an array"),
+			/must be an array/,
 		);
 	});
 
 	it("every issue pattern must be a string", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"issuePatterns":[17]}') }),
-			(error) => String(error).includes("issuePatterns[0] must be a regular expression string"),
+			/issuePatterns\[0\] must be a regular expression string/,
 		);
 	});
 
 	it("every issue pattern must compile as JavaScript regex", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"issuePatterns":["(?<number>"]}') }),
-			(error) => String(error).includes("not a valid JavaScript regular expression"),
+			/not a valid JavaScript regular expression/,
 		);
 	});
 
 	it("every issue pattern must declare the number capture", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"issuePatterns":["issue-([0-9]+)"]}') }),
-			(error) => String(error).includes("named capture group (?<number>...)"),
+			/named capture group \(\?<number>\.\.\.\)/,
 		);
 	});
 
 	it("escaped capture-like text is not treated as a number capture", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"issuePatterns":["\\\\(\\\\?<number>"]}') }),
-			(error) => String(error).includes("named capture group (?<number>...)"),
+			/named capture group \(\?<number>\.\.\.\)/,
 		);
 	});
 });

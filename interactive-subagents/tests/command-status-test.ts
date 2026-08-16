@@ -313,18 +313,10 @@ describe("registerSubagentStatusCommand", () => {
 		(failingContext.ui as unknown as { custom: () => Promise<never> }).custom = async () => {
 			throw new Error("picker failed");
 		};
-		let pickerFailureSurfaced = false;
-		try {
-			await handler?.("", failingContext);
-		} catch {
-			pickerFailureSurfaced = true;
-		}
+		await assert.rejects(async () => handler?.("", failingContext));
 		assert.deepStrictEqual(
-			[
-				pickerFailureSurfaced,
-				...widgetTransitions.map(({ content }) => content === undefined ? "clear" : typeof content),
-			],
-			[true, "clear", "function"]);
+			widgetTransitions.map(({ content }) => content === undefined ? "clear" : typeof content),
+			["clear", "function"]);
 	});
 
 	it("live picker refreshes open rows and keeps selection anchored by id", async () => {

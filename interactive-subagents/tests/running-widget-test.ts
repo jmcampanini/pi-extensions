@@ -46,13 +46,21 @@ function snapshot(inRun: boolean, runsCompleted: number): ActivitySnapshot {
 }
 
 function runningChild(id: string, status: "active" | "waiting" | "starting" | "stalled"): RunningSubagent {
-	const activity = status === "stalled"
-		? { watchdogStartMs: NOW - 60_000, problemSinceMs: NOW - 60_000 }
-		: status === "active"
-			? { watchdogStartMs: NOW - 10_000, snapshot: snapshot(true, 0), acceptedAtMs: NOW }
-			: status === "waiting"
-				? { watchdogStartMs: NOW - 10_000, snapshot: snapshot(false, 1), everSawRun: true }
-				: { watchdogStartMs: NOW - 1_000, snapshot: snapshot(false, 0) };
+	let activity: RunningSubagent["activity"];
+	switch (status) {
+		case "stalled":
+			activity = { watchdogStartMs: NOW - 60_000, problemSinceMs: NOW - 60_000 };
+			break;
+		case "active":
+			activity = { watchdogStartMs: NOW - 10_000, snapshot: snapshot(true, 0), acceptedAtMs: NOW };
+			break;
+		case "waiting":
+			activity = { watchdogStartMs: NOW - 10_000, snapshot: snapshot(false, 1), everSawRun: true };
+			break;
+		case "starting":
+			activity = { watchdogStartMs: NOW - 1_000, snapshot: snapshot(false, 0) };
+			break;
+	}
 	return {
 		id,
 		name: `${id} task`,

@@ -222,9 +222,8 @@ describe("smartOpenBlock", () => {
 		const errorEvents: string[] = [];
 		const errorFs = new FakeFileSystem();
 		errorFs.events = errorEvents;
-		let spawnError = "";
-		try {
-			await smartOpenBlock(block({ fileReference: { path: "/repo/file.ts", line: 9 } }), {
+		await assert.rejects(
+			() => smartOpenBlock(block({ fileReference: { path: "/repo/file.ts", line: 9 } }), {
 				tui: fakeTui(errorEvents),
 				settings: { externalEditor: "vim" },
 				fileSystem: errorFs,
@@ -234,11 +233,10 @@ describe("smartOpenBlock", () => {
 						throw new Error("spawn failed");
 					},
 				},
-			});
-		} catch (error) {
-			spawnError = error instanceof Error ? error.message : String(error);
-		}
-		assert.strictEqual(spawnError, "spawn failed", "spawn error propagates to controller");
+			}),
+			{ message: "spawn failed" },
+			"spawn error propagates to controller",
+		);
 		assert.deepStrictEqual(errorEvents,
 			["stop", "run-error", "start", "render:true"],
 			"spawn error still restarts TUI with full render");
@@ -248,16 +246,12 @@ describe("smartOpenBlock", () => {
 		const temporaryErrorEvents: string[] = [];
 		const temporaryErrorFs = new FakeFileSystem();
 		temporaryErrorFs.events = temporaryErrorEvents;
-		try {
-			await smartOpenBlock(block(), {
-				tui: fakeTui(temporaryErrorEvents),
-				settings: { externalEditor: "vim" },
-				fileSystem: temporaryErrorFs,
-				processRunner: { async run(): Promise<number | null> { throw new Error("editor crashed"); } },
-			});
-		} catch {
-			// Expected.
-		}
+		await assert.rejects(() => smartOpenBlock(block(), {
+			tui: fakeTui(temporaryErrorEvents),
+			settings: { externalEditor: "vim" },
+			fileSystem: temporaryErrorFs,
+			processRunner: { async run(): Promise<number | null> { throw new Error("editor crashed"); } },
+		}));
 		assert.deepStrictEqual(temporaryErrorEvents,
 			["create", "stop", "remove", "start", "render:true"]);
 	});

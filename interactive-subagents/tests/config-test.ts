@@ -84,21 +84,21 @@ describe("loadConfig", () => {
 	it("negative widget rows are rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":-1}') }),
-			(error) => String(error).includes("positive integer"),
+			/positive integer/,
 		);
 	});
 
 	it("fractional widget rows are rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":2.5}') }),
-			(error) => String(error).includes("positive integer"),
+			/positive integer/,
 		);
 	});
 
 	it("invalid widget rows env names the variable", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_WIDGET_MAX_ROWS: "0" }),
-			(error) => String(error).includes("PI_SUBAGENT_WIDGET_MAX_ROWS"),
+			/PI_SUBAGENT_WIDGET_MAX_ROWS/,
 		);
 	});
 
@@ -116,126 +116,126 @@ describe("loadConfig", () => {
 	it("zero max concurrent is rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":0}') }),
-			(error) => String(error).includes("integer from 1 through 9"),
+			/integer from 1 through 9/,
 		);
 	});
 
 	it("max concurrent above 9 is rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":10}') }),
-			(error) => String(error).includes("integer from 1 through 9"),
+			/integer from 1 through 9/,
 		);
 	});
 
 	it("fractional max concurrent is rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":2.5}') }),
-			(error) => String(error).includes("integer from 1 through 9"),
+			/integer from 1 through 9/,
 		);
 	});
 
 	it("string max concurrent in file is rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":"9"}') }),
-			(error) => String(error).includes('"9"'),
+			/"9"/,
 		);
 	});
 
 	it("invalid max concurrent env names the variable", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS: "lots" }),
-			(error) => String(error).includes("PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS"),
+			/PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS/,
 		);
 	});
 
 	it("unknown key", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layot":"main"}') }),
-			(error) => String(error).includes("unknown key(s) layot"),
+			/unknown key\(s\) layot/,
 		);
 	});
 
 	it("bad json", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{nope") }),
-			(error) => String(error).includes("not valid JSON"),
+			/not valid JSON/,
 		);
 	});
 
 	it("array root", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("[1]") }),
-			(error) => String(error).includes("must be a JSON object"),
+			/must be a JSON object/,
 		);
 	});
 
 	it("bad layout in file", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"grid"}') }),
-			(error) => String(error).includes("valid values: main, window, off"),
+			/valid values: main, window, off/,
 		);
 	});
 
 	it("bad layout in env", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_LAYOUT: "windw" }),
-			(error) => String(error).includes("PI_SUBAGENT_LAYOUT"),
+			/PI_SUBAGENT_LAYOUT/,
 		);
 	});
 
 	it("bad width", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"mainWidth":"12px"}') }),
-			(error) => String(error).includes("mainWidth"),
+			/mainWidth/,
 		);
 	});
 
 	it("uppercase layout in env is rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_LAYOUT: "MAIN" }),
-			(error) => String(error).includes("PI_SUBAGENT_LAYOUT"),
+			/PI_SUBAGENT_LAYOUT/,
 		);
 	});
 
 	it("negative call preview lines are rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":-1}') }),
-			(error) => String(error).includes("integer from 0 through 20"),
+			/integer from 0 through 20/,
 		);
 	});
 
 	it("result preview lines above the maximum are rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":21}') }),
-			(error) => String(error).includes("integer from 0 through 20"),
+			/integer from 0 through 20/,
 		);
 	});
 
 	it("fractional preview lines are rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":1.5}') }),
-			(error) => String(error).includes("integer from 0 through 20"),
+			/integer from 0 through 20/,
 		);
 	});
 
 	it("string preview lines in file are rejected", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":"5"}') }),
-			(error) => String(error).includes('"5"'),
+			/"5"/,
 		);
 	});
 
 	it("invalid call preview env names the variable", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_CALL_PREVIEW_LINES: "many" }),
-			(error) => String(error).includes("PI_SUBAGENT_CALL_PREVIEW_LINES"),
+			/PI_SUBAGENT_CALL_PREVIEW_LINES/,
 		);
 	});
 
 	it("invalid result preview env names the variable", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_RESULT_PREVIEW_LINES: "21" }),
-			(error) => String(error).includes("PI_SUBAGENT_RESULT_PREVIEW_LINES"),
+			/PI_SUBAGENT_RESULT_PREVIEW_LINES/,
 		);
 	});
 
@@ -281,42 +281,42 @@ describe("loadConfig", () => {
 	it("bad worktree mode in file", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupMode":"always"}') }),
-			(error) => String(error).includes("valid values: auto, never"),
+			/valid values: auto, never/,
 		);
 	});
 
 	it("bad worktree mode in env", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_WORKTREE_CLEANUP_MODE: "always" }),
-			(error) => String(error).includes("PI_SUBAGENT_WORKTREE_CLEANUP_MODE"),
+			/PI_SUBAGENT_WORKTREE_CLEANUP_MODE/,
 		);
 	});
 
 	it("empty create command in file", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":""}') }),
-			(error) => String(error).includes("worktreeCreateCommand"),
+			/worktreeCreateCommand/,
 		);
 	});
 
 	it("blank cleanup command in file", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupCommand":"   "}') }),
-			(error) => String(error).includes("worktreeCleanupCommand"),
+			/worktreeCleanupCommand/,
 		);
 	});
 
 	it("non-string create command in file", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":42}') }),
-			(error) => String(error).includes("non-empty shell command"),
+			/non-empty shell command/,
 		);
 	});
 
 	it("blank create command in env", () => {
 		assert.throws(
 			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_WORKTREE_CREATE_COMMAND: "   " }),
-			(error) => String(error).includes("PI_SUBAGENT_WORKTREE_CREATE_COMMAND"),
+			/PI_SUBAGENT_WORKTREE_CREATE_COMMAND/,
 		);
 	});
 });

@@ -67,17 +67,6 @@ describe("inferIssueNumber", () => {
 });
 
 describe("discoverRepositoryContext", () => {
-	function completeDiscovery(calls: string[][] = []): Promise<RepositoryContext> {
-		return discoverRepositoryContext(
-			jsonRunner(
-				{ number: 123, url: "https://github.enterprise/acme/payments/pull/123", state: "MERGED", isDraft: false },
-				{ number: 456, url: "https://github.enterprise/acme/payments/issues/456", state: "CLOSED" },
-				calls,
-			),
-			{ cwd: "/work/issue-456", branch: "feature/issue-456", issuePatterns: DEFAULT_ISSUE_PATTERNS },
-		);
-	}
-
 	it("PR states map to their footer suffixes", async () => {
 		for (const [label, state, isDraft, expected] of [
 			["open", "OPEN", false, "o"],
@@ -96,28 +85,26 @@ describe("discoverRepositoryContext", () => {
 		}
 	});
 
-	it("verified issue preserves its canonical Enterprise URL", async () => {
-		const complete = await completeDiscovery();
+	it("preserves verified links and sends the expected gh commands", async () => {
+		const commandCalls: string[][] = [];
+		const complete = await discoverRepositoryContext(
+			jsonRunner(
+				{ number: 123, url: "https://github.enterprise/acme/payments/pull/123", state: "MERGED", isDraft: false },
+				{ number: 456, url: "https://github.enterprise/acme/payments/issues/456", state: "CLOSED" },
+				commandCalls,
+			),
+			{ cwd: "/work/issue-456", branch: "feature/issue-456", issuePatterns: DEFAULT_ISSUE_PATTERNS },
+		);
 		assert.deepStrictEqual(complete.issue,
-			{ number: 456, url: "https://github.enterprise/acme/payments/issues/456", state: "c" });
-	});
-
-	it("current-branch PR preserves its canonical Enterprise URL", async () => {
-		const complete = await completeDiscovery();
+			{ number: 456, url: "https://github.enterprise/acme/payments/issues/456", state: "c" },
+			"verified issue preserves its canonical Enterprise URL");
 		assert.deepStrictEqual(complete.pr,
-			{ number: 123, url: "https://github.enterprise/acme/payments/pull/123", state: "m" });
-	});
-
-	it("PR discovery asks gh for draft-aware state", async () => {
-		const commandCalls: string[][] = [];
-		await completeDiscovery(commandCalls);
-		assert.deepStrictEqual(commandCalls[0], ["pr", "view", "--json", "number,url,state,isDraft"]);
-	});
-
-	it("issue verification asks gh for the inferred number", async () => {
-		const commandCalls: string[][] = [];
-		await completeDiscovery(commandCalls);
-		assert.deepStrictEqual(commandCalls[1], ["issue", "view", "456", "--json", "number,url,state"]);
+			{ number: 123, url: "https://github.enterprise/acme/payments/pull/123", state: "m" },
+			"current-branch PR preserves its canonical Enterprise URL");
+		assert.deepStrictEqual(commandCalls[0], ["pr", "view", "--json", "number,url,state,isDraft"],
+			"PR discovery asks gh for draft-aware state");
+		assert.deepStrictEqual(commandCalls[1], ["issue", "view", "456", "--json", "number,url,state"],
+			"issue verification asks gh for the inferred number");
 	});
 
 	it("issue verification rejects a mismatched returned number", async () => {

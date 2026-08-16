@@ -34,7 +34,6 @@ class FakeClock implements ElapsedTimeClock {
 	lastIntervalMs: number | undefined;
 	private nextTimer = 1;
 	private readonly timers = new Map<number, () => void>();
-	readonly clearedTimers: number[] = [];
 
 	now = (): number => this.nowMs;
 
@@ -46,9 +45,7 @@ class FakeClock implements ElapsedTimeClock {
 	}
 
 	clearInterval(handle: object | number): void {
-		const timer = handle as number;
-		this.clearedTimers.push(timer);
-		this.timers.delete(timer);
+		this.timers.delete(handle as number);
 	}
 
 	fireTimers(): void {
