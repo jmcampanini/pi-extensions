@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { config, type AutoCompactConfig } from "./config.ts";
-import { formatTokens, resolveThresholdTokens } from "./threshold.ts";
+import { config, type AutoCompactConfig } from "../shared/auto-compact-config.ts";
+import { formatTokens, resolveThresholdTokens } from "../shared/auto-compact-threshold.ts";
+import { AUTO_COMPACT_STATUS_KEY } from "../shared/status-keys.ts";
 
-export const AUTO_COMPACT_STATUS_KEY = "auto-compact";
 
 export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompactConfig): void {
 	let inFlight = false;

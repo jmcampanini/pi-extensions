@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { agentConfigDir, config, configFilePath, loadConfig } from "../config.ts";
+import { agentConfigDir, config, configFilePath, loadConfig } from "../auto-compact-config.ts";
 
 let pass = 0;
 let fail = 0;

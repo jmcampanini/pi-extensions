@@ -6,7 +6,7 @@ import {
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { copyBlockCanonicalText, smartOpenBlock } from "./actions.ts";
-import { ExplorerComponent } from "./component.ts";
+import { ExplorerComponent, OVERLAY_HEIGHT_FRACTION } from "./component.ts";
 import { config } from "./config.ts";
 import { BranchBlockIndex } from "./indexer.ts";
 import { ExplorerState } from "./state.ts";
@@ -59,7 +59,7 @@ export function registerFuzzyExplorer(pi: ExtensionAPI): void {
 						anchor: "center",
 						width: "92%",
 						minWidth: 40,
-						maxHeight: "90%",
+						maxHeight: `${Math.round(OVERLAY_HEIGHT_FRACTION * 100)}%`,
 						margin: 1,
 					},
 				},

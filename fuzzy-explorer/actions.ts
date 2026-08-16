@@ -1,39 +1,29 @@
-import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access, mkdir, unlink, writeFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { copyToClipboard } from "@earendil-works/pi-coding-agent";
+import {
+	editorNeedsOptionsTerminator,
+	editorSupportsPlusLine,
+	nodeEditorProcessRunner,
+	parseEditorCommand,
+	resolveExternalEditor,
+	type EditorEnvironment,
+	type EditorInvocation,
+	type EditorProcessRunner,
+	type EditorResolver,
+	type EditorTui,
+	type ExternalEditorSettings,
+} from "../shared/external-editor.ts";
 import type { Block } from "./types.ts";
 
 export type ClipboardWriter = (text: string) => Promise<void>;
-
-export interface ExternalEditorSettings {
-	externalEditor?: string;
-}
-
-export type EditorEnvironment = Readonly<Record<string, string | undefined>>;
-
-export type EditorResolver = (
-	settings: ExternalEditorSettings,
-	environment: EditorEnvironment,
-	platform: NodeJS.Platform,
-) => string;
-
-export interface ActionTui {
-	stop(): void;
-	start(): void;
-	requestRender(force?: boolean): void;
-}
 
 export interface SmartOpenFileSystem {
 	pathExists(filePath: string): Promise<boolean>;
 	createCanonicalTextFile(repositoryRoot: string, text: string): Promise<string>;
 	removeFile(filePath: string): Promise<void>;
-}
-
-export interface EditorProcessRunner {
-	run(command: string, args: string[]): Promise<number | null>;
 }
 
 export type SmartOpenTarget =
@@ -46,13 +36,8 @@ export type SmartOpenDescription =
 	| { kind: "full-output"; path: string }
 	| { kind: "canonical-text" };
 
-export interface EditorInvocation {
-	command: string;
-	args: string[];
-}
-
 export interface SmartOpenOptions {
-	tui: ActionTui;
+	tui: EditorTui;
 	settings?: ExternalEditorSettings;
 	environment?: EditorEnvironment;
 	platform?: NodeJS.Platform;
@@ -160,98 +145,7 @@ export function formatSmartOpenHint(target: SmartOpenDescription): string {
 	return "open block text";
 }
 
-// Editor command handling
-
-export function resolveExternalEditor(
-	settings: ExternalEditorSettings = {},
-	environment: EditorEnvironment = process.env,
-	platform: NodeJS.Platform = process.platform,
-): string {
-	const configured = settings.externalEditor;
-	if (typeof configured === "string" && configured.trim() !== "") return configured;
-	if (environment.VISUAL) return environment.VISUAL;
-	if (environment.EDITOR) return environment.EDITOR;
-	return platform === "win32" ? "notepad" : "nano";
-}
-
-export function parseEditorCommand(editorCommand: string): string[] {
-	const parts: string[] = [];
-	let current = "";
-	let quote: "'" | "\"" | undefined;
-	let started = false;
-
-	for (let index = 0; index < editorCommand.length; index++) {
-		const character = editorCommand[index]!;
-		if (quote === "'") {
-			if (character === "'") quote = undefined;
-			else current += character;
-			started = true;
-			continue;
-		}
-
-		if (quote === "\"") {
-			if (character === "\"") {
-				quote = undefined;
-			} else if (character === "\\" && /["\\]/.test(editorCommand[index + 1] ?? "")) {
-				current += editorCommand[++index]!;
-			} else {
-				current += character;
-			}
-			started = true;
-			continue;
-		}
-
-		if (character === "'" || character === "\"") {
-			quote = character;
-			started = true;
-		} else if (/\s/.test(character)) {
-			if (started) {
-				parts.push(current);
-				current = "";
-				started = false;
-			}
-		} else if (character === "\\" && /[\s'"\\]/.test(editorCommand[index + 1] ?? "")) {
-			current += editorCommand[++index]!;
-			started = true;
-		} else {
-			current += character;
-			started = true;
-		}
-	}
-
-	if (quote) throw new Error("External editor command has an unmatched quote");
-	if (started) parts.push(current);
-	if (!parts[0]) throw new Error("External editor command is empty");
-	return parts;
-}
-
-const PLUS_LINE_EDITORS = new Set([
-	"emacs",
-	"emacsclient",
-	"ex",
-	"gvim",
-	"mvim",
-	"nano",
-	"nvim",
-	"nvimdiff",
-	"pico",
-	"vi",
-	"view",
-	"vim",
-	"vimdiff",
-]);
-
-const END_OF_OPTIONS_EDITORS = new Set([
-	"ex", "gvim", "mvim", "nvim", "nvimdiff", "vi", "view", "vim", "vimdiff",
-]);
-
-function editorExecutableName(command: string): string {
-	return basename(command).toLowerCase().replace(/\.(?:bat|cmd|exe)$/i, "");
-}
-
-export function editorSupportsPlusLine(command: string): boolean {
-	return PLUS_LINE_EDITORS.has(editorExecutableName(command));
-}
+// Editor invocation
 
 export function buildEditorInvocation(editorCommand: string, target: SmartOpenTarget): EditorInvocation {
 	const [command, ...configuredArgs] = parseEditorCommand(editorCommand);
@@ -263,7 +157,7 @@ export function buildEditorInvocation(editorCommand: string, target: SmartOpenTa
 	) {
 		args.push(`+${target.line}`);
 	}
-	if (END_OF_OPTIONS_EDITORS.has(editorExecutableName(command!))) args.push("--");
+	if (editorNeedsOptionsTerminator(command!)) args.push("--");
 	args.push(target.path);
 	return { command: command!, args };
 }
@@ -320,15 +214,5 @@ export const nodeSmartOpenFileSystem: SmartOpenFileSystem = {
 	},
 	async removeFile(filePath): Promise<void> {
 		await unlink(filePath);
-	},
-};
-
-export const nodeEditorProcessRunner: EditorProcessRunner = {
-	run(command, args): Promise<number | null> {
-		return new Promise((resolve, reject) => {
-			const child = spawn(command, args, { stdio: "inherit", shell: false });
-			child.once("error", reject);
-			child.once("close", resolve);
-		});
 	},
 };

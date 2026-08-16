@@ -8,12 +8,12 @@ import { stripVTControlCharacters } from "node:util";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Text, visibleWidth } from "@earendil-works/pi-tui";
+import { parseSubagentResultEnvelope } from "../../shared/subagent-envelope.ts";
 import {
 	buildSubagentResultEnvelope,
 	buildSubagentResultMessage,
-	parseSubagentResultEnvelope,
 } from "../result-content.ts";
-import { clampStyled, fitText } from "../text-fit.ts";
+import { clampStyled, fitText } from "../../shared/text-fit.ts";
 import {
 	estimateResultTokens,
 	formatCollapsedSubagentResult,

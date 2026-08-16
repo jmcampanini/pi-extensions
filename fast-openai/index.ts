@@ -14,7 +14,7 @@ type FastOpenAIConfig = {
 
 type FastAction = "on" | "off";
 
-export const FAST_OPENAI_STATUS_KEY = "fast-openai";
+import { FAST_OPENAI_STATUS_KEY } from "../shared/status-keys.ts";
 
 type ConfigDiagnostic = {
 	path: string;

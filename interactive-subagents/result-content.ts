@@ -1,3 +1,4 @@
+import { SUBAGENT_ENVELOPE_TITLE } from "../shared/subagent-envelope.ts";
 import { assertValidAgentIdentifier } from "./agent-identifier.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { formatCost, formatTokens } from "./widget.ts";
@@ -49,15 +50,6 @@ export interface SubagentResultDetails {
 	expanded: SubagentExpandedResultPresentation;
 	presentation: SubagentResultPresentation;
 }
-
-// Public format contract for consumers that present subagent traffic (e.g. the
-// fuzzy-explorer extension): the customType results arrive under, which tool
-// arguments are prose rather than metadata, and a parser that inverts
-// buildSubagentResultEnvelope so the envelope format cannot drift from it.
-
-export const SUBAGENT_RESULT_CUSTOM_TYPE = "subagent_result";
-export const SUBAGENT_TOOL_NAME_PREFIX = "subagent_";
-export const SUBAGENT_PROSE_ARGUMENT_KEYS: ReadonlySet<string> = new Set(["task", "prompt", "message"]);
 
 export interface SubagentResultEnvelope {
 	status: SubagentEnvelopeStatus;
@@ -175,7 +167,7 @@ export function buildSubagentResultEnvelope(input: SubagentResultEnvelope): Suba
 		...(input.worktree ? ["worktree"] : []),
 	];
 	const lines = [
-		"Subagent result",
+		SUBAGENT_ENVELOPE_TITLE,
 		`Status: ${input.status}`,
 		...(input.failureReason ? [`Failure: ${inline(input.failureReason)}`] : []),
 		...(input.notice ? [`Notice: ${inline(input.notice)}`] : []),
@@ -287,57 +279,4 @@ export function buildSubagentResultMessage(input: SubagentResultMessageInput): S
 			presentation: resultPresentation(input.status, input.elapsedSeconds, preview),
 		},
 	};
-}
-
-export interface SubagentEnvelopeField {
-	key: string;
-	value: string;
-}
-
-export interface ParsedSubagentResultEnvelope {
-	/** Metadata lines (head and tail) as lowercase key/value pairs, in envelope order. */
-	fields: SubagentEnvelopeField[];
-	/** The delivered response text, unwrapped from its <result> markers. */
-	response: string;
-}
-
-const ENVELOPE_TITLE = "Subagent result";
-const ENVELOPE_FIELD_LINE = /^([A-Za-z][A-Za-z ]{0,24}): (.*)$/;
-
-/** Invert buildSubagentResultEnvelope; undefined when content is not an envelope. */
-export function parseSubagentResultEnvelope(content: string): ParsedSubagentResultEnvelope | undefined {
-	const lines = content.split("\n");
-	const fields: SubagentEnvelopeField[] = [];
-	let index = lines[0]?.trim() === ENVELOPE_TITLE ? 1 : 0;
-	for (; index < lines.length; index++) {
-		const line = lines[index]!;
-		if (line.trim() === "") break;
-		const match = ENVELOPE_FIELD_LINE.exec(line);
-		if (match === null) break;
-		fields.push({ key: match[1]!.toLowerCase(), value: match[2]! });
-	}
-	if (fields.length === 0) return undefined;
-
-	const rest = lines.slice(index).join("\n").trim();
-	const open = rest.indexOf("<result>");
-	const close = rest.lastIndexOf("</result>");
-	let response = "";
-	let tail = rest;
-	if (open !== -1 && close > open) {
-		response = rest.slice(open + "<result>".length, close).trim();
-		tail = `${rest.slice(0, open)}\n${rest.slice(close + "</result>".length)}`;
-	}
-
-	// The action/session tail lines are metadata too; anything unshaped joins the response.
-	const leftover: string[] = [];
-	for (const line of tail.split("\n")) {
-		if (line.trim() === "") continue;
-		const match = ENVELOPE_FIELD_LINE.exec(line);
-		if (match !== null) fields.push({ key: match[1]!.toLowerCase(), value: match[2]! });
-		else leftover.push(line);
-	}
-	if (leftover.length > 0) {
-		response = [response, leftover.join("\n")].filter((text) => text !== "").join("\n\n");
-	}
-	return { fields, response };
 }

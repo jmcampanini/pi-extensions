@@ -1,6 +1,7 @@
 import type { CompactOptions, ContextUsage, ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { AutoCompactConfig } from "../config.ts";
-import { AUTO_COMPACT_STATUS_KEY, registerAutoCompact } from "../index.ts";
+import type { AutoCompactConfig } from "../../shared/auto-compact-config.ts";
+import { AUTO_COMPACT_STATUS_KEY } from "../../shared/status-keys.ts";
+import { registerAutoCompact } from "../index.ts";
 
 let pass = 0;
 let fail = 0;

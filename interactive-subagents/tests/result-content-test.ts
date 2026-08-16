@@ -1,7 +1,7 @@
+import { parseSubagentResultEnvelope } from "../../shared/subagent-envelope.ts";
 import {
 	buildSubagentResultEnvelope,
 	buildSubagentResultMessage,
-	parseSubagentResultEnvelope,
 	type SubagentResultMessage,
 	type SubagentResultStatus,
 } from "../result-content.ts";

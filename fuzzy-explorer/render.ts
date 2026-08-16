@@ -1,8 +1,8 @@
 import { stripVTControlCharacters } from "node:util";
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi, type MarkdownTheme } from "@earendil-works/pi-tui";
-import { fitText } from "../interactive-subagents/text-fit.ts";
+import { visibleWidth, wrapTextWithAnsi, type MarkdownTheme } from "@earendil-works/pi-tui";
+import { clampStyled, fitText } from "../shared/text-fit.ts";
 import { SEPARATOR_CLASS, stripSeparators } from "./search.ts";
-import { subagentView, type SubagentView } from "./subagent.ts";
+import { subagentView, type SubagentField, type SubagentView } from "./subagent.ts";
 import type { Block, BlockTruncation, SearchResult } from "./types.ts";
 
 export interface RenderStyles {
@@ -335,7 +335,7 @@ function canonicalBodySpans(block: Block, bodySpans: readonly TextSpan[], conten
 }
 
 function clampLine(line: string, width: number): string {
-	return truncateToWidth(line, width, "");
+	return clampStyled(line, width);
 }
 
 function wrapStyledText(text: string, width: number): string[] {
@@ -345,9 +345,11 @@ function wrapStyledText(text: string, width: number): string[] {
 
 // Block identity
 
+/** Local wall-clock HH:MM; the searchable `timestamp:` field stays UTC. */
 function shortTime(timestamp: string): string {
-	const match = /T(\d{2}:\d{2})/u.exec(timestamp);
-	return match === null ? singleLine(timestamp) : match[1]!;
+	const date = new Date(timestamp);
+	if (!Number.isFinite(date.getTime())) return singleLine(timestamp);
+	return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 /** Aligned tag-column text: tool name for tool blocks, a short role label otherwise. */
@@ -418,20 +420,46 @@ export function formatSubagentResultDivider(width: number): string {
 	return prefix + "─".repeat(Math.max(0, maxWidth - visibleWidth(prefix)));
 }
 
+export type SubagentSection =
+	| { type: "fields"; fields: SubagentField[] }
+	| { type: "content"; text: string }
+	| { type: "divider" }
+	| { type: "table"; text: string };
+
+/**
+ * Ordered display sections for a subagent view — the single owner of the
+ * layout policy: results show content, divider, table; tool calls show
+ * fields, content; empty sections are dropped. Consumers style each section.
+ */
+export function subagentSections(view: SubagentView): SubagentSection[] {
+	const sections: SubagentSection[] = [];
+	if (view.result) {
+		const table = formatSubagentTable(view);
+		if (view.content !== "") sections.push({ type: "content", text: view.content });
+		if (table !== "") {
+			if (view.content !== "") sections.push({ type: "divider" });
+			sections.push({ type: "table", text: table });
+		}
+		return sections;
+	}
+	if (view.fields.length > 0) sections.push({ type: "fields", fields: view.fields });
+	if (view.content !== "") sections.push({ type: "content", text: view.content });
+	return sections;
+}
+
 /** Displayed preview/detail text: parsed result responses precede their canonical metadata table. */
 export function displayContent(block: Block, width = 80): string {
 	const view = subagentView(block);
-	if (view !== undefined) {
-		if (view.result) {
-			const table = formatSubagentTable(view);
-			const sections = [view.content];
-			if (view.content !== "" && table !== "") sections.push(formatSubagentResultDivider(width));
-			sections.push(table);
-			return sections.filter((text) => text !== "").join("\n\n");
-		}
-		return [formatSubagentFields(view), view.content].filter((text) => text !== "").join("\n\n");
-	}
-	return block.body !== "" ? block.body : block.canonicalText;
+	if (view === undefined) return block.body !== "" ? block.body : block.canonicalText;
+	return subagentSections(view)
+		.map((section) => {
+			if (section.type === "fields") {
+				return section.fields.map((field) => `${field.key}=${field.value}`).join(" ");
+			}
+			if (section.type === "divider") return formatSubagentResultDivider(width);
+			return section.text;
+		})
+		.join("\n\n");
 }
 
 function rowDetailText(block: Block): string {
@@ -479,7 +507,7 @@ export function tailAwareTruncate(text: string, width: number): string {
 		words[longestIndex] = shrinkPathWord(words[longestIndex]!)!;
 		compact = words.join(" ");
 	}
-	return truncateToWidth(compact, maxWidth, "…");
+	return fitText(compact, maxWidth);
 }
 
 /** Build the explicit status shown whenever the stored session output was truncated. */
@@ -540,7 +568,7 @@ export function formatResultRow(
 
 	const marker = selected ? styles.accent("▸ ") : "  ";
 	const column = Math.max(1, Math.min(tagWidth, maxWidth - 2));
-	const tagText = truncateToWidth(singleLine(formatBlockTag(block)), column, "…");
+	const tagText = fitText(singleLine(formatBlockTag(block)), column);
 	const tagSpans = mergeSpans(keyTokens.flatMap((token) => keyTokenSpans(token, tagText)));
 	const tag = applySpanStyles(tagText, tagSpans, (text) => styles.title(text), styles.highlight)
 		+ " ".repeat(Math.max(0, column - visibleWidth(tagText)));
@@ -656,7 +684,7 @@ export function formatBorderLine(
 	let right = rightText === "" ? "" : ` ${rightText} `;
 	if (visibleWidth(right) > inner) right = "";
 	const leftBudget = inner - visibleWidth(right);
-	const leftInner = leftText === "" ? "" : truncateToWidth(leftText, Math.max(0, leftBudget - 2), "…");
+	const leftInner = leftText === "" ? "" : fitText(leftText, Math.max(0, leftBudget - 2));
 	const left = visibleWidth(leftInner) === 0 ? "" : ` ${leftInner} `;
 
 	const fill = inner - visibleWidth(left) - visibleWidth(right);
@@ -684,7 +712,7 @@ export function formatHintBorder(
 		chosen = candidate;
 	}
 	if (chosen === "" && hints.length > 0) {
-		chosen = truncateToWidth(hints[0]!, Math.max(0, inner - 2), "…");
+		chosen = fitText(hints[0]!, Math.max(0, inner - 2));
 	}
 	return formatBorderLine(
 		maxWidth,

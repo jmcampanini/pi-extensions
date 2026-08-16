@@ -12,7 +12,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { matchesKey, visibleWidth } from "@earendil-works/pi-tui";
 import { requestCancel } from "./cancel.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
-import { clampStyled, fitText } from "./text-fit.ts";
+import { clampStyled, fitText } from "../shared/text-fit.ts";
 import {
 	collectLifecycleWidgetRows,
 	type LifecycleWidgetRow,

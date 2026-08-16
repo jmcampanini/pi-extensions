@@ -3,15 +3,15 @@ import {
 	SUBAGENT_PROSE_ARGUMENT_KEYS,
 	SUBAGENT_RESULT_CUSTOM_TYPE,
 	SUBAGENT_TOOL_NAME_PREFIX,
-} from "../interactive-subagents/result-content.ts";
+} from "../shared/subagent-envelope.ts";
 import type { Block } from "./types.ts";
 
 /**
  * Structured presentation for interactive-subagents traffic. The envelope and
- * argument contracts live in that extension (next to the code that writes
- * them); this module only maps them onto fuzzy-explorer blocks: metadata
- * becomes key=value fields (name/agent/status first) and the task prompt or
- * delivered result becomes markdown-renderable content.
+ * argument contracts live in shared/subagent-envelope.ts; this module only
+ * maps them onto fuzzy-explorer blocks: metadata becomes key=value fields
+ * (name/agent/status first) and the task prompt or delivered result becomes
+ * markdown-renderable content.
  */
 
 export interface SubagentField {
@@ -41,19 +41,7 @@ function compactValue(value: string): string {
 
 /** Tool calls: primitive arguments are metadata; prose arguments and the ack are content. */
 function toolView(block: Block): SubagentView | undefined {
-	const toolName = block.toolName;
-	if (toolName === undefined) return undefined;
-	const argumentsEnd = block.body !== "" && block.canonicalBodyOffset !== undefined
-		? block.canonicalBodyOffset - 2
-		: block.canonicalText.length;
-	const argumentsText = block.canonicalText.slice(toolName.length + 1, argumentsEnd);
-
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(argumentsText);
-	} catch {
-		return undefined;
-	}
+	const parsed = block.toolArguments;
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
 
 	const fields: SubagentField[] = [];

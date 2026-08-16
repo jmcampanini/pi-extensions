@@ -44,6 +44,7 @@ import {
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { readExternalResult } from "./harnesses.ts";
+import { SUBAGENT_RESULT_CUSTOM_TYPE } from "../shared/subagent-envelope.ts";
 import { buildSubagentResultMessage, humanElapsed } from "./result-content.ts";
 import { computeStatus, STALL_AFTER_MS, type SubagentStatus } from "./status.ts";
 import { closePane, pollForExit, refreshLayout, type ExitResult } from "./tmux.ts";
@@ -475,7 +476,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 				stopRequester: child.stopRequester,
 			});
 			sendDelivery(pi, record, generation, {
-				customType: "subagent_result",
+				customType: SUBAGENT_RESULT_CUSTOM_TYPE,
 				content: message.content,
 				display: true,
 				details: message.details,
@@ -558,7 +559,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		});
 
 	sendDelivery(pi, record, generation, {
-		customType: "subagent_result",
+		customType: SUBAGENT_RESULT_CUSTOM_TYPE,
 		content: message.content,
 		display: true,
 		details: message.details,

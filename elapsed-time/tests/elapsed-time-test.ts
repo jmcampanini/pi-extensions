@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { ELAPSED_TIME_STATUS_KEY } from "../../shared/status-keys.ts";
 import {
-	ELAPSED_TIME_STATUS_KEY,
 	formatElapsed,
 	registerElapsedTime,
 	type ElapsedTimeClock,

@@ -39,6 +39,7 @@ export interface MakeBlockOptions {
 	subtitle?: string;
 	toolName?: string;
 	toolCallId?: string;
+	toolArguments?: unknown;
 	fileReference?: FileReference;
 	truncation?: BlockTruncation;
 	isError?: boolean;
@@ -366,6 +367,7 @@ function createBlock(entry: SessionEntry, options: MakeBlockOptions): Block {
 		canonicalBodyOffset,
 		toolName: options.toolName,
 		toolCallId: options.toolCallId,
+		toolArguments: options.toolArguments,
 		fileReference: options.fileReference,
 		truncation: options.truncation,
 		isError: options.isError,
@@ -435,6 +437,7 @@ function extractAssistant(entry: SessionMessageEntry, context: ExtractionContext
 			fieldParts,
 			toolName: part.name,
 			toolCallId: part.id,
+			toolArguments: redactImageData(part.arguments),
 			fileReference: references[0],
 			truncation: result ? truncationFromDetails(result.message.details) : undefined,
 			isError: result?.message.isError,

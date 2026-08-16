@@ -50,7 +50,7 @@ import {
 	formatExpandedSubagentResumeCall,
 } from "./subagent-call.ts";
 import { renderSubagentLaunchResult } from "./subagent-result.ts";
-import { clampStyled, fitText } from "./text-fit.ts";
+import { clampStyled, fitText } from "../shared/text-fit.ts";
 import { updateRunningWidget } from "./running-widget.ts";
 import { closePane, createPane, isTmuxAvailable, shellQuote, stageLaunchScript } from "./tmux.ts";
 import { ledger, moduleGeneration, running } from "./state.ts";

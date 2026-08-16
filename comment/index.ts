@@ -6,8 +6,8 @@ import {
 	nodeEditorProcessRunner,
 	parseEditorCommand,
 	resolveExternalEditor,
-	type ActionTui,
-} from "../fuzzy-explorer/actions.ts";
+	type EditorTui,
+} from "../shared/external-editor.ts";
 import { formatQuotedEditorText, getLastAssistantText } from "./quote.ts";
 
 export interface EditOutcome {
@@ -19,7 +19,7 @@ export interface EditOutcome {
 // Same TUI handoff lifecycle as fuzzy-explorer's smartOpenBlock: nothing may
 // leave Pi's TUI stopped, so restart lives in the finally.
 export async function editTextExternally(
-	tui: ActionTui,
+	tui: EditorTui,
 	editorCommand: string,
 	initialText: string,
 ): Promise<EditOutcome> {

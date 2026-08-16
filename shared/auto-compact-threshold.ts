@@ -1,4 +1,4 @@
-import type { AutoCompactConfig } from "./config.ts";
+import type { AutoCompactConfig } from "./auto-compact-config.ts";
 
 export function resolveThresholdTokens(config: AutoCompactConfig, contextWindow: number): number {
 	const spec = config.classes.find((windowClass) => contextWindow <= windowClass.windowMax) ?? config.default;

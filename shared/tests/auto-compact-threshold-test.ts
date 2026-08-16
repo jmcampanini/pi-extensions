@@ -1,5 +1,5 @@
-import type { AutoCompactConfig } from "../config.ts";
-import { formatTokens, resolveThresholdTokens } from "../threshold.ts";
+import type { AutoCompactConfig } from "../auto-compact-config.ts";
+import { formatTokens, resolveThresholdTokens } from "../auto-compact-threshold.ts";
 
 let pass = 0;
 let fail = 0;

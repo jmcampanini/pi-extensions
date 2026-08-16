@@ -39,6 +39,7 @@ const spawnBlock = makeBlock({
 	body: spawnAck,
 	canonicalText: spawnCanonical,
 	canonicalBodyOffset: spawnCanonical.length - spawnAck.length,
+	toolArguments: spawnArguments,
 });
 const pendingSpawnBlock = makeBlock({
 	id: "spawn-2",
@@ -47,6 +48,7 @@ const pendingSpawnBlock = makeBlock({
 	title: "subagent_spawn",
 	body: "",
 	canonicalText: spawnInvocation,
+	toolArguments: spawnArguments,
 });
 const envelope = buildSubagentResultMessage({
 	status: "completed",
