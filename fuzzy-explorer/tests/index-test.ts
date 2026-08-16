@@ -1,3 +1,5 @@
+import { after, describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -8,44 +10,50 @@ const agentDir = mkdtempSync(join(sandbox, "fuzzy-explorer-index-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const { registerFuzzyExplorer } = await import("../index.ts");
 
-let pass = 0, fail = 0;
-function eq(label: string, got: unknown, want: unknown): void {
-	const g = JSON.stringify(got), w = JSON.stringify(want);
-	if (g === w) { pass++; console.log(`  ok  ${label}`); }
-	else { fail++; console.log(`  FAIL ${label}: got ${g}, want ${w}`); }
-}
+after(() => {
+	rmSync(agentDir, { recursive: true, force: true });
+});
 
 type OpenHandler = (ctx: ExtensionContext) => Promise<void>;
-let commandName = "";
-let commandDescription = "";
-let commandHandler: ((args: string, ctx: ExtensionContext) => Promise<void>) | undefined;
-let shortcutRegistrations = 0;
-const pi = {
-	registerCommand(name: string, options: { description: string; handler: typeof commandHandler }): void {
-		commandName = name;
-		commandDescription = options.description;
-		commandHandler = options.handler;
-	},
-	registerShortcut(_key: string, _options: { description: string; handler: OpenHandler }): void {
-		shortcutRegistrations++;
-	},
-} as unknown as ExtensionAPI;
-registerFuzzyExplorer(pi);
 
-eq("registers the documented slash command", commandName, "fuzzy-explorer");
-eq("does not register a shortcut by default", shortcutRegistrations, 0);
-eq("the command has a discoverable description", commandDescription.length > 0, true);
+describe("registerFuzzyExplorer", () => {
+	let commandName = "";
+	let commandDescription = "";
+	let commandHandler: ((args: string, ctx: ExtensionContext) => Promise<void>) | undefined;
+	let shortcutRegistrations = 0;
+	const pi = {
+		registerCommand(name: string, options: { description: string; handler: typeof commandHandler }): void {
+			commandName = name;
+			commandDescription = options.description;
+			commandHandler = options.handler;
+		},
+		registerShortcut(_key: string, _options: { description: string; handler: OpenHandler }): void {
+			shortcutRegistrations++;
+		},
+	} as unknown as ExtensionAPI;
+	registerFuzzyExplorer(pi);
 
-const notices: Array<[string, string]> = [];
-const nonTui = {
-	mode: "print",
-	ui: { notify: (message: string, level: string) => notices.push([message, level]) },
-} as unknown as ExtensionContext;
-await commandHandler?.("", nonTui);
-eq("the command fails clearly outside interactive TUI", notices, [
-	["fuzzy-explorer requires Pi's interactive TUI.", "warning"],
-]);
+	it("registers the documented slash command", () => {
+		assert.strictEqual(commandName, "fuzzy-explorer");
+	});
 
-rmSync(agentDir, { recursive: true, force: true });
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
+	it("does not register a shortcut by default", () => {
+		assert.strictEqual(shortcutRegistrations, 0);
+	});
+
+	it("the command has a discoverable description", () => {
+		assert.strictEqual(commandDescription.length > 0, true);
+	});
+
+	it("the command fails clearly outside interactive TUI", async () => {
+		const notices: Array<[string, string]> = [];
+		const nonTui = {
+			mode: "print",
+			ui: { notify: (message: string, level: string) => notices.push([message, level]) },
+		} as unknown as ExtensionContext;
+		await commandHandler?.("", nonTui);
+		assert.deepStrictEqual(notices, [
+			["fuzzy-explorer requires Pi's interactive TUI.", "warning"],
+		]);
+	});
+});

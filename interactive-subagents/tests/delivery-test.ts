@@ -6,18 +6,12 @@
 // strict, or a throw on a hostile shape, strands rows forever. delivery.ts
 // takes pi's ExtensionAPI as `import type` only, so a stub object with a
 // handler registry and a manual emit() drives it under plain node.
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { deliveredChildId, registerDeliveryListener } from "../delivery.ts";
 import { delivering, resetForShutdown } from "../state.ts";
 
-let pass = 0, fail = 0;
-function eq(label: string, got: unknown, want: unknown) {
-	const g = JSON.stringify(got), w = JSON.stringify(want);
-	if (g === w) { pass++; console.log(`  ok  ${label}`); }
-	else { fail++; console.log(`  FAIL ${label}: got ${g}, want ${w}`); }
-}
-
-// ── the fake pi emitter ──────────────────────────────────────────────────
 // registerDeliveryListener only ever calls pi.on(type, handler), so a
 // Map-backed registry with a manual emit is a faithful stand-in (same
 // pattern as recorder-test.ts).
@@ -38,8 +32,6 @@ function fakePi(): { on: (type: string, handler: Handler) => void; emit: (type: 
 	};
 }
 
-// ── helpers: a seeded delivering entry and a well-formed landed message ──
-
 function seed(id: string): void {
 	delivering.set(id, {
 		id,
@@ -57,68 +49,100 @@ function message(id: unknown, customType: string = "subagent_result"): unknown {
 	return { role: "custom", customType, content: "prose", display: true, details: { id }, timestamp: 1 };
 }
 
-// ── the matcher truth table (pure, no pi) ────────────────────────────────
+describe("deliveredChildId", () => {
+	it("matcher accepts subagent_result with a string id", () => {
+		assert.strictEqual(deliveredChildId(message("abc12345")), "abc12345");
+	});
 
-eq("matcher accepts subagent_result with a string id", deliveredChildId(message("abc12345")), "abc12345");
-eq("matcher accepts subagent_ping with a string id", deliveredChildId(message("abc12345", "subagent_ping")), "abc12345");
+	it("matcher accepts subagent_ping with a string id", () => {
+		assert.strictEqual(deliveredChildId(message("abc12345", "subagent_ping")), "abc12345");
+	});
 
-// The load-bearing rejections: stalled/recovered carry the same details.id
-// shape but are sent for STILL-RUNNING children - matching them would clear
-// a row whose real result is still queued.
-eq("matcher rejects subagent_stalled (load-bearing)", deliveredChildId(message("abc12345", "subagent_stalled")), undefined);
-eq("matcher rejects subagent_recovered (load-bearing)", deliveredChildId(message("abc12345", "subagent_recovered")), undefined);
+	// The load-bearing rejections: stalled/recovered carry the same details.id
+	// shape but are sent for STILL-RUNNING children - matching them would clear
+	// a row whose real result is still queued.
+	it("matcher rejects subagent_stalled (load-bearing)", () => {
+		assert.strictEqual(deliveredChildId(message("abc12345", "subagent_stalled")), undefined);
+	});
 
-// Hostile / mismatched shapes: every one returns undefined without throwing.
-eq("matcher rejects a non-custom role",
-	deliveredChildId({ role: "assistant", customType: "subagent_result", details: { id: "abc12345" } }), undefined);
-eq("matcher rejects a missing role",
-	deliveredChildId({ customType: "subagent_result", details: { id: "abc12345" } }), undefined);
-eq("matcher rejects missing details",
-	deliveredChildId({ role: "custom", customType: "subagent_result" }), undefined);
-eq("matcher rejects null details",
-	deliveredChildId({ role: "custom", customType: "subagent_result", details: null }), undefined);
-eq("matcher rejects a non-string id", deliveredChildId(message(42)), undefined);
-eq("matcher rejects empty details",
-	deliveredChildId({ role: "custom", customType: "subagent_result", details: {} }), undefined);
-eq("matcher rejects a null message", deliveredChildId(null), undefined);
-eq("matcher rejects a primitive message", deliveredChildId("subagent_result"), undefined);
-eq("matcher rejects an undefined message", deliveredChildId(undefined), undefined);
+	it("matcher rejects subagent_recovered (load-bearing)", () => {
+		assert.strictEqual(deliveredChildId(message("abc12345", "subagent_recovered")), undefined);
+	});
 
-// ── the listener round trip ──────────────────────────────────────────────
-// updateRunningWidget runs inside the handler and must no-op harmlessly:
-// getLatestCtx() is null under plain node - nothing may throw.
+	// Hostile / mismatched shapes: every one returns undefined without throwing.
+	it("matcher rejects a non-custom role", () => {
+		assert.strictEqual(deliveredChildId({ role: "assistant", customType: "subagent_result", details: { id: "abc12345" } }), undefined);
+	});
 
-const pi = fakePi();
-registerDeliveryListener(pi as unknown as ExtensionAPI);
+	it("matcher rejects a missing role", () => {
+		assert.strictEqual(deliveredChildId({ customType: "subagent_result", details: { id: "abc12345" } }), undefined);
+	});
 
-seed("aaaa1111");
-seed("bbbb2222");
-pi.emit("message_end", { type: "message_end", message: message("aaaa1111") }, undefined);
-eq("a landed result clears exactly its own row", [...delivering.keys()], ["bbbb2222"]);
-pi.emit("message_end", { type: "message_end", message: message("bbbb2222", "subagent_ping") }, undefined);
-eq("a landed ping clears its row too", delivering.size, 0);
+	it("matcher rejects missing details", () => {
+		assert.strictEqual(deliveredChildId({ role: "custom", customType: "subagent_result" }), undefined);
+	});
 
-seed("cccc3333");
-pi.emit("message_end", { type: "message_end", message: message("cccc3333", "subagent_stalled") }, undefined);
-eq("a stalled steer never clears a delivering row", delivering.has("cccc3333"), true);
-pi.emit("message_end", { type: "message_end", message: message("zzzz9999") }, undefined);
-eq("an unknown id is a no-op (pre-reload results are normal)", delivering.size, 1);
-pi.emit("message_end", { type: "message_end", message: null }, undefined);
-pi.emit("message_end", { type: "message_end" }, undefined);
-eq("hostile events neither throw nor clear anything", delivering.size, 1);
+	it("matcher rejects null details", () => {
+		assert.strictEqual(deliveredChildId({ role: "custom", customType: "subagent_result", details: null }), undefined);
+	});
 
-pi.emit("message_end", { type: "message_end", message: message("cccc3333") }, undefined);
-eq("the matching result clears the seeded row", delivering.has("cccc3333"), false);
-pi.emit("message_end", { type: "message_end", message: message("cccc3333") }, undefined);
-eq("redelivery is an idempotent no-op", delivering.size, 0);
+	it("matcher rejects a non-string id", () => {
+		assert.strictEqual(deliveredChildId(message(42)), undefined);
+	});
 
-// ── session teardown ─────────────────────────────────────────────────────
-// Stale rows must not leak into the next session; the fresh AbortController
-// resetForShutdown arms is harmless under node.
+	it("matcher rejects empty details", () => {
+		assert.strictEqual(deliveredChildId({ role: "custom", customType: "subagent_result", details: {} }), undefined);
+	});
 
-seed("dddd4444");
-resetForShutdown();
-eq("resetForShutdown clears the delivering map", delivering.size, 0);
+	it("matcher rejects a null message", () => {
+		assert.strictEqual(deliveredChildId(null), undefined);
+	});
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
+	it("matcher rejects a primitive message", () => {
+		assert.strictEqual(deliveredChildId("subagent_result"), undefined);
+	});
+
+	it("matcher rejects an undefined message", () => {
+		assert.strictEqual(deliveredChildId(undefined), undefined);
+	});
+});
+
+describe("registerDeliveryListener", () => {
+	// updateRunningWidget runs inside the handler and must no-op harmlessly:
+	// getLatestCtx() is null under plain node - nothing may throw.
+	it("clears delivering rows only when this extension's own message lands", () => {
+		const pi = fakePi();
+		registerDeliveryListener(pi as unknown as ExtensionAPI);
+
+		seed("aaaa1111");
+		seed("bbbb2222");
+		pi.emit("message_end", { type: "message_end", message: message("aaaa1111") }, undefined);
+		assert.deepStrictEqual([...delivering.keys()], ["bbbb2222"], "a landed result clears exactly its own row");
+		pi.emit("message_end", { type: "message_end", message: message("bbbb2222", "subagent_ping") }, undefined);
+		assert.strictEqual(delivering.size, 0, "a landed ping clears its row too");
+
+		seed("cccc3333");
+		pi.emit("message_end", { type: "message_end", message: message("cccc3333", "subagent_stalled") }, undefined);
+		assert.strictEqual(delivering.has("cccc3333"), true, "a stalled steer never clears a delivering row");
+		pi.emit("message_end", { type: "message_end", message: message("zzzz9999") }, undefined);
+		assert.strictEqual(delivering.size, 1, "an unknown id is a no-op (pre-reload results are normal)");
+		pi.emit("message_end", { type: "message_end", message: null }, undefined);
+		pi.emit("message_end", { type: "message_end" }, undefined);
+		assert.strictEqual(delivering.size, 1, "hostile events neither throw nor clear anything");
+
+		pi.emit("message_end", { type: "message_end", message: message("cccc3333") }, undefined);
+		assert.strictEqual(delivering.has("cccc3333"), false, "the matching result clears the seeded row");
+		pi.emit("message_end", { type: "message_end", message: message("cccc3333") }, undefined);
+		assert.strictEqual(delivering.size, 0, "redelivery is an idempotent no-op");
+	});
+});
+
+describe("resetForShutdown", () => {
+	// Stale rows must not leak into the next session; the fresh AbortController
+	// resetForShutdown arms is harmless under node.
+	it("resetForShutdown clears the delivering map", () => {
+		seed("dddd4444");
+		resetForShutdown();
+		assert.strictEqual(delivering.size, 0);
+	});
+});

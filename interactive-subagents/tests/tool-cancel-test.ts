@@ -1,3 +1,5 @@
+import { after, describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type {
@@ -16,26 +18,9 @@ const { registerSubagentCancelTool } = await import("../tool-cancel.ts");
 type RunningSubagent = import("../state.ts").RunningSubagent;
 type SpawnSpec = import("../capacity.ts").SpawnSpec;
 
-let pass = 0, fail = 0;
-function eq(label: string, got: unknown, want: unknown): void {
-	const g = JSON.stringify(got), w = JSON.stringify(want);
-	if (g === w) { pass++; console.log(`  ok  ${label}`); }
-	else { fail++; console.log(`  FAIL ${label}: got ${g}, want ${w}`); }
-}
-function ok(label: string, condition: boolean): void {
-	if (condition) { pass++; console.log(`  ok  ${label}`); }
-	else { fail++; console.log(`  FAIL ${label}`); }
-}
-async function rejection(label: string, id: string, contains: string): Promise<void> {
-	try {
-		await execute(id);
-		fail++;
-		console.log(`  FAIL ${label}: expected rejection`);
-	} catch (error) {
-		if (String(error).includes(contains)) { pass++; console.log(`  ok  ${label}`); }
-		else { fail++; console.log(`  FAIL ${label}: ${String(error)}`); }
-	}
-}
+after(() => {
+	reset();
+});
 
 function spawnSpec(id: string, name: string): SpawnSpec {
 	return {
@@ -108,7 +93,7 @@ const fakePi = {
 	sendMessage(): void {},
 } as unknown as ExtensionAPI;
 registerSubagentCancelTool(fakePi);
-if (!registered) throw new Error("subagent_cancel did not register");
+assert.ok(registered, "subagent_cancel did not register");
 const tool = registered;
 
 async function execute(id: string) {
@@ -121,208 +106,256 @@ async function execute(id: string) {
 	);
 }
 
-// Registration and schema are the model-facing control contract.
-eq("tool registers its canonical name and label", [tool.name, tool.label], ["subagent_cancel", "Cancel Subagent"]);
-const schema = tool.parameters as {
-	type?: string;
-	required?: string[];
-	properties?: { id?: { type?: string; description?: string } };
-};
-eq("tool schema requires one string id", {
-	type: schema.type,
-	required: schema.required,
-	idType: schema.properties?.id?.type,
-}, {
-	type: "object",
-	required: ["id"],
-	idType: "string",
+describe("subagent_cancel", () => {
+	// Registration and schema are the model-facing control contract.
+	it("tool registers its canonical name and label", () => {
+		assert.deepStrictEqual([tool.name, tool.label], ["subagent_cancel", "Cancel Subagent"]);
+	});
+
+	const schema = tool.parameters as {
+		type?: string;
+		required?: string[];
+		properties?: { id?: { type?: string; description?: string } };
+	};
+
+	it("tool schema requires one string id", () => {
+		assert.deepStrictEqual({
+			type: schema.type,
+			required: schema.required,
+			idType: schema.properties?.id?.type,
+		}, {
+			type: "object",
+			required: ["id"],
+			idType: "string",
+		});
+	});
+
+	it("id schema points callers at the stable id returned by launch and status tools", () => {
+		assert.ok(Boolean(schema.properties?.id?.description?.includes("stable short id") &&
+			schema.properties.id.description.includes("subagent_status") &&
+			schema.properties.id.description.includes("subagent_spawn/subagent_resume")));
+	});
+
+	const description = tool.description ?? "";
+
+	it("description says lifecycle state is resolved at execution time", () => {
+		assert.ok(description.includes("lifecycle state is resolved at execution time") &&
+			description.includes("do not choose a cancel/stop variant"));
+	});
+
+	it("description defines cancelled as no eventual result", () => {
+		assert.ok(description.includes("Result `cancelled`") && description.includes("no result will ever arrive"));
+	});
+
+	it("description defines stopping as asynchronous with self-arriving notice", () => {
+		assert.ok(description.includes("Result `stopping`") &&
+			description.includes("stopped notice arrives on its own like any result"));
+	});
+
+	it("description warns about partial work, kept worktrees, and interactive humans", () => {
+		assert.ok(description.includes("leave partial work") && description.includes("worktrees are kept") &&
+			description.includes("autoExit: false") && description.includes("human working in their pane"));
+	});
+
+	// Every success result carries a protocol word and enough standalone prose.
+	it("cancelling a queued launch reports count-aware cancelled prose", async () => {
+		reset();
+		state.running.set("blocker0", runningChild("blocker0", "Capacity blocker"));
+		capacity.admitLaunch(spawnSpec("queue001", "Queued task"));
+		const queuedResult = await execute("queue001");
+		assert.deepStrictEqual(queuedResult.details, {
+			id: "queue001",
+			status: "cancelled",
+			outcome: "cancelled-queued",
+		}, "queued tool result has cancelled details");
+		assert.deepStrictEqual(queuedResult.content, [{
+			type: "text",
+			text: "Sub-agent \"Queued task\" (id queue001, agent worker) was cancelled before it started. " +
+				"Result: cancelled. It never ran and no result will arrive for it. Currently 1 running, 0 queued.",
+		}], "queued result prose is complete and count-aware");
+	});
+
+	it("cancelling a starting launch unwinds it without a run or result", async () => {
+		reset();
+		capacity.admitLaunch(spawnSpec("start001", "Starting task"));
+		const startingResult = await execute("start001");
+		assert.deepStrictEqual(startingResult.details, {
+			id: "start001",
+			status: "cancelled",
+			outcome: "cancelled-starting",
+		}, "starting tool result has cancelled details");
+		assert.deepStrictEqual(startingResult.content, [{
+			type: "text",
+			text: "Sub-agent \"Starting task\" (id start001, agent worker) was cancelled while starting. " +
+				"Result: cancelled. Its launch is being unwound, it will not run, and no result will arrive for it. " +
+				"Currently 0 running, 0 queued.",
+		}], "starting result promises unwind, no run, and no result");
+	});
+
+	it("stopping a running child is immediate, attributed, and idempotent", async () => {
+		reset();
+		const running = runningChild("running1", "Running task");
+		state.running.set(running.id, running);
+		const stoppingResult = await execute(running.id);
+		assert.deepStrictEqual(stoppingResult.details, {
+			id: running.id,
+			status: "stopping",
+			outcome: "stopping",
+		}, "running tool result has stopping details");
+		assert.deepStrictEqual(stoppingResult.content, [{
+			type: "text",
+			text: "Sub-agent \"Running task\" (id running1, agent worker) was asked to stop. Result: stopping. " +
+				"Its stopped notice will arrive on its own. Partial work may remain.",
+		}], "running result explains asynchronous notice and retained partial work");
+		assert.deepStrictEqual(
+			[running.stopRequester, running.abort.signal.aborted],
+			["model", true],
+			"execute performs the immediate model-attributed stop");
+		const repeatResult = await execute(running.id);
+		assert.deepStrictEqual(repeatResult.details, {
+			id: running.id,
+			status: "stopping",
+			outcome: "already-stopping",
+		}, "idempotent repeat remains a stopping success");
+		assert.deepStrictEqual(repeatResult.content, [{
+			type: "text",
+			text: "Sub-agent \"Running task\" (id running1, agent worker) is already being stopped. Result: stopping. " +
+				"Its stopped notice will still arrive on its own. Partial work may remain.",
+		}], "repeat prose says the stopped notice still arrives on its own");
+	});
+
+	it("running worktree result says that its worktree is retained", async () => {
+		reset();
+		const worktreeRunning = runningChild("running2", "Worktree task");
+		worktreeRunning.worktree = {
+			dir: "/repo/worktree",
+			branch: "pi/worktree",
+			baseCommit: "base",
+			parentCwd: "/repo",
+		};
+		state.running.set(worktreeRunning.id, worktreeRunning);
+		const worktreeStopping = await execute(worktreeRunning.id);
+		assert.ok(worktreeStopping.content[0]?.type === "text" &&
+			worktreeStopping.content[0].text.includes("Its worktree is kept so it can be inspected or resumed."));
+	});
+
+	// Wrong lifecycle beliefs are errors with distinct corrective prose.
+	it("finished delivery cannot be revoked", async () => {
+		reset();
+		delivery("deliver1", "Finished task", false);
+		await assert.rejects(() => execute("deliver1"), (error) =>
+			String(error).includes("has already finished. Its result is on its way and cannot be revoked; wait for it."));
+	});
+
+	it("stopped delivery names the stopped notice", async () => {
+		reset();
+		delivery("deliver2", "Stopped task", true);
+		await assert.rejects(() => execute("deliver2"), (error) =>
+			String(error).includes("has already stopped. Its stopped notice is on its way and cannot be revoked; wait for it."));
+	});
+
+	it("tombstoned id says no result will arrive", async () => {
+		reset();
+		capacity.recordCancellation("cancel01", "user");
+		await assert.rejects(() => execute("cancel01"), (error) =>
+			String(error).includes("was already cancelled. No result will arrive for it."));
+	});
+
+	it("completed id says its result was delivered", async () => {
+		reset();
+		state.ledger.set("complete", { sessionFile: "/sessions/complete.jsonl", name: "Completed task" });
+		await assert.rejects(() => execute("complete"), (error) =>
+			String(error).includes("already finished and its result was delivered; there is nothing to cancel."));
+	});
+
+	it("unknown id points at subagent_status", async () => {
+		reset();
+		await assert.rejects(() => execute("missing1"), (error) =>
+			String(error).includes("No sub-agent with id missing1. Use subagent_status to list unresolved sub-agents."));
+	});
+
+	// Native tool rendering uses only the required semantic tokens.
+	const themeCalls: string[] = [];
+	const markedTheme = {
+		fg(token: string, text: string): string {
+			themeCalls.push(token);
+			return `<${token}>${text}</${token}>`;
+		},
+		bold(text: string): string {
+			return `<b>${text}</b>`;
+		},
+	} as unknown as Theme;
+	const renderContext = (isError: boolean) => ({
+		args: {},
+		toolCallId: "render-cancel",
+		invalidate(): void {},
+		lastComponent: undefined,
+		state: {},
+		cwd: process.cwd(),
+		executionStarted: true,
+		argsComplete: true,
+		isPartial: false,
+		expanded: false,
+		showImages: false,
+		isError,
+	}) as Parameters<NonNullable<ToolDefinition["renderResult"]>>[3];
+
+	it("call renderer follows the subagent tool family grammar with native tokens", () => {
+		themeCalls.length = 0;
+		const callOutput = tool.renderCall?.({ id: "abc12345" }, markedTheme, renderContext(false)).render(100).join("\n").trimEnd() ?? "";
+		assert.strictEqual(callOutput,
+			"<toolTitle><b>subagent cancel</b></toolTitle><muted> · </muted><accent>abc12345</accent>",
+			"call renderer matches the subagent tool family grammar");
+		assert.deepStrictEqual(themeCalls, ["toolTitle", "muted", "accent"],
+			"call renderer touches only native title, separator, and argument tokens");
+	});
+
+	it("call renderer strips terminal controls and flattens whitespace", () => {
+		const hostileCallOutput = tool.renderCall?.(
+			{ id: "abc\u001b]52;c;Y2xpcGJvYXJk\u000712345\n" },
+			markedTheme,
+			renderContext(false),
+		).render(100).join("\n") ?? "";
+		assert.ok(!hostileCallOutput.includes("\u001b]52") && hostileCallOutput.includes("abc12345"));
+	});
+
+	const renderResult = tool.renderResult;
+	assert.ok(renderResult, "subagent_cancel did not register a result renderer");
+
+	it("success renderer uses plain tool-output text", () => {
+		themeCalls.length = 0;
+		const successOutput = renderResult(
+			{ content: [{ type: "text", text: "Result: stopping." }], details: {} },
+			{ expanded: false, isPartial: false },
+			markedTheme,
+			renderContext(false),
+		).render(100).join("\n").trimEnd();
+		assert.deepStrictEqual([successOutput, themeCalls],
+			["<toolOutput>Result: stopping.</toolOutput>", ["toolOutput"]]);
+	});
+
+	it("error renderer strips terminal controls and uses the error token", () => {
+		themeCalls.length = 0;
+		const hostileErrorOutput = renderResult(
+			{ content: [{ type: "text", text: "Bad\u001b]52;c;Y2xpcGJvYXJk\u0007 id" }], details: {} },
+			{ expanded: false, isPartial: false },
+			markedTheme,
+			renderContext(true),
+		).render(100).join("\n").trimEnd();
+		assert.deepStrictEqual(
+			[stripVTControlCharacters(hostileErrorOutput), hostileErrorOutput.includes("\u001b]52"), themeCalls],
+			["<error>Bad id</error>", false, ["error"]]);
+	});
+
+	it("empty error rendering has a useful fallback", () => {
+		themeCalls.length = 0;
+		const fallbackErrorOutput = renderResult(
+			{ content: [], details: {} },
+			{ expanded: false, isPartial: false },
+			markedTheme,
+			renderContext(true),
+		).render(100).join("\n").trimEnd();
+		assert.deepStrictEqual([fallbackErrorOutput, themeCalls],
+			["<error>Unable to cancel sub-agent.</error>", ["error"]]);
+	});
 });
-ok("id schema points callers at the stable id returned by launch and status tools",
-	Boolean(schema.properties?.id?.description?.includes("stable short id") &&
-	schema.properties.id.description.includes("subagent_status") &&
-	schema.properties.id.description.includes("subagent_spawn/subagent_resume")));
-const description = tool.description ?? "";
-ok("description says lifecycle state is resolved at execution time",
-	description.includes("lifecycle state is resolved at execution time") &&
-	description.includes("do not choose a cancel/stop variant"));
-ok("description defines cancelled as no eventual result",
-	description.includes("Result `cancelled`") && description.includes("no result will ever arrive"));
-ok("description defines stopping as asynchronous with self-arriving notice",
-	description.includes("Result `stopping`") &&
-	description.includes("stopped notice arrives on its own like any result"));
-ok("description warns about partial work, kept worktrees, and interactive humans",
-	description.includes("leave partial work") && description.includes("worktrees are kept") &&
-	description.includes("autoExit: false") && description.includes("human working in their pane"));
-
-// Every success result carries a protocol word and enough standalone prose.
-reset();
-state.running.set("blocker0", runningChild("blocker0", "Capacity blocker"));
-capacity.admitLaunch(spawnSpec("queue001", "Queued task"));
-const queuedResult = await execute("queue001");
-eq("queued tool result has cancelled details", queuedResult.details, {
-	id: "queue001",
-	status: "cancelled",
-	outcome: "cancelled-queued",
-});
-eq("queued result prose is complete and count-aware",
-	queuedResult.content, [{
-		type: "text",
-		text: "Sub-agent \"Queued task\" (id queue001, agent worker) was cancelled before it started. " +
-			"Result: cancelled. It never ran and no result will arrive for it. Currently 1 running, 0 queued.",
-	}]);
-
-reset();
-capacity.admitLaunch(spawnSpec("start001", "Starting task"));
-const startingResult = await execute("start001");
-eq("starting tool result has cancelled details", startingResult.details, {
-	id: "start001",
-	status: "cancelled",
-	outcome: "cancelled-starting",
-});
-eq("starting result promises unwind, no run, and no result",
-	startingResult.content, [{
-		type: "text",
-		text: "Sub-agent \"Starting task\" (id start001, agent worker) was cancelled while starting. " +
-			"Result: cancelled. Its launch is being unwound, it will not run, and no result will arrive for it. " +
-			"Currently 0 running, 0 queued.",
-	}]);
-
-reset();
-const running = runningChild("running1", "Running task");
-state.running.set(running.id, running);
-const stoppingResult = await execute(running.id);
-eq("running tool result has stopping details", stoppingResult.details, {
-	id: running.id,
-	status: "stopping",
-	outcome: "stopping",
-});
-eq("running result explains asynchronous notice and retained partial work",
-	stoppingResult.content, [{
-		type: "text",
-		text: "Sub-agent \"Running task\" (id running1, agent worker) was asked to stop. Result: stopping. " +
-			"Its stopped notice will arrive on its own. Partial work may remain.",
-	}]);
-eq("execute performs the immediate model-attributed stop",
-	[running.stopRequester, running.abort.signal.aborted], ["model", true]);
-const repeatResult = await execute(running.id);
-eq("idempotent repeat remains a stopping success", repeatResult.details, {
-	id: running.id,
-	status: "stopping",
-	outcome: "already-stopping",
-});
-eq("repeat prose says the stopped notice still arrives on its own",
-	repeatResult.content, [{
-		type: "text",
-		text: "Sub-agent \"Running task\" (id running1, agent worker) is already being stopped. Result: stopping. " +
-			"Its stopped notice will still arrive on its own. Partial work may remain.",
-	}]);
-
-reset();
-const worktreeRunning = runningChild("running2", "Worktree task");
-worktreeRunning.worktree = {
-	dir: "/repo/worktree",
-	branch: "pi/worktree",
-	baseCommit: "base",
-	parentCwd: "/repo",
-};
-state.running.set(worktreeRunning.id, worktreeRunning);
-const worktreeStopping = await execute(worktreeRunning.id);
-ok("running worktree result says that its worktree is retained",
-	worktreeStopping.content[0]?.type === "text" &&
-	worktreeStopping.content[0].text.includes("Its worktree is kept so it can be inspected or resumed."));
-
-// Wrong lifecycle beliefs are errors with distinct corrective prose.
-reset();
-delivery("deliver1", "Finished task", false);
-await rejection("finished delivery cannot be revoked", "deliver1",
-	"has already finished. Its result is on its way and cannot be revoked; wait for it.");
-reset();
-delivery("deliver2", "Stopped task", true);
-await rejection("stopped delivery names the stopped notice", "deliver2",
-	"has already stopped. Its stopped notice is on its way and cannot be revoked; wait for it.");
-reset();
-capacity.recordCancellation("cancel01", "user");
-await rejection("tombstoned id says no result will arrive", "cancel01",
-	"was already cancelled. No result will arrive for it.");
-reset();
-state.ledger.set("complete", { sessionFile: "/sessions/complete.jsonl", name: "Completed task" });
-await rejection("completed id says its result was delivered", "complete",
-	"already finished and its result was delivered; there is nothing to cancel.");
-reset();
-await rejection("unknown id points at subagent_status", "missing1",
-	"No sub-agent with id missing1. Use subagent_status to list unresolved sub-agents.");
-
-// Native tool rendering uses only the required semantic tokens.
-const themeCalls: string[] = [];
-const markedTheme = {
-	fg(token: string, text: string): string {
-		themeCalls.push(token);
-		return `<${token}>${text}</${token}>`;
-	},
-	bold(text: string): string {
-		return `<b>${text}</b>`;
-	},
-} as unknown as Theme;
-const renderContext = (isError: boolean) => ({
-	args: {},
-	toolCallId: "render-cancel",
-	invalidate(): void {},
-	lastComponent: undefined,
-	state: {},
-	cwd: process.cwd(),
-	executionStarted: true,
-	argsComplete: true,
-	isPartial: false,
-	expanded: false,
-	showImages: false,
-	isError,
-}) as Parameters<NonNullable<ToolDefinition["renderResult"]>>[3];
-
-const callOutput = tool.renderCall?.({ id: "abc12345" }, markedTheme, renderContext(false)).render(100).join("\n").trimEnd() ?? "";
-eq("call renderer matches the subagent tool family grammar",
-	callOutput, "<toolTitle><b>subagent cancel</b></toolTitle><muted> · </muted><accent>abc12345</accent>");
-eq("call renderer touches only native title, separator, and argument tokens", themeCalls, ["toolTitle", "muted", "accent"]);
-const hostileCallOutput = tool.renderCall?.(
-	{ id: "abc\u001b]52;c;Y2xpcGJvYXJk\u000712345\n" },
-	markedTheme,
-	renderContext(false),
-).render(100).join("\n") ?? "";
-ok("call renderer strips terminal controls and flattens whitespace",
-	!hostileCallOutput.includes("\u001b]52") && hostileCallOutput.includes("abc12345"));
-
-const renderResult = tool.renderResult;
-if (!renderResult) throw new Error("subagent_cancel did not register a result renderer");
-themeCalls.length = 0;
-const successOutput = renderResult(
-	{ content: [{ type: "text", text: "Result: stopping." }], details: {} },
-	{ expanded: false, isPartial: false },
-	markedTheme,
-	renderContext(false),
-).render(100).join("\n").trimEnd();
-eq("success renderer uses plain tool-output text",
-	[successOutput, themeCalls], ["<toolOutput>Result: stopping.</toolOutput>", ["toolOutput"]]);
-
-themeCalls.length = 0;
-const hostileErrorOutput = renderResult(
-	{ content: [{ type: "text", text: "Bad\u001b]52;c;Y2xpcGJvYXJk\u0007 id" }], details: {} },
-	{ expanded: false, isPartial: false },
-	markedTheme,
-	renderContext(true),
-).render(100).join("\n").trimEnd();
-eq("error renderer strips terminal controls and uses the error token",
-	[stripVTControlCharacters(hostileErrorOutput), hostileErrorOutput.includes("\u001b]52"), themeCalls],
-	["<error>Bad id</error>", false, ["error"]]);
-
-themeCalls.length = 0;
-const fallbackErrorOutput = renderResult(
-	{ content: [], details: {} },
-	{ expanded: false, isPartial: false },
-	markedTheme,
-	renderContext(true),
-).render(100).join("\n").trimEnd();
-eq("empty error rendering has a useful fallback",
-	[fallbackErrorOutput, themeCalls], ["<error>Unable to cancel sub-agent.</error>", ["error"]]);
-
-reset();
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);

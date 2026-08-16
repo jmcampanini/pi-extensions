@@ -1,21 +1,10 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { DEFAULT_WORKTREE_CLEANUP_COMMAND, DEFAULT_WORKTREE_CREATE_COMMAND, loadConfig } from "../config.ts";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-let pass = 0, fail = 0;
-function eq(label: string, got: unknown, want: unknown) {
-	const g = JSON.stringify(got), w = JSON.stringify(want);
-	if (g === w) { pass++; console.log(`  ok  ${label}`); }
-	else { fail++; console.log(`  FAIL ${label}: got ${g}, want ${w}`); }
-}
-function throws(label: string, fn: () => void, contains: string) {
-	try { fn(); fail++; console.log(`  FAIL ${label}: expected throw`); }
-	catch (e) {
-		if (String(e).includes(contains)) { pass++; console.log(`  ok  ${label}`); }
-		else { fail++; console.log(`  FAIL ${label}: message missing "${contains}": ${e}`); }
-	}
-}
 function dirWith(content: string | null): string {
 	const dir = mkdtempSync(join(tmpdir(), "subagents-config-"));
 	if (content !== null) writeFileSync(join(dir, "subagents.json"), content);
@@ -35,156 +24,299 @@ const worktreeDefaults = {
 	worktreeCleanupMode: "auto",
 };
 
-// defaults when no file and no env
-eq("defaults", loadConfig({ PI_CODING_AGENT_DIR: dirWith(null) }),
-	{ layout: "window", mainWidth: "60%", ...previewDefaults, ...worktreeDefaults });
+describe("loadConfig", () => {
+	it("defaults", () => {
+		assert.deepStrictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith(null) }),
+			{ layout: "window", mainWidth: "60%", ...previewDefaults, ...worktreeDefaults });
+	});
 
-// full file applies
-eq("file applies", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window","mainWidth":"120","maxConcurrentSubagents":4,"callPreviewLines":4,"resultPreviewLines":8,"widgetMaxRows":7}') }),
-	{ layout: "window", mainWidth: "120", maxConcurrentSubagents: 4, callPreviewLines: 4, resultPreviewLines: 8, widgetMaxRows: 7, ...worktreeDefaults });
+	it("file applies", () => {
+		assert.deepStrictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window","mainWidth":"120","maxConcurrentSubagents":4,"callPreviewLines":4,"resultPreviewLines":8,"widgetMaxRows":7}') }),
+			{ layout: "window", mainWidth: "120", maxConcurrentSubagents: 4, callPreviewLines: 4, resultPreviewLines: 8, widgetMaxRows: 7, ...worktreeDefaults });
+	});
 
-// partial file merges with defaults
-eq("partial file", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"off"}') }),
-	{ layout: "off", mainWidth: "60%", ...previewDefaults, ...worktreeDefaults });
+	it("partial file merges with defaults", () => {
+		assert.deepStrictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"off"}') }),
+			{ layout: "off", mainWidth: "60%", ...previewDefaults, ...worktreeDefaults });
+	});
 
-// env beats file
-eq("env beats file", loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window"}'), PI_SUBAGENT_LAYOUT: "main" }).layout, "main");
-eq("file accepts header-only call previews",
-	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":0}') }).callPreviewLines, 0);
-eq("file accepts footer-only result cards",
-	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":0}') }).resultPreviewLines, 0);
-eq("file accepts the maximum result preview",
-	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":20}') }).resultPreviewLines, 20);
-eq("call preview env beats file",
-	loadConfig({
-		PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":2}'),
-		PI_SUBAGENT_CALL_PREVIEW_LINES: "7",
-	}).callPreviewLines, 7);
-eq("result preview env beats file",
-	loadConfig({
-		PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":2}'),
-		PI_SUBAGENT_RESULT_PREVIEW_LINES: "9",
-	}).resultPreviewLines, 9);
-eq("widget rows env beats file",
-	loadConfig({
-		PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":3}'),
-		PI_SUBAGENT_WIDGET_MAX_ROWS: "8",
-	}).widgetMaxRows, 8);
-eq("widget rows accept one",
-	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":1}') }).widgetMaxRows, 1);
-throws("negative widget rows are rejected",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":-1}') }),
-	"positive integer");
-throws("fractional widget rows are rejected",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":2.5}') }),
-	"positive integer");
-throws("invalid widget rows env names the variable",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_WIDGET_MAX_ROWS: "0" }),
-	"PI_SUBAGENT_WIDGET_MAX_ROWS");
+	it("env beats file", () => {
+		assert.strictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window"}'), PI_SUBAGENT_LAYOUT: "main" }).layout, "main");
+	});
 
-// ── maxConcurrentSubagents ────────────────────────────────────────────────
+	it("file accepts header-only call previews", () => {
+		assert.strictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":0}') }).callPreviewLines, 0);
+	});
 
-eq("max concurrent accepts the minimum",
-	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":1}') }).maxConcurrentSubagents, 1);
-eq("max concurrent env beats file",
-	loadConfig({
-		PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":3}'),
-		PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS: "5",
-	}).maxConcurrentSubagents, 5);
-throws("zero max concurrent is rejected",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":0}') }),
-	"integer from 1 through 9");
-throws("max concurrent above 9 is rejected",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":10}') }),
-	"integer from 1 through 9");
-throws("fractional max concurrent is rejected",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":2.5}') }),
-	"integer from 1 through 9");
-throws("string max concurrent in file is rejected",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":"9"}') }),
-	'"9"');
-throws("invalid max concurrent env names the variable",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS: "lots" }),
-	"PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS");
+	it("file accepts footer-only result cards", () => {
+		assert.strictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":0}') }).resultPreviewLines, 0);
+	});
 
-// failures — each names the offender
-throws("unknown key", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layot":"main"}') }), "unknown key(s) layot");
-throws("bad json", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{nope") }), "not valid JSON");
-throws("array root", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith("[1]") }), "must be a JSON object");
-throws("bad layout in file", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"grid"}') }), "valid values: main, window, off");
-throws("bad layout in env", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_LAYOUT: "windw" }), "PI_SUBAGENT_LAYOUT");
-throws("bad width", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"mainWidth":"12px"}') }), "mainWidth");
-throws("uppercase layout in env is rejected", () => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_LAYOUT: "MAIN" }), "PI_SUBAGENT_LAYOUT");
-throws("negative call preview lines are rejected",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":-1}') }),
-	"integer from 0 through 20");
-throws("result preview lines above the maximum are rejected",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":21}') }),
-	"integer from 0 through 20");
-throws("fractional preview lines are rejected",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":1.5}') }),
-	"integer from 0 through 20");
-throws("string preview lines in file are rejected",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":"5"}') }),
-	'"5"');
-throws("invalid call preview env names the variable",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_CALL_PREVIEW_LINES: "many" }),
-	"PI_SUBAGENT_CALL_PREVIEW_LINES");
-throws("invalid result preview env names the variable",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_RESULT_PREVIEW_LINES: "21" }),
-	"PI_SUBAGENT_RESULT_PREVIEW_LINES");
+	it("file accepts the maximum result preview", () => {
+		assert.strictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":20}') }).resultPreviewLines, 20);
+	});
 
-// ── worktree keys ──────────────────────────────────────────────────────────
+	it("call preview env beats file", () => {
+		assert.strictEqual(loadConfig({
+			PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":2}'),
+			PI_SUBAGENT_CALL_PREVIEW_LINES: "7",
+		}).callPreviewLines, 7);
+	});
 
-// file overrides work for each key
-eq("worktree create command from file",
-	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":"grove create \\"$PI_SUBAGENT_WORKTREE_NAME\\""}') }).worktreeCreateCommand,
-	'grove create "$PI_SUBAGENT_WORKTREE_NAME"');
-eq("worktree cleanup command from file",
-	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupCommand":"grove remove \\"$PI_SUBAGENT_WORKTREE_DIR\\""}') }).worktreeCleanupCommand,
-	'grove remove "$PI_SUBAGENT_WORKTREE_DIR"');
-eq("worktree cleanup mode from file",
-	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupMode":"never"}') }).worktreeCleanupMode,
-	"never");
+	it("result preview env beats file", () => {
+		assert.strictEqual(loadConfig({
+			PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":2}'),
+			PI_SUBAGENT_RESULT_PREVIEW_LINES: "9",
+		}).resultPreviewLines, 9);
+	});
 
-// env overrides beat the file, per key
-eq("worktree create env beats file",
-	loadConfig({
-		PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":"from-file"}'),
-		PI_SUBAGENT_WORKTREE_CREATE_COMMAND: "from-env",
-	}).worktreeCreateCommand, "from-env");
-eq("worktree cleanup env beats file",
-	loadConfig({
-		PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupCommand":"from-file"}'),
-		PI_SUBAGENT_WORKTREE_CLEANUP_COMMAND: "from-env",
-	}).worktreeCleanupCommand, "from-env");
-eq("worktree mode env beats file",
-	loadConfig({
-		PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupMode":"never"}'),
-		PI_SUBAGENT_WORKTREE_CLEANUP_MODE: "auto",
-	}).worktreeCleanupMode, "auto");
+	it("widget rows env beats file", () => {
+		assert.strictEqual(loadConfig({
+			PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":3}'),
+			PI_SUBAGENT_WIDGET_MAX_ROWS: "8",
+		}).widgetMaxRows, 8);
+	});
 
-// invalid mode value is rejected from BOTH layers, naming the offender
-throws("bad worktree mode in file",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupMode":"always"}') }),
-	"valid values: auto, never");
-throws("bad worktree mode in env",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_WORKTREE_CLEANUP_MODE: "always" }),
-	"PI_SUBAGENT_WORKTREE_CLEANUP_MODE");
+	it("widget rows accept one", () => {
+		assert.strictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":1}') }).widgetMaxRows, 1);
+	});
 
-// commands must be non-empty strings (blank would silently do nothing)
-throws("empty create command in file",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":""}') }),
-	"worktreeCreateCommand");
-throws("blank cleanup command in file",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupCommand":"   "}') }),
-	"worktreeCleanupCommand");
-throws("non-string create command in file",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":42}') }),
-	"non-empty shell command");
-throws("blank create command in env",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_WORKTREE_CREATE_COMMAND: "   " }),
-	"PI_SUBAGENT_WORKTREE_CREATE_COMMAND");
+	it("negative widget rows are rejected", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":-1}') }),
+			(error) => String(error).includes("positive integer"),
+		);
+	});
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
+	it("fractional widget rows are rejected", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":2.5}') }),
+			(error) => String(error).includes("positive integer"),
+		);
+	});
+
+	it("invalid widget rows env names the variable", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_WIDGET_MAX_ROWS: "0" }),
+			(error) => String(error).includes("PI_SUBAGENT_WIDGET_MAX_ROWS"),
+		);
+	});
+
+	it("max concurrent accepts the minimum", () => {
+		assert.strictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":1}') }).maxConcurrentSubagents, 1);
+	});
+
+	it("max concurrent env beats file", () => {
+		assert.strictEqual(loadConfig({
+			PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":3}'),
+			PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS: "5",
+		}).maxConcurrentSubagents, 5);
+	});
+
+	it("zero max concurrent is rejected", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":0}') }),
+			(error) => String(error).includes("integer from 1 through 9"),
+		);
+	});
+
+	it("max concurrent above 9 is rejected", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":10}') }),
+			(error) => String(error).includes("integer from 1 through 9"),
+		);
+	});
+
+	it("fractional max concurrent is rejected", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":2.5}') }),
+			(error) => String(error).includes("integer from 1 through 9"),
+		);
+	});
+
+	it("string max concurrent in file is rejected", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":"9"}') }),
+			(error) => String(error).includes('"9"'),
+		);
+	});
+
+	it("invalid max concurrent env names the variable", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS: "lots" }),
+			(error) => String(error).includes("PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS"),
+		);
+	});
+
+	it("unknown key", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layot":"main"}') }),
+			(error) => String(error).includes("unknown key(s) layot"),
+		);
+	});
+
+	it("bad json", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{nope") }),
+			(error) => String(error).includes("not valid JSON"),
+		);
+	});
+
+	it("array root", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("[1]") }),
+			(error) => String(error).includes("must be a JSON object"),
+		);
+	});
+
+	it("bad layout in file", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"grid"}') }),
+			(error) => String(error).includes("valid values: main, window, off"),
+		);
+	});
+
+	it("bad layout in env", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_LAYOUT: "windw" }),
+			(error) => String(error).includes("PI_SUBAGENT_LAYOUT"),
+		);
+	});
+
+	it("bad width", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"mainWidth":"12px"}') }),
+			(error) => String(error).includes("mainWidth"),
+		);
+	});
+
+	it("uppercase layout in env is rejected", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_LAYOUT: "MAIN" }),
+			(error) => String(error).includes("PI_SUBAGENT_LAYOUT"),
+		);
+	});
+
+	it("negative call preview lines are rejected", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":-1}') }),
+			(error) => String(error).includes("integer from 0 through 20"),
+		);
+	});
+
+	it("result preview lines above the maximum are rejected", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":21}') }),
+			(error) => String(error).includes("integer from 0 through 20"),
+		);
+	});
+
+	it("fractional preview lines are rejected", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":1.5}') }),
+			(error) => String(error).includes("integer from 0 through 20"),
+		);
+	});
+
+	it("string preview lines in file are rejected", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":"5"}') }),
+			(error) => String(error).includes('"5"'),
+		);
+	});
+
+	it("invalid call preview env names the variable", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_CALL_PREVIEW_LINES: "many" }),
+			(error) => String(error).includes("PI_SUBAGENT_CALL_PREVIEW_LINES"),
+		);
+	});
+
+	it("invalid result preview env names the variable", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_RESULT_PREVIEW_LINES: "21" }),
+			(error) => String(error).includes("PI_SUBAGENT_RESULT_PREVIEW_LINES"),
+		);
+	});
+
+	it("worktree create command from file", () => {
+		assert.strictEqual(
+			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":"grove create \\"$PI_SUBAGENT_WORKTREE_NAME\\""}') }).worktreeCreateCommand,
+			'grove create "$PI_SUBAGENT_WORKTREE_NAME"');
+	});
+
+	it("worktree cleanup command from file", () => {
+		assert.strictEqual(
+			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupCommand":"grove remove \\"$PI_SUBAGENT_WORKTREE_DIR\\""}') }).worktreeCleanupCommand,
+			'grove remove "$PI_SUBAGENT_WORKTREE_DIR"');
+	});
+
+	it("worktree cleanup mode from file", () => {
+		assert.strictEqual(
+			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupMode":"never"}') }).worktreeCleanupMode,
+			"never");
+	});
+
+	it("worktree create env beats file", () => {
+		assert.strictEqual(loadConfig({
+			PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":"from-file"}'),
+			PI_SUBAGENT_WORKTREE_CREATE_COMMAND: "from-env",
+		}).worktreeCreateCommand, "from-env");
+	});
+
+	it("worktree cleanup env beats file", () => {
+		assert.strictEqual(loadConfig({
+			PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupCommand":"from-file"}'),
+			PI_SUBAGENT_WORKTREE_CLEANUP_COMMAND: "from-env",
+		}).worktreeCleanupCommand, "from-env");
+	});
+
+	it("worktree mode env beats file", () => {
+		assert.strictEqual(loadConfig({
+			PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupMode":"never"}'),
+			PI_SUBAGENT_WORKTREE_CLEANUP_MODE: "auto",
+		}).worktreeCleanupMode, "auto");
+	});
+
+	it("bad worktree mode in file", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupMode":"always"}') }),
+			(error) => String(error).includes("valid values: auto, never"),
+		);
+	});
+
+	it("bad worktree mode in env", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_WORKTREE_CLEANUP_MODE: "always" }),
+			(error) => String(error).includes("PI_SUBAGENT_WORKTREE_CLEANUP_MODE"),
+		);
+	});
+
+	it("empty create command in file", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":""}') }),
+			(error) => String(error).includes("worktreeCreateCommand"),
+		);
+	});
+
+	it("blank cleanup command in file", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupCommand":"   "}') }),
+			(error) => String(error).includes("worktreeCleanupCommand"),
+		);
+	});
+
+	it("non-string create command in file", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":42}') }),
+			(error) => String(error).includes("non-empty shell command"),
+		);
+	});
+
+	it("blank create command in env", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_SUBAGENT_WORKTREE_CREATE_COMMAND: "   " }),
+			(error) => String(error).includes("PI_SUBAGENT_WORKTREE_CREATE_COMMAND"),
+		);
+	});
+});

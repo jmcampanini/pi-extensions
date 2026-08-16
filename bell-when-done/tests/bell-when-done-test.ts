@@ -1,20 +1,7 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerBellWhenDone, type BellIO } from "../index.ts";
-
-let pass = 0;
-let fail = 0;
-
-function eq(label: string, got: unknown, want: unknown): void {
-	const actual = JSON.stringify(got);
-	const expected = JSON.stringify(want);
-	if (actual === expected) {
-		pass++;
-		console.log(`  ok  ${label}`);
-	} else {
-		fail++;
-		console.log(`  FAIL ${label}: got ${actual}, want ${expected}`);
-	}
-}
 
 type Handler = (event: any, ctx: any) => void;
 
@@ -51,25 +38,28 @@ function harness(env: BellIO["env"]): { pi: ReturnType<typeof fakePi>; writes: s
 
 const settled = { type: "agent_settled" };
 
-const tui = harness({});
-tui.pi.emit("agent_settled", settled, { mode: "tui" });
-eq("settling in tui rings the bell once", tui.writes, ["\x07"]);
+describe("registerBellWhenDone", () => {
+	it("settling in tui rings the bell once per settled run", () => {
+		const tui = harness({});
+		tui.pi.emit("agent_settled", settled, { mode: "tui" });
+		assert.deepStrictEqual(tui.writes, ["\x07"], "settling in tui rings the bell once");
+		tui.pi.emit("agent_settled", settled, { mode: "tui" });
+		assert.deepStrictEqual(tui.writes, ["\x07", "\x07"], "each settled run rings its own bell");
+		tui.pi.emit("agent_end", { type: "agent_end", messages: [] }, { mode: "tui" });
+		assert.strictEqual(tui.writes.length, 2, "loop ends within a run do not ring");
+	});
 
-tui.pi.emit("agent_settled", settled, { mode: "tui" });
-eq("each settled run rings its own bell", tui.writes, ["\x07", "\x07"]);
+	it("non-tui modes stay silent", () => {
+		for (const mode of ["rpc", "json", "print"]) {
+			const run = harness({});
+			run.pi.emit("agent_settled", settled, { mode });
+			assert.deepStrictEqual(run.writes, [], `${mode} mode stays silent`);
+		}
+	});
 
-tui.pi.emit("agent_end", { type: "agent_end", messages: [] }, { mode: "tui" });
-eq("loop ends within a run do not ring", tui.writes.length, 2);
-
-for (const mode of ["rpc", "json", "print"]) {
-	const run = harness({});
-	run.pi.emit("agent_settled", settled, { mode });
-	eq(`${mode} mode stays silent`, run.writes, []);
-}
-
-const subagent = harness({ PI_SUBAGENT_SESSION: "/tmp/subagent/session.jsonl" });
-subagent.pi.emit("agent_settled", settled, { mode: "tui" });
-eq("subagent children never ring", subagent.writes, []);
-
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
+	it("subagent children never ring", () => {
+		const subagent = harness({ PI_SUBAGENT_SESSION: "/tmp/subagent/session.jsonl" });
+		subagent.pi.emit("agent_settled", settled, { mode: "tui" });
+		assert.deepStrictEqual(subagent.writes, []);
+	});
+});

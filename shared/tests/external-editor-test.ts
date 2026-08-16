@@ -1,3 +1,5 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import {
 	editorNeedsOptionsTerminator,
 	editorSupportsPlusLine,
@@ -5,48 +7,66 @@ import {
 	resolveExternalEditor,
 } from "../external-editor.ts";
 
-let pass = 0, fail = 0;
-function eq(label: string, got: unknown, want: unknown): void {
-	const g = JSON.stringify(got), w = JSON.stringify(want);
-	if (g === w) { pass++; console.log(`  ok  ${label}`); }
-	else { fail++; console.log(`  FAIL ${label}: got ${g}, want ${w}`); }
-}
+describe("parseEditorCommand", () => {
+	it("quoted editor commands are parsed without a shell", () => {
+		assert.deepStrictEqual(
+			parseEditorCommand("'/Applications/Visual Studio Code/bin/code' --wait --reuse-window"),
+			["/Applications/Visual Studio Code/bin/code", "--wait", "--reuse-window"],
+		);
+	});
 
-// Editor parsing keeps quoted commands and arguments as individual argv entries.
+	it("quoted editor arguments are parsed", () => {
+		assert.deepStrictEqual(parseEditorCommand(`vim -c "set number"`), ["vim", "-c", "set number"]);
+	});
 
-eq("quoted editor commands are parsed without a shell",
-	parseEditorCommand("'/Applications/Visual Studio Code/bin/code' --wait --reuse-window"),
-	["/Applications/Visual Studio Code/bin/code", "--wait", "--reuse-window"]);
-eq("quoted editor arguments are parsed", parseEditorCommand(`vim -c "set number"`),
-	["vim", "-c", "set number"]);
-let unmatchedQuote = "";
-try {
-	parseEditorCommand("vim 'unfinished");
-} catch (error) {
-	unmatchedQuote = error instanceof Error ? error.message : String(error);
-}
-eq("unmatched editor quote fails clearly", unmatchedQuote, "External editor command has an unmatched quote");
+	it("unmatched editor quote fails clearly", () => {
+		assert.throws(
+			() => parseEditorCommand("vim 'unfinished"),
+			(error) => error instanceof Error && error.message === "External editor command has an unmatched quote",
+		);
+	});
+});
 
-// Resolution order: configured setting, VISUAL, EDITOR, platform default.
+describe("resolveExternalEditor", () => {
+	it("configured editor wins resolution", () => {
+		assert.strictEqual(
+			resolveExternalEditor({ externalEditor: "code --wait" }, { VISUAL: "nvim", EDITOR: "vim" }, "linux"),
+			"code --wait",
+		);
+	});
 
-eq("configured editor wins resolution", resolveExternalEditor({ externalEditor: "code --wait" }, { VISUAL: "nvim", EDITOR: "vim" }, "linux"),
-	"code --wait");
-eq("blank setting falls through to VISUAL", resolveExternalEditor({ externalEditor: "  " }, { VISUAL: "nvim", EDITOR: "vim" }, "linux"),
-	"nvim");
-eq("EDITOR follows VISUAL", resolveExternalEditor({}, { EDITOR: "vim" }, "linux"), "vim");
-eq("Pi's Unix editor default is retained", resolveExternalEditor({}, {}, "linux"), "nano");
-eq("Pi's Windows editor default is retained", resolveExternalEditor({}, {}, "win32"), "notepad");
+	it("blank setting falls through to VISUAL", () => {
+		assert.strictEqual(
+			resolveExternalEditor({ externalEditor: "  " }, { VISUAL: "nvim", EDITOR: "vim" }, "linux"),
+			"nvim",
+		);
+	});
 
-// Capability tables match editors by executable basename.
+	it("EDITOR follows VISUAL", () => {
+		assert.strictEqual(resolveExternalEditor({}, { EDITOR: "vim" }, "linux"), "vim");
+	});
 
-eq("+line support is recognized by basename", [
-	editorSupportsPlusLine("/usr/local/bin/vim"),
-	editorSupportsPlusLine("code"),
-], [true, false]);
-eq("vi-family editors require an options terminator", [
-	editorNeedsOptionsTerminator("nvim"),
-	editorNeedsOptionsTerminator("nano"),
-], [true, false]);
+	it("Pi's Unix editor default is retained", () => {
+		assert.strictEqual(resolveExternalEditor({}, {}, "linux"), "nano");
+	});
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
+	it("Pi's Windows editor default is retained", () => {
+		assert.strictEqual(resolveExternalEditor({}, {}, "win32"), "notepad");
+	});
+});
+
+describe("editor capability tables", () => {
+	it("+line support is recognized by basename", () => {
+		assert.deepStrictEqual(
+			[editorSupportsPlusLine("/usr/local/bin/vim"), editorSupportsPlusLine("code")],
+			[true, false],
+		);
+	});
+
+	it("vi-family editors require an options terminator", () => {
+		assert.deepStrictEqual(
+			[editorNeedsOptionsTerminator("nvim"), editorNeedsOptionsTerminator("nano")],
+			[true, false],
+		);
+	});
+});

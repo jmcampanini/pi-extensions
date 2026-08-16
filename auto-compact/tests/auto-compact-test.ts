@@ -1,22 +1,9 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import type { CompactOptions, ContextUsage, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AutoCompactConfig } from "../../shared/auto-compact-config.ts";
 import { AUTO_COMPACT_STATUS_KEY } from "../../shared/status-keys.ts";
 import { registerAutoCompact } from "../index.ts";
-
-let pass = 0;
-let fail = 0;
-
-function eq(label: string, got: unknown, want: unknown): void {
-	const actual = JSON.stringify(got);
-	const expected = JSON.stringify(want);
-	if (actual === expected) {
-		pass++;
-		console.log(`  ok  ${label}`);
-	} else {
-		fail++;
-		console.log(`  FAIL ${label}: got ${actual}, want ${expected}`);
-	}
-}
 
 type Handler = (event: any, ctx: any) => void | Promise<void>;
 
@@ -123,218 +110,295 @@ function harness(options: {
 	};
 }
 
-for (const tokens of [179_999, 180_000]) {
-	const boundary = harness({
-		usage: { tokens, contextWindow: 200_000, percent: (tokens / 200_000) * 100 },
-	});
-	boundary.settle();
-	eq(
-		`the settled handler compacts only at or above the resolved threshold (${tokens})`,
-		boundary.compactions.length,
-		tokens >= 180_000 ? 1 : 0,
-	);
-}
-
-const unknown = harness();
-unknown.state.usage = undefined;
-unknown.settle();
-unknown.state.usage = { tokens: null, contextWindow: 200_000, percent: null };
-unknown.settle();
-eq("unknown usage never triggers", unknown.compactions.length, 0);
-eq("unknown usage stays silent", unknown.notifications, []);
-
 const tiny: FakeModel = { id: "tiny-model", provider: "openai", contextWindow: 128_000 };
-const nativeDidNotCompact = harness({
-	usage: { tokens: 120_000, contextWindow: 128_000, percent: 93.75 },
-	model: tiny,
+
+describe("registerAutoCompact", () => {
+	it("the settled handler compacts only at or above the resolved threshold", () => {
+		for (const tokens of [179_999, 180_000]) {
+			const boundary = harness({
+				usage: { tokens, contextWindow: 200_000, percent: (tokens / 200_000) * 100 },
+			});
+			boundary.settle();
+			assert.strictEqual(
+				boundary.compactions.length,
+				tokens >= 180_000 ? 1 : 0,
+				`the settled handler compacts only at or above the resolved threshold (${tokens})`,
+			);
+		}
+	});
+
+	it("unknown usage never triggers or notifies", () => {
+		const unknown = harness();
+		unknown.state.usage = undefined;
+		unknown.settle();
+		unknown.state.usage = { tokens: null, contextWindow: 200_000, percent: null };
+		unknown.settle();
+		assert.strictEqual(unknown.compactions.length, 0, "unknown usage never triggers");
+		assert.deepStrictEqual(unknown.notifications, [], "unknown usage stays silent");
+	});
+
+	it("high settled usage compacts even when pi was expected to compact first", () => {
+		const nativeDidNotCompact = harness({
+			usage: { tokens: 120_000, contextWindow: 128_000, percent: 93.75 },
+			model: tiny,
+		});
+		nativeDidNotCompact.settle();
+		nativeDidNotCompact.settle();
+		assert.strictEqual(
+			nativeDidNotCompact.compactions.length,
+			1,
+			"high settled usage compacts even when pi was expected to compact first",
+		);
+		assert.deepStrictEqual(
+			nativeDidNotCompact.notifications.map(({ level }) => level),
+			["info"],
+			"high settled usage posts a single info notification without a speculative native warning",
+		);
+	});
+
+	it("an observed native threshold compaction warns once per model", () => {
+		const nativeWarn = harness({
+			usage: { tokens: null, contextWindow: 128_000, percent: null },
+			model: { id: "tiny-model", provider: "openai", contextWindow: 999_999 },
+		});
+		nativeWarn.pi.emit(
+			"session_compact",
+			{ type: "session_compact", reason: "threshold", fromExtension: false },
+			nativeWarn.ctx,
+		);
+		nativeWarn.settle();
+		assert.strictEqual(nativeWarn.compactions.length, 0, "post-native unknown usage does not duplicate compaction");
+		assert.deepStrictEqual(
+			nativeWarn.notifications,
+			[
+				{
+					message:
+						"Auto-compact: Pi's native compaction ran before Auto Compact could evaluate the 115k threshold for tiny-model. If this happens repeatedly, the threshold may be at or past Pi's native compaction point.",
+					level: "warning",
+				},
+			],
+			"an observed native threshold compaction warns once with the usage-derived threshold",
+		);
+		nativeWarn.pi.emit(
+			"session_compact",
+			{ type: "session_compact", reason: "threshold", fromExtension: false },
+			nativeWarn.ctx,
+		);
+		assert.strictEqual(nativeWarn.notifications.length, 1, "repeated native compaction for the same model stays quiet");
+		nativeWarn.selectModel({ id: "tiny-sibling", provider: "openai", contextWindow: 128_000 });
+		nativeWarn.pi.emit(
+			"session_compact",
+			{ type: "session_compact", reason: "threshold", fromExtension: true },
+			nativeWarn.ctx,
+		);
+		assert.strictEqual(
+			nativeWarn.notifications.length,
+			2,
+			"each model warns independently regardless of who supplied the summary",
+		);
+	});
+
+	it("manual and overflow compactions do not imply native threshold preemption", () => {
+		const nonThresholdCompact = harness({ model: tiny });
+		nonThresholdCompact.pi.emit(
+			"session_compact",
+			{ type: "session_compact", reason: "manual", fromExtension: false },
+			nonThresholdCompact.ctx,
+		);
+		nonThresholdCompact.pi.emit(
+			"session_compact",
+			{ type: "session_compact", reason: "overflow", fromExtension: false },
+			nonThresholdCompact.ctx,
+		);
+		assert.deepStrictEqual(nonThresholdCompact.notifications, []);
+	});
+
+	it("a multi-turn workflow compacts exactly once after full settlement", () => {
+		const workflow = harness();
+		workflow.endRun("toolUse");
+		workflow.endRun("stop");
+		assert.strictEqual(
+			workflow.compactions.length,
+			0,
+			"multi-turn and queued continuations do not compact before settlement",
+		);
+		workflow.settle();
+		assert.strictEqual(workflow.compactions.length, 1, "fully settled workflow compacts exactly once");
+	});
+
+	it("non-idle and pending-message races defer compaction to a safe idle boundary", () => {
+		const race = harness();
+		race.state.idle = false;
+		race.settle();
+		race.state.idle = true;
+		race.state.pending = true;
+		race.settle();
+		assert.strictEqual(race.compactions.length, 0, "non-idle and pending-message races do not compact");
+		race.state.pending = false;
+		race.settle();
+		assert.strictEqual(race.compactions.length, 1, "safe idle boundary compacts");
+	});
+
+	it("in-flight compaction suppresses duplicates until a later run has fresh high usage", () => {
+		const inFlight = harness();
+		inFlight.settle();
+		inFlight.settle();
+		assert.strictEqual(inFlight.compactions.length, 1, "in-flight compaction suppresses duplicate requests");
+		assert.deepStrictEqual(
+			inFlight.notifications,
+			[{ message: "Context at 180k/200k (90%) — auto-compacting.", level: "info" }],
+			"trigger notification is posted once",
+		);
+		inFlight.compactions[0]?.onComplete?.({} as never);
+		assert.strictEqual(inFlight.notifications.length, 1, "successful completion adds no extra notification");
+		inFlight.state.usage = { tokens: null, contextWindow: 200_000, percent: null };
+		inFlight.settle();
+		assert.strictEqual(inFlight.compactions.length, 1, "stale post-compaction usage cannot retrigger");
+		inFlight.state.usage = { tokens: 181_000, contextWindow: 200_000, percent: 90.5 };
+		inFlight.settle();
+		assert.strictEqual(inFlight.compactions.length, 2, "a later completed run with fresh high usage can compact");
+	});
+
+	// The settlement hold is what keeps print/json teardown from racing an in-flight compaction.
+	it("later settlement handlers are held until compaction completes", async () => {
+		const holdSuccess = harness();
+		let laterHandlerRan = false;
+		holdSuccess.pi.on("agent_settled", () => {
+			laterHandlerRan = true;
+		});
+		const holdSettlement = holdSuccess.settleAsync();
+		assert.strictEqual(laterHandlerRan, false, "later settlement handlers are held while compaction runs");
+		holdSuccess.compactions[0]?.onComplete?.({} as never);
+		await holdSettlement;
+		assert.strictEqual(laterHandlerRan, true, "later settlement handlers are released after compaction completes");
+	});
+
+	it("compaction failure releases the settlement hold", async () => {
+		const holdFailure = harness();
+		let failureHandlerRan = false;
+		holdFailure.pi.on("agent_settled", () => {
+			failureHandlerRan = true;
+		});
+		const failureSettlement = holdFailure.settleAsync();
+		holdFailure.compactions[0]?.onError?.(new Error("summary failed"));
+		await failureSettlement;
+		assert.strictEqual(failureHandlerRan, true, "failure releases the settlement hold");
+		assert.strictEqual(holdFailure.notifications.at(-1)?.level, "error", "failure is reported before the hold releases");
+	});
+
+	it("an aborted run defers compaction until the next completed run", () => {
+		const aborted = harness();
+		aborted.endRun("aborted");
+		aborted.settle();
+		assert.strictEqual(aborted.compactions.length, 0, "aborted run defers compaction");
+		assert.deepStrictEqual(
+			aborted.notifications,
+			[
+				{
+					message:
+						"Context at 180k/200k (90%) — auto-compaction deferred after the aborted run; it will run after the next completed run.",
+					level: "info",
+				},
+			],
+			"aborted run posts the deferred notification",
+		);
+		aborted.endRun("stop");
+		aborted.settle();
+		assert.strictEqual(aborted.compactions.length, 1, "next completed run compacts normally");
+	});
+
+	it("compaction failure latches auto-compaction off until success or model switch", () => {
+		const latch = harness({ model: { id: "regular-model", provider: "openai", contextWindow: 200_000 } });
+		latch.settle();
+		latch.compactions[0]?.onError?.(new Error("Nothing to compact"));
+		assert.deepStrictEqual(
+			latch.notifications.at(-1),
+			{
+				message:
+					"Auto-compaction failed: Nothing to compact. Auto-compaction is disabled until the next successful compaction or model switch.",
+				level: "error",
+			},
+			"failure is surfaced and latches auto-compaction off",
+		);
+		assert.strictEqual(
+			latch.statuses.get(AUTO_COMPACT_STATUS_KEY),
+			"auto-compact paused",
+			"failure publishes the paused status",
+		);
+		latch.settle();
+		assert.strictEqual(latch.compactions.length, 1, "failure latch prevents a retry loop");
+		latch.pi.emit(
+			"session_compact",
+			{ type: "session_compact", reason: "threshold", fromExtension: false },
+			latch.ctx,
+		);
+		assert.deepStrictEqual(
+			latch.notifications.filter(({ level }) => level === "warning"),
+			[],
+			"native fallback after an extension failure does not warn",
+		);
+		assert.strictEqual(latch.statuses.has(AUTO_COMPACT_STATUS_KEY), false, "clearing the latch clears the paused status");
+		latch.settle();
+		assert.strictEqual(latch.compactions.length, 2, "any successful compaction clears the failure latch");
+		latch.compactions[1]?.onError?.(new Error("failed again"));
+		latch.pi.emit("model_select", { type: "model_select", model: tiny }, latch.ctx);
+		assert.strictEqual(latch.statuses.has(AUTO_COMPACT_STATUS_KEY), false, "model switch clears the paused status");
+		latch.settle();
+		assert.strictEqual(latch.compactions.length, 3, "model switch clears the failure latch");
+	});
+
+	it("cancellation pauses auto-compaction without reporting a failure", () => {
+		const cancelled = harness();
+		cancelled.settle();
+		cancelled.compactions[0]?.onError?.(new Error("Compaction cancelled"));
+		assert.deepStrictEqual(
+			cancelled.notifications.at(-1),
+			{
+				message:
+					"Compaction cancelled — auto-compaction paused until the next successful compaction or model switch.",
+				level: "info",
+			},
+			"cancellation is reported as an info pause, not a failure",
+		);
+		assert.strictEqual(
+			cancelled.statuses.get(AUTO_COMPACT_STATUS_KEY),
+			"auto-compact paused",
+			"cancellation publishes the paused status",
+		);
+		cancelled.settle();
+		assert.strictEqual(
+			cancelled.compactions.length,
+			1,
+			"cancellation engages the latch so a declined compaction is not re-requested",
+		);
+	});
+
+	it("late compaction failure after shutdown is inert", () => {
+		const shutdown = harness();
+		shutdown.settle();
+		shutdown.pi.emit("session_shutdown", { type: "session_shutdown", reason: "quit" }, shutdown.ctx);
+		assert.doesNotThrow(
+			() => shutdown.compactions[0]?.onError?.(new Error("cancelled during shutdown")),
+			"late compaction failure after shutdown does not use stale context",
+		);
+		assert.strictEqual(shutdown.notifications.length, 1, "late compaction failure after shutdown adds no notification");
+		assert.strictEqual(
+			shutdown.statuses.has(AUTO_COMPACT_STATUS_KEY),
+			false,
+			"late compaction failure after shutdown publishes no status",
+		);
+	});
+
+	it("disabled extension never compacts or notifies", () => {
+		const disabled = harness({ config: { enabled: false }, model: tiny });
+		disabled.pi.emit(
+			"session_compact",
+			{ type: "session_compact", reason: "threshold", fromExtension: false },
+			disabled.ctx,
+		);
+		disabled.endRun("aborted");
+		disabled.settle();
+		assert.strictEqual(disabled.compactions.length, 0, "disabled extension never compacts");
+		assert.deepStrictEqual(disabled.notifications, [], "disabled extension posts no notifications or warnings");
+	});
 });
-nativeDidNotCompact.settle();
-nativeDidNotCompact.settle();
-eq("high settled usage compacts even when pi was expected to compact first", nativeDidNotCompact.compactions.length, 1);
-eq(
-	"high settled usage posts a single info notification without a speculative native warning",
-	nativeDidNotCompact.notifications.map(({ level }) => level),
-	["info"],
-);
-
-const nativeWarn = harness({
-	usage: { tokens: null, contextWindow: 128_000, percent: null },
-	model: { id: "tiny-model", provider: "openai", contextWindow: 999_999 },
-});
-nativeWarn.pi.emit(
-	"session_compact",
-	{ type: "session_compact", reason: "threshold", fromExtension: false },
-	nativeWarn.ctx,
-);
-nativeWarn.settle();
-eq("post-native unknown usage does not duplicate compaction", nativeWarn.compactions.length, 0);
-eq("an observed native threshold compaction warns once with the usage-derived threshold", nativeWarn.notifications, [
-	{
-		message:
-			"Auto-compact: Pi's native compaction ran before Auto Compact could evaluate the 115k threshold for tiny-model. If this happens repeatedly, the threshold may be at or past Pi's native compaction point.",
-		level: "warning",
-	},
-]);
-nativeWarn.pi.emit(
-	"session_compact",
-	{ type: "session_compact", reason: "threshold", fromExtension: false },
-	nativeWarn.ctx,
-);
-eq("repeated native compaction for the same model stays quiet", nativeWarn.notifications.length, 1);
-nativeWarn.selectModel({ id: "tiny-sibling", provider: "openai", contextWindow: 128_000 });
-nativeWarn.pi.emit(
-	"session_compact",
-	{ type: "session_compact", reason: "threshold", fromExtension: true },
-	nativeWarn.ctx,
-);
-eq("each model warns independently regardless of who supplied the summary", nativeWarn.notifications.length, 2);
-
-const nonThresholdCompact = harness({ model: tiny });
-nonThresholdCompact.pi.emit(
-	"session_compact",
-	{ type: "session_compact", reason: "manual", fromExtension: false },
-	nonThresholdCompact.ctx,
-);
-nonThresholdCompact.pi.emit(
-	"session_compact",
-	{ type: "session_compact", reason: "overflow", fromExtension: false },
-	nonThresholdCompact.ctx,
-);
-eq("manual and overflow compactions do not imply native threshold preemption", nonThresholdCompact.notifications, []);
-
-const workflow = harness();
-workflow.endRun("toolUse");
-workflow.endRun("stop");
-eq("multi-turn and queued continuations do not compact before settlement", workflow.compactions.length, 0);
-workflow.settle();
-eq("fully settled workflow compacts exactly once", workflow.compactions.length, 1);
-
-const race = harness();
-race.state.idle = false;
-race.settle();
-race.state.idle = true;
-race.state.pending = true;
-race.settle();
-eq("non-idle and pending-message races do not compact", race.compactions.length, 0);
-race.state.pending = false;
-race.settle();
-eq("safe idle boundary compacts", race.compactions.length, 1);
-
-const inFlight = harness();
-inFlight.settle();
-inFlight.settle();
-eq("in-flight compaction suppresses duplicate requests", inFlight.compactions.length, 1);
-eq("trigger notification is posted once", inFlight.notifications, [
-	{ message: "Context at 180k/200k (90%) — auto-compacting.", level: "info" },
-]);
-inFlight.compactions[0]?.onComplete?.({} as never);
-eq("successful completion adds no extra notification", inFlight.notifications.length, 1);
-inFlight.state.usage = { tokens: null, contextWindow: 200_000, percent: null };
-inFlight.settle();
-eq("stale post-compaction usage cannot retrigger", inFlight.compactions.length, 1);
-inFlight.state.usage = { tokens: 181_000, contextWindow: 200_000, percent: 90.5 };
-inFlight.settle();
-eq("a later completed run with fresh high usage can compact", inFlight.compactions.length, 2);
-
-// The settlement hold is what keeps print/json teardown from racing an in-flight compaction.
-const holdSuccess = harness();
-let laterHandlerRan = false;
-holdSuccess.pi.on("agent_settled", () => {
-	laterHandlerRan = true;
-});
-const holdSettlement = holdSuccess.settleAsync();
-eq("later settlement handlers are held while compaction runs", laterHandlerRan, false);
-holdSuccess.compactions[0]?.onComplete?.({} as never);
-await holdSettlement;
-eq("later settlement handlers are released after compaction completes", laterHandlerRan, true);
-
-const holdFailure = harness();
-let failureHandlerRan = false;
-holdFailure.pi.on("agent_settled", () => {
-	failureHandlerRan = true;
-});
-const failureSettlement = holdFailure.settleAsync();
-holdFailure.compactions[0]?.onError?.(new Error("summary failed"));
-await failureSettlement;
-eq("failure releases the settlement hold", failureHandlerRan, true);
-eq("failure is reported before the hold releases", holdFailure.notifications.at(-1)?.level, "error");
-
-const aborted = harness();
-aborted.endRun("aborted");
-aborted.settle();
-eq("aborted run defers compaction", aborted.compactions.length, 0);
-eq("aborted run posts the deferred notification", aborted.notifications, [
-	{
-		message:
-			"Context at 180k/200k (90%) — auto-compaction deferred after the aborted run; it will run after the next completed run.",
-		level: "info",
-	},
-]);
-aborted.endRun("stop");
-aborted.settle();
-eq("next completed run compacts normally", aborted.compactions.length, 1);
-
-const latch = harness({ model: { id: "regular-model", provider: "openai", contextWindow: 200_000 } });
-latch.settle();
-latch.compactions[0]?.onError?.(new Error("Nothing to compact"));
-eq("failure is surfaced and latches auto-compaction off", latch.notifications.at(-1), {
-	message:
-		"Auto-compaction failed: Nothing to compact. Auto-compaction is disabled until the next successful compaction or model switch.",
-	level: "error",
-});
-eq("failure publishes the paused status", latch.statuses.get(AUTO_COMPACT_STATUS_KEY), "auto-compact paused");
-latch.settle();
-eq("failure latch prevents a retry loop", latch.compactions.length, 1);
-latch.pi.emit(
-	"session_compact",
-	{ type: "session_compact", reason: "threshold", fromExtension: false },
-	latch.ctx,
-);
-eq("native fallback after an extension failure does not warn", latch.notifications.filter(({ level }) => level === "warning"), []);
-eq("clearing the latch clears the paused status", latch.statuses.has(AUTO_COMPACT_STATUS_KEY), false);
-latch.settle();
-eq("any successful compaction clears the failure latch", latch.compactions.length, 2);
-latch.compactions[1]?.onError?.(new Error("failed again"));
-latch.pi.emit("model_select", { type: "model_select", model: tiny }, latch.ctx);
-eq("model switch clears the paused status", latch.statuses.has(AUTO_COMPACT_STATUS_KEY), false);
-latch.settle();
-eq("model switch clears the failure latch", latch.compactions.length, 3);
-
-const cancelled = harness();
-cancelled.settle();
-cancelled.compactions[0]?.onError?.(new Error("Compaction cancelled"));
-eq("cancellation is reported as an info pause, not a failure", cancelled.notifications.at(-1), {
-	message:
-		"Compaction cancelled — auto-compaction paused until the next successful compaction or model switch.",
-	level: "info",
-});
-eq("cancellation publishes the paused status", cancelled.statuses.get(AUTO_COMPACT_STATUS_KEY), "auto-compact paused");
-cancelled.settle();
-eq("cancellation engages the latch so a declined compaction is not re-requested", cancelled.compactions.length, 1);
-
-const shutdown = harness();
-shutdown.settle();
-shutdown.pi.emit("session_shutdown", { type: "session_shutdown", reason: "quit" }, shutdown.ctx);
-let postShutdownErrorThrew = false;
-try {
-	shutdown.compactions[0]?.onError?.(new Error("cancelled during shutdown"));
-} catch {
-	postShutdownErrorThrew = true;
-}
-eq("late compaction failure after shutdown does not use stale context", postShutdownErrorThrew, false);
-eq("late compaction failure after shutdown adds no notification", shutdown.notifications.length, 1);
-eq("late compaction failure after shutdown publishes no status", shutdown.statuses.has(AUTO_COMPACT_STATUS_KEY), false);
-
-const disabled = harness({ config: { enabled: false }, model: tiny });
-disabled.pi.emit(
-	"session_compact",
-	{ type: "session_compact", reason: "threshold", fromExtension: false },
-	disabled.ctx,
-);
-disabled.endRun("aborted");
-disabled.settle();
-eq("disabled extension never compacts", disabled.compactions.length, 0);
-eq("disabled extension posts no notifications or warnings", disabled.notifications, []);
-
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);

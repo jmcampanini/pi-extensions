@@ -11,6 +11,8 @@
  * subagents.json.
  */
 
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,24 +25,6 @@ const state = await import("../state.ts");
 const capacity = await import("../capacity.ts");
 type SpawnSpec = import("../capacity.ts").SpawnSpec;
 type ResumeSpec = import("../capacity.ts").ResumeSpec;
-
-let pass = 0, fail = 0;
-function eq(label: string, got: unknown, want: unknown) {
-	const g = JSON.stringify(got), w = JSON.stringify(want);
-	if (g === w) { pass++; console.log(`  ok  ${label}`); }
-	else { fail++; console.log(`  FAIL ${label}: got ${g}, want ${w}`); }
-}
-function ok(label: string, cond: boolean) {
-	if (cond) { pass++; console.log(`  ok  ${label}`); }
-	else { fail++; console.log(`  FAIL ${label}`); }
-}
-function throws(label: string, fn: () => unknown, contains: string) {
-	try { fn(); fail++; console.log(`  FAIL ${label}: expected throw`); }
-	catch (error) {
-		if (String(error).includes(contains)) { pass++; console.log(`  ok  ${label}`); }
-		else { fail++; console.log(`  FAIL ${label}: ${String(error)}`); }
-	}
-}
 
 function spawnSpec(id: string): SpawnSpec {
 	return {
@@ -104,315 +88,370 @@ function reset(): void {
 	sent.length = 0;
 }
 
-// ── admission ─────────────────────────────────────────────────────────────
-
-reset();
-const invalidAgentSpec = { ...spawnSpec("invalid"), agentName: "code reviewer" };
-throws("admission rejects an invalid persisted agent identifier",
-	() => capacity.admitLaunch(invalidAgentSpec), "whitespace");
-eq("invalid admission creates no claim or queue entry",
-	[capacity.pendingLaunchCount(), capacity.queuedCount()], [0, 0]);
-eq("admit under capacity runs", capacity.admitLaunch(spawnSpec("a")), { status: "run" });
-capacity.releaseClaim("a");
-
-reset();
-for (let i = 0; i < 8; i++) fakeRunning(`run-${i}`);
-eq("ninth child still runs", capacity.admitLaunch(spawnSpec("a")), { status: "run" });
-eq("tenth child queues (claims count toward capacity)", capacity.admitLaunch(spawnSpec("b")), { status: "queued", ahead: 0 });
-eq("eleventh child sees one ahead", capacity.admitLaunch(spawnSpec("c")), { status: "queued", ahead: 1 });
-eq("queued entries are in FIFO order", capacity.queuedEntries().map((entry) => entry.spec.id), ["b", "c"]);
-
-// no queue-jumping: capacity freed, but the queue is non-empty
-state.running.clear();
-eq("admit with a non-empty queue always queues", capacity.admitLaunch(spawnSpec("d")), { status: "queued", ahead: 2 });
-
-// a synchronous 12-call burst (what parallel tool calls reduce to, since
-// admission has no interleave point) never exceeds the limit
-reset();
-const outcomes = Array.from({ length: 12 }, (_, i) => capacity.admitLaunch(spawnSpec(`s${i}`)));
-eq("burst of 12: nine run", outcomes.filter((o) => o.status === "run").length, 9);
-eq("burst of 12: three queue in order",
-	capacity.queuedEntries().map((entry) => entry.spec.id), ["s9", "s10", "s11"]);
-
-// ── resume dedupe ─────────────────────────────────────────────────────────
-
-reset();
-eq("resume claim is visible to pendingResumeFor",
-	capacity.admitLaunch(resumeSpec("r1", "/tmp/child.jsonl")), { status: "run" });
-ok("claimed resume blocks a second attach", capacity.pendingResumeFor("/tmp/child.jsonl"));
-capacity.releaseClaim("r1");
-ok("released claim unblocks", !capacity.pendingResumeFor("/tmp/child.jsonl"));
-
-for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
-capacity.admitLaunch(resumeSpec("r2", "/tmp/child.jsonl"));
-ok("queued resume blocks a second attach", capacity.pendingResumeFor("/tmp/child.jsonl"));
-ok("other sessions are not blocked", !capacity.pendingResumeFor("/tmp/other.jsonl"));
-
-// paths are compared resolved: a non-canonical spelling cannot slip past
-reset();
-eq("non-canonical resume path still claims",
-	capacity.admitLaunch(resumeSpec("r1", "/tmp/./child.jsonl")), { status: "run" });
-ok("dedupe matches the canonical spelling", capacity.pendingResumeFor("/tmp/child.jsonl"));
-capacity.releaseClaim("r1");
-
-// in-flight and queued launches are visible by id
-reset();
-capacity.admitLaunch(spawnSpec("a"));
-ok("a claimed launch is pending", capacity.isPendingLaunch("a"));
-eq("pendingLaunches exposes the spec", capacity.pendingLaunches().map((p) => p.spec.id), ["a"]);
-capacity.releaseClaim("a");
-ok("a released launch is no longer pending", !capacity.isPendingLaunch("a"));
-
-// ── cancel ────────────────────────────────────────────────────────────────
-
-reset();
-for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
-capacity.admitLaunch(spawnSpec("a"));
-capacity.admitLaunch(spawnSpec("b"));
-eq("findQueued sees a queued id", capacity.findQueued("b")?.spec.id, "b");
-eq("cancelQueued removes the right entry", capacity.cancelQueued("a")?.spec.id, "a");
-eq("cancel leaves the rest in order", capacity.queuedEntries().map((entry) => entry.spec.id), ["b"]);
-eq("cancel of an unknown id is undefined", capacity.cancelQueued("nope"), undefined);
-const firstCancellation = capacity.recordCancellation("cancelled", "user");
-eq("a cancellation tombstone records requester and is stable",
-	[capacity.cancellationFor("cancelled")?.requester, capacity.recordCancellation("cancelled", "model") === firstCancellation],
-	["user", true]);
-
-// ── drain ─────────────────────────────────────────────────────────────────
-
-reset();
 const launched: string[] = [];
-capacity.registerLauncher("spawn", async (_pi, spec) => {
-	launched.push(spec.id);
-	// The pipeline contract: register the child and release the claim in the
-	// same synchronous step.
-	fakeRunning(spec.id);
-	capacity.releaseClaim(spec.id);
+
+describe("admission", () => {
+	it("admission rejects an invalid persisted agent identifier without claiming", () => {
+		reset();
+		const invalidAgentSpec = { ...spawnSpec("invalid"), agentName: "code reviewer" };
+		assert.throws(
+			() => capacity.admitLaunch(invalidAgentSpec),
+			(error) => String(error).includes("whitespace"),
+			"admission rejects an invalid persisted agent identifier",
+		);
+		assert.deepStrictEqual(
+			[capacity.pendingLaunchCount(), capacity.queuedCount()], [0, 0],
+			"invalid admission creates no claim or queue entry");
+		assert.deepStrictEqual(capacity.admitLaunch(spawnSpec("a")), { status: "run" }, "admit under capacity runs");
+		capacity.releaseClaim("a");
+	});
+
+	it("claims count toward capacity and the queue is FIFO with no queue-jumping", () => {
+		reset();
+		for (let i = 0; i < 8; i++) fakeRunning(`run-${i}`);
+		assert.deepStrictEqual(capacity.admitLaunch(spawnSpec("a")), { status: "run" }, "ninth child still runs");
+		assert.deepStrictEqual(capacity.admitLaunch(spawnSpec("b")), { status: "queued", ahead: 0 },
+			"tenth child queues (claims count toward capacity)");
+		assert.deepStrictEqual(capacity.admitLaunch(spawnSpec("c")), { status: "queued", ahead: 1 },
+			"eleventh child sees one ahead");
+		assert.deepStrictEqual(capacity.queuedEntries().map((entry) => entry.spec.id), ["b", "c"],
+			"queued entries are in FIFO order");
+
+		// no queue-jumping: capacity freed, but the queue is non-empty
+		state.running.clear();
+		assert.deepStrictEqual(capacity.admitLaunch(spawnSpec("d")), { status: "queued", ahead: 2 },
+			"admit with a non-empty queue always queues");
+	});
+
+	it("a synchronous 12-call burst never exceeds the limit", () => {
+		// what parallel tool calls reduce to, since admission has no interleave point
+		reset();
+		const outcomes = Array.from({ length: 12 }, (_, i) => capacity.admitLaunch(spawnSpec(`s${i}`)));
+		assert.strictEqual(outcomes.filter((o) => o.status === "run").length, 9, "burst of 12: nine run");
+		assert.deepStrictEqual(capacity.queuedEntries().map((entry) => entry.spec.id), ["s9", "s10", "s11"],
+			"burst of 12: three queue in order");
+	});
 });
 
-for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
-capacity.admitLaunch(spawnSpec("a"));
-capacity.admitLaunch(spawnSpec("b"));
-capacity.admitLaunch(spawnSpec("c"));
-state.running.delete("run-0");
-state.running.delete("run-1");
-capacity.drainQueue(fakePi);
-await flush();
-eq("drain launches as many as freed slots, in order", launched, ["a", "b"]);
-eq("drain leaves the remainder queued", capacity.queuedEntries().map((entry) => entry.spec.id), ["c"]);
-eq("drained children are running", [state.running.has("a"), state.running.has("b")], [true, true]);
+describe("resume dedupe", () => {
+	it("a claimed or queued resume blocks a second attach until released", () => {
+		reset();
+		assert.deepStrictEqual(capacity.admitLaunch(resumeSpec("r1", "/tmp/child.jsonl")), { status: "run" },
+			"resume claim is visible to pendingResumeFor");
+		assert.ok(capacity.pendingResumeFor("/tmp/child.jsonl"), "claimed resume blocks a second attach");
+		capacity.releaseClaim("r1");
+		assert.ok(!capacity.pendingResumeFor("/tmp/child.jsonl"), "released claim unblocks");
 
-reset();
-for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
-capacity.admitLaunch(spawnSpec("a"));
-capacity.admitLaunch(spawnSpec("b"));
-capacity.recordCancellation("a", "model");
-state.running.delete("run-0");
-launched.length = 0;
-capacity.drainQueue(fakePi);
-await flush();
-eq("drain drops a tombstoned entry and launches its neighbor", launched, ["b"]);
-eq("the tombstoned entry is not resurrected", state.running.has("a"), false);
+		for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+		capacity.admitLaunch(resumeSpec("r2", "/tmp/child.jsonl"));
+		assert.ok(capacity.pendingResumeFor("/tmp/child.jsonl"), "queued resume blocks a second attach");
+		assert.ok(!capacity.pendingResumeFor("/tmp/other.jsonl"), "other sessions are not blocked");
+	});
 
-// a failing launch notifies the model and keeps draining
-reset();
-capacity.registerLauncher("spawn", async (_pi, spec) => {
-	if (spec.id === "bad") throw new Error("tmux exploded");
-	launched.push(spec.id);
-	fakeRunning(spec.id);
-	capacity.releaseClaim(spec.id);
+	it("paths are compared resolved: a non-canonical spelling cannot slip past", () => {
+		reset();
+		assert.deepStrictEqual(capacity.admitLaunch(resumeSpec("r1", "/tmp/./child.jsonl")), { status: "run" },
+			"non-canonical resume path still claims");
+		assert.ok(capacity.pendingResumeFor("/tmp/child.jsonl"), "dedupe matches the canonical spelling");
+		capacity.releaseClaim("r1");
+	});
+
+	it("in-flight and queued launches are visible by id", () => {
+		reset();
+		capacity.admitLaunch(spawnSpec("a"));
+		assert.ok(capacity.isPendingLaunch("a"), "a claimed launch is pending");
+		assert.deepStrictEqual(capacity.pendingLaunches().map((p) => p.spec.id), ["a"], "pendingLaunches exposes the spec");
+		capacity.releaseClaim("a");
+		assert.ok(!capacity.isPendingLaunch("a"), "a released launch is no longer pending");
+	});
 });
-for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
-capacity.admitLaunch(spawnSpec("bad"));
-capacity.admitLaunch(spawnSpec("good"));
-launched.length = 0;
-state.running.delete("run-0");
-capacity.drainQueue(fakePi);
-await flush();
-eq("failure notice reaches the model", sent.map((m) => m.customType), ["subagent_launch_failed"]);
-ok("notice names the child and the error",
-	Boolean(sent[0]?.content?.includes("bad") && sent[0]?.content?.includes("tmux exploded")));
-eq("drain continues past the failure", launched, ["good"]);
-eq("failed entry is gone from the queue", capacity.queuedCount(), 0);
 
-// RequeueLaunch (a reload landing mid-launch) puts the entry back at the
-// head, silently; the follow-up drain no-ops because the module is aborted,
-// so the entry waits for the replacement generation.
-reset();
-capacity.registerLauncher("spawn", async () => {
-	state.prepareForReload(() => {});
-	throw new capacity.RequeueLaunch();
+describe("cancel", () => {
+	it("cancelQueued splices exactly the requested entry and tombstones are stable", () => {
+		reset();
+		for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+		capacity.admitLaunch(spawnSpec("a"));
+		capacity.admitLaunch(spawnSpec("b"));
+		assert.strictEqual(capacity.findQueued("b")?.spec.id, "b", "findQueued sees a queued id");
+		assert.strictEqual(capacity.cancelQueued("a")?.spec.id, "a", "cancelQueued removes the right entry");
+		assert.deepStrictEqual(capacity.queuedEntries().map((entry) => entry.spec.id), ["b"],
+			"cancel leaves the rest in order");
+		assert.strictEqual(capacity.cancelQueued("nope"), undefined, "cancel of an unknown id is undefined");
+		const firstCancellation = capacity.recordCancellation("cancelled", "user");
+		assert.deepStrictEqual(
+			[capacity.cancellationFor("cancelled")?.requester, capacity.recordCancellation("cancelled", "model") === firstCancellation],
+			["user", true],
+			"a cancellation tombstone records requester and is stable");
+	});
 });
-for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
-capacity.admitLaunch(spawnSpec("a"));
-state.running.delete("run-0");
-capacity.drainQueue(fakePi);
-await flush();
-eq("requeued entry returns to the queue", capacity.queuedEntries().map((entry) => entry.spec.id), ["a"]);
-eq("requeue sends nothing", sent.length, 0);
 
-// ...and the drain hook lets the dying generation hand that entry to the
-// replacement: once a live generation arms the hook, requestDrain launches.
-state.completeReloadHandoff();
-capacity.registerLauncher("spawn", async (_pi, spec) => {
-	launched.push(spec.id);
-	fakeRunning(spec.id);
-	capacity.releaseClaim(spec.id);
+describe("drain", () => {
+	it("drain launches as many as freed slots, in order", async () => {
+		reset();
+		launched.length = 0;
+		capacity.registerLauncher("spawn", async (_pi, spec) => {
+			launched.push(spec.id);
+			// The pipeline contract: register the child and release the claim in the
+			// same synchronous step.
+			fakeRunning(spec.id);
+			capacity.releaseClaim(spec.id);
+		});
+
+		for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+		capacity.admitLaunch(spawnSpec("a"));
+		capacity.admitLaunch(spawnSpec("b"));
+		capacity.admitLaunch(spawnSpec("c"));
+		state.running.delete("run-0");
+		state.running.delete("run-1");
+		capacity.drainQueue(fakePi);
+		await flush();
+		assert.deepStrictEqual(launched, ["a", "b"], "drain launches as many as freed slots, in order");
+		assert.deepStrictEqual(capacity.queuedEntries().map((entry) => entry.spec.id), ["c"],
+			"drain leaves the remainder queued");
+		assert.deepStrictEqual([state.running.has("a"), state.running.has("b")], [true, true],
+			"drained children are running");
+	});
+
+	it("drain drops a tombstoned entry and launches its neighbor", async () => {
+		reset();
+		capacity.registerLauncher("spawn", async (_pi, spec) => {
+			launched.push(spec.id);
+			fakeRunning(spec.id);
+			capacity.releaseClaim(spec.id);
+		});
+		for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+		capacity.admitLaunch(spawnSpec("a"));
+		capacity.admitLaunch(spawnSpec("b"));
+		capacity.recordCancellation("a", "model");
+		state.running.delete("run-0");
+		launched.length = 0;
+		capacity.drainQueue(fakePi);
+		await flush();
+		assert.deepStrictEqual(launched, ["b"], "drain drops a tombstoned entry and launches its neighbor");
+		assert.strictEqual(state.running.has("a"), false, "the tombstoned entry is not resurrected");
+	});
+
+	it("a failing launch notifies the model and keeps draining", async () => {
+		reset();
+		capacity.registerLauncher("spawn", async (_pi, spec) => {
+			if (spec.id === "bad") throw new Error("tmux exploded");
+			launched.push(spec.id);
+			fakeRunning(spec.id);
+			capacity.releaseClaim(spec.id);
+		});
+		for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+		capacity.admitLaunch(spawnSpec("bad"));
+		capacity.admitLaunch(spawnSpec("good"));
+		launched.length = 0;
+		state.running.delete("run-0");
+		capacity.drainQueue(fakePi);
+		await flush();
+		assert.deepStrictEqual(sent.map((m) => m.customType), ["subagent_launch_failed"],
+			"failure notice reaches the model");
+		assert.ok(Boolean(sent[0]?.content?.includes("bad") && sent[0]?.content?.includes("tmux exploded")),
+			"notice names the child and the error");
+		assert.deepStrictEqual(launched, ["good"], "drain continues past the failure");
+		assert.strictEqual(capacity.queuedCount(), 0, "failed entry is gone from the queue");
+	});
+
+	it("a requeued entry waits for the replacement generation and launches once the drain hook is armed", async () => {
+		// RequeueLaunch (a reload landing mid-launch) puts the entry back at the
+		// head, silently; the follow-up drain no-ops because the module is aborted,
+		// so the entry waits for the replacement generation.
+		reset();
+		capacity.registerLauncher("spawn", async () => {
+			state.prepareForReload(() => {});
+			throw new capacity.RequeueLaunch();
+		});
+		for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+		capacity.admitLaunch(spawnSpec("a"));
+		state.running.delete("run-0");
+		capacity.drainQueue(fakePi);
+		await flush();
+		assert.deepStrictEqual(capacity.queuedEntries().map((entry) => entry.spec.id), ["a"],
+			"requeued entry returns to the queue");
+		assert.strictEqual(sent.length, 0, "requeue sends nothing");
+
+		// ...and the drain hook lets the dying generation hand that entry to the
+		// replacement: once a live generation arms the hook, requestDrain launches.
+		state.completeReloadHandoff();
+		capacity.registerLauncher("spawn", async (_pi, spec) => {
+			launched.push(spec.id);
+			fakeRunning(spec.id);
+			capacity.releaseClaim(spec.id);
+		});
+		state.running.clear();
+		launched.length = 0;
+		capacity.armDrainHook(fakePi);
+		capacity.requestDrain(fakePi);
+		await flush();
+		assert.deepStrictEqual(launched, ["a"], "armed drain hook launches the requeued entry");
+	});
+
+	it("a late RequeueLaunch cannot resurrect a claim fenced by shutdown", async () => {
+		reset();
+		let releaseBoundaryLaunch!: () => void;
+		const boundaryGate = new Promise<void>((resolve) => { releaseBoundaryLaunch = resolve; });
+		let boundaryLaunches = 0;
+		capacity.registerLauncher("spawn", async () => {
+			boundaryLaunches++;
+			await boundaryGate;
+			throw new capacity.RequeueLaunch();
+		});
+		for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+		capacity.admitLaunch(spawnSpec("a"));
+		state.running.delete("run-0");
+		capacity.drainQueue(fakePi);
+		capacity.clearQueueForShutdown();
+		releaseBoundaryLaunch();
+		await flush();
+		assert.deepStrictEqual(
+			[boundaryLaunches, capacity.queuedCount(), capacity.findPendingLaunch("a")], [1, 0, undefined]);
+	});
+
+	it("the reload hook discards an invalid retained queue entry with a notice", () => {
+		reset();
+		const retainedInvalid = { ...spawnSpec("retained-invalid"), agentName: "code reviewer" };
+		(capacity.queuedEntries() as Array<{ spec: SpawnSpec; queuedAt: number }>).push({
+			spec: retainedInvalid,
+			queuedAt: Date.now(),
+		});
+		capacity.armDrainHook(fakePi);
+		assert.strictEqual(capacity.queuedCount(), 0, "reload hook discards an invalid retained queue entry");
+		assert.deepStrictEqual(sent.map((message) => message.customType), ["subagent_launch_failed"],
+			"invalid retained queue entry gets a failure notice");
+		assert.ok(!sent[0]?.content?.includes(retainedInvalid.agentName),
+			"retained-entry notice does not reformat the invalid identifier");
+	});
+
+	it("AbandonLaunch drops the entry, silently", async () => {
+		reset();
+		capacity.registerLauncher("spawn", async () => {
+			throw new capacity.AbandonLaunch();
+		});
+		for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+		capacity.admitLaunch(spawnSpec("a"));
+		state.running.delete("run-0");
+		capacity.drainQueue(fakePi);
+		await flush();
+		assert.strictEqual(capacity.queuedCount(), 0, "abandoned entry is dropped");
+		assert.strictEqual(sent.length, 0, "abandon sends nothing");
+	});
+
+	it("CancelLaunch drops the claimed entry without a duplicate notice", async () => {
+		reset();
+		capacity.registerLauncher("spawn", async () => {
+			throw new capacity.CancelLaunch("model");
+		});
+		for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+		capacity.admitLaunch(spawnSpec("a"));
+		state.running.delete("run-0");
+		capacity.drainQueue(fakePi);
+		await flush();
+		assert.deepStrictEqual([capacity.queuedCount(), capacity.isPendingLaunch("a")], [0, false],
+			"CancelLaunch drops the claimed entry");
+		assert.strictEqual(sent.length, 0, "CancelLaunch dispatch sends no duplicate notice");
+	});
+
+	it("cancel rollback failure emits one distinct operational notice", async () => {
+		reset();
+		capacity.registerLauncher("spawn", async () => {
+			const error = new capacity.CancelLaunch("model");
+			error.cleanupFailure = "Remove /repo/leaked-worktree manually.";
+			throw error;
+		});
+		for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+		capacity.admitLaunch(spawnSpec("a"));
+		state.running.delete("run-0");
+		capacity.drainQueue(fakePi);
+		await flush();
+		assert.deepStrictEqual(sent.map((message) => message.customType), ["subagent_cancel_cleanup_failed"],
+			"cancel rollback failure emits one distinct operational notice");
+		assert.ok(sent[0]?.content?.includes("remains cancelled") === true && sent[0]?.content?.includes("/repo/leaked-worktree"),
+			"cancel rollback warning preserves the manual cleanup instruction");
+	});
 });
-state.running.clear();
-launched.length = 0;
-capacity.armDrainHook(fakePi);
-capacity.requestDrain(fakePi);
-await flush();
-eq("armed drain hook launches the requeued entry", launched, ["a"]);
 
-reset();
-let releaseBoundaryLaunch!: () => void;
-const boundaryGate = new Promise<void>((resolve) => { releaseBoundaryLaunch = resolve; });
-let boundaryLaunches = 0;
-capacity.registerLauncher("spawn", async () => {
-	boundaryLaunches++;
-	await boundaryGate;
-	throw new capacity.RequeueLaunch();
+describe("notices are self-contained", () => {
+	it("failure and cancel notices carry id, error, counts, and warnings", () => {
+		reset();
+		fakeRunning("r");
+		capacity.admitLaunch(spawnSpec("x")); // consumes the last... no: 1 running, so this runs
+		capacity.releaseClaim("x");
+		const failureNotice = capacity.formatLaunchFailureNotice(spawnSpec("x"), "boom");
+		assert.ok(failureNotice.includes("id x") && failureNotice.includes("boom") && failureNotice.includes("1 running"),
+			"failure notice carries id, error, and counts");
+		const cancelNotice = capacity.formatQueueCancelledNotice(resumeSpec("r9", "/tmp/child.jsonl"));
+		assert.ok(cancelNotice.includes("id r9") && cancelNotice.includes("no result will arrive"),
+			"cancel notice carries id and no-result warning");
+	});
 });
-for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
-capacity.admitLaunch(spawnSpec("a"));
-state.running.delete("run-0");
-capacity.drainQueue(fakePi);
-capacity.clearQueueForShutdown();
-releaseBoundaryLaunch();
-await flush();
-eq("a late RequeueLaunch cannot resurrect a claim fenced by shutdown",
-	[boundaryLaunches, capacity.queuedCount(), capacity.findPendingLaunch("a")], [1, 0, undefined]);
 
-reset();
-const retainedInvalid = { ...spawnSpec("retained-invalid"), agentName: "code reviewer" };
-(capacity.queuedEntries() as Array<{ spec: SpawnSpec; queuedAt: number }>).push({
-	spec: retainedInvalid,
-	queuedAt: Date.now(),
+describe("boundary guards", () => {
+	// prepareForReload aborts the module signal without changing the generation
+	// (→ requeue); completeReloadHandoff after an abort starts a fresh
+	// generation (→ abandon for launches captured under the old one).
+
+	it("the launch guard passes, cancels, requeues, and abandons across generations", () => {
+		reset();
+		const generation = state.moduleGeneration();
+		let guardOutcome = "none";
+		try { capacity.assertLaunchStillWanted(generation, "guard-live"); guardOutcome = "passed"; } catch { guardOutcome = "threw"; }
+		assert.strictEqual(guardOutcome, "passed", "guard passes in a live generation");
+
+		capacity.recordCancellation("guard-cancel", "user");
+		try { capacity.assertLaunchStillWanted(generation, "guard-cancel"); guardOutcome = "passed"; }
+		catch (error) {
+			guardOutcome = error instanceof capacity.CancelLaunch && error.requester === "user" ? "cancel" : "other";
+		}
+		assert.strictEqual(guardOutcome, "cancel", "a tombstone wins the launch boundary");
+
+		state.prepareForReload(() => {});
+		try { capacity.assertLaunchStillWanted(generation, "guard-reload"); guardOutcome = "passed"; }
+		catch (error) { guardOutcome = error instanceof capacity.RequeueLaunch ? "requeue" : "other"; }
+		assert.strictEqual(guardOutcome, "requeue", "reload in progress requeues");
+
+		capacity.registerLauncher("spawn", async (_pi, spec) => { launched.push(spec.id); });
+		for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+		capacity.admitLaunch(spawnSpec("a"));
+		state.running.clear();
+		launched.length = 0;
+		capacity.drainQueue(fakePi);
+		assert.ok(launched.length === 0 && capacity.queuedCount() === 1,
+			"drain is a no-op while the generation is aborted");
+
+		state.completeReloadHandoff();
+		try { capacity.assertLaunchStillWanted(generation, "guard-abandon"); guardOutcome = "passed"; }
+		catch (error) { guardOutcome = error instanceof capacity.AbandonLaunch ? "abandon" : "other"; }
+		assert.strictEqual(guardOutcome, "abandon", "a later generation abandons");
+	});
+
+	it("the reaper arms even when only queued work exists", async () => {
+		reset();
+		let reaped = false;
+		state.prepareForReload(() => { reaped = true; }, 0, true);
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		assert.strictEqual(reaped, true, "reaper arms for queued-only pending work");
+		state.completeReloadHandoff();
+	});
 });
-capacity.armDrainHook(fakePi);
-eq("reload hook discards an invalid retained queue entry", capacity.queuedCount(), 0);
-eq("invalid retained queue entry gets a failure notice", sent.map((message) => message.customType), ["subagent_launch_failed"]);
-ok("retained-entry notice does not reformat the invalid identifier",
-	!sent[0]?.content?.includes(retainedInvalid.agentName));
 
-// AbandonLaunch drops the entry, silently
-reset();
-capacity.registerLauncher("spawn", async () => {
-	throw new capacity.AbandonLaunch();
+describe("/reload survival", () => {
+	// A cache-busted re-import simulates pi re-importing the module graph; the
+	// queue lives on globalThis, so the replacement sees the same entries.
+
+	it("the queue and cancellation tombstones survive a module re-import", async () => {
+		reset();
+		for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
+		capacity.admitLaunch(spawnSpec("a"));
+		capacity.recordCancellation("reload-cancel", "model");
+		const reloaded = await import(new URL(`../capacity.ts?reload-test=${Date.now()}`, import.meta.url).href) as typeof capacity;
+		assert.deepStrictEqual(reloaded.queuedEntries().map((entry) => entry.spec.id), ["a"],
+			"queue survives a module re-import");
+		assert.strictEqual(reloaded.cancellationFor("reload-cancel")?.requester, "model",
+			"cancellation tombstones survive a module re-import");
+		reloaded.clearQueueForShutdown();
+		assert.strictEqual(reloaded.cancellationFor("reload-cancel"), undefined,
+			"destructive shutdown clears cancellation tombstones");
+	});
 });
-for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
-capacity.admitLaunch(spawnSpec("a"));
-state.running.delete("run-0");
-capacity.drainQueue(fakePi);
-await flush();
-eq("abandoned entry is dropped", capacity.queuedCount(), 0);
-eq("abandon sends nothing", sent.length, 0);
-
-reset();
-capacity.registerLauncher("spawn", async () => {
-	throw new capacity.CancelLaunch("model");
-});
-for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
-capacity.admitLaunch(spawnSpec("a"));
-state.running.delete("run-0");
-capacity.drainQueue(fakePi);
-await flush();
-eq("CancelLaunch drops the claimed entry", [capacity.queuedCount(), capacity.isPendingLaunch("a")], [0, false]);
-eq("CancelLaunch dispatch sends no duplicate notice", sent.length, 0);
-
-reset();
-capacity.registerLauncher("spawn", async () => {
-	const error = new capacity.CancelLaunch("model");
-	error.cleanupFailure = "Remove /repo/leaked-worktree manually.";
-	throw error;
-});
-for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
-capacity.admitLaunch(spawnSpec("a"));
-state.running.delete("run-0");
-capacity.drainQueue(fakePi);
-await flush();
-eq("cancel rollback failure emits one distinct operational notice",
-	sent.map((message) => message.customType), ["subagent_cancel_cleanup_failed"]);
-ok("cancel rollback warning preserves the manual cleanup instruction",
-	sent[0]?.content?.includes("remains cancelled") === true && sent[0]?.content?.includes("/repo/leaked-worktree"));
-
-// ── notices are self-contained ────────────────────────────────────────────
-
-reset();
-fakeRunning("r");
-capacity.admitLaunch(spawnSpec("x")); // consumes the last... no: 1 running, so this runs
-capacity.releaseClaim("x");
-const failureNotice = capacity.formatLaunchFailureNotice(spawnSpec("x"), "boom");
-ok("failure notice carries id, error, and counts",
-	failureNotice.includes("id x") && failureNotice.includes("boom") && failureNotice.includes("1 running"));
-const cancelNotice = capacity.formatQueueCancelledNotice(resumeSpec("r9", "/tmp/child.jsonl"));
-ok("cancel notice carries id and no-result warning",
-	cancelNotice.includes("id r9") && cancelNotice.includes("no result will arrive"));
-
-// ── boundary guards ───────────────────────────────────────────────────────
-// prepareForReload aborts the module signal without changing the generation
-// (→ requeue); completeReloadHandoff after an abort starts a fresh
-// generation (→ abandon for launches captured under the old one).
-
-reset();
-const generation = state.moduleGeneration();
-let guardOutcome = "none";
-try { capacity.assertLaunchStillWanted(generation, "guard-live"); guardOutcome = "passed"; } catch { guardOutcome = "threw"; }
-eq("guard passes in a live generation", guardOutcome, "passed");
-
-capacity.recordCancellation("guard-cancel", "user");
-try { capacity.assertLaunchStillWanted(generation, "guard-cancel"); guardOutcome = "passed"; }
-catch (error) {
-	guardOutcome = error instanceof capacity.CancelLaunch && error.requester === "user" ? "cancel" : "other";
-}
-eq("a tombstone wins the launch boundary", guardOutcome, "cancel");
-
-state.prepareForReload(() => {});
-try { capacity.assertLaunchStillWanted(generation, "guard-reload"); guardOutcome = "passed"; }
-catch (error) { guardOutcome = error instanceof capacity.RequeueLaunch ? "requeue" : "other"; }
-eq("reload in progress requeues", guardOutcome, "requeue");
-
-ok("drain is a no-op while the generation is aborted", (() => {
-	capacity.registerLauncher("spawn", async (_pi, spec) => { launched.push(spec.id); });
-	for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
-	capacity.admitLaunch(spawnSpec("a"));
-	state.running.clear();
-	launched.length = 0;
-	capacity.drainQueue(fakePi);
-	return launched.length === 0 && capacity.queuedCount() === 1;
-})());
-
-state.completeReloadHandoff();
-try { capacity.assertLaunchStillWanted(generation, "guard-abandon"); guardOutcome = "passed"; }
-catch (error) { guardOutcome = error instanceof capacity.AbandonLaunch ? "abandon" : "other"; }
-eq("a later generation abandons", guardOutcome, "abandon");
-
-// the reaper arms even when only queued work exists (nothing running)
-reset();
-let reaped = false;
-state.prepareForReload(() => { reaped = true; }, 0, true);
-await new Promise((resolve) => setTimeout(resolve, 5));
-eq("reaper arms for queued-only pending work", reaped, true);
-state.completeReloadHandoff();
-
-// ── /reload survival ──────────────────────────────────────────────────────
-// A cache-busted re-import simulates pi re-importing the module graph; the
-// queue lives on globalThis, so the replacement sees the same entries.
-
-reset();
-for (let i = 0; i < 9; i++) fakeRunning(`run-${i}`);
-capacity.admitLaunch(spawnSpec("a"));
-capacity.recordCancellation("reload-cancel", "model");
-const reloaded = await import(new URL(`../capacity.ts?reload-test=${Date.now()}`, import.meta.url).href) as typeof capacity;
-eq("queue survives a module re-import",
-	reloaded.queuedEntries().map((entry) => entry.spec.id), ["a"]);
-eq("cancellation tombstones survive a module re-import",
-	reloaded.cancellationFor("reload-cancel")?.requester, "model");
-reloaded.clearQueueForShutdown();
-eq("destructive shutdown clears cancellation tombstones",
-	reloaded.cancellationFor("reload-cancel"), undefined);
-
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
