@@ -71,6 +71,11 @@ eq("unknown progress preserves the resolved token point", compactTargetVariants(
 eq("disabled compact target is absent", compactTargetVariants(disabled, 372_000, 140_000), undefined);
 eq("zero-window compact target is absent", compactTargetVariants(enabled, 0, 140_000), undefined);
 eq("unknown-window compact target is absent", compactTargetVariants(enabled, undefined, 140_000), undefined);
+eq("paused compact target replaces progress with the paused marker", compactTargetVariants(enabled, 372_000, 140_000, true), {
+	full: "compact ⏸",
+	compact: "C⏸",
+});
+eq("paused disabled compact target stays absent", compactTargetVariants(disabled, 372_000, 140_000, true), undefined);
 
 eq("enabled warning lower bound is inclusive", selectContextColorBand(60, enabled, 372_000), "warning");
 eq("enabled threshold is error", selectContextColorBand(70, enabled, 372_000), "error");
@@ -83,6 +88,8 @@ eq("unknown window falls back to static bands", selectContextColorBand(80, enabl
 eq("disabled keeps exact 70 boundary uncolored", selectContextColorBand(70, disabled, 372_000), undefined);
 eq("disabled keeps greater-than-70 warning boundary", selectContextColorBand(70.1, disabled, 372_000), "warning");
 eq("disabled keeps greater-than-90 error boundary", selectContextColorBand(90.1, disabled, 372_000), "error");
+eq("paused falls back to the static bands", selectContextColorBand(70, enabled, 372_000, true), undefined);
+eq("paused keeps the static warning boundary", selectContextColorBand(70.1, enabled, 372_000, true), "warning");
 
 eq("token flow has no shorter representation", tokenFlowVariants(305_000, 31_000), {
 	full: "↑305k ↓31k",
@@ -162,10 +169,12 @@ eq("owned statuses are removed from the generic line", partitionFooterStatuses(n
 	["z-status", "  zeta\nvalue  "],
 	["elapsed-time", "  ◷ 00:42  "],
 	["fast-openai", "fast"],
+	["auto-compact", "auto-compact paused"],
 	["a-status", "alpha\tvalue"],
 ])), {
 	elapsedTime: "◷ 00:42",
 	fastMode: true,
+	autoCompactPaused: true,
 	statusLine: "alpha value zeta value",
 });
 eq("elapsed alone does not create a third line or fast mode", partitionFooterStatuses(new Map([
@@ -173,6 +182,7 @@ eq("elapsed alone does not create a third line or fast mode", partitionFooterSta
 ])), {
 	elapsedTime: "✓ 00:42",
 	fastMode: false,
+	autoCompactPaused: false,
 	statusLine: undefined,
 });
 

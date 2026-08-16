@@ -148,6 +148,7 @@ let branch = "feature/issue-456";
 let branchChanged: (() => void) | undefined;
 let unsubscribed = 0;
 let renders = 0;
+let extensionStatuses = new Map([["fast-openai", "fast"]]);
 const component = footerFactory(
 	{ requestRender: () => renders++ },
 	{
@@ -162,7 +163,7 @@ const component = footerFactory(
 			branchChanged = callback;
 			return () => unsubscribed++;
 		},
-		getExtensionStatuses: () => new Map([["fast-openai", "fast"]]),
+		getExtensionStatuses: () => extensionStatuses,
 		getAvailableProviderCount: () => 1,
 	},
 );
@@ -199,6 +200,12 @@ ok("responsive footer uses compact progress form",
 	responsiveStats.some((line) => line.includes("C57%")));
 ok("responsive footer shortens fast mode",
 	responsiveStats.some((line) => line.endsWith("no-model • f")));
+
+extensionStatuses = new Map([["fast-openai", "fast"], ["auto-compact", "auto-compact paused"]]);
+eq("published auto-compact pause replaces compact-target progress",
+	plain(component.render(120)[1] ?? "").trimStart().split(/ {2,}/)[0],
+	"↑305k ↓31k • $5.179 • 51% 140k/272k • compact ⏸");
+extensionStatuses = new Map([["fast-openai", "fast"]]);
 
 branch = "feature/issue-789";
 branchChanged?.();
