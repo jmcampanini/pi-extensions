@@ -1,7 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
-import { buildSubagentResultMessage } from "../../interactive-subagents/result-content.ts";
 import { ExplorerComponent } from "../component.ts";
 import { formatPreviewLines, formatResultRow } from "../render.ts";
 import { ExplorerState } from "../state.ts";
@@ -50,36 +49,36 @@ const pendingSpawnBlock = makeBlock({
 	canonicalText: spawnInvocation,
 	toolArguments: spawnArguments,
 });
-const envelope = buildSubagentResultMessage({
-	status: "completed",
-	name: "Message type recon",
-	agent: "scout",
-	id: "c853bdcf",
-	model: "claude-sonnet-5",
-	effort: "high",
-	forked: true,
-	interactive: true,
-	worktree: true,
-	tools: "read,edit,bash",
-	elapsedSeconds: 45,
-	contextTokens: 66_000,
-	contextWindow: 200_000,
-	resultTokens: 951,
-	costUsd: 0.13,
-	exitCode: 0,
-	reason: "done",
-	response: "## Relevant Files\n\n- `render.ts` — **tag** logic",
-	sessionFile: "/sessions/child.jsonl",
-	worktreeDir: "/repo/worktree",
-	worktreeBranch: "pi/message-types",
-	worktreeStatus: "kept",
-	worktreeNote: "Worktree: kept at /repo/worktree on branch pi/message-types.",
-});
+// A static instance of the shared envelope format (shared/subagent-envelope.ts);
+// the writer's build→parse round-trip is pinned in interactive-subagents' tests.
+const envelopeContent = `Subagent result
+Status: completed
+Name: Message type recon
+Agent: scout
+ID: c853bdcf
+Model: claude-sonnet-5
+Effort: high
+Mode: forked · interactive · worktree
+Tools: read,edit,bash
+Elapsed: 45s
+Context: 66k tokens
+Result: ~951 tokens
+Cost: $0.13
+
+<result>
+## Relevant Files
+
+- \`render.ts\` — **tag** logic
+</result>
+
+Resume: subagent_resume({ id: "c853bdcf", message: "..." })
+Session: /sessions/child.jsonl
+Worktree: kept at /repo/worktree on branch pi/message-types.`;
 const resultBlock = makeBlock({
 	id: "result-1",
 	kind: "custom",
 	title: "subagent_result",
-	body: envelope.content,
+	body: envelopeContent,
 });
 
 // View mapping
