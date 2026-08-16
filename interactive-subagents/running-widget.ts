@@ -197,15 +197,16 @@ export function compactWidgetSnapshot(
 
 export function updateRunningWidget(): void {
 	if (widgetSuspensions.count > 0) return;
+	const idle = running.size === 0 && queuedCount() === 0 && pendingLaunchCount() === 0;
+	if (idle) stopWidgetTimer();
+
 	const ctx = getLatestCtx();
 	if (!ctx || !ctx.hasUI) return;
 
-	if (running.size === 0 && delivering.size === 0 && queuedCount() === 0 && pendingLaunchCount() === 0) {
+	if (idle && delivering.size === 0) {
 		ctx.ui.setWidget(WIDGET_KEY, undefined);
-		stopWidgetTimer();
 		return;
 	}
-	if (running.size === 0 && queuedCount() === 0 && pendingLaunchCount() === 0) stopWidgetTimer();
 
 	const snapshot = compactWidgetSnapshot();
 	ctx.ui.setWidget(

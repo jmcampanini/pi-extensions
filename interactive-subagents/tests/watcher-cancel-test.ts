@@ -10,7 +10,6 @@ process.env.PI_CODING_AGENT_DIR = join(process.cwd(), ".sandbox", "watcher-cance
 const { adoptRunningChildren, trackChild } = await import("../watcher.ts");
 const state = await import("../state.ts");
 const capacity = await import("../capacity.ts");
-const { stopWidgetTimer } = await import("../running-widget.ts");
 const { deliveryRecord, ledger, resetForShutdown, running } = state;
 const { clearQueueForShutdown } = capacity;
 type SpawnSpec = import("../capacity.ts").SpawnSpec;
@@ -18,9 +17,6 @@ type SpawnSpec = import("../capacity.ts").SpawnSpec;
 after(() => {
 	resetForShutdown();
 	clearQueueForShutdown();
-	// Without a UI context updateRunningWidget can never reach its own
-	// stopWidgetTimer call, so the 1s interval would keep the process alive.
-	stopWidgetTimer();
 });
 
 interface SentDetails {
