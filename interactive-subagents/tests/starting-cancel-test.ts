@@ -123,16 +123,15 @@ describe("cancelling a starting launch", () => {
 		assert.strictEqual(requestCancel(pi, spawnId, "model").kind, "cancelled-starting",
 			"cancelling the parked launch resolves as starting");
 		writeFileSync(releaseMarker, "release\n");
-		let spawnError: unknown;
 		try {
-			await spawnPromise;
-		} catch (error) {
-			spawnError = error;
+			await assert.rejects(
+				spawnPromise,
+				(error) => error instanceof capacity.CancelLaunch && error.requester === "model",
+				"the resumed boundary throws requester-aware CancelLaunch",
+			);
 		} finally {
 			capacity.releaseClaim(spawnId);
 		}
-		assert.ok(spawnError instanceof capacity.CancelLaunch && spawnError.requester === "model",
-			"the resumed boundary throws requester-aware CancelLaunch");
 		const worktreeDir = join(repo, `.cancel-wt-${spawnSpec.slug}-${spawnId}`);
 		assert.ok(!existsSync(worktreeDir), "cancelled starting spawn rolls back the fresh worktree");
 		assert.deepStrictEqual([
@@ -163,16 +162,15 @@ describe("cancelling a starting launch", () => {
 		assert.ok(existsSync(failureMarker), "failing worktree creation reaches its controllable await");
 		requestCancel(pi, failureId, "model");
 		writeFileSync(releaseFailureMarker, "release\n");
-		let failureError: unknown;
 		try {
-			await failurePromise;
-		} catch (error) {
-			failureError = error;
+			await assert.rejects(
+				failurePromise,
+				(error) => error instanceof capacity.CancelLaunch && error.requester === "model",
+				"a tombstone dominates an error from the awaited create step",
+			);
 		} finally {
 			capacity.releaseClaim(failureId);
 		}
-		assert.ok(failureError instanceof capacity.CancelLaunch && failureError.requester === "model",
-			"a tombstone dominates an error from the awaited create step");
 
 		capacity.clearQueueForShutdown();
 		rmSync(createdMarker, { force: true });
@@ -191,19 +189,18 @@ describe("cancelling a starting launch", () => {
 		}
 		requestCancel(pi, cleanupId, "user");
 		writeFileSync(releaseMarker, "release\n");
-		let cleanupError: unknown;
 		try {
-			await cleanupPromise;
-		} catch (error) {
-			cleanupError = error;
+			await assert.rejects(
+				cleanupPromise,
+				(error) =>
+					error instanceof capacity.CancelLaunch &&
+					error.cleanupFailure?.includes("intentional cleanup failure") === true &&
+					error.cleanupFailure.includes("remove") === true,
+				"cancellation preserves a rollback-failure warning on CancelLaunch",
+			);
 		} finally {
 			capacity.releaseClaim(cleanupId);
 		}
-		assert.ok(
-			cleanupError instanceof capacity.CancelLaunch &&
-			cleanupError.cleanupFailure?.includes("intentional cleanup failure") === true &&
-			cleanupError.cleanupFailure.includes("remove") === true,
-			"cancellation preserves a rollback-failure warning on CancelLaunch");
 		const leakedWorktree = join(repo, `.cancel-wt-${cleanupSpec.slug}-${cleanupId}`);
 		assert.ok(existsSync(leakedWorktree), "the warning corresponds to the worktree left by failed cleanup");
 		execFileSync("git", ["worktree", "remove", "--force", leakedWorktree], { cwd: repo });
@@ -238,16 +235,15 @@ describe("cancelling a starting launch", () => {
 		capacity.admitLaunch(resumeSpec);
 		capacity.recordCancellation(resumeId, "user");
 		const resumePromise = trackLaunch(runResumeLaunch(pi, resumeSpec));
-		let resumeError: unknown;
 		try {
-			await resumePromise;
-		} catch (error) {
-			resumeError = error;
+			await assert.rejects(
+				resumePromise,
+				(error) => error instanceof capacity.CancelLaunch && error.requester === "user",
+				"cancelled resume reaches the same requester-aware boundary",
+			);
 		} finally {
 			capacity.releaseClaim(resumeId);
 		}
-		assert.ok(resumeError instanceof capacity.CancelLaunch && resumeError.requester === "user",
-			"cancelled resume reaches the same requester-aware boundary");
 		assert.strictEqual(readFileSync(sessionPath, "utf8"), originalSession,
 			"cancelled resume preserves the earlier session file byte-for-byte");
 		assert.deepStrictEqual([state.running.has(resumeId), state.ledger.has(resumeId)], [false, false],

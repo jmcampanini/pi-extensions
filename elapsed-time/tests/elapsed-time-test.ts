@@ -10,10 +10,7 @@ import {
 
 type Handler = (event: any, ctx: any) => void;
 
-function fakePi(): {
-	api: ExtensionAPI;
-	emit(type: string, event: unknown, ctx: unknown): void;
-} {
+function fakePi() {
 	const handlers = new Map<string, Handler[]>();
 	return {
 		api: {
@@ -23,7 +20,7 @@ function fakePi(): {
 				handlers.set(type, registered);
 			},
 		} as unknown as ExtensionAPI,
-		emit(type, event, ctx): void {
+		emit(type: string, event: unknown, ctx: unknown): void {
 			for (const handler of handlers.get(type) ?? []) handler(event, ctx);
 		},
 	};
@@ -57,13 +54,7 @@ class FakeClock implements ElapsedTimeClock {
 	}
 }
 
-function harness(hasUI = true): {
-	pi: ReturnType<typeof fakePi>;
-	clock: FakeClock;
-	ctx: unknown;
-	statuses: Array<[string, string | undefined]>;
-	themeTokens: string[];
-} {
+function harness(hasUI = true) {
 	const pi = fakePi();
 	const clock = new FakeClock();
 	const statuses: Array<[string, string | undefined]> = [];
