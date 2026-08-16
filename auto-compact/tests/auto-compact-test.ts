@@ -103,6 +103,8 @@ function harness(options: {
 				},
 				ctx,
 			),
+		recordCompaction: (reason: "threshold" | "manual" | "overflow", fromExtension = false) =>
+			pi.emit("session_compact", { type: "session_compact", reason, fromExtension }, ctx),
 		selectModel: (model: FakeModel | undefined) => {
 			state.model = model;
 			pi.emit("model_select", { type: "model_select", model }, ctx);
@@ -161,11 +163,7 @@ describe("registerAutoCompact", () => {
 			usage: { tokens: null, contextWindow: 128_000, percent: null },
 			model: { id: "tiny-model", provider: "openai", contextWindow: 999_999 },
 		});
-		nativeWarn.pi.emit(
-			"session_compact",
-			{ type: "session_compact", reason: "threshold", fromExtension: false },
-			nativeWarn.ctx,
-		);
+		nativeWarn.recordCompaction("threshold");
 		nativeWarn.settle();
 		assert.strictEqual(nativeWarn.compactions.length, 0, "post-native unknown usage does not duplicate compaction");
 		assert.deepStrictEqual(
@@ -179,18 +177,10 @@ describe("registerAutoCompact", () => {
 			],
 			"an observed native threshold compaction warns once with the usage-derived threshold",
 		);
-		nativeWarn.pi.emit(
-			"session_compact",
-			{ type: "session_compact", reason: "threshold", fromExtension: false },
-			nativeWarn.ctx,
-		);
+		nativeWarn.recordCompaction("threshold");
 		assert.strictEqual(nativeWarn.notifications.length, 1, "repeated native compaction for the same model stays quiet");
 		nativeWarn.selectModel({ id: "tiny-sibling", provider: "openai", contextWindow: 128_000 });
-		nativeWarn.pi.emit(
-			"session_compact",
-			{ type: "session_compact", reason: "threshold", fromExtension: true },
-			nativeWarn.ctx,
-		);
+		nativeWarn.recordCompaction("threshold", true);
 		assert.strictEqual(
 			nativeWarn.notifications.length,
 			2,
@@ -200,16 +190,8 @@ describe("registerAutoCompact", () => {
 
 	it("manual and overflow compactions do not imply native threshold preemption", () => {
 		const nonThresholdCompact = harness({ model: tiny });
-		nonThresholdCompact.pi.emit(
-			"session_compact",
-			{ type: "session_compact", reason: "manual", fromExtension: false },
-			nonThresholdCompact.ctx,
-		);
-		nonThresholdCompact.pi.emit(
-			"session_compact",
-			{ type: "session_compact", reason: "overflow", fromExtension: false },
-			nonThresholdCompact.ctx,
-		);
+		nonThresholdCompact.recordCompaction("manual");
+		nonThresholdCompact.recordCompaction("overflow");
 		assert.deepStrictEqual(nonThresholdCompact.notifications, []);
 	});
 
@@ -327,11 +309,7 @@ describe("registerAutoCompact", () => {
 		);
 		latch.settle();
 		assert.strictEqual(latch.compactions.length, 1, "failure latch prevents a retry loop");
-		latch.pi.emit(
-			"session_compact",
-			{ type: "session_compact", reason: "threshold", fromExtension: false },
-			latch.ctx,
-		);
+		latch.recordCompaction("threshold");
 		assert.deepStrictEqual(
 			latch.notifications.filter(({ level }) => level === "warning"),
 			[],
@@ -391,11 +369,7 @@ describe("registerAutoCompact", () => {
 
 	it("disabled extension never compacts or notifies", () => {
 		const disabled = harness({ config: { enabled: false }, model: tiny });
-		disabled.pi.emit(
-			"session_compact",
-			{ type: "session_compact", reason: "threshold", fromExtension: false },
-			disabled.ctx,
-		);
+		disabled.recordCompaction("threshold");
 		disabled.endRun("aborted");
 		disabled.settle();
 		assert.strictEqual(disabled.compactions.length, 0, "disabled extension never compacts");

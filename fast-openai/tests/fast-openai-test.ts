@@ -89,7 +89,7 @@ const requestContext = (model: FakeModel | undefined, usingOAuth = true): FakeCo
 	modelRegistry: { isUsingOAuth: () => usingOAuth },
 });
 
-const injectWith = (enabled: boolean, payload: unknown, ctx: FakeContext): unknown => {
+const inject = (payload: unknown, ctx: FakeContext, enabled = true): unknown => {
 	writeFileSync(configPath, JSON.stringify({ enabled }), "utf8");
 	return beforeProviderRequest({ type: "before_provider_request", payload }, ctx);
 };
@@ -181,54 +181,54 @@ describe("before_provider_request", () => {
 
 	it("eligible request gains the priority tier", () => {
 		assert.deepStrictEqual(
-			injectWith(true, { model: "gpt-5.5", input: "hi" }, requestContext(eligibleModel)),
+			inject({ model: "gpt-5.5", input: "hi" }, requestContext(eligibleModel)),
 			{ model: "gpt-5.5", input: "hi", service_tier: "priority" },
 		);
 	});
 
 	it("payload without a model field still gains the tier", () => {
 		assert.deepStrictEqual(
-			injectWith(true, { input: "hi" }, requestContext(eligibleModel)),
+			inject({ input: "hi" }, requestContext(eligibleModel)),
 			{ input: "hi", service_tier: "priority" },
 		);
 	});
 
 	it("payload for a different model is left alone", () => {
-		assert.strictEqual(injectWith(true, { model: "gpt-5.4" }, requestContext(eligibleModel)), undefined);
+		assert.strictEqual(inject({ model: "gpt-5.4" }, requestContext(eligibleModel)), undefined);
 	});
 
 	it("existing service_tier is preserved", () => {
 		assert.strictEqual(
-			injectWith(true, { model: "gpt-5.5", service_tier: "default" }, requestContext(eligibleModel)),
+			inject({ model: "gpt-5.5", service_tier: "default" }, requestContext(eligibleModel)),
 			undefined,
 		);
 	});
 
 	it("non-object payload is left alone", () => {
-		assert.strictEqual(injectWith(true, "prompt", requestContext(eligibleModel)), undefined);
+		assert.strictEqual(inject("prompt", requestContext(eligibleModel)), undefined);
 	});
 
 	it("no current model never injects", () => {
-		assert.strictEqual(injectWith(true, {}, requestContext(undefined)), undefined);
+		assert.strictEqual(inject({}, requestContext(undefined)), undefined);
 	});
 
 	it("unsupported model never injects", () => {
-		assert.strictEqual(injectWith(true, {}, requestContext({ ...eligibleModel, id: "gpt-4.1" })), undefined);
+		assert.strictEqual(inject({}, requestContext({ ...eligibleModel, id: "gpt-4.1" })), undefined);
 	});
 
 	it("unsupported provider never injects", () => {
-		assert.strictEqual(injectWith(true, {}, requestContext({ ...eligibleModel, provider: "openai" })), undefined);
+		assert.strictEqual(inject({}, requestContext({ ...eligibleModel, provider: "openai" })), undefined);
 	});
 
 	it("unsupported api never injects", () => {
-		assert.strictEqual(injectWith(true, {}, requestContext({ ...eligibleModel, api: "openai-responses" })), undefined);
+		assert.strictEqual(inject({}, requestContext({ ...eligibleModel, api: "openai-responses" })), undefined);
 	});
 
 	it("api-key auth never injects", () => {
-		assert.strictEqual(injectWith(true, {}, requestContext(eligibleModel, false)), undefined);
+		assert.strictEqual(inject({}, requestContext(eligibleModel, false)), undefined);
 	});
 
 	it("disabled config never injects", () => {
-		assert.strictEqual(injectWith(false, {}, requestContext(eligibleModel)), undefined);
+		assert.strictEqual(inject({}, requestContext(eligibleModel), false), undefined);
 	});
 });
