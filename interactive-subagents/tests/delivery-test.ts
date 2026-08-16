@@ -9,28 +9,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createTestEventHarness } from "../../shared/test-event-harness.ts";
 import { deliveredChildId, registerDeliveryListener } from "../delivery.ts";
 import { delivering, resetForShutdown } from "../state.ts";
-
-// registerDeliveryListener only ever calls pi.on(type, handler), so a
-// Map-backed registry with a manual emit is a faithful stand-in (same
-// pattern as recorder-test.ts).
-
-type Handler = (event: unknown, ctx: unknown) => void;
-
-function fakePi(): { on: (type: string, handler: Handler) => void; emit: (type: string, event: unknown, ctx: unknown) => void } {
-	const handlers = new Map<string, Handler[]>();
-	return {
-		on(type: string, handler: Handler): void {
-			const list = handlers.get(type) ?? [];
-			list.push(handler);
-			handlers.set(type, list);
-		},
-		emit(type: string, event: unknown, ctx: unknown): void {
-			for (const handler of handlers.get(type) ?? []) handler(event, ctx);
-		},
-	};
-}
 
 function seed(id: string): void {
 	delivering.set(id, {
@@ -111,7 +92,7 @@ describe("registerDeliveryListener", () => {
 	// updateRunningWidget runs inside the handler and must no-op harmlessly:
 	// getLatestCtx() is null under plain node - nothing may throw.
 	it("clears delivering rows only when this extension's own message lands", () => {
-		const pi = fakePi();
+		const pi = createTestEventHarness();
 		registerDeliveryListener(pi as unknown as ExtensionAPI);
 
 		seed("aaaa1111");

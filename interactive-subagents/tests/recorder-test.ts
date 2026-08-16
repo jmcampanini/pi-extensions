@@ -10,30 +10,11 @@
 import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createTestEventHarness } from "../../shared/test-event-harness.ts";
 import { readActivityFile, registerActivityRecorder, type ActivitySnapshot } from "../activity.ts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-// ── the fake pi emitter ──────────────────────────────────────────────────
-// registerActivityRecorder only ever calls pi.on(type, handler), so a
-// Map-backed registry with a manual emit is a faithful stand-in.
-
-type Handler = (event: unknown, ctx: unknown) => void;
-
-function fakePi(): { on: (type: string, handler: Handler) => void; emit: (type: string, event: unknown, ctx: unknown) => void } {
-	const handlers = new Map<string, Handler[]>();
-	return {
-		on(type: string, handler: Handler): void {
-			const list = handlers.get(type) ?? [];
-			list.push(handler);
-			handlers.set(type, list);
-		},
-		emit(type: string, event: unknown, ctx: unknown): void {
-			for (const handler of handlers.get(type) ?? []) handler(event, ctx);
-		},
-	};
-}
 
 // ctx stand-ins: the recorder reads only ctx.model?.id and ctx.getContextUsage().
 const usage = { tokens: 84_000, contextWindow: 200_000, percent: 42 };
@@ -61,7 +42,7 @@ function read(): ActivitySnapshot {
 describe("registerActivityRecorder", () => {
 	it("records every lifecycle event's snapshot on disk in order", () => {
 		// ── registration: snapshot #1 proves liveness before any run ─────────
-		const pi = fakePi();
+		const pi = createTestEventHarness();
 		const beforeRegister = Date.now();
 		registerActivityRecorder(pi as unknown as ExtensionAPI, { runId: "run1", activityFile });
 		let s = read();
@@ -167,7 +148,7 @@ describe("registerActivityRecorder", () => {
 	// absorb this — pinned in activity-test.ts and status-test.ts; here we pin
 	// only what the fresh process actually writes.
 	it("a fresh registration resets per-process counters", () => {
-		const piReloaded = fakePi();
+		const piReloaded = createTestEventHarness();
 		registerActivityRecorder(piReloaded as unknown as ExtensionAPI, { runId: "run1", activityFile });
 		const s = read();
 		assert.strictEqual(s.sequence, 1, "reload: fresh process restarts at sequence 1");

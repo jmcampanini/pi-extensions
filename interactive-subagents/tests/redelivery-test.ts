@@ -6,6 +6,7 @@ import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createTestEventHarness } from "../../shared/test-event-harness.ts";
 import { agentEndWasNormal, needsRedelivery, registerDeliveryListener } from "../delivery.ts";
 import {
 	currentRunIndex,
@@ -22,7 +23,6 @@ after(() => {
 	resetForShutdown();
 });
 
-type Handler = (event: any, ctx: unknown) => void;
 type SendCall = { message: any; options: any };
 
 function fakePi(): {
@@ -31,20 +31,16 @@ function fakePi(): {
 	calls: SendCall[];
 	failuresRemaining: number;
 } {
-	const handlers = new Map<string, Handler[]>();
+	const events = createTestEventHarness<any, undefined>();
 	const fake = {
 		emit(type: string, event: any): void {
-			for (const handler of handlers.get(type) ?? []) handler(event, undefined);
+			events.emit(type, event, undefined);
 		},
 		calls: [] as SendCall[],
 		failuresRemaining: 0,
 	};
 	const api = {
-		on(type: string, handler: Handler): void {
-			const list = handlers.get(type) ?? [];
-			list.push(handler);
-			handlers.set(type, list);
-		},
+		on: events.on,
 		sendMessage(message: any, options: any): void {
 			fake.calls.push({ message, options });
 			if (fake.failuresRemaining > 0) {

@@ -3,30 +3,8 @@ import assert from "node:assert/strict";
 import type { CompactOptions, ContextUsage, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AutoCompactConfig } from "../../shared/auto-compact-config.ts";
 import { AUTO_COMPACT_STATUS_KEY } from "../../shared/status-keys.ts";
+import { createTestEventHarness } from "../../shared/test-event-harness.ts";
 import { registerAutoCompact } from "../index.ts";
-
-type Handler = (event: any, ctx: any) => void | Promise<void>;
-
-function fakePi(): {
-	on: (type: string, handler: Handler) => void;
-	emit: (type: string, event: unknown, ctx: unknown) => void;
-	emitAsync: (type: string, event: unknown, ctx: unknown) => Promise<void>;
-} {
-	const handlers = new Map<string, Handler[]>();
-	return {
-		on(type, handler): void {
-			const registered = handlers.get(type) ?? [];
-			registered.push(handler);
-			handlers.set(type, registered);
-		},
-		emit(type, event, ctx): void {
-			for (const handler of handlers.get(type) ?? []) void handler(event, ctx);
-		},
-		async emitAsync(type, event, ctx): Promise<void> {
-			for (const handler of handlers.get(type) ?? []) await handler(event, ctx);
-		},
-	};
-}
 
 interface FakeModel {
 	id: string;
@@ -55,7 +33,7 @@ function harness(options: {
 	usage?: ContextUsage;
 	model?: FakeModel;
 } = {}) {
-	const pi = fakePi();
+	const pi = createTestEventHarness<unknown, unknown, void | Promise<void>>();
 	const state: HarnessState = {
 		usage: options.usage ?? { tokens: 180_000, contextWindow: 200_000, percent: 90 },
 		idle: true,

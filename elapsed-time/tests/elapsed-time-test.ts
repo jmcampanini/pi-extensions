@@ -2,28 +2,16 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { ELAPSED_TIME_STATUS_KEY } from "../../shared/status-keys.ts";
+import { createTestEventHarness } from "../../shared/test-event-harness.ts";
 import {
 	formatElapsed,
 	registerElapsedTime,
 	type ElapsedTimeClock,
 } from "../index.ts";
 
-type Handler = (event: any, ctx: any) => void;
-
 function fakePi() {
-	const handlers = new Map<string, Handler[]>();
-	return {
-		api: {
-			on(type: string, handler: Handler): void {
-				const registered = handlers.get(type) ?? [];
-				registered.push(handler);
-				handlers.set(type, registered);
-			},
-		} as unknown as ExtensionAPI,
-		emit(type: string, event: unknown, ctx: unknown): void {
-			for (const handler of handlers.get(type) ?? []) handler(event, ctx);
-		},
-	};
+	const events = createTestEventHarness();
+	return { api: events as unknown as ExtensionAPI, emit: events.emit };
 }
 
 class FakeClock implements ElapsedTimeClock {
@@ -32,24 +20,24 @@ class FakeClock implements ElapsedTimeClock {
 	private nextTimer = 1;
 	private readonly timers = new Map<number, () => void>();
 
-	now = (): number => this.nowMs;
+	now = () => this.nowMs;
 
-	setInterval(callback: () => void, milliseconds: number): number {
+	setInterval(callback: () => void, milliseconds: number) {
 		this.lastIntervalMs = milliseconds;
 		const timer = this.nextTimer++;
 		this.timers.set(timer, callback);
 		return timer;
 	}
 
-	clearInterval(handle: object | number): void {
+	clearInterval(handle: object | number) {
 		this.timers.delete(handle as number);
 	}
 
-	fireTimers(): void {
+	fireTimers() {
 		for (const callback of [...this.timers.values()]) callback();
 	}
 
-	activeTimerCount(): number {
+	activeTimerCount() {
 		return this.timers.size;
 	}
 }

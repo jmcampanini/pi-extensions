@@ -1,9 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import type { EditorTui } from "../../shared/external-editor.ts";
 import { editTextExternally } from "../index.ts";
 
-function fakeTui(): { tui: EditorTui; calls: string[] } {
+function fakeTui() {
 	const calls: string[] = [];
 	return {
 		calls,
