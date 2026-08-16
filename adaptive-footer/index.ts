@@ -5,7 +5,7 @@ import { config as autoCompactConfig, type AutoCompactConfig } from "../auto-com
 import { AUTO_COMPACT_STATUS_KEY } from "../auto-compact/index.ts";
 import { formatTokens, resolveThresholdTokens } from "../auto-compact/threshold.ts";
 import { ELAPSED_TIME_STATUS_KEY } from "../elapsed-time/index.ts";
-import { FAST_OPENAI_STATUS_KEY } from "../fast-openai/index.ts";
+import { FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_ON } from "../fast-openai/index.ts";
 import { clampStyled, fitText } from "../interactive-subagents/text-fit.ts";
 import { config as adaptiveFooterConfig } from "./config.ts";
 import {
@@ -94,7 +94,7 @@ export function partitionFooterStatuses(statuses: ReadonlyMap<string, string>): 
 		.join(" ");
 	return {
 		elapsedTime: elapsedTime === undefined ? undefined : sanitizeStatusText(elapsedTime),
-		fastMode: statuses.has(FAST_OPENAI_STATUS_KEY),
+		fastMode: statuses.get(FAST_OPENAI_STATUS_KEY) === FAST_OPENAI_STATUS_ON,
 		autoCompactPaused: statuses.has(AUTO_COMPACT_STATUS_KEY),
 		statusLine: statusLine || undefined,
 	};
