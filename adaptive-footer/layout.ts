@@ -51,9 +51,35 @@ export const REDUCTION_ORDER: readonly FooterComponentId[] = [
 const COMPONENT_SEPARATOR = " • ";
 const MINIMUM_SIDE_GAP = 2;
 
-interface VisibleComponent {
-	id: FooterComponentId;
-	text: string;
+interface TwoSidedSpans<Span extends { text: string }> {
+	left: string;
+	right: string;
+	line: string;
+	requiredWidth: number;
+	spans: (Span | { text: string })[];
+}
+
+function composeTwoSidedSpans<Span extends { text: string }>(
+	leftSpans: readonly Span[],
+	rightSpans: readonly Span[],
+	width: number,
+): TwoSidedSpans<Span> {
+	const left = leftSpans.map((span) => span.text).join(COMPONENT_SEPARATOR);
+	const right = rightSpans.map((span) => span.text).join(COMPONENT_SEPARATOR);
+	const requiredWidth = visibleWidth(left) + visibleWidth(right) + (left && right ? MINIMUM_SIDE_GAP : 0);
+	const spans: (Span | { text: string })[] = [];
+	for (const [index, span] of leftSpans.entries()) {
+		if (index > 0) spans.push({ text: COMPONENT_SEPARATOR });
+		spans.push(span);
+	}
+	if (right) {
+		spans.push({ text: " ".repeat(Math.max(0, width - visibleWidth(left) - visibleWidth(right))) });
+		for (const [index, span] of rightSpans.entries()) {
+			if (index > 0) spans.push({ text: COMPONENT_SEPARATOR });
+			spans.push(span);
+		}
+	}
+	return { left, right, line: spans.map((span) => span.text).join(""), requiredWidth, spans };
 }
 
 function initialStates(components: ReadonlyMap<FooterComponentId, FooterComponent>): Record<FooterComponentId, FooterComponentState> {
@@ -66,60 +92,15 @@ function composeSide(
 	alignment: FooterAlignment,
 	components: ReadonlyMap<FooterComponentId, FooterComponent>,
 	states: Readonly<Record<FooterComponentId, FooterComponentState>>,
-): VisibleComponent[] {
+): FooterLayoutSpan[] {
 	return DISPLAY_ORDER.flatMap((id) => {
 		const component = components.get(id);
 		if (!component || component.alignment !== alignment) return [];
 		const state = states[id];
 		if (state === "hidden") return [];
 		const text = component[state];
-		return text ? [{ id, text }] : [];
+		return text ? [{ text, component: id }] : [];
 	});
-}
-
-function joinSide(components: readonly VisibleComponent[]): string {
-	return components.map((component) => component.text).join(COMPONENT_SEPARATOR);
-}
-
-function compose(
-	components: ReadonlyMap<FooterComponentId, FooterComponent>,
-	states: Readonly<Record<FooterComponentId, FooterComponentState>>,
-): {
-	left: string;
-	right: string;
-	leftComponents: VisibleComponent[];
-	rightComponents: VisibleComponent[];
-	requiredWidth: number;
-} {
-	const leftComponents = composeSide("left", components, states);
-	const rightComponents = composeSide("right", components, states);
-	const left = joinSide(leftComponents);
-	const right = joinSide(rightComponents);
-	const requiredWidth = visibleWidth(left) + visibleWidth(right) + (left && right ? MINIMUM_SIDE_GAP : 0);
-	return { left, right, leftComponents, rightComponents, requiredWidth };
-}
-
-function appendSideSpans(spans: FooterLayoutSpan[], components: readonly VisibleComponent[]): void {
-	for (const [index, component] of components.entries()) {
-		if (index > 0) spans.push({ text: COMPONENT_SEPARATOR });
-		spans.push({ text: component.text, component: component.id });
-	}
-}
-
-function renderSpans(
-	left: string,
-	right: string,
-	leftComponents: readonly VisibleComponent[],
-	rightComponents: readonly VisibleComponent[],
-	width: number,
-): FooterLayoutSpan[] {
-	const spans: FooterLayoutSpan[] = [];
-	appendSideSpans(spans, leftComponents);
-	if (right) {
-		spans.push({ text: " ".repeat(Math.max(0, width - visibleWidth(left) - visibleWidth(right))) });
-		appendSideSpans(spans, rightComponents);
-	}
-	return spans;
 }
 
 export function styleFooterSpans(
@@ -138,20 +119,17 @@ export function fitFooterLayout(componentsInput: readonly FooterComponent[], wid
 	const states = initialStates(components);
 
 	function resultIfFit(): FittedFooterLayout | undefined {
-		const candidate = compose(components, states);
-		if (candidate.requiredWidth > safeWidth) return undefined;
-		const spans = renderSpans(
-			candidate.left,
-			candidate.right,
-			candidate.leftComponents,
-			candidate.rightComponents,
+		const composed = composeTwoSidedSpans(
+			composeSide("left", components, states),
+			composeSide("right", components, states),
 			safeWidth,
 		);
+		if (composed.requiredWidth > safeWidth) return undefined;
 		return {
-			left: candidate.left,
-			right: candidate.right,
-			line: spans.map((span) => span.text).join(""),
-			spans,
+			left: composed.left,
+			right: composed.right,
+			line: composed.line,
+			spans: composed.spans,
 			states: { ...states },
 		};
 	}
@@ -290,14 +268,6 @@ function repositorySideSpans(
 	return { left, right };
 }
 
-function repositorySideText(spans: readonly RepositoryLayoutSpan[]): string {
-	return spans.map((span) => span.text).join(COMPONENT_SEPARATOR);
-}
-
-function repositoryRequiredWidth(left: string, right: string): number {
-	return visibleWidth(left) + visibleWidth(right) + (left && right ? MINIMUM_SIDE_GAP : 0);
-}
-
 function repositoryResult(
 	input: RepositoryLayoutInput,
 	states: Readonly<RepositoryLayoutState>,
@@ -305,29 +275,19 @@ function repositoryResult(
 	branchText: string,
 	width: number,
 	stage: RepositoryReductionStage,
-): FittedRepositoryLayout {
+): { layout: FittedRepositoryLayout; requiredWidth: number } {
 	const sides = repositorySideSpans(input, states, cwdText, branchText);
-	const left = repositorySideText(sides.left);
-	const right = repositorySideText(sides.right);
-	const spans: RepositoryLayoutSpan[] = [];
-	for (const [index, span] of sides.left.entries()) {
-		if (index > 0) spans.push({ text: COMPONENT_SEPARATOR });
-		spans.push(span);
-	}
-	if (right) {
-		spans.push({ text: " ".repeat(Math.max(0, width - visibleWidth(left) - visibleWidth(right))) });
-		for (const [index, span] of sides.right.entries()) {
-			if (index > 0) spans.push({ text: COMPONENT_SEPARATOR });
-			spans.push(span);
-		}
-	}
+	const composed = composeTwoSidedSpans(sides.left, sides.right, width);
 	return {
-		left,
-		right,
-		line: spans.map((span) => span.text).join(""),
-		spans,
-		states: { ...states },
-		stage,
+		layout: {
+			left: composed.left,
+			right: composed.right,
+			line: composed.line,
+			spans: composed.spans,
+			states: { ...states },
+			stage,
+		},
+		requiredWidth: composed.requiredWidth,
 	};
 }
 
@@ -347,7 +307,7 @@ export function fitRepositoryLayout(input: RepositoryLayoutInput, width: number)
 
 	function resultIfFit(stage: RepositoryReductionStage): FittedRepositoryLayout | undefined {
 		const result = repositoryResult(input, states, cwdText, branchText, safeWidth, stage);
-		return repositoryRequiredWidth(result.left, result.right) <= safeWidth ? result : undefined;
+		return result.requiredWidth <= safeWidth ? result.layout : undefined;
 	}
 
 	let fitted = resultIfFit("full");
@@ -368,13 +328,13 @@ export function fitRepositoryLayout(input: RepositoryLayoutInput, width: number)
 	if (!branchText) {
 		states.cwd = "clamped";
 		cwdText = fitTail(cwdText, safeWidth);
-		return repositoryResult(input, states, cwdText, branchText, safeWidth, "local-clamped");
+		return repositoryResult(input, states, cwdText, branchText, safeWidth, "local-clamped").layout;
 	}
 	if (!cwdText || safeWidth < 6) {
 		states.cwd = "hidden";
 		states.branch = "clamped";
 		branchText = fitText(branchText, safeWidth);
-		return repositoryResult(input, states, "", branchText, safeWidth, "branch-only");
+		return repositoryResult(input, states, "", branchText, safeWidth, "branch-only").layout;
 	}
 
 	const available = safeWidth - MINIMUM_SIDE_GAP;
@@ -394,7 +354,7 @@ export function fitRepositoryLayout(input: RepositoryLayoutInput, width: number)
 	states.branch = rightWidth < branchWidth ? "clamped" : states.branch;
 	cwdText = fitTail(cwdText, leftWidth);
 	branchText = fitText(branchText, rightWidth);
-	return repositoryResult(input, states, cwdText, branchText, safeWidth, "local-clamped");
+	return repositoryResult(input, states, cwdText, branchText, safeWidth, "local-clamped").layout;
 }
 
 export function styleRepositorySpans(

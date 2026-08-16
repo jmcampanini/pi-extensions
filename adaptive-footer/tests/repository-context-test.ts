@@ -152,6 +152,31 @@ eq("stale discovery results never replace the latest context", refresher.get().p
 eq("coalesced discovery renders only the latest result", changes, 1);
 refresher.dispose();
 
+let clockMs = 0;
+let flooredDiscoveries = 0;
+const flooredRefresher = createRepositoryContextRefresher(
+	() => ({ cwd: "/work/payments", branch: "main", issuePatterns: [] }),
+	async () => {
+		flooredDiscoveries++;
+		return {};
+	},
+	() => {},
+	() => clockMs,
+);
+await flooredRefresher.refresh();
+eq("an unconditional refresh always discovers", flooredDiscoveries, 1);
+clockMs = 29_999;
+await flooredRefresher.refreshIfStale(30_000);
+eq("a refresh inside the floor is skipped", flooredDiscoveries, 1);
+clockMs = 30_000;
+await flooredRefresher.refreshIfStale(30_000);
+eq("a refresh at the floor rediscovers", flooredDiscoveries, 2);
+clockMs = 30_001;
+flooredRefresher.clear();
+await flooredRefresher.refreshIfStale(30_000);
+eq("a cleared context is always stale", flooredDiscoveries, 3);
+flooredRefresher.dispose();
+
 const sandbox = join(process.cwd(), ".sandbox");
 mkdirSync(sandbox, { recursive: true });
 const fixture = mkdtempSync(join(sandbox, "adaptive-footer-gh-"));

@@ -179,6 +179,7 @@ export async function discoverRepositoryContext(
 export interface RepositoryContextRefresher {
 	get(): RepositoryContext;
 	refresh(): Promise<void>;
+	refreshIfStale(minIntervalMs: number): Promise<void>;
 	clear(): void;
 	dispose(): void;
 }
@@ -187,12 +188,14 @@ export function createRepositoryContextRefresher(
 	getInput: () => RepositoryContextInput,
 	discover: RepositoryContextDiscovery,
 	onChange: () => void,
+	now: () => number = Date.now,
 ): RepositoryContextRefresher {
 	let current: RepositoryContext = {};
 	let pending = false;
 	let disposed = false;
 	let active: Promise<void> | undefined;
 	let controller: AbortController | undefined;
+	let lastCompletedAt: number | undefined;
 
 	async function drain(): Promise<void> {
 		while (pending && !disposed) {
@@ -201,6 +204,7 @@ export function createRepositoryContextRefresher(
 			let next: RepositoryContext;
 			try {
 				next = await discover(getInput(), controller.signal);
+				lastCompletedAt = now();
 			} catch {
 				next = {};
 			}
@@ -212,21 +216,30 @@ export function createRepositoryContextRefresher(
 		}
 	}
 
+	function refresh(): Promise<void> {
+		if (disposed) return Promise.resolve();
+		pending = true;
+		if (!active) {
+			active = drain().finally(() => {
+				active = undefined;
+			});
+		}
+		return active;
+	}
+
 	return {
 		get: () => current,
-		refresh(): Promise<void> {
-			if (disposed) return Promise.resolve();
-			pending = true;
-			if (!active) {
-				active = drain().finally(() => {
-					active = undefined;
-				});
+		refresh,
+		refreshIfStale(minIntervalMs: number): Promise<void> {
+			if (lastCompletedAt !== undefined && now() - lastCompletedAt < minIntervalMs) {
+				return active ?? Promise.resolve();
 			}
-			return active;
+			return refresh();
 		},
 		clear(): void {
 			if (disposed) return;
 			current = {};
+			lastCompletedAt = undefined;
 			onChange();
 		},
 		dispose(): void {

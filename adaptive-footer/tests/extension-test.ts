@@ -46,7 +46,7 @@ interface FakeContext {
 	sessionManager: {
 		getCwd(): string;
 		getSessionName(): string | undefined;
-		getEntries(): never[];
+		getEntries(): unknown[];
 	};
 	model: undefined;
 	modelRegistry: {
@@ -112,7 +112,8 @@ const discover: RepositoryContextDiscovery = async ({ branch }) => {
 		},
 	};
 };
-registerAdaptiveFooter(fakePi, { issuePatterns: [], discover });
+let nowMs = 0;
+registerAdaptiveFooter(fakePi, { issuePatterns: [], discover, now: () => nowMs });
 
 const context: FakeContext = {
 	hasUI: true,
@@ -124,7 +125,15 @@ const context: FakeContext = {
 	sessionManager: {
 		getCwd: () => "/Users/dev/Code/acme/payments/main",
 		getSessionName: () => "footer links",
-		getEntries: () => [],
+		getEntries: () => [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					usage: { input: 305_000, output: 31_000, cacheRead: 0, cacheWrite: 0, cost: { total: 5.179 } },
+				},
+			},
+		],
 	},
 	model: undefined,
 	modelRegistry: {
@@ -180,8 +189,8 @@ ok("extension render emits clickable issue and PR URLs",
 ok("issue and PR links share the underlined accent treatment",
 	initialLine.includes("\x1b[36m\x1b[4mis#456 o")
 		&& initialLine.includes("\x1b[36m\x1b[4mpr#123 d"));
-eq("extension wires context usage into compact-target progress", initialStats,
-	"51% 140k/272k • compact @245k 57%");
+eq("extension wires usage totals and context into the stats line", initialStats,
+	"↑305k ↓31k • $5.179 • 51% 140k/272k • compact @245k 57%");
 ok("extension places enabled fast mode after the model",
 	plain(initialRender[1] ?? "").endsWith("no-model • fast"));
 const responsiveStats = Array.from({ length: 121 }, (_, width) =>
@@ -204,7 +213,11 @@ eq("branch change performs one additional discovery", discoveryCalls, 2);
 
 await handlers.get("agent_settled")?.({ type: "agent_settled" }, context);
 await new Promise<void>((resolve) => setImmediate(resolve));
-eq("settled agent runs refresh repository context", discoveryCalls, 3);
+eq("settling within the refresh floor skips gh discovery", discoveryCalls, 2);
+nowMs = 31_000;
+await handlers.get("agent_settled")?.({ type: "agent_settled" }, context);
+await new Promise<void>((resolve) => setImmediate(resolve));
+eq("settling after the refresh floor rediscovers repository context", discoveryCalls, 3);
 
 const wiredOverflowWidth = Array.from({ length: 121 }, (_, width) => width)
 	.find((width) => visibleWidth(component.render(width)[0] ?? "") > width);
