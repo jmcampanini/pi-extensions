@@ -1,4 +1,4 @@
-import { after, describe, it } from "node:test";
+import { after, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
@@ -17,10 +17,6 @@ const capacity = await import("../capacity.ts");
 const { registerSubagentCancelTool } = await import("../tool-cancel.ts");
 type RunningSubagent = import("../state.ts").RunningSubagent;
 type SpawnSpec = import("../capacity.ts").SpawnSpec;
-
-after(() => {
-	reset();
-});
 
 function spawnSpec(id: string, name: string): SpawnSpec {
 	return {
@@ -84,6 +80,9 @@ function reset(): void {
 	for (const pending of capacity.pendingLaunches()) capacity.releaseClaim(pending.spec.id);
 	capacity.clearQueueForShutdown();
 }
+
+beforeEach(reset);
+after(reset);
 
 let registered: ToolDefinition | undefined;
 const fakePi = {
@@ -159,7 +158,6 @@ describe("subagent_cancel", () => {
 
 	// Every success result carries a protocol word and enough standalone prose.
 	it("cancelling a queued launch reports count-aware cancelled prose", async () => {
-		reset();
 		state.running.set("blocker0", runningChild("blocker0", "Capacity blocker"));
 		capacity.admitLaunch(spawnSpec("queue001", "Queued task"));
 		const queuedResult = await execute("queue001");
@@ -176,7 +174,6 @@ describe("subagent_cancel", () => {
 	});
 
 	it("cancelling a starting launch unwinds it without a run or result", async () => {
-		reset();
 		capacity.admitLaunch(spawnSpec("start001", "Starting task"));
 		const startingResult = await execute("start001");
 		assert.deepStrictEqual(startingResult.details, {
@@ -193,7 +190,6 @@ describe("subagent_cancel", () => {
 	});
 
 	it("stopping a running child is immediate, attributed, and idempotent", async () => {
-		reset();
 		const running = runningChild("running1", "Running task");
 		state.running.set(running.id, running);
 		const stoppingResult = await execute(running.id);
@@ -225,7 +221,6 @@ describe("subagent_cancel", () => {
 	});
 
 	it("running worktree result says that its worktree is retained", async () => {
-		reset();
 		const worktreeRunning = runningChild("running2", "Worktree task");
 		worktreeRunning.worktree = {
 			dir: "/repo/worktree",
@@ -241,35 +236,30 @@ describe("subagent_cancel", () => {
 
 	// Wrong lifecycle beliefs are errors with distinct corrective prose.
 	it("finished delivery cannot be revoked", async () => {
-		reset();
 		delivery("deliver1", "Finished task", false);
 		await assert.rejects(() => execute("deliver1"), (error) =>
 			String(error).includes("has already finished. Its result is on its way and cannot be revoked; wait for it."));
 	});
 
 	it("stopped delivery names the stopped notice", async () => {
-		reset();
 		delivery("deliver2", "Stopped task", true);
 		await assert.rejects(() => execute("deliver2"), (error) =>
 			String(error).includes("has already stopped. Its stopped notice is on its way and cannot be revoked; wait for it."));
 	});
 
 	it("tombstoned id says no result will arrive", async () => {
-		reset();
 		capacity.recordCancellation("cancel01", "user");
 		await assert.rejects(() => execute("cancel01"), (error) =>
 			String(error).includes("was already cancelled. No result will arrive for it."));
 	});
 
 	it("completed id says its result was delivered", async () => {
-		reset();
 		state.ledger.set("complete", { sessionFile: "/sessions/complete.jsonl", name: "Completed task" });
 		await assert.rejects(() => execute("complete"), (error) =>
 			String(error).includes("already finished and its result was delivered; there is nothing to cancel."));
 	});
 
 	it("unknown id points at subagent_status", async () => {
-		reset();
 		await assert.rejects(() => execute("missing1"), (error) =>
 			String(error).includes("No sub-agent with id missing1. Use subagent_status to list unresolved sub-agents."));
 	});
