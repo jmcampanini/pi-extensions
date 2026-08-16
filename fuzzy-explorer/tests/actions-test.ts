@@ -1,3 +1,4 @@
+import type { EditorProcessRunner, EditorTui } from "../../shared/external-editor.ts";
 import type { Block } from "../types.ts";
 import {
 	buildEditorInvocation,
@@ -5,12 +6,8 @@ import {
 	describeSmartOpen,
 	describeSmartOpenSync,
 	formatSmartOpenHint,
-	parseEditorCommand,
-	resolveExternalEditor,
 	resolveSmartOpenTarget,
 	smartOpenBlock,
-	type ActionTui,
-	type EditorProcessRunner,
 	type SmartOpenFileSystem,
 	type SmartOpenTarget,
 } from "../actions.ts";
@@ -79,7 +76,7 @@ class FakeFileSystem implements SmartOpenFileSystem {
 	}
 }
 
-function fakeTui(events: string[]): ActionTui {
+function fakeTui(events: string[]): EditorTui {
 	return {
 		stop(): void { events.push("stop"); },
 		start(): void { events.push("start"); },
@@ -151,20 +148,7 @@ eq("fallback hint is honest without creating another temp",
 	"open block text");
 eq("hint did not create another canonical temp", missingFs.created.length, 1);
 
-// Editor parsing keeps quoted commands and target paths as individual argv entries.
-
-eq("quoted editor commands are parsed without a shell",
-	parseEditorCommand("'/Applications/Visual Studio Code/bin/code' --wait --reuse-window"),
-	["/Applications/Visual Studio Code/bin/code", "--wait", "--reuse-window"]);
-eq("quoted editor arguments are parsed", parseEditorCommand(`vim -c "set number"`),
-	["vim", "-c", "set number"]);
-let unmatchedQuote = "";
-try {
-	parseEditorCommand("vim 'unfinished");
-} catch (error) {
-	unmatchedQuote = error instanceof Error ? error.message : String(error);
-}
-eq("unmatched editor quote fails clearly", unmatchedQuote, "External editor command has an unmatched quote");
+// Editor invocations keep target paths safe as individual argv entries.
 
 const fileTarget: SmartOpenTarget = {
 	kind: "file-reference",
@@ -187,14 +171,6 @@ const nonReferenceWithLine = {
 } as unknown as SmartOpenTarget;
 eq("line argument is limited to file-reference targets", buildEditorInvocation("nvim", nonReferenceWithLine),
 	{ command: "nvim", args: ["--", "/saved/full output.log"] });
-
-eq("configured editor wins resolution", resolveExternalEditor({ externalEditor: "code --wait" }, { VISUAL: "nvim", EDITOR: "vim" }, "linux"),
-	"code --wait");
-eq("blank setting falls through to VISUAL", resolveExternalEditor({ externalEditor: "  " }, { VISUAL: "nvim", EDITOR: "vim" }, "linux"),
-	"nvim");
-eq("EDITOR follows VISUAL", resolveExternalEditor({}, { EDITOR: "vim" }, "linux"), "vim");
-eq("Pi's Unix editor default is retained", resolveExternalEditor({}, {}, "linux"), "nano");
-eq("Pi's Windows editor default is retained", resolveExternalEditor({}, {}, "win32"), "notepad");
 
 // Temp cleanup and TUI restoration happen only after the editor settles.
 

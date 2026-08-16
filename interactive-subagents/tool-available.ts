@@ -16,7 +16,7 @@ import {
 } from "./agents.ts";
 import { updateCatalogue } from "./catalogue.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
-import { clampStyled } from "./text-fit.ts";
+import { clampStyled } from "../shared/text-fit.ts";
 
 export interface AvailablePresentation {
 	version: 1;

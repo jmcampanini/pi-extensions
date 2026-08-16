@@ -5,13 +5,13 @@ import {
 	Input,
 	Markdown,
 	matchesKey,
-	truncateToWidth,
 	wrapTextWithAnsi,
 	type Component,
 	type Focusable,
 	type MarkdownTheme,
 	type TUI,
 } from "@earendil-works/pi-tui";
+import { clampStyled } from "../shared/text-fit.ts";
 import { describeSmartOpenSync, formatSmartOpenHint } from "./actions.ts";
 import {
 	computeTagWidth,
@@ -24,11 +24,11 @@ import {
 	formatPreviewLines,
 	formatResultRow,
 	formatSubagentResultDivider,
-	formatSubagentTable,
 	formatTruncationMarker,
 	PLAIN_MARKDOWN_THEME,
 	rendersMarkdownByDefault,
 	sanitizeTerminalText,
+	subagentSections,
 	tailAwareTruncate,
 	type RenderStyles,
 } from "./render.ts";
@@ -56,6 +56,9 @@ export interface ExplorerComponentOptions {
 	refreshIntervalMs?: number;
 	markdownTheme?: MarkdownTheme;
 }
+
+/** Height budget shared by the overlay registration and the component's own cap. */
+export const OVERLAY_HEIGHT_FRACTION = 0.9;
 
 function openHint(block: Block | undefined): string {
 	const hint = block ? formatSmartOpenHint(describeSmartOpenSync(block, existsSync)) : "smart open";
@@ -98,7 +101,7 @@ export class ExplorerComponent implements Component, Focusable {
 		this.refreshTimer = setInterval(() => {
 			if (!this.syncBlocks()) return;
 			this.tui.requestRender();
-		}, options.refreshIntervalMs ?? 200);
+		}, options.refreshIntervalMs ?? 1000);
 	}
 
 	get focused(): boolean {
@@ -113,7 +116,7 @@ export class ExplorerComponent implements Component, Focusable {
 	render(width: number): string[] {
 		this.syncBlocks();
 		this.lastWidth = Math.max(1, Math.floor(width));
-		const maxHeight = Math.max(3, Math.floor(this.tui.terminal.rows * 0.9));
+		const maxHeight = Math.max(3, Math.floor(this.tui.terminal.rows * OVERLAY_HEIGHT_FRACTION));
 		return this.state.mode === "detail"
 			? this.renderDetail(this.lastWidth, maxHeight)
 			: this.renderList(this.lastWidth, maxHeight);
@@ -289,29 +292,34 @@ export class ExplorerComponent implements Component, Focusable {
 		// Rendered markdown shows parsed content only; copy and open keep the raw text.
 		const styles = this.styles();
 		const view = subagentView(selected.block);
-		const text = sanitizeTerminalText(view === undefined ? selected.block.body : view.content);
+		const sections = subagentSections(view ?? { fields: [], content: selected.block.body });
 		const lines: string[] = [];
-		if (view !== undefined && !view.result) {
-			for (const field of view.fields) {
-				lines.push(truncateToWidth(styles.muted(sanitizeTerminalText(`${field.key}=${field.value}`)), innerWidth, ""));
-			}
-		}
-		if (lines.length > 0 && text !== "") lines.push("");
-		if (text !== "") {
-			if (text !== this.lastMarkdownText) {
-				this.markdown.setText(text);
-				this.lastMarkdownText = text;
-			}
-			lines.push(...this.markdown.render(innerWidth).map((line) => truncateToWidth(line, innerWidth, "")));
-		}
-		if (view?.result && view.fields.length > 0) {
-			if (text !== "") lines.push("", styles.muted(formatSubagentResultDivider(innerWidth)), "");
-			for (const line of formatSubagentTable(view).split("\n")) {
-				lines.push(...wrapTextWithAnsi(sanitizeTerminalText(line), innerWidth).map(styles.muted));
+		const append = (chunk: string[]): void => {
+			if (chunk.length === 0) return;
+			if (lines.length > 0) lines.push("");
+			lines.push(...chunk);
+		};
+		for (const section of sections) {
+			if (section.type === "fields") {
+				append(section.fields.map((field) =>
+					clampStyled(styles.muted(sanitizeTerminalText(`${field.key}=${field.value}`)), innerWidth)));
+			} else if (section.type === "content") {
+				const text = sanitizeTerminalText(section.text);
+				if (text === "") continue;
+				if (text !== this.lastMarkdownText) {
+					this.markdown.setText(text);
+					this.lastMarkdownText = text;
+				}
+				append(this.markdown.render(innerWidth).map((line) => clampStyled(line, innerWidth)));
+			} else if (section.type === "divider") {
+				append([styles.muted(formatSubagentResultDivider(innerWidth))]);
+			} else {
+				append(section.text.split("\n").flatMap((line) =>
+					wrapTextWithAnsi(sanitizeTerminalText(line), innerWidth).map(styles.muted)));
 			}
 		}
 		const marker = formatTruncationMarker(selected.block.truncation, existsSync);
-		if (marker !== undefined) lines.push(truncateToWidth(styles.dim(marker), innerWidth, ""));
+		if (marker !== undefined) lines.push(clampStyled(styles.dim(marker), innerWidth));
 		return lines;
 	}
 

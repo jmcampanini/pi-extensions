@@ -21,7 +21,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { assertValidAgentIdentifier, isValidAgentIdentifier } from "./agent-identifier.ts";
-import { clampStyled, fitText } from "./text-fit.ts";
+import { clampStyled, fitText } from "../shared/text-fit.ts";
 import { agentConfigDir } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { harnessProfile, isExternalHarness, validHarnessValues } from "./harnesses.ts";

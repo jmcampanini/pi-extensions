@@ -1,5 +1,5 @@
 import { sliceByColumn, visibleWidth } from "@earendil-works/pi-tui";
-import { fitText } from "../interactive-subagents/text-fit.ts";
+import { fitText } from "../shared/text-fit.ts";
 import type { RepositoryContext } from "./repository-context.ts";
 
 export const COMPONENT_IDS = [

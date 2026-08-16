@@ -29,6 +29,13 @@ const session = SessionManager.open(fixture.sessionFile);
 const blocks: readonly Block[] = extractBlocks(session.getBranch(), (id) => session.getLabel(id));
 eq("fixture extracts the expected active-branch blocks", blocks.length, 12);
 
+function localShortTime(timestamp: string): string {
+	const date = new Date(timestamp);
+	return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+const newestTime = localShortTime(blocks.at(-1)!.timestamp);
+const readTime = localShortTime(blocks.find((candidate) => candidate.toolCallId === "call-read")!.timestamp);
+
 const tui = { terminal: { rows: 30 }, requestRender(): void {} } as unknown as TUI;
 const theme = {
 	fg: (_token: string, text: string) => text,
@@ -74,7 +81,7 @@ for (const width of [120, 100]) {
 		lines.some((line) => line.includes("▸ User") && line.includes("latest active user block")));
 	ok(`list@${width}: tool rows show their argument details`,
 		lines.some((line) => line.includes("read") && line.includes("path=gone.log")));
-	ok(`list@${width}: preview rule carries the block identity`, lines.some((line) => line.startsWith("├ User · 00:00 ")));
+	ok(`list@${width}: preview rule carries the block identity`, lines.some((line) => line.startsWith(`├ User · ${newestTime} `)));
 	ok(`list@${width}: preview shows the selected body`, lines.some((line) => line.startsWith("│ latest active user block")));
 	ok(`list@${width}: hints render in the bottom border`, lines.at(-1)?.startsWith("└ l/enter detail · / filter · q/esc quit") === true);
 }
@@ -110,7 +117,7 @@ for (const width of [120, 100]) {
 	frameChecks(width, lines, `detail@${width}`);
 	eq(`detail@${width}: frame height uses the 90% budget`, lines.length, 27);
 	ok(`detail@${width}: border shows identity and position`,
-		lines[0]?.startsWith("┌ tool/read · 00:00 ") === true && lines[0]?.endsWith(" 1/1 ┐") === true);
+		lines[0]?.startsWith(`┌ tool/read · ${readTime} `) === true && lines[0]?.endsWith(" 1/1 ┐") === true);
 	ok(`detail@${width}: content starts on the first interior line`, lines[1]?.startsWith("│ read {") === true);
 	ok(`detail@${width}: canonical content includes the stored result`,
 		lines.some((line) => line.includes("STORED_RESULT_ONLY_NEEDLE")));

@@ -276,6 +276,11 @@ ok("tool fields include role, type, name, id, args, paths, line, time, entries, 
 	"label:result checkpoint",
 ].every((field) => readBlock?.fields.includes(field)));
 eq("file reference strips @ and uses read offset", readBlock?.fileReference, { path: "src/config.ts", line: 42 });
+eq("tool call carries redacted structured arguments", readBlock?.toolArguments, {
+	path: "@src/config.ts",
+	offset: 42,
+	options: { image: "[image]" },
+});
 
 // The curated search key is kind + tool name + title/subtitle with duplicates folded.
 eq("tool search key is kind, tool, and argument subtitle", readBlock?.searchKey,

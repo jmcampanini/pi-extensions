@@ -1,6 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-
-export const ELAPSED_TIME_STATUS_KEY = "elapsed-time";
+import { ELAPSED_TIME_STATUS_KEY } from "../shared/status-keys.ts";
 
 export interface ElapsedTimeClock {
 	now(): number;

@@ -36,6 +36,8 @@ export interface Block {
 	canonicalBodyOffset?: number;
 	toolName?: string;
 	toolCallId?: string;
+	/** Redacted structured tool-call arguments; backs the subagent views. */
+	toolArguments?: unknown;
 	fileReference?: FileReference;
 	truncation?: BlockTruncation;
 	label?: string;

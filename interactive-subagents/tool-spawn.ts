@@ -59,7 +59,7 @@ import { countEntries, seedForkSession, seedNewSession } from "./session.ts";
 import { moduleGeneration } from "./state.ts";
 import { formatCollapsedSubagentCall, formatExpandedSubagentCall } from "./subagent-call.ts";
 import { renderSubagentLaunchResult } from "./subagent-result.ts";
-import { clampStyled, fitText } from "./text-fit.ts";
+import { clampStyled, fitText } from "../shared/text-fit.ts";
 import { updateRunningWidget } from "./running-widget.ts";
 import { closePane, createPane, isTmuxAvailable, shellQuote, stageLaunchScript } from "./tmux.ts";
 import { trackChild } from "./watcher.ts";

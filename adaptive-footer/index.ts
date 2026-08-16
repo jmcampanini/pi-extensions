@@ -1,12 +1,15 @@
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { hyperlink } from "@earendil-works/pi-tui";
-import { config as autoCompactConfig, type AutoCompactConfig } from "../auto-compact/config.ts";
-import { AUTO_COMPACT_STATUS_KEY } from "../auto-compact/index.ts";
-import { formatTokens, resolveThresholdTokens } from "../auto-compact/threshold.ts";
-import { ELAPSED_TIME_STATUS_KEY } from "../elapsed-time/index.ts";
-import { FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_ON } from "../fast-openai/index.ts";
-import { clampStyled, fitText } from "../interactive-subagents/text-fit.ts";
+import { config as autoCompactConfig, type AutoCompactConfig } from "../shared/auto-compact-config.ts";
+import { formatTokens, resolveThresholdTokens } from "../shared/auto-compact-threshold.ts";
+import {
+	AUTO_COMPACT_STATUS_KEY,
+	ELAPSED_TIME_STATUS_KEY,
+	FAST_OPENAI_STATUS_KEY,
+	FAST_OPENAI_STATUS_ON,
+} from "../shared/status-keys.ts";
+import { clampStyled, fitText } from "../shared/text-fit.ts";
 import { config as adaptiveFooterConfig } from "./config.ts";
 import {
 	cwdVariants,

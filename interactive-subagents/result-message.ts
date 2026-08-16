@@ -11,7 +11,8 @@ import {
 	type SubagentResultContentRange,
 	type SubagentResultDetails,
 } from "./result-content.ts";
-import { clampStyled, fitText } from "./text-fit.ts";
+import { SUBAGENT_RESULT_CUSTOM_TYPE } from "../shared/subagent-envelope.ts";
+import { clampStyled, fitText } from "../shared/text-fit.ts";
 import { formatCost, formatTokens } from "./widget.ts";
 
 export { humanElapsed, resultPresentation, resultPreview } from "./result-content.ts";
@@ -466,7 +467,7 @@ function structuredExpandedResult(
 }
 
 export function registerSubagentResultRenderer(pi: ExtensionAPI): void {
-	pi.registerMessageRenderer("subagent_result", (message, { expanded, outputPad = 1 }, theme) => {
+	pi.registerMessageRenderer(SUBAGENT_RESULT_CUSTOM_TYPE, (message, { expanded, outputPad = 1 }, theme) => {
 		const details = parseSubagentResultDetails(message.details);
 		if (details === undefined) return undefined;
 		// A stop the user or parent asked for is not a failure — red stays

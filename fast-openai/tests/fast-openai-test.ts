@@ -8,11 +8,11 @@ const testRoot = mkdtempSync(join(sandbox, "fast-openai-"));
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = testRoot;
 const {
-	default: fastOpenAI,
 	FAST_OPENAI_STATUS_KEY,
 	FAST_OPENAI_STATUS_ON,
 	FAST_OPENAI_STATUS_OFF,
-} = await import("../index.ts");
+} = await import("../../shared/status-keys.ts");
+const { default: fastOpenAI } = await import("../index.ts");
 
 let pass = 0;
 let fail = 0;

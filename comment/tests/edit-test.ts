@@ -1,4 +1,4 @@
-import type { ActionTui } from "../../fuzzy-explorer/actions.ts";
+import type { EditorTui } from "../../shared/external-editor.ts";
 import { editTextExternally } from "../index.ts";
 
 let pass = 0;
@@ -16,7 +16,7 @@ function eq(label: string, got: unknown, want: unknown): void {
 	}
 }
 
-function fakeTui(): { tui: ActionTui; calls: string[] } {
+function fakeTui(): { tui: EditorTui; calls: string[] } {
 	const calls: string[] = [];
 	return {
 		calls,

@@ -121,7 +121,7 @@ const tui = await import(packageName).catch(() => undefined) as
 		Text: new (text: string, paddingX: number, paddingY: number) => { render(width: number): string[] };
 	}
 	| undefined;
-const textFitModule = "../text-fit.ts";
+const textFitModule = "../../shared/text-fit.ts";
 const textFit = tui
 	? await import(textFitModule) as {
 		fitText: (text: string, maxWidth: number, ellipsis?: string) => string;

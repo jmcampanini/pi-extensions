@@ -14,6 +14,7 @@ import {
 	formatTruncationMarker,
 	rendersMarkdownByDefault,
 	sanitizeTerminalText,
+	subagentSections,
 	tailAwareTruncate,
 	type RenderStyles,
 } from "../render.ts";
@@ -37,6 +38,11 @@ function eq(label: string, got: unknown, want: unknown): void {
 
 function ok(label: string, condition: boolean): void {
 	eq(label, condition, true);
+}
+
+function localShortTime(timestamp: string): string {
+	const date = new Date(timestamp);
+	return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 const block = makeBlock({
@@ -82,17 +88,19 @@ eq("custom and summary rows are tagged with their titles", [
 	formatBlockTag(makeBlock({ kind: "summary", title: "Branch summary" })),
 	formatBlockTag(makeBlock({ kind: "bash", title: "Bash", subtitle: "printf hi" })),
 ], ["fixture-card", "Branch summary", "Bash"]);
-eq("preview identity is tag plus short time", formatPreviewIdentity(block), "read · 12:34");
-eq("detail identity folds tool name into the kind", formatDetailIdentity(block), "tool/read · 12:34");
+eq("preview identity is tag plus local short time",
+	formatPreviewIdentity(block), `read · ${localShortTime(block.timestamp)}`);
+eq("detail identity folds tool name into the kind",
+	formatDetailIdentity(block), `tool/read · ${localShortTime(block.timestamp)}`);
 eq(
 	"detail identity keeps a distinct title",
 	formatDetailIdentity(makeBlock({ kind: "custom", title: "fixture-card", timestamp: "2026-03-01T21:14:00.000Z" })),
-	"custom · 21:14 · fixture-card",
+	`custom · ${localShortTime("2026-03-01T21:14:00.000Z")} · fixture-card`,
 );
 eq(
 	"detail identity drops a title that repeats the kind",
 	formatDetailIdentity(makeBlock({ kind: "bash", title: "Bash", timestamp: "2026-03-01T21:14:00.000Z" })),
-	"bash · 21:14",
+	`bash · ${localShortTime("2026-03-01T21:14:00.000Z")}`,
 );
 eq("tag column width follows the widest visible tag", computeTagWidth([
 	makeBlock({ kind: "tool", toolName: "read", title: "read" }),
@@ -122,7 +130,8 @@ const plainRow = stripVTControlCharacters(formatResultRow(result, true, 80, 6));
 ok("selected rows carry the marker", plainRow.startsWith("▸ "));
 ok("unselected rows keep column alignment", stripVTControlCharacters(formatResultRow(result, false, 80, 6)).startsWith("  read"));
 eq("rows are marker, aligned tag, then detail", plainRow, "▸ read    path=src/config.ts");
-ok("rows never include timestamps", !plainRow.includes("12:34") && !plainRow.includes("2026"));
+ok("rows never include timestamps",
+	!plainRow.includes(localShortTime(block.timestamp)) && !plainRow.includes("2026"));
 
 const proseRow = stripVTControlCharacters(formatResultRow(
 	makeBlock({ kind: "assistant", body: "  First answer line.\nsecond line" }),
@@ -252,6 +261,22 @@ ok("bounded result preview keeps the response and labeled divider while clipping
 	&& boundedResultPreview.includes("preview clipped") && !boundedResultPreview.includes("session"));
 ok("response-first transformation sanitizes and preserves body-match highlights",
 	boundedResultPreview.includes("response ⟦needle⟧") && !boundedResultPreview.includes("\x1b[2J"));
+
+// The section plan is the single owner of subagent display layout.
+
+eq("result sections order content, divider, table",
+	subagentSections({ fields: [{ key: "status", value: "completed" }], content: "response", result: true })
+		.map((section) => section.type),
+	["content", "divider", "table"]);
+eq("a result without a response drops the divider",
+	subagentSections({ fields: [{ key: "status", value: "stopped" }], content: "", result: true })
+		.map((section) => section.type),
+	["table"]);
+eq("tool sections order fields then content",
+	subagentSections({ fields: [{ key: "agent", value: "scout" }], content: "task prompt" })
+		.map((section) => section.type),
+	["fields", "content"]);
+eq("empty sections are dropped entirely", subagentSections({ fields: [], content: "" }), []);
 
 // Stored truncation is honest about both line counts and temp-file survival.
 

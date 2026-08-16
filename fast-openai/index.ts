@@ -6,6 +6,11 @@ import {
 	type ExtensionCommandContext,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import {
+	FAST_OPENAI_STATUS_KEY,
+	FAST_OPENAI_STATUS_OFF,
+	FAST_OPENAI_STATUS_ON,
+} from "../shared/status-keys.ts";
 
 type FastOpenAIConfig = {
 	enabled: boolean;
@@ -13,11 +18,6 @@ type FastOpenAIConfig = {
 
 type FastAction = "on" | "off";
 
-export const FAST_OPENAI_STATUS_KEY = "fast-openai";
-// The status is always published while the extension is running, so consumers
-// can tell "fast is off" apart from "fast-openai is not loaded" (key absent).
-export const FAST_OPENAI_STATUS_ON = "on";
-export const FAST_OPENAI_STATUS_OFF = "off";
 
 type ConfigDiagnostic = {
 	path: string;

@@ -8,7 +8,7 @@ import { Type } from "@sinclair/typebox";
 import { oldestActiveTool, toolElapsedSeconds, type ActivityObservation } from "./activity.ts";
 import { pendingLaunches, queuedEntries, specDisplay, type LaunchSpec } from "./capacity.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
-import { clampStyled } from "./text-fit.ts";
+import { clampStyled } from "../shared/text-fit.ts";
 import { humanElapsed } from "./result-content.ts";
 import { collectLifecycleWidgetRows } from "./running-widget.ts";
 import { delivering, running } from "./state.ts";
