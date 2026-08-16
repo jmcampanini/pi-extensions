@@ -1,5 +1,5 @@
-import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { Usage } from "@earendil-works/pi-ai";
+import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { hyperlink } from "@earendil-works/pi-tui";
 import { config as autoCompactConfig, type AutoCompactConfig } from "../auto-compact/config.ts";
 import { AUTO_COMPACT_STATUS_KEY } from "../auto-compact/index.ts";
@@ -31,15 +31,15 @@ export interface ComponentVariants {
 
 export function compactTargetVariants(
 	autoCompactConfig: AutoCompactConfig,
-	contextWindow: number,
-	contextTokens?: number | null,
+	contextWindow: number | undefined,
+	contextTokens?: number,
 	paused = false,
 ): ComponentVariants | undefined {
-	if (!autoCompactConfig.enabled || contextWindow <= 0) return undefined;
+	if (!autoCompactConfig.enabled || contextWindow === undefined || contextWindow <= 0) return undefined;
 	if (paused) return { full: "compact ⏸", compact: "C⏸" };
 	const thresholdTokens = resolveThresholdTokens(autoCompactConfig, contextWindow);
 	const target = formatTokens(thresholdTokens);
-	if (contextTokens == null) {
+	if (contextTokens === undefined) {
 		return {
 			full: `compact @${target}`,
 			compact: `C@${target}`,
@@ -53,14 +53,14 @@ export function compactTargetVariants(
 }
 
 export function selectContextColorBand(
-	percent: number | null | undefined,
+	percent: number | undefined,
 	autoCompactConfig: AutoCompactConfig,
-	contextWindow: number,
+	contextWindow: number | undefined,
 	paused = false,
 ): ContextColorBand | undefined {
-	if (percent == null) return undefined;
+	if (percent === undefined) return undefined;
 
-	if (!autoCompactConfig.enabled || contextWindow <= 0 || paused) {
+	if (!autoCompactConfig.enabled || contextWindow === undefined || contextWindow <= 0 || paused) {
 		if (percent > 90) return "error";
 		if (percent > 70) return "warning";
 		return undefined;
@@ -89,7 +89,7 @@ export function partitionFooterStatuses(statuses: ReadonlyMap<string, string>): 
 	const ownedKeys = [ELAPSED_TIME_STATUS_KEY, FAST_OPENAI_STATUS_KEY, AUTO_COMPACT_STATUS_KEY];
 	const statusLine = Array.from(statuses.entries())
 		.filter(([key]) => !ownedKeys.includes(key))
-		.sort(([a], [b]) => a.localeCompare(b))
+		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 		.map(([, text]) => sanitizeStatusText(text))
 		.join(" ");
 	return {
@@ -131,13 +131,14 @@ export function costVariants(total: number, usingSubscription: boolean): Compone
 }
 
 export function contextVariants(
-	percent: number | null | undefined,
-	tokens: number | null | undefined,
-	window: number,
+	percent: number | undefined,
+	tokens: number | undefined,
+	window: number | undefined,
 ): ComponentVariants {
-	const percentDisplay = percent == null ? "?" : `${Math.round(percent)}%`;
-	const tokensDisplay = tokens === null ? "?" : formatTokens(tokens ?? 0);
-	const ratio = `${tokensDisplay}/${formatTokens(window)}`;
+	const percentDisplay = percent === undefined ? "?" : `${Math.round(percent)}%`;
+	const tokensDisplay = tokens === undefined ? "?" : formatTokens(tokens);
+	const windowDisplay = window === undefined || window <= 0 ? "?" : formatTokens(window);
+	const ratio = `${tokensDisplay}/${windowDisplay}`;
 	return { full: `${percentDisplay} ${ratio}`, compact: ratio };
 }
 
@@ -155,19 +156,65 @@ export function runtimeIdentityVariants(
 	};
 }
 
+export interface SessionUsageTotals {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	cost: number;
+	latestCacheHitRate: number | undefined;
+}
+
+// Matches pi's native footer accounting: tool-result usage and
+// compaction/branch-summary summarization usage count toward session totals,
+// even though they sit outside the main LLM context.
+export function aggregateSessionUsage(entries: readonly SessionEntry[]): SessionUsageTotals {
+	const totals: SessionUsageTotals = {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		cost: 0,
+		latestCacheHitRate: undefined,
+	};
+	const add = (usage: Usage): void => {
+		totals.input += usage.input;
+		totals.output += usage.output;
+		totals.cacheRead += usage.cacheRead;
+		totals.cacheWrite += usage.cacheWrite;
+		totals.cost += usage.cost.total;
+	};
+	for (const entry of entries) {
+		if (entry.type === "message" && entry.message.role === "assistant") {
+			const usage = entry.message.usage;
+			add(usage);
+			const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+			totals.latestCacheHitRate = promptTokens > 0 ? (usage.cacheRead / promptTokens) * 100 : undefined;
+		} else if (entry.type === "message" && entry.message.role === "toolResult" && entry.message.usage) {
+			add(entry.message.usage);
+		} else if ((entry.type === "branch_summary" || entry.type === "compaction") && entry.usage) {
+			add(entry.usage);
+		}
+	}
+	return totals;
+}
+
 export interface AdaptiveFooterDependencies {
 	issuePatterns?: readonly string[];
 	discover?: RepositoryContextDiscovery;
+	now?: () => number;
 }
+
+const SETTLE_REFRESH_MIN_INTERVAL_MS = 30_000;
 
 export function registerAdaptiveFooter(
 	pi: ExtensionAPI,
 	dependencies: AdaptiveFooterDependencies = {},
 ): void {
-	let activeSession: { refresh(): Promise<void>; dispose(): void } | undefined;
+	let activeSession: { refresh(): Promise<void>; refreshOnSettle(): Promise<void>; dispose(): void } | undefined;
 
 	pi.on("agent_settled", () => {
-		void activeSession?.refresh();
+		void activeSession?.refreshOnSettle();
 	});
 
 	pi.on("session_shutdown", () => {
@@ -194,6 +241,7 @@ export function registerAdaptiveFooter(
 				}),
 				discover,
 				() => tui.requestRender(),
+				dependencies.now,
 			);
 			const unsubscribeBranch = footerData.onBranchChange(() => {
 				refresher.clear();
@@ -202,6 +250,7 @@ export function registerAdaptiveFooter(
 			let disposed = false;
 			const session = {
 				refresh: () => refresher.refresh(),
+				refreshOnSettle: () => refresher.refreshIfStale(SETTLE_REFRESH_MIN_INTERVAL_MS),
 				dispose(): void {
 					if (disposed) return;
 					disposed = true;
@@ -218,32 +267,12 @@ export function registerAdaptiveFooter(
 				dispose: session.dispose,
 				invalidate() {},
 				render(width: number): string[] {
-					let totalInput = 0;
-					let totalOutput = 0;
-					let totalCacheRead = 0;
-					let totalCacheWrite = 0;
-					let totalCost = 0;
-					let latestCacheHitRate: number | undefined;
-
-					for (const entry of ctx.sessionManager.getEntries()) {
-						if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-
-						const message = entry.message as AssistantMessage;
-						totalInput += message.usage.input;
-						totalOutput += message.usage.output;
-						totalCacheRead += message.usage.cacheRead;
-						totalCacheWrite += message.usage.cacheWrite;
-						totalCost += message.usage.cost.total;
-
-						const latestPromptTokens =
-							message.usage.input + message.usage.cacheRead + message.usage.cacheWrite;
-						latestCacheHitRate =
-							latestPromptTokens > 0 ? (message.usage.cacheRead / latestPromptTokens) * 100 : undefined;
-					}
+					const usage = aggregateSessionUsage(ctx.sessionManager.getEntries());
 
 					const contextUsage = ctx.getContextUsage();
-					const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-					const contextPercent = contextUsage?.percent;
+					const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow;
+					const contextPercent = contextUsage?.percent ?? undefined;
+					const contextTokens = contextUsage?.tokens ?? undefined;
 					const footerStatuses = partitionFooterStatuses(footerData.getExtensionStatuses());
 					const contextColorBand = selectContextColorBand(
 						contextPercent,
@@ -253,23 +282,23 @@ export function registerAdaptiveFooter(
 					);
 					const components: FooterComponent[] = [];
 
-					const tokenFlow = tokenFlowVariants(totalInput, totalOutput);
+					const tokenFlow = tokenFlowVariants(usage.input, usage.output);
 					if (tokenFlow) components.push({ id: "token-flow", alignment: "left", ...tokenFlow });
 
-					const cache = cacheVariants(totalCacheRead, totalCacheWrite, latestCacheHitRate);
+					const cache = cacheVariants(usage.cacheRead, usage.cacheWrite, usage.latestCacheHitRate);
 					if (cache) components.push({ id: "cache", alignment: "left", ...cache });
 
 					const usingSubscription = ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false;
-					const cost = costVariants(totalCost, usingSubscription);
+					const cost = costVariants(usage.cost, usingSubscription);
 					if (cost) components.push({ id: "cost", alignment: "left", ...cost });
 
-					const context = contextVariants(contextPercent, contextUsage?.tokens, contextWindow);
+					const context = contextVariants(contextPercent, contextTokens, contextWindow);
 					components.push({ id: "context", alignment: "left", ...context });
 
 					const compactTarget = compactTargetVariants(
 						autoCompactConfig,
 						contextWindow,
-						contextUsage?.tokens,
+						contextTokens,
 						footerStatuses.autoCompactPaused,
 					);
 					if (compactTarget) {

@@ -1,5 +1,6 @@
 import { hyperlink, visibleWidth } from "@earendil-works/pi-tui";
 import {
+	aggregateSessionUsage,
 	cacheVariants,
 	compactTargetVariants,
 	contextVariants,
@@ -11,10 +12,8 @@ import {
 } from "../index.ts";
 import {
 	cwdVariants,
-	DISPLAY_ORDER,
 	fitFooterLayout,
 	fitRepositoryLayout,
-	REDUCTION_ORDER,
 	styleFooterSpans,
 	styleRepositorySpans,
 	type FooterComponent,
@@ -70,7 +69,8 @@ eq("unknown progress preserves the resolved token point", compactTargetVariants(
 	compact: "C@260k",
 });
 eq("disabled compact target is absent", compactTargetVariants(disabled, 372_000, 140_000), undefined);
-eq("unknown window compact target is absent", compactTargetVariants(enabled, 0, 140_000), undefined);
+eq("zero-window compact target is absent", compactTargetVariants(enabled, 0, 140_000), undefined);
+eq("unknown-window compact target is absent", compactTargetVariants(enabled, undefined, 140_000), undefined);
 eq("paused compact target replaces progress with the paused marker", compactTargetVariants(enabled, 372_000, 140_000, true), {
 	full: "compact ⏸",
 	compact: "C⏸",
@@ -80,7 +80,7 @@ eq("paused disabled compact target stays absent", compactTargetVariants(disabled
 eq("enabled warning lower bound is inclusive", selectContextColorBand(60, enabled, 372_000), "warning");
 eq("enabled threshold is error", selectContextColorBand(70, enabled, 372_000), "error");
 eq("below the warning band is uncolored", selectContextColorBand(59.9, enabled, 372_000), undefined);
-eq("enabled unknown percent is uncolored", selectContextColorBand(null, enabled, 372_000), undefined);
+eq("enabled unknown percent is uncolored", selectContextColorBand(undefined, enabled, 372_000), undefined);
 eq("configured error band is independent of pi's native point", selectContextColorBand(90, enabled, 128_000), "error");
 eq("configured warning band is independent of pi's native point", selectContextColorBand(80, enabled, 128_000), "warning");
 eq("configured band stays uncolored below the margin", selectContextColorBand(79.9, enabled, 128_000), undefined);
@@ -125,9 +125,17 @@ eq("context compact form drops percentage", contextVariants(51, 140_000, 272_000
 	full: "51% 140k/272k",
 	compact: "140k/272k",
 });
-eq("unknown context remains explicit", contextVariants(null, null, 272_000), {
+eq("unknown context remains explicit", contextVariants(undefined, undefined, 272_000), {
 	full: "? ?/272k",
 	compact: "?/272k",
+});
+eq("unknown window remains explicit", contextVariants(51, 140_000, undefined), {
+	full: "51% 140k/?",
+	compact: "140k/?",
+});
+eq("zero window is treated as unknown", contextVariants(undefined, undefined, 0), {
+	full: "? ?/?",
+	compact: "?/?",
 });
 
 eq("runtime compact form shortens fast and drops provider", runtimeIdentityVariants(
@@ -178,24 +186,36 @@ eq("elapsed alone does not create a third line or fast mode", partitionFooterSta
 	statusLine: undefined,
 });
 
-eq("display order is independent from priority", DISPLAY_ORDER, [
-	"token-flow",
-	"cache",
-	"cost",
-	"context",
-	"compact-target",
-	"elapsed",
-	"runtime-identity",
-]);
-eq("reduction priority is lowest to highest", REDUCTION_ORDER, [
-	"cost",
-	"compact-target",
-	"elapsed",
-	"token-flow",
-	"cache",
-	"context",
-	"runtime-identity",
-]);
+function usage(input: number, output: number, cacheRead: number, cacheWrite: number, cost: number) {
+	return { input, output, cacheRead, cacheWrite, cost: { total: cost } };
+}
+const usageEntries = [
+	{ type: "message", message: { role: "user" } },
+	{ type: "message", message: { role: "assistant", usage: usage(100, 50, 400, 25, 0.5) } },
+	{ type: "message", message: { role: "toolResult", usage: usage(10, 5, 0, 0, 0.25) } },
+	{ type: "message", message: { role: "toolResult" } },
+	{ type: "compaction", usage: usage(1000, 200, 0, 0, 0.125) },
+	{ type: "branch_summary", usage: usage(500, 100, 0, 0, 0.0625) },
+	{ type: "model_change" },
+	{ type: "message", message: { role: "assistant", usage: usage(30, 20, 90, 0, 0.5) } },
+] as unknown as Parameters<typeof aggregateSessionUsage>[0];
+eq("session usage counts assistant, tool-result, compaction, and branch-summary usage",
+	aggregateSessionUsage(usageEntries), {
+		input: 1640,
+		output: 375,
+		cacheRead: 490,
+		cacheWrite: 25,
+		cost: 1.4375,
+		latestCacheHitRate: 75,
+	});
+eq("empty session usage is all zeros", aggregateSessionUsage([]), {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	cost: 0,
+	latestCacheHitRate: undefined,
+});
 
 const components: FooterComponent[] = [
 	{ id: "token-flow", alignment: "left", full: "n", compact: "n" },
