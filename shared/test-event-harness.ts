@@ -12,9 +12,13 @@ export function createTestEventHarness<Event = unknown, Context = unknown, Resul
 		for (const handler of handlers.get(type) ?? []) void handler(event, context);
 	}
 
+	function emitResults(type: string, event: Event, context: Context): Result[] {
+		return (handlers.get(type) ?? []).map((handler) => handler(event, context));
+	}
+
 	async function emitAsync(type: string, event: Event, context: Context): Promise<void> {
 		for (const handler of handlers.get(type) ?? []) await handler(event, context);
 	}
 
-	return { on, emit, emitAsync };
+	return { on, emit, emitResults, emitAsync };
 }

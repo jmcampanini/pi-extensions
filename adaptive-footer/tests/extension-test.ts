@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { RepositoryContextDiscovery } from "../repository-context.ts";
+import { createTestEventHarness } from "../../shared/test-event-harness.ts";
 
 const sandbox = join(process.cwd(), ".sandbox");
 mkdirSync(sandbox, { recursive: true });
@@ -67,8 +68,6 @@ interface FooterComponent {
 }
 
 type FooterFactory = (tui: FakeTui, theme: FakeTheme, footerData: FakeFooterData) => FooterComponent;
-type EventHandler = (event: unknown, context: FakeContext) => unknown;
-
 function plain(line: string): string {
 	return line
 		.replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, "")
@@ -77,12 +76,10 @@ function plain(line: string): string {
 
 describe("registerAdaptiveFooter", () => {
 	it("wires discovery, rendering, refresh, and disposal through the pi footer", async () => {
-		const handlers = new Map<string, EventHandler>();
+		const events = createTestEventHarness<unknown, FakeContext, unknown>();
 		let footerFactory: FooterFactory | undefined;
 		const fakePi = {
-			on(event: string, handler: EventHandler): void {
-				handlers.set(event, handler);
-			},
+			on: events.on,
 			getThinkingLevel(): string {
 				return "xhigh";
 			},
@@ -134,7 +131,7 @@ describe("registerAdaptiveFooter", () => {
 			},
 			getContextUsage: () => ({ percent: 51, tokens: 140_000, contextWindow: 272_000 }),
 		};
-		await handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context);
+		await events.emitAsync("session_start", { type: "session_start", reason: "startup" }, context);
 		assert.ok(footerFactory, "session_start did not install the footer");
 
 		let branch = "feature/issue-456";
@@ -207,11 +204,11 @@ describe("registerAdaptiveFooter", () => {
 		assert.ok(refreshedLine.includes("is#789 o"), "branch refresh installs links for the new branch");
 		assert.strictEqual(discoveryCalls, 2, "branch change performs one additional discovery");
 
-		await handlers.get("agent_settled")?.({ type: "agent_settled" }, context);
+		await events.emitAsync("agent_settled", { type: "agent_settled" }, context);
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		assert.strictEqual(discoveryCalls, 2, "settling within the refresh floor skips gh discovery");
 		nowMs = 31_000;
-		await handlers.get("agent_settled")?.({ type: "agent_settled" }, context);
+		await events.emitAsync("agent_settled", { type: "agent_settled" }, context);
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		assert.strictEqual(discoveryCalls, 3, "settling after the refresh floor rediscovers repository context");
 
@@ -221,7 +218,7 @@ describe("registerAdaptiveFooter", () => {
 			"wired footer line never overflows from width 0 through 120");
 		component.dispose();
 		assert.strictEqual(unsubscribed, 1, "footer disposal removes the branch subscription");
-		await handlers.get("session_shutdown")?.({ type: "session_shutdown" }, context);
+		await events.emitAsync("session_shutdown", { type: "session_shutdown" }, context);
 		assert.strictEqual(unsubscribed, 1,
 			"session shutdown does not dispose an already disposed footer twice");
 	});

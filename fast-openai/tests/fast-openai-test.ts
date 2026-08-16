@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createTestEventHarness } from "../../shared/test-event-harness.ts";
 
 const sandbox = join(process.cwd(), ".sandbox");
 mkdirSync(sandbox, { recursive: true });
@@ -43,11 +44,13 @@ interface FakeContext {
 type EventHandler = (event: unknown, context: FakeContext) => unknown;
 type CommandHandler = (args: string, context: FakeContext) => unknown;
 
-const handlers = new Map<string, EventHandler>();
+const events = createTestEventHarness<unknown, FakeContext, unknown>();
 const commands = new Map<string, CommandHandler>();
+let beforeProviderRequestRegistered = false;
 const fakePi = {
 	on(event: string, handler: unknown): void {
-		handlers.set(event, handler as EventHandler);
+		events.on(event, handler as EventHandler);
+		if (event === "before_provider_request") beforeProviderRequestRegistered = true;
 	},
 	registerCommand(name: string, options: unknown): void {
 		commands.set(name, (options as { handler: CommandHandler }).handler);
@@ -71,8 +74,7 @@ const context: FakeContext = {
 fastOpenAI(fakePi);
 const fastCommand = commands.get("fast");
 assert.ok(fastCommand, "fast command was not registered");
-const beforeProviderRequest = handlers.get("before_provider_request");
-assert.ok(beforeProviderRequest, "before_provider_request handler was not registered");
+assert.ok(beforeProviderRequestRegistered, "before_provider_request handler was not registered");
 
 const extensionsPath = join(testRoot, "extensions");
 const configPath = join(extensionsPath, "fast-openai.json");
@@ -91,13 +93,13 @@ const requestContext = (model: FakeModel | undefined, usingOAuth = true): FakeCo
 
 const inject = (payload: unknown, ctx: FakeContext, enabled = true): unknown => {
 	writeFileSync(configPath, JSON.stringify({ enabled }), "utf8");
-	return beforeProviderRequest({ type: "before_provider_request", payload }, ctx);
+	return events.emitResults("before_provider_request", { type: "before_provider_request", payload }, ctx)[0];
 };
 
 describe("fast status lifecycle", () => {
 	it("session lifecycle persists toggles and republishes the fast status", async () => {
 		rmSync(extensionsPath, { recursive: true, force: true });
-		await handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context);
+		await events.emitAsync("session_start", { type: "session_start", reason: "startup" }, context);
 		assert.deepStrictEqual(
 			statuses.at(-1),
 			[FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_OFF],
@@ -117,14 +119,14 @@ describe("fast status lifecycle", () => {
 			"fast on persists enabled config",
 		);
 
-		await handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "reload" }, context);
+		await events.emitAsync("session_shutdown", { type: "session_shutdown", reason: "reload" }, context);
 		assert.deepStrictEqual(
 			statuses.at(-1),
 			[FAST_OPENAI_STATUS_KEY, undefined],
 			"shutdown clears the status entirely",
 		);
 
-		await handlers.get("session_start")?.({ type: "session_start", reason: "reload" }, context);
+		await events.emitAsync("session_start", { type: "session_start", reason: "reload" }, context);
 		assert.deepStrictEqual(
 			statuses.at(-1),
 			[FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_ON],
@@ -139,13 +141,13 @@ describe("fast status lifecycle", () => {
 		);
 
 		const disabledReloadStart = statuses.length;
-		await handlers.get("session_start")?.({ type: "session_start", reason: "reload" }, context);
+		await events.emitAsync("session_start", { type: "session_start", reason: "reload" }, context);
 		assert.deepStrictEqual(statuses.slice(disabledReloadStart), [
 			[FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_OFF],
 		], "session start republishes the persisted off status");
 
 		writeFileSync(configPath, '{"enabled":true}', "utf8");
-		await handlers.get("agent_start")?.({ type: "agent_start" }, context);
+		await events.emitAsync("agent_start", { type: "agent_start" }, context);
 		assert.deepStrictEqual(
 			statuses.at(-1),
 			[FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_ON],
@@ -153,7 +155,7 @@ describe("fast status lifecycle", () => {
 		);
 
 		writeFileSync(configPath, "{invalid", "utf8");
-		await handlers.get("session_start")?.({ type: "session_start", reason: "reload" }, context);
+		await events.emitAsync("session_start", { type: "session_start", reason: "reload" }, context);
 		assert.deepStrictEqual(
 			statuses.at(-1),
 			[FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_OFF],
@@ -161,7 +163,8 @@ describe("fast status lifecycle", () => {
 		);
 
 		const statusCount = statuses.length;
-		await handlers.get("session_start")?.(
+		await events.emitAsync(
+			"session_start",
 			{ type: "session_start", reason: "reload" },
 			{ ...context, hasUI: false },
 		);

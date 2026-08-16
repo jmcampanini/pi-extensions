@@ -25,6 +25,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createTestEventHarness } from "../../shared/test-event-harness.ts";
 
 // A throwaway global config root and a throwaway project cwd.
 const globalRoot = mkdtempSync(join(tmpdir(), "subagents-global-"));
@@ -669,17 +670,20 @@ describe("the model-facing catalogue", () => {
 	});
 
 	it("the system-prompt injection rides only when spawning is possible", () => {
-		const handlers = new Map<string, (event: { systemPrompt: string }) => { systemPrompt: string } | undefined>();
+		const events = createTestEventHarness<
+			{ systemPrompt: string },
+			undefined,
+			{ systemPrompt: string } | undefined
+		>();
 		let activeTools = ["subagent_spawn"];
 		registerCatalogue({
-			on(event: string, handler: unknown) {
-				handlers.set(event, handler as (event: { systemPrompt: string }) => { systemPrompt: string } | undefined);
-			},
+			on: events.on,
 			getActiveTools: () => activeTools,
 		} as unknown as Parameters<typeof registerCatalogue>[0]);
-		const beforeAgentStart = handlers.get("before_agent_start")!;
+		const beforeAgentStart = (systemPrompt: string) =>
+			events.emitResults("before_agent_start", { systemPrompt }, undefined)[0];
 		updateCatalogue([info({ name: "worker", description: "W." })]);
-		const injected = beforeAgentStart({ systemPrompt: "BASE" });
+		const injected = beforeAgentStart("BASE");
 		assert.ok(Boolean(injected?.systemPrompt.startsWith("BASE\n\n") &&
 			injected.systemPrompt.includes("- worker (default): W.") &&
 			injected.systemPrompt.endsWith(WAITING_CONTRACT)),
@@ -688,11 +692,11 @@ describe("the model-facing catalogue", () => {
 			WAITING_CONTRACT.includes("tell the user in one line what you are waiting on and end your turn"),
 			"waiting contract prescribes the action instead of prohibiting");
 		activeTools = [];
-		assert.strictEqual(beforeAgentStart({ systemPrompt: "BASE" }), undefined,
+		assert.strictEqual(beforeAgentStart("BASE"), undefined,
 			"nothing is injected while subagent_spawn is inactive");
 		activeTools = ["subagent_spawn"];
 		updateCatalogue([]);
-		assert.strictEqual(beforeAgentStart({ systemPrompt: "BASE" }), undefined,
+		assert.strictEqual(beforeAgentStart("BASE"), undefined,
 			"nothing is injected while no agents exist");
 	});
 });
