@@ -3,7 +3,12 @@ import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent
 import { hyperlink } from "@earendil-works/pi-tui";
 import { config as autoCompactConfig, type AutoCompactConfig } from "../shared/auto-compact-config.ts";
 import { formatTokens, resolveThresholdTokens } from "../shared/auto-compact-threshold.ts";
-import { AUTO_COMPACT_STATUS_KEY, ELAPSED_TIME_STATUS_KEY, FAST_OPENAI_STATUS_KEY } from "../shared/status-keys.ts";
+import {
+	AUTO_COMPACT_STATUS_KEY,
+	ELAPSED_TIME_STATUS_KEY,
+	FAST_OPENAI_STATUS_KEY,
+	FAST_OPENAI_STATUS_ON,
+} from "../shared/status-keys.ts";
 import { clampStyled, fitText } from "../shared/text-fit.ts";
 import { config as adaptiveFooterConfig } from "./config.ts";
 import {
@@ -92,7 +97,7 @@ export function partitionFooterStatuses(statuses: ReadonlyMap<string, string>): 
 		.join(" ");
 	return {
 		elapsedTime: elapsedTime === undefined ? undefined : sanitizeStatusText(elapsedTime),
-		fastMode: statuses.has(FAST_OPENAI_STATUS_KEY),
+		fastMode: statuses.get(FAST_OPENAI_STATUS_KEY) === FAST_OPENAI_STATUS_ON,
 		autoCompactPaused: statuses.has(AUTO_COMPACT_STATUS_KEY),
 		statusLine: statusLine || undefined,
 	};

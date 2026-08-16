@@ -168,7 +168,7 @@ eq("runtime fast mode has no dangling thinking separator", runtimeIdentityVarian
 eq("owned statuses are removed from the generic line", partitionFooterStatuses(new Map([
 	["z-status", "  zeta\nvalue  "],
 	["elapsed-time", "  ◷ 00:42  "],
-	["fast-openai", "fast"],
+	["fast-openai", "on"],
 	["auto-compact", "auto-compact paused"],
 	["a-status", "alpha\tvalue"],
 ])), {
@@ -181,6 +181,14 @@ eq("elapsed alone does not create a third line or fast mode", partitionFooterSta
 	["elapsed-time", "✓ 00:42"],
 ])), {
 	elapsedTime: "✓ 00:42",
+	fastMode: false,
+	autoCompactPaused: false,
+	statusLine: undefined,
+});
+eq("published fast-openai off stays owned without lighting fast mode", partitionFooterStatuses(new Map([
+	["fast-openai", "off"],
+])), {
+	elapsedTime: undefined,
 	fastMode: false,
 	autoCompactPaused: false,
 	statusLine: undefined,
