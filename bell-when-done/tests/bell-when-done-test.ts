@@ -4,10 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createTestEventHarness } from "../../shared/test-event-harness.ts";
 import { registerBellWhenDone, type BellIO } from "../index.ts";
 
-function harness(env: BellIO["env"]): {
-	emit(type: string, event: unknown, ctx: unknown): void;
-	writes: string[];
-} {
+function harness(env: BellIO["env"]) {
 	const pi = createTestEventHarness();
 	const writes: string[] = [];
 	registerBellWhenDone(

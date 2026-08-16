@@ -9,11 +9,6 @@ import {
 	type ElapsedTimeClock,
 } from "../index.ts";
 
-function fakePi() {
-	const events = createTestEventHarness();
-	return { api: events as unknown as ExtensionAPI, emit: events.emit };
-}
-
 class FakeClock implements ElapsedTimeClock {
 	nowMs = 0;
 	lastIntervalMs: number | undefined;
@@ -43,7 +38,7 @@ class FakeClock implements ElapsedTimeClock {
 }
 
 function harness(hasUI = true) {
-	const pi = fakePi();
+	const events = createTestEventHarness();
 	const clock = new FakeClock();
 	const statuses: Array<[string, string | undefined]> = [];
 	const themeTokens: string[] = [];
@@ -59,8 +54,8 @@ function harness(hasUI = true) {
 			setStatus: (key: string, text: string | undefined) => statuses.push([key, text]),
 		},
 	};
-	registerElapsedTime(pi.api, clock);
-	return { pi, clock, ctx, statuses, themeTokens };
+	registerElapsedTime(events as unknown as ExtensionAPI, clock);
+	return { emit: events.emit, clock, ctx, statuses, themeTokens };
 }
 
 describe("formatElapsed", () => {
@@ -84,7 +79,7 @@ describe("registerElapsedTime", () => {
 	it("tracks a run from start through settlement, later runs, and shutdown", () => {
 		const run = harness();
 		run.clock.nowMs = 1_000;
-		run.pi.emit("agent_start", { type: "agent_start" }, run.ctx);
+		run.emit("agent_start", { type: "agent_start" }, run.ctx);
 		assert.deepStrictEqual(run.statuses, [
 			[ELAPSED_TIME_STATUS_KEY, "◷ 00:00"],
 		], "run starts with an immediate zero status");
@@ -98,10 +93,10 @@ describe("registerElapsedTime", () => {
 			"◷ 01:01",
 		], "tick derives elapsed time from the start timestamp");
 
-		run.pi.emit("agent_start", { type: "agent_start" }, run.ctx);
+		run.emit("agent_start", { type: "agent_start" }, run.ctx);
 		assert.strictEqual(run.clock.activeTimerCount(), 1, "continuation does not add another timer");
 		run.clock.nowMs = 66_000;
-		run.pi.emit("agent_settled", { type: "agent_settled" }, run.ctx);
+		run.emit("agent_settled", { type: "agent_settled" }, run.ctx);
 		assert.deepStrictEqual(run.statuses.at(-1), [
 			ELAPSED_TIME_STATUS_KEY,
 			"✓ 01:05",
@@ -115,15 +110,15 @@ describe("registerElapsedTime", () => {
 		assert.strictEqual(run.statuses.length, statusCountAfterSettlement, "a settled status does not keep changing");
 
 		run.clock.nowMs = 100_000;
-		run.pi.emit("agent_start", { type: "agent_start" }, run.ctx);
+		run.emit("agent_start", { type: "agent_start" }, run.ctx);
 		run.clock.nowMs = 102_100;
-		run.pi.emit("agent_settled", { type: "agent_settled" }, run.ctx);
+		run.emit("agent_settled", { type: "agent_settled" }, run.ctx);
 		assert.deepStrictEqual(run.statuses.at(-1), [
 			ELAPSED_TIME_STATUS_KEY,
 			"✓ 00:02",
 		], "a later interaction starts a fresh measurement");
 
-		run.pi.emit("session_shutdown", { type: "session_shutdown", reason: "reload" }, run.ctx);
+		run.emit("session_shutdown", { type: "session_shutdown", reason: "reload" }, run.ctx);
 		assert.deepStrictEqual(
 			run.statuses.at(-1),
 			[ELAPSED_TIME_STATUS_KEY, undefined],
@@ -133,8 +128,8 @@ describe("registerElapsedTime", () => {
 
 	it("shutdown stops an active run", () => {
 		const interrupted = harness();
-		interrupted.pi.emit("agent_start", { type: "agent_start" }, interrupted.ctx);
-		interrupted.pi.emit("session_shutdown", { type: "session_shutdown", reason: "quit" }, interrupted.ctx);
+		interrupted.emit("agent_start", { type: "agent_start" }, interrupted.ctx);
+		interrupted.emit("session_shutdown", { type: "session_shutdown", reason: "quit" }, interrupted.ctx);
 		assert.strictEqual(interrupted.clock.activeTimerCount(), 0, "shutdown stops an active timer");
 		assert.deepStrictEqual(
 			interrupted.statuses.at(-1),
@@ -145,9 +140,9 @@ describe("registerElapsedTime", () => {
 
 	it("headless runs create no timers or statuses", () => {
 		const headless = harness(false);
-		headless.pi.emit("agent_start", { type: "agent_start" }, headless.ctx);
+		headless.emit("agent_start", { type: "agent_start" }, headless.ctx);
 		headless.clock.nowMs = 5_000;
-		headless.pi.emit("agent_settled", { type: "agent_settled" }, headless.ctx);
+		headless.emit("agent_settled", { type: "agent_settled" }, headless.ctx);
 		assert.strictEqual(headless.clock.activeTimerCount(), 0, "headless runs create no timers");
 		assert.deepStrictEqual(headless.statuses, [], "headless runs create no statuses");
 	});
