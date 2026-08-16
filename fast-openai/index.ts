@@ -9,12 +9,15 @@ import {
 
 type FastOpenAIConfig = {
 	enabled: boolean;
-	providers: string[];
 };
 
 type FastAction = "on" | "off";
 
 export const FAST_OPENAI_STATUS_KEY = "fast-openai";
+// The status is always published while the extension is running, so consumers
+// can tell "fast is off" apart from "fast-openai is not loaded" (key absent).
+export const FAST_OPENAI_STATUS_ON = "on";
+export const FAST_OPENAI_STATUS_OFF = "off";
 
 type ConfigDiagnostic = {
 	path: string;
@@ -31,21 +34,20 @@ type ConfigLoadResult = {
 	diagnostic?: ConfigDiagnostic;
 };
 
+type FastStatusReport = {
+	text: string;
+	hasWarning: boolean;
+};
+
 type PayloadRecord = Record<string, unknown>;
 type PiModel = NonNullable<ExtensionContext["model"]>;
 
 type FastEligibility = {
 	eligible: boolean;
-	providerListed: boolean;
 	providerSupported: boolean;
 	apiSupported: boolean;
 	modelSupported: boolean;
 	usingOAuth: boolean;
-};
-
-const DEFAULT_CONFIG: FastOpenAIConfig = {
-	enabled: false,
-	providers: ["openai-codex"],
 };
 
 const CONFIG_FILE = path.join(getAgentDir(), "extensions", "fast-openai.json");
@@ -67,35 +69,16 @@ function publishFastStatus(
 	enabled: boolean,
 ): void {
 	if (!ctx.hasUI) return;
-	ctx.ui.setStatus(FAST_OPENAI_STATUS_KEY, enabled ? "fast" : undefined);
+	ctx.ui.setStatus(FAST_OPENAI_STATUS_KEY, enabled ? FAST_OPENAI_STATUS_ON : FAST_OPENAI_STATUS_OFF);
 }
 
-function defaultProviders(): string[] {
-	return [...DEFAULT_CONFIG.providers];
+function clearFastStatus(ctx: Pick<ExtensionContext, "hasUI" | "ui">): void {
+	if (!ctx.hasUI) return;
+	ctx.ui.setStatus(FAST_OPENAI_STATUS_KEY, undefined);
 }
 
 function defaultConfig(): FastOpenAIConfig {
-	return {
-		enabled: DEFAULT_CONFIG.enabled,
-		providers: defaultProviders(),
-	};
-}
-
-function normalizeProviders(value: unknown): string[] | undefined {
-	if (!Array.isArray(value)) return undefined;
-
-	const providers: string[] = [];
-	const seen = new Set<string>();
-	for (const item of value) {
-		if (typeof item !== "string") return undefined;
-		const provider = item.trim();
-		if (!provider) return undefined;
-		if (seen.has(provider)) continue;
-		seen.add(provider);
-		providers.push(provider);
-	}
-
-	return providers.length > 0 ? providers : undefined;
+	return { enabled: false };
 }
 
 function formatError(error: unknown): string {
@@ -151,18 +134,11 @@ function parseConfigObject(value: Record<string, unknown>): ConfigLoadResult {
 		};
 	}
 
-	const providers = normalizeProviders(value.providers);
-	if (!providers) {
-		return {
-			config: defaultConfig(),
-			diagnostic: configDiagnostic('field "providers" must be a non-empty array of non-empty strings'),
-		};
-	}
-
-	return { config: { enabled: value.enabled, providers } };
+	return { config: { enabled: value.enabled } };
 }
 
-function loadConfigResult(readResult = readConfigFile()): ConfigLoadResult {
+function loadConfigResult(): ConfigLoadResult {
+	const readResult = readConfigFile();
 	if (readResult.status === "missing") return { config: defaultConfig() };
 	// Invalid fast-mode config should not fail the model request. Fast mode is an
 	// optional latency/cost preference, so fall back to disabled rather than
@@ -173,11 +149,6 @@ function loadConfigResult(readResult = readConfigFile()): ConfigLoadResult {
 		return { config: defaultConfig(), diagnostic: readResult.diagnostic };
 	}
 	return parseConfigObject(readResult.object);
-}
-
-function providersForSave(readResult: ConfigFileReadResult): string[] {
-	if (readResult.status !== "ok") return defaultProviders();
-	return normalizeProviders(readResult.object.providers) ?? defaultProviders();
 }
 
 function saveConfig(config: FastOpenAIConfig): void {
@@ -193,7 +164,6 @@ function getFastEligibility(
 	if (!model) {
 		return {
 			eligible: false,
-			providerListed: false,
 			providerSupported: false,
 			apiSupported: false,
 			modelSupported: false,
@@ -201,18 +171,20 @@ function getFastEligibility(
 		};
 	}
 
-	const providerListed = config.providers.includes(model.provider);
 	const providerSupported = model.provider === SUPPORTED_PROVIDER;
 	const apiSupported = model.api === SUPPORTED_API;
 	const modelSupported = SUPPORTED_MODELS.has(model.id);
+	// Eligibility is intentionally narrow because this extension targets fast
+	// mode specifically: it should activate only in very specific circumstances,
+	// which today means ChatGPT-OAuth Codex sessions. Those circumstances may
+	// change over time; revisit these gates when they do.
 	const usingOAuth = ctx.modelRegistry.isUsingOAuth(model);
 
 	const eligible =
-		config.enabled && providerListed && providerSupported && apiSupported && modelSupported && usingOAuth;
+		config.enabled && providerSupported && apiSupported && modelSupported && usingOAuth;
 
 	return {
 		eligible,
-		providerListed,
 		providerSupported,
 		apiSupported,
 		modelSupported,
@@ -231,6 +203,8 @@ function injectFastServiceTier(payload: unknown, ctx: ExtensionContext): Payload
 	const config = loadConfigResult().config;
 	const eligibility = getFastEligibility(ctx, config);
 	if (!eligibility.eligible) return undefined;
+	// These guards are restated in prose by the "request payload check" line in
+	// formatCurrentModelStatus; keep the two in sync.
 	if (!isObjectRecord(payload)) return undefined;
 	if ("service_tier" in payload) return undefined;
 	if (!payloadMatchesModel(payload, model)) return undefined;
@@ -254,7 +228,7 @@ function formatConfigWarning(diagnostic: ConfigDiagnostic): string {
 function formatCurrentModelStatus(
 	ctx: Pick<ExtensionContext, "model" | "modelRegistry">,
 	loadResult: ConfigLoadResult,
-): string {
+): FastStatusReport {
 	const { config, diagnostic } = loadResult;
 	const model = ctx.model;
 	const lines: string[] = [];
@@ -264,15 +238,13 @@ function formatCurrentModelStatus(
 
 	if (!model) {
 		lines.push("current model: none", "would inject: no", `config path: ${CONFIG_FILE}`);
-		if (config.enabled) lines.push(COST_ACCOUNTING_WARNING);
-		return lines.join("\n");
+		return { text: lines.join("\n"), hasWarning: Boolean(diagnostic) };
 	}
 
 	const eligibility = getFastEligibility(ctx, config);
 	lines.push(
 		`current model: ${model.provider}/${model.id}`,
 		`current api: ${model.api}`,
-		`provider listed: ${eligibility.providerListed ? "yes" : "no"}`,
 		`provider supported: ${eligibility.providerSupported ? "yes" : `no (requires ${SUPPORTED_PROVIDER})`}`,
 		`api supported: ${eligibility.apiSupported ? "yes" : `no (requires ${SUPPORTED_API})`}`,
 		`model supported: ${eligibility.modelSupported ? "yes" : `no (requires ${[...SUPPORTED_MODELS].join(", ")})`}`,
@@ -281,8 +253,8 @@ function formatCurrentModelStatus(
 		`would inject: ${eligibility.eligible ? "yes (service_tier: priority)" : "no"}`,
 		`config path: ${CONFIG_FILE}`,
 	);
-	if (config.enabled) lines.push(COST_ACCOUNTING_WARNING);
-	return lines.join("\n");
+	if (eligibility.eligible) lines.push(COST_ACCOUNTING_WARNING);
+	return { text: lines.join("\n"), hasWarning: Boolean(diagnostic) || eligibility.eligible };
 }
 
 function showUsage(ctx: ExtensionCommandContext): void {
@@ -290,12 +262,8 @@ function showUsage(ctx: ExtensionCommandContext): void {
 }
 
 function setFastMode(action: FastAction, ctx: ExtensionCommandContext): void {
-	const readResult = readConfigFile();
-	const previousDiagnostic = loadConfigResult(readResult).diagnostic;
-	const nextConfig: FastOpenAIConfig = {
-		enabled: action === "on",
-		providers: providersForSave(readResult),
-	};
+	const previousDiagnostic = loadConfigResult().diagnostic;
+	const nextConfig: FastOpenAIConfig = { enabled: action === "on" };
 
 	try {
 		saveConfig(nextConfig);
@@ -320,9 +288,8 @@ function setFastMode(action: FastAction, ctx: ExtensionCommandContext): void {
 }
 
 function showFastStatus(ctx: ExtensionCommandContext): void {
-	const loadResult = loadConfigResult();
-	const hasWarning = Boolean(loadResult.diagnostic) || loadResult.config.enabled;
-	ctx.ui.notify(formatCurrentModelStatus(ctx, loadResult), hasWarning ? "warning" : "info");
+	const report = formatCurrentModelStatus(ctx, loadConfigResult());
+	ctx.ui.notify(report.text, report.hasWarning ? "warning" : "info");
 }
 
 export default function (pi: ExtensionAPI): void {
@@ -331,7 +298,7 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
-		publishFastStatus(ctx, false);
+		clearFastStatus(ctx);
 	});
 
 	pi.on("agent_start", (_event, ctx) => {
