@@ -1,4 +1,4 @@
-import { after, describe, it } from "node:test";
+import { after, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -11,10 +11,6 @@ const capacity = await import("../capacity.ts");
 const { requestCancel } = await import("../cancel.ts");
 type RunningSubagent = import("../state.ts").RunningSubagent;
 type SpawnSpec = import("../capacity.ts").SpawnSpec;
-
-after(() => {
-	reset();
-});
 
 function spawnSpec(id: string, overrides: Partial<SpawnSpec> = {}): SpawnSpec {
 	return {
@@ -91,6 +87,9 @@ function reset(): void {
 	sent.length = 0;
 }
 
+beforeEach(reset);
+after(reset);
+
 function queue(spec: SpawnSpec): void {
 	state.running.set("blocker0", runningChild("blocker0"));
 	assert.strictEqual(capacity.admitLaunch(spec).status, "queued", `queue ${spec.id}`);
@@ -103,7 +102,6 @@ function flush(): Promise<void> {
 describe("requestCancel", () => {
 	it("queued cancellation resolves, splices only its entry, and tombstones idempotently", () => {
 		// Full lifecycle resolution and tombstone bookkeeping.
-		reset();
 		const queuedSpec = spawnSpec("queue001", { context: "forked", parentSessionFile: "/do-not-copy.jsonl" });
 		queue(queuedSpec);
 		const queuedOutcome = requestCancel(fakePi, queuedSpec.id, "model");
@@ -126,7 +124,6 @@ describe("requestCancel", () => {
 	});
 
 	it("user queued cancellation sends one steer carrying the cancelled id", () => {
-		reset();
 		const userQueuedSpec = spawnSpec("queue002");
 		queue(userQueuedSpec);
 		assert.strictEqual(requestCancel(fakePi, userQueuedSpec.id, "user").kind, "cancelled-queued",
@@ -138,7 +135,6 @@ describe("requestCancel", () => {
 	});
 
 	it("inline starting cancellation tombstones, guards the launch, and stays cancelled after release", () => {
-		reset();
 		const inlineSpec = spawnSpec("inline01");
 		assert.strictEqual(capacity.admitLaunch(inlineSpec).status, "run", "inline launch claims a slot");
 		const inlineOutcome = requestCancel(fakePi, inlineSpec.id, "user");
@@ -160,7 +156,6 @@ describe("requestCancel", () => {
 	});
 
 	it("user drain cancellation steers once and the pipeline unwinds without requeue", async () => {
-		reset();
 		let releaseDrain!: () => void;
 		const drainGate = new Promise<void>((resolve) => { releaseDrain = resolve; });
 		capacity.registerLauncher("spawn", async (_pi, spec) => {
@@ -191,7 +186,6 @@ describe("requestCancel", () => {
 	});
 
 	it("model drain cancellation never steers", async () => {
-		reset();
 		let releaseModelDrain!: () => void;
 		const modelDrainGate = new Promise<void>((resolve) => { releaseModelDrain = resolve; });
 		capacity.registerLauncher("spawn", async (_pi, spec) => {
@@ -210,7 +204,6 @@ describe("requestCancel", () => {
 	});
 
 	it("a cancelled user launch failure emits only its original cancellation steer", async () => {
-		reset();
 		let releaseUserFailure!: () => void;
 		const userFailureGate = new Promise<void>((resolve) => { releaseUserFailure = resolve; });
 		capacity.registerLauncher("spawn", async () => {
@@ -228,7 +221,6 @@ describe("requestCancel", () => {
 	});
 
 	it("a cancelled model launch failure stays silent", async () => {
-		reset();
 		let releaseModelFailure!: () => void;
 		const modelFailureGate = new Promise<void>((resolve) => { releaseModelFailure = resolve; });
 		capacity.registerLauncher("spawn", async () => {
@@ -246,7 +238,6 @@ describe("requestCancel", () => {
 	});
 
 	it("a reload requeue is dropped by its tombstone instead of relaunching", async () => {
-		reset();
 		let releaseReloadRace!: () => void;
 		const reloadRaceGate = new Promise<void>((resolve) => { releaseReloadRace = resolve; });
 		let reloadRaceLaunches = 0;
@@ -270,7 +261,6 @@ describe("requestCancel", () => {
 	});
 
 	it("running cancellation stops immediately and later requests are idempotent", () => {
-		reset();
 		const running = runningChild("running1");
 		let abortEvents = 0;
 		running.abort.signal.addEventListener("abort", () => abortEvents++);
@@ -288,7 +278,6 @@ describe("requestCancel", () => {
 	});
 
 	it("picker racing after model keeps model attribution", () => {
-		reset();
 		const modelFirst = runningChild("running2");
 		state.running.set(modelFirst.id, modelFirst);
 		assert.strictEqual(requestCancel(fakePi, modelFirst.id, "model").kind, "stopping", "model-first stop succeeds");
@@ -298,7 +287,6 @@ describe("requestCancel", () => {
 	});
 
 	it("an already-fired abort is idempotent and adopts the first explicit requester", () => {
-		reset();
 		const externallyAborted = runningChild("running3");
 		externallyAborted.abort.abort();
 		state.running.set(externallyAborted.id, externallyAborted);
@@ -311,7 +299,6 @@ describe("requestCancel", () => {
 	});
 
 	it("delivering ids are rejected without mutation, preserving stopped attribution", () => {
-		reset();
 		delivery("deliver1", false);
 		const delivering = requestCancel(fakePi, "deliver1", "model");
 		assert.deepStrictEqual(
@@ -328,7 +315,6 @@ describe("requestCancel", () => {
 	});
 
 	it("ledger-only ids resolve to completed and unknown ids stay distinct", () => {
-		reset();
 		state.ledger.set("complete", { sessionFile: "/sessions/complete.jsonl", name: "completed task" });
 		assert.deepStrictEqual(requestCancel(fakePi, "complete", "model"), {
 			kind: "completed",
@@ -342,7 +328,6 @@ describe("requestCancel", () => {
 
 	it("running wins over a stale delivery record", () => {
 		// Resolution order is authoritative even if stale registries overlap.
-		reset();
 		const overlapRunning = runningChild("overlap1");
 		state.running.set(overlapRunning.id, overlapRunning);
 		delivery(overlapRunning.id, false);
@@ -350,7 +335,6 @@ describe("requestCancel", () => {
 	});
 
 	it("delivery wins over a stale queued entry without splicing it", () => {
-		reset();
 		const overlapSpec = spawnSpec("overlap2");
 		queue(overlapSpec);
 		delivery(overlapSpec.id, false);
@@ -362,7 +346,6 @@ describe("requestCancel", () => {
 
 	it("cancelling one queue entry cannot touch neighbors", () => {
 		// Every mutation is keyed by id: cancelling one queue entry cannot touch neighbors.
-		reset();
 		const blocker = runningChild("neighbor");
 		state.running.set(blocker.id, blocker);
 		const firstNeighbor = spawnSpec("queue101");
