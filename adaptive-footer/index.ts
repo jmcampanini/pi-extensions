@@ -2,6 +2,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { hyperlink } from "@earendil-works/pi-tui";
 import { config as autoCompactConfig, type AutoCompactConfig } from "../auto-compact/config.ts";
+import { AUTO_COMPACT_STATUS_KEY } from "../auto-compact/index.ts";
 import { formatTokens, resolveThresholdTokens } from "../auto-compact/threshold.ts";
 import { ELAPSED_TIME_STATUS_KEY } from "../elapsed-time/index.ts";
 import { FAST_OPENAI_STATUS_KEY } from "../fast-openai/index.ts";
@@ -32,8 +33,10 @@ export function compactTargetVariants(
 	autoCompactConfig: AutoCompactConfig,
 	contextWindow: number,
 	contextTokens?: number | null,
+	paused = false,
 ): ComponentVariants | undefined {
 	if (!autoCompactConfig.enabled || contextWindow <= 0) return undefined;
+	if (paused) return { full: "compact ⏸", compact: "C⏸" };
 	const thresholdTokens = resolveThresholdTokens(autoCompactConfig, contextWindow);
 	const target = formatTokens(thresholdTokens);
 	if (contextTokens == null) {
@@ -53,10 +56,11 @@ export function selectContextColorBand(
 	percent: number | null | undefined,
 	autoCompactConfig: AutoCompactConfig,
 	contextWindow: number,
+	paused = false,
 ): ContextColorBand | undefined {
 	if (percent == null) return undefined;
 
-	if (!autoCompactConfig.enabled || contextWindow <= 0) {
+	if (!autoCompactConfig.enabled || contextWindow <= 0 || paused) {
 		if (percent > 90) return "error";
 		if (percent > 70) return "warning";
 		return undefined;
@@ -78,17 +82,20 @@ function sanitizeStatusText(text: string): string {
 export function partitionFooterStatuses(statuses: ReadonlyMap<string, string>): {
 	elapsedTime: string | undefined;
 	fastMode: boolean;
+	autoCompactPaused: boolean;
 	statusLine: string | undefined;
 } {
 	const elapsedTime = statuses.get(ELAPSED_TIME_STATUS_KEY);
+	const ownedKeys = [ELAPSED_TIME_STATUS_KEY, FAST_OPENAI_STATUS_KEY, AUTO_COMPACT_STATUS_KEY];
 	const statusLine = Array.from(statuses.entries())
-		.filter(([key]) => key !== ELAPSED_TIME_STATUS_KEY && key !== FAST_OPENAI_STATUS_KEY)
+		.filter(([key]) => !ownedKeys.includes(key))
 		.sort(([a], [b]) => a.localeCompare(b))
 		.map(([, text]) => sanitizeStatusText(text))
 		.join(" ");
 	return {
 		elapsedTime: elapsedTime === undefined ? undefined : sanitizeStatusText(elapsedTime),
 		fastMode: statuses.has(FAST_OPENAI_STATUS_KEY),
+		autoCompactPaused: statuses.has(AUTO_COMPACT_STATUS_KEY),
 		statusLine: statusLine || undefined,
 	};
 }
@@ -237,8 +244,13 @@ export function registerAdaptiveFooter(
 					const contextUsage = ctx.getContextUsage();
 					const contextWindow = contextUsage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
 					const contextPercent = contextUsage?.percent;
-					const contextColorBand = selectContextColorBand(contextPercent, autoCompactConfig, contextWindow);
 					const footerStatuses = partitionFooterStatuses(footerData.getExtensionStatuses());
+					const contextColorBand = selectContextColorBand(
+						contextPercent,
+						autoCompactConfig,
+						contextWindow,
+						footerStatuses.autoCompactPaused,
+					);
 					const components: FooterComponent[] = [];
 
 					const tokenFlow = tokenFlowVariants(totalInput, totalOutput);
@@ -258,6 +270,7 @@ export function registerAdaptiveFooter(
 						autoCompactConfig,
 						contextWindow,
 						contextUsage?.tokens,
+						footerStatuses.autoCompactPaused,
 					);
 					if (compactTarget) {
 						components.push({ id: "compact-target", alignment: "left", ...compactTarget });

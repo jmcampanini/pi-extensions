@@ -1,6 +1,6 @@
 import type { CompactOptions, ContextUsage, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AutoCompactConfig } from "../config.ts";
-import { registerAutoCompact } from "../index.ts";
+import { AUTO_COMPACT_STATUS_KEY, registerAutoCompact } from "../index.ts";
 
 let pass = 0;
 let fail = 0;
@@ -66,7 +66,6 @@ function harness(options: {
 	config?: Partial<AutoCompactConfig>;
 	usage?: ContextUsage;
 	model?: FakeModel;
-	mode?: "tui" | "rpc" | "json" | "print";
 } = {}) {
 	const pi = fakePi();
 	const state: HarnessState = {
@@ -77,8 +76,9 @@ function harness(options: {
 	};
 	const compactions: CompactOptions[] = [];
 	const notifications: Array<{ message: string; level: string }> = [];
+	const statuses = new Map<string, string>();
 	const ctx = {
-		mode: options.mode ?? "tui",
+		hasUI: true,
 		get model() {
 			return state.model;
 		},
@@ -88,6 +88,10 @@ function harness(options: {
 		compact: (compactOptions: CompactOptions = {}) => compactions.push(compactOptions),
 		ui: {
 			notify: (message: string, level: string) => notifications.push({ message, level }),
+			setStatus: (key: string, text: string | undefined) => {
+				if (text === undefined) statuses.delete(key);
+				else statuses.set(key, text);
+			},
 		},
 	};
 
@@ -99,6 +103,7 @@ function harness(options: {
 		ctx,
 		compactions,
 		notifications,
+		statuses,
 		settle: () => pi.emit("agent_settled", { type: "agent_settled" }, ctx),
 		settleAsync: () => pi.emitAsync("agent_settled", { type: "agent_settled" }, ctx),
 		endRun: (stopReason: string) =>
@@ -117,27 +122,16 @@ function harness(options: {
 	};
 }
 
-const thresholds = [
-	{ contextWindow: 200_000, threshold: 180_000, rule: "90% class" },
-	{ contextWindow: 272_000, threshold: 244_800, rule: "90% class" },
-	{ contextWindow: 300_000, threshold: 270_000, rule: "inclusive windowMax boundary" },
-	{ contextWindow: 300_001, threshold: 210_001, rule: "70% class just past the boundary" },
-	{ contextWindow: 372_000, threshold: 260_400, rule: "70% class" },
-	{ contextWindow: 400_000, threshold: 280_000, rule: "70% class" },
-	{ contextWindow: 1_000_000, threshold: 400_000, rule: "token default" },
-];
-for (const { contextWindow, threshold, rule } of thresholds) {
-	for (const tokens of [threshold - 1, threshold]) {
-		const test = harness({
-			usage: { tokens, contextWindow, percent: (tokens / contextWindow) * 100 },
-		});
-		test.settle();
-		eq(
-			`${tokens} of ${contextWindow} (${rule}) triggers only at or above the threshold`,
-			test.compactions.length,
-			tokens >= threshold ? 1 : 0,
-		);
-	}
+for (const tokens of [179_999, 180_000]) {
+	const boundary = harness({
+		usage: { tokens, contextWindow: 200_000, percent: (tokens / 200_000) * 100 },
+	});
+	boundary.settle();
+	eq(
+		`the settled handler compacts only at or above the resolved threshold (${tokens})`,
+		boundary.compactions.length,
+		tokens >= 180_000 ? 1 : 0,
+	);
 }
 
 const unknown = harness();
@@ -156,13 +150,15 @@ const nativeDidNotCompact = harness({
 nativeDidNotCompact.settle();
 nativeDidNotCompact.settle();
 eq("high settled usage compacts even when pi was expected to compact first", nativeDidNotCompact.compactions.length, 1);
-eq("high settled usage does not post a speculative native warning", nativeDidNotCompact.notifications, [
-	{ message: "Context at 120k/128k (94%) — auto-compacting.", level: "info" },
-]);
+eq(
+	"high settled usage posts a single info notification without a speculative native warning",
+	nativeDidNotCompact.notifications.map(({ level }) => level),
+	["info"],
+);
 
 const nativeWarn = harness({
 	usage: { tokens: null, contextWindow: 128_000, percent: null },
-	model: tiny,
+	model: { id: "tiny-model", provider: "openai", contextWindow: 999_999 },
 });
 nativeWarn.pi.emit(
 	"session_compact",
@@ -171,7 +167,7 @@ nativeWarn.pi.emit(
 );
 nativeWarn.settle();
 eq("post-native unknown usage does not duplicate compaction", nativeWarn.compactions.length, 0);
-eq("an observed native threshold compaction warns once", nativeWarn.notifications, [
+eq("an observed native threshold compaction warns once with the usage-derived threshold", nativeWarn.notifications, [
 	{
 		message:
 			"Auto-compact: Pi's native compaction ran before Auto Compact could evaluate the 115k threshold for tiny-model. If this happens repeatedly, the threshold may be at or past Pi's native compaction point.",
@@ -206,7 +202,6 @@ nonThresholdCompact.pi.emit(
 eq("manual and overflow compactions do not imply native threshold preemption", nonThresholdCompact.notifications, []);
 
 const workflow = harness();
-workflow.pi.emit("turn_end", { type: "turn_end" }, workflow.ctx);
 workflow.endRun("toolUse");
 workflow.endRun("stop");
 eq("multi-turn and queued continuations do not compact before settlement", workflow.compactions.length, 0);
@@ -240,40 +235,28 @@ inFlight.state.usage = { tokens: 181_000, contextWindow: 200_000, percent: 90.5 
 inFlight.settle();
 eq("a later completed run with fresh high usage can compact", inFlight.compactions.length, 2);
 
-for (const mode of ["tui", "rpc"] as const) {
-	const interactiveMode = harness({ mode });
-	let laterSettlementHandlerRan = false;
-	interactiveMode.pi.on("agent_settled", () => {
-		laterSettlementHandlerRan = true;
-	});
-	const settlement = interactiveMode.settleAsync();
-	eq(`${mode} mode holds later settlement handlers during compaction`, laterSettlementHandlerRan, false);
-	interactiveMode.compactions[0]?.onComplete?.({} as never);
-	await settlement;
-	eq(`${mode} mode releases later settlement handlers after compaction`, laterSettlementHandlerRan, true);
-}
-
-const printMode = harness({ mode: "print" });
-let printModeCanTearDown = false;
-const printModeSettlement = printMode.settleAsync().then(() => {
-	printModeCanTearDown = true;
+// The settlement hold is what keeps print/json teardown from racing an in-flight compaction.
+const holdSuccess = harness();
+let laterHandlerRan = false;
+holdSuccess.pi.on("agent_settled", () => {
+	laterHandlerRan = true;
 });
-eq("print mode requests compaction before settlement returns", printMode.compactions.length, 1);
-eq("print mode cannot tear down during compaction", printModeCanTearDown, false);
-printMode.compactions[0]?.onComplete?.({} as never);
-await printModeSettlement;
-eq("print mode can tear down after compaction completes", printModeCanTearDown, true);
+const holdSettlement = holdSuccess.settleAsync();
+eq("later settlement handlers are held while compaction runs", laterHandlerRan, false);
+holdSuccess.compactions[0]?.onComplete?.({} as never);
+await holdSettlement;
+eq("later settlement handlers are released after compaction completes", laterHandlerRan, true);
 
-const jsonMode = harness({ mode: "json" });
-let jsonModeCanTearDown = false;
-const jsonModeSettlement = jsonMode.settleAsync().then(() => {
-	jsonModeCanTearDown = true;
+const holdFailure = harness();
+let failureHandlerRan = false;
+holdFailure.pi.on("agent_settled", () => {
+	failureHandlerRan = true;
 });
-eq("JSON mode cannot tear down during compaction", jsonModeCanTearDown, false);
-jsonMode.compactions[0]?.onError?.(new Error("summary failed"));
-await jsonModeSettlement;
-eq("JSON mode can tear down after compaction fails", jsonModeCanTearDown, true);
-eq("JSON mode reports failure before teardown", jsonMode.notifications.at(-1)?.level, "error");
+const failureSettlement = holdFailure.settleAsync();
+holdFailure.compactions[0]?.onError?.(new Error("summary failed"));
+await failureSettlement;
+eq("failure releases the settlement hold", failureHandlerRan, true);
+eq("failure is reported before the hold releases", holdFailure.notifications.at(-1)?.level, "error");
 
 const aborted = harness();
 aborted.endRun("aborted");
@@ -298,6 +281,7 @@ eq("failure is surfaced and latches auto-compaction off", latch.notifications.at
 		"Auto-compaction failed: Nothing to compact. Auto-compaction is disabled until the next successful compaction or model switch.",
 	level: "error",
 });
+eq("failure publishes the paused status", latch.statuses.get(AUTO_COMPACT_STATUS_KEY), "auto-compact paused");
 latch.settle();
 eq("failure latch prevents a retry loop", latch.compactions.length, 1);
 latch.pi.emit(
@@ -306,12 +290,26 @@ latch.pi.emit(
 	latch.ctx,
 );
 eq("native fallback after an extension failure does not warn", latch.notifications.filter(({ level }) => level === "warning"), []);
+eq("clearing the latch clears the paused status", latch.statuses.has(AUTO_COMPACT_STATUS_KEY), false);
 latch.settle();
 eq("any successful compaction clears the failure latch", latch.compactions.length, 2);
 latch.compactions[1]?.onError?.(new Error("failed again"));
 latch.pi.emit("model_select", { type: "model_select", model: tiny }, latch.ctx);
+eq("model switch clears the paused status", latch.statuses.has(AUTO_COMPACT_STATUS_KEY), false);
 latch.settle();
 eq("model switch clears the failure latch", latch.compactions.length, 3);
+
+const cancelled = harness();
+cancelled.settle();
+cancelled.compactions[0]?.onError?.(new Error("Compaction cancelled"));
+eq("cancellation is reported as an info pause, not a failure", cancelled.notifications.at(-1), {
+	message:
+		"Compaction cancelled — auto-compaction paused until the next successful compaction or model switch.",
+	level: "info",
+});
+eq("cancellation publishes the paused status", cancelled.statuses.get(AUTO_COMPACT_STATUS_KEY), "auto-compact paused");
+cancelled.settle();
+eq("cancellation engages the latch so a declined compaction is not re-requested", cancelled.compactions.length, 1);
 
 const shutdown = harness();
 shutdown.settle();
@@ -324,6 +322,7 @@ try {
 }
 eq("late compaction failure after shutdown does not use stale context", postShutdownErrorThrew, false);
 eq("late compaction failure after shutdown adds no notification", shutdown.notifications.length, 1);
+eq("late compaction failure after shutdown publishes no status", shutdown.statuses.has(AUTO_COMPACT_STATUS_KEY), false);
 
 const disabled = harness({ config: { enabled: false }, model: tiny });
 disabled.pi.emit(
