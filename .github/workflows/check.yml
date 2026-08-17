@@ -1,4 +1,4 @@
-name: CI
+name: Check
 
 on:
   push:
@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   check:
+    name: check
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -30,5 +31,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Record working tree state
+        run: git status --porcelain > "$RUNNER_TEMP/porcelain-before"
+
       - name: Check
         run: make check
+
+      - name: Verify check left the working tree unchanged
+        run: |
+          git status --porcelain > "$RUNNER_TEMP/porcelain-after"
+          diff -u "$RUNNER_TEMP/porcelain-before" "$RUNNER_TEMP/porcelain-after"
