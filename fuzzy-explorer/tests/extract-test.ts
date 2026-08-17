@@ -1,3 +1,5 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
 	contentToText,
@@ -9,31 +11,6 @@ import {
 	formatToolArguments,
 } from "../extract.ts";
 import { stripSeparators } from "../search.ts";
-
-let pass = 0;
-let fail = 0;
-
-function eq(label: string, got: unknown, want: unknown): void {
-	const actual = JSON.stringify(got);
-	const expected = JSON.stringify(want);
-	if (actual === expected) {
-		pass++;
-		console.log(`  ok  ${label}`);
-	} else {
-		fail++;
-		console.log(`  FAIL ${label}:\n    got  ${actual}\n    want ${expected}`);
-	}
-}
-
-function ok(label: string, condition: boolean): void {
-	if (condition) {
-		pass++;
-		console.log(`  ok  ${label}`);
-	} else {
-		fail++;
-		console.log(`  FAIL ${label}`);
-	}
-}
 
 let sequence = 0;
 function base(id: string): { id: string; parentId: string | null; timestamp: string } {
@@ -227,179 +204,323 @@ const entries: SessionEntry[] = [
 	...excludedEntries,
 	...labels,
 ];
-const blocks = extractBlocks(entries, (id) => id === "user0001" ? "getter bookmark" : undefined);
-const byEntry = (id: string) => blocks.filter((block) => block.entryId === id);
-const readBlock = blocks.find((block) => block.toolCallId === "call-read");
-const writeBlock = blocks.find((block) => block.toolCallId === "call-write");
-const orphanBlock = blocks.find((block) => block.entryId === "orph0001");
-const bashBlock = blocks.find((block) => block.entryId === "bash0001");
 
-// Every v1 source kind is represented once or folded as designed.
+describe("extractBlocks", () => {
+	const blocks = extractBlocks(entries, (id) => id === "user0001" ? "getter bookmark" : undefined);
+	const byEntry = (id: string) => blocks.filter((block) => block.entryId === id);
+	const readBlock = blocks.find((block) => block.toolCallId === "call-read");
+	const writeBlock = blocks.find((block) => block.toolCallId === "call-write");
+	const orphanBlock = blocks.find((block) => block.entryId === "orph0001");
+	const bashBlock = blocks.find((block) => block.entryId === "bash0001");
 
-eq("expected number of rows", blocks.length, 12);
-eq("block kinds", blocks.map((block) => block.kind), [
-	"user",
-	"assistant",
-	"tool",
-	"tool",
-	"tool",
-	"bash",
-	"custom",
-	"custom",
-	"summary",
-	"summary",
-	"summary",
-	"summary",
-]);
-eq("assistant combines text and keeps part order", byEntry("asst0001").map((block) => [block.kind, block.body]), [
-	["assistant", "First answer.\nSecond answer."],
-	["tool", `${fullBody}\n[image]`],
-	["tool", ""],
-]);
-ok("assistant thinking is excluded", !JSON.stringify(blocks).includes("PRIVATE THINKING"));
-eq("matched result folds into call entry ids", readBlock?.entryIds, ["asst0001", "rslt0001"]);
-eq("matched result has no orphan row", byEntry("rslt0001").length, 0);
-eq("orphan result gets a tool row", [orphanBlock?.kind, orphanBlock?.body, orphanBlock?.isError], ["tool", "orphan output", true]);
+	it("expected number of rows", () => {
+		assert.strictEqual(blocks.length, 12);
+	});
 
-// Search fields stay compact and carry all structured metadata.
-ok("tool fields include role, type, name, id, args, paths, line, time, entries, and label", [
-	"role:assistant",
-	"type:tool",
-	"tool:read",
-	"toolCallId:call-read",
-	"args:path=@src/config.ts",
-	"path:src/config.ts",
-	"line:42",
-	"timestamp:2025-01-02 03:04:01Z",
-	"entry:asst0001",
-	"entry:rslt0001",
-	"label:result checkpoint",
-].every((field) => readBlock?.fields.includes(field)));
-eq("file reference strips @ and uses read offset", readBlock?.fileReference, { path: "src/config.ts", line: 42 });
-eq("tool call carries redacted structured arguments", readBlock?.toolArguments, {
-	path: "@src/config.ts",
-	offset: 42,
-	options: { image: "[image]" },
+	it("block kinds", () => {
+		assert.deepStrictEqual(blocks.map((block) => block.kind), [
+			"user",
+			"assistant",
+			"tool",
+			"tool",
+			"tool",
+			"bash",
+			"custom",
+			"custom",
+			"summary",
+			"summary",
+			"summary",
+			"summary",
+		]);
+	});
+
+	it("assistant combines text and keeps part order", () => {
+		assert.deepStrictEqual(byEntry("asst0001").map((block) => [block.kind, block.body]), [
+			["assistant", "First answer.\nSecond answer."],
+			["tool", `${fullBody}\n[image]`],
+			["tool", ""],
+		]);
+	});
+
+	it("assistant thinking is excluded", () => {
+		assert.ok(!JSON.stringify(blocks).includes("PRIVATE THINKING"));
+	});
+
+	it("matched result folds into call entry ids", () => {
+		assert.deepStrictEqual(readBlock?.entryIds, ["asst0001", "rslt0001"]);
+	});
+
+	it("matched result has no orphan row", () => {
+		assert.strictEqual(byEntry("rslt0001").length, 0);
+	});
+
+	it("orphan result gets a tool row", () => {
+		assert.deepStrictEqual([orphanBlock?.kind, orphanBlock?.body, orphanBlock?.isError],
+			["tool", "orphan output", true]);
+	});
+
+	it("tool fields include role, type, name, id, args, paths, line, time, entries, and label", () => {
+		assert.ok([
+			"role:assistant",
+			"type:tool",
+			"tool:read",
+			"toolCallId:call-read",
+			"args:path=@src/config.ts",
+			"path:src/config.ts",
+			"line:42",
+			"timestamp:2025-01-02 03:04:01Z",
+			"entry:asst0001",
+			"entry:rslt0001",
+			"label:result checkpoint",
+		].every((field) => readBlock?.fields.includes(field)));
+	});
+
+	it("file reference strips @ and uses read offset", () => {
+		assert.deepStrictEqual(readBlock?.fileReference, { path: "src/config.ts", line: 42 });
+	});
+
+	it("tool call carries redacted structured arguments", () => {
+		assert.deepStrictEqual(readBlock?.toolArguments, {
+			path: "@src/config.ts",
+			offset: 42,
+			options: { image: "[image]" },
+		});
+	});
+
+	it("tool search key is kind, tool, and argument subtitle", () => {
+		assert.strictEqual(readBlock?.searchKey,
+			"tool read path=@src/config.ts offset=42 options.image=[image]");
+	});
+
+	it("prose search keys fold duplicate titles", () => {
+		assert.deepStrictEqual([
+			byEntry("user0001")[0]?.searchKey,
+			byEntry("asst0001")[0]?.searchKey,
+		], ["user", "assistant"]);
+	});
+
+	it("bash search key carries the command subtitle", () => {
+		assert.strictEqual(bashBlock?.searchKey, "bash printf 'hello'");
+	});
+
+	it("custom search key carries the custom type", () => {
+		assert.strictEqual(byEntry("cust0001")[0]?.searchKey, "custom visible-role");
+	});
+
+	it("any haystack is the fields blob plus canonical text", () => {
+		assert.ok(readBlock?.anyText === `${readBlock?.fields}\n${readBlock?.canonicalText}`);
+	});
+
+	it("label decoration keeps the any haystack in sync", () => {
+		assert.ok(readBlock?.anyText.includes("label:result checkpoint") === true);
+	});
+
+	it("stripped body mirrors the body without separators", () => {
+		assert.ok(readBlock?.strippedBody === stripSeparators(readBlock?.body ?? ""));
+	});
+
+	it("stripped any haystack mirrors the any haystack", () => {
+		assert.ok(readBlock?.strippedAnyText === stripSeparators(readBlock?.anyText ?? ""));
+	});
+
+	it("blocks without bodies still index their invocation through any", () => {
+		assert.ok(writeBlock?.anyText.includes("complete argument content") === true);
+	});
+
+	it("path suffix supplies a line", () => {
+		assert.deepStrictEqual(writeBlock?.fileReference, { path: "src/other.ts", line: 9 });
+	});
+
+	it("label getter decorates target block", () => {
+		assert.deepStrictEqual(
+			[byEntry("user0001")[0]?.label, byEntry("user0001")[0]?.fields.includes("label:getter bookmark")],
+			["getter bookmark", true],
+		);
+	});
+
+	it("label on folded result decorates tool block", () => {
+		assert.strictEqual(readBlock?.label, "result checkpoint");
+	});
+
+	it("cleared label is absent", () => {
+		assert.strictEqual(orphanBlock?.label, undefined);
+	});
+
+	it("stable ids derive from entry and part", () => {
+		assert.ok(blocks.every((block) => block.id.startsWith(`${block.entryId}:part:`)));
+	});
+
+	it("same entries produce stable ids", () => {
+		assert.deepStrictEqual(extractBlocks(entries).map((block) => block.id), blocks.map((block) => block.id));
+	});
+
+	it("user images become placeholders", () => {
+		assert.strictEqual(byEntry("user0001")[0]?.body,
+			"Please inspect this image.\n[image]\nThe prompt continues.");
+	});
+
+	it("user canonical text is the complete body", () => {
+		assert.strictEqual(byEntry("user0001")[0]?.canonicalText, byEntry("user0001")[0]?.body);
+	});
+
+	it("merged tool body is complete stored output", () => {
+		assert.strictEqual(readBlock?.body, `${fullBody}\n[image]`);
+	});
+
+	it("merged tool canonical text has invocation and complete result", () => {
+		assert.ok(readBlock?.canonicalText.startsWith("read {\n") === true
+			&& readBlock.canonicalText.endsWith(`${fullBody}\n[image]`));
+	});
+
+	it("merged tool records its exact canonical body offset", () => {
+		assert.strictEqual(readBlock?.canonicalBodyOffset,
+			(readBlock?.canonicalText.length ?? 0) - (readBlock?.body.length ?? 0));
+	});
+
+	it("unmatched call canonical text retains complete arguments", () => {
+		assert.ok(writeBlock?.canonicalText.includes("complete argument content") === true);
+	});
+
+	it("bash body remains stored output", () => {
+		assert.strictEqual(bashBlock?.body, "complete bash output");
+	});
+
+	it("bash canonical text includes command, output, and exit", () => {
+		assert.strictEqual(bashBlock?.canonicalText, "printf 'hello'\n\ncomplete bash output\n\nexit code 7");
+	});
+
+	it("bash records the output section offset", () => {
+		assert.strictEqual(bashBlock?.canonicalBodyOffset, "printf 'hello'\n\n".length);
+	});
+
+	it("bash fields include command and exit", () => {
+		assert.ok(bashBlock?.fields.includes("command:printf 'hello'") === true
+			&& bashBlock.fields.includes("exit:7"));
+	});
+
+	it("forbidden payloads are never indexed", () => {
+		const serializedBlocks = JSON.stringify(blocks);
+		for (const forbidden of [
+			userImageData,
+			resultImageData,
+			argumentImageData,
+			"CUSTOM_ENTRY_BASE64",
+			"DETAIL SECRET MUST STAY OUT",
+			"TRUNCATION CONTENT MUST STAY OUT",
+			"PRIVATE TRUNCATION METADATA",
+			"ORPHAN DETAIL SECRET",
+			"CUSTOM ROLE DETAIL SECRET",
+			"CUSTOM ENTRY DETAIL SECRET",
+			"COMPACTION DETAIL SECRET",
+			"BRANCH DETAIL SECRET",
+		]) {
+			assert.ok(!serializedBlocks.includes(forbidden), `forbidden payload is not indexed: ${forbidden}`);
+		}
+	});
+
+	it("tool truncation metadata", () => {
+		assert.deepStrictEqual(readBlock?.truncation, {
+			truncated: true,
+			metadata: {
+				truncated: true,
+				truncatedBy: "lines",
+				totalLines: 9_000,
+				totalBytes: 90_000,
+				outputLines: 2_000,
+				outputBytes: 20_000,
+				maxLines: 2_000,
+				maxBytes: 50_000,
+				lastLinePartial: false,
+				firstLineExceedsLimit: false,
+			},
+			fullOutputPath: "/surviving/full-read-output.txt",
+		});
+	});
+
+	it("bash truncation keeps full-output path", () => {
+		assert.deepStrictEqual(bashBlock?.truncation, {
+			truncated: true,
+			fullOutputPath: "/surviving/full-bash-output.txt",
+		});
+	});
+
+	it("displayable custom sources", () => {
+		assert.deepStrictEqual(
+			blocks.filter((block) => block.kind === "custom").map((block) => [block.title, block.body]),
+			[
+				["visible-role", "displayable custom role"],
+				["visible-entry", "displayable custom entry\n[image]"],
+			],
+		);
+	});
+
+	it("summary sources", () => {
+		assert.deepStrictEqual(blocks.filter((block) => block.kind === "summary").map((block) => block.body), [
+			"top-level compaction summary",
+			"top-level branch summary",
+			"message-role branch summary",
+			"message-role compaction summary",
+		]);
+	});
+
+	it("excluded entries have no rows", () => {
+		for (const excludedId of ["cust0002", "cmsg0002", "state001", "model001", "think001", "info0001"]) {
+			assert.strictEqual(byEntry(excludedId).length, 0, `excluded entry has no row: ${excludedId}`);
+		}
+	});
 });
 
-// The curated search key is kind + tool name + title/subtitle with duplicates folded.
-eq("tool search key is kind, tool, and argument subtitle", readBlock?.searchKey,
-	"tool read path=@src/config.ts offset=42 options.image=[image]");
-eq("prose search keys fold duplicate titles", [
-	byEntry("user0001")[0]?.searchKey,
-	byEntry("asst0001")[0]?.searchKey,
-], ["user", "assistant"]);
-eq("bash search key carries the command subtitle", bashBlock?.searchKey, "bash printf 'hello'");
-eq("custom search key carries the custom type", byEntry("cust0001")[0]?.searchKey, "custom visible-role");
+describe("extraction helpers", () => {
+	it("registry exposes every current entry type", () => {
+		assert.ok([
+			"message",
+			"custom_message",
+			"compaction",
+			"branch_summary",
+			"custom",
+			"label",
+			"model_change",
+			"thinking_level_change",
+			"session_info",
+		].every((type) => typeof extractorRegistry[type] === "function"));
+	});
 
-// Search-text copies are precomputed and stay consistent with their sources.
-ok("any haystack is the fields blob plus canonical text",
-	readBlock?.anyText === `${readBlock?.fields}\n${readBlock?.canonicalText}`);
-ok("label decoration keeps the any haystack in sync",
-	readBlock?.anyText.includes("label:result checkpoint") === true);
-ok("stripped body mirrors the body without separators", readBlock?.strippedBody === stripSeparators(readBlock?.body ?? ""));
-ok("stripped any haystack mirrors the any haystack", readBlock?.strippedAnyText === stripSeparators(readBlock?.anyText ?? ""));
-ok("blocks without bodies still index their invocation through any",
-	writeBlock?.anyText.includes("complete argument content") === true);
-eq("path suffix supplies a line", writeBlock?.fileReference, { path: "src/other.ts", line: 9 });
-eq("label getter decorates target block", [byEntry("user0001")[0]?.label, byEntry("user0001")[0]?.fields.includes("label:getter bookmark")], ["getter bookmark", true]);
-eq("label on folded result decorates tool block", readBlock?.label, "result checkpoint");
-eq("cleared label is absent", orphanBlock?.label, undefined);
-ok("stable ids derive from entry and part", blocks.every((block) => block.id.startsWith(`${block.entryId}:part:`)));
-eq("same entries produce stable ids", extractBlocks(entries).map((block) => block.id), blocks.map((block) => block.id));
+	it("content helper never returns image data", () => {
+		assert.strictEqual(contentToText([{ type: "image", data: "raw" }]), "[image]");
+	});
 
-// Bodies and canonical text retain stored content while forbidden payloads stay out.
-eq("user images become placeholders", byEntry("user0001")[0]?.body, "Please inspect this image.\n[image]\nThe prompt continues.");
-eq("user canonical text is the complete body", byEntry("user0001")[0]?.canonicalText, byEntry("user0001")[0]?.body);
-eq("merged tool body is complete stored output", readBlock?.body, `${fullBody}\n[image]`);
-ok("merged tool canonical text has invocation and complete result", readBlock?.canonicalText.startsWith("read {\n") === true && readBlock.canonicalText.endsWith(`${fullBody}\n[image]`));
-eq("merged tool records its exact canonical body offset", readBlock?.canonicalBodyOffset,
-	(readBlock?.canonicalText.length ?? 0) - (readBlock?.body.length ?? 0));
-ok("unmatched call canonical text retains complete arguments", writeBlock?.canonicalText.includes("complete argument content") === true);
-eq("bash body remains stored output", bashBlock?.body, "complete bash output");
-eq("bash canonical text includes command, output, and exit", bashBlock?.canonicalText, "printf 'hello'\n\ncomplete bash output\n\nexit code 7");
-eq("bash records the output section offset", bashBlock?.canonicalBodyOffset, "printf 'hello'\n\n".length);
-ok("bash fields include command and exit", bashBlock?.fields.includes("command:printf 'hello'") === true && bashBlock.fields.includes("exit:7"));
+	it("embedded image data becomes a placeholder", () => {
+		assert.strictEqual(contentToText("before data:image/png;base64,QUJDRA== after"), "before [image] after");
+	});
 
-const serializedBlocks = JSON.stringify(blocks);
-for (const forbidden of [
-	userImageData,
-	resultImageData,
-	argumentImageData,
-	"CUSTOM_ENTRY_BASE64",
-	"DETAIL SECRET MUST STAY OUT",
-	"TRUNCATION CONTENT MUST STAY OUT",
-	"PRIVATE TRUNCATION METADATA",
-	"ORPHAN DETAIL SECRET",
-	"CUSTOM ROLE DETAIL SECRET",
-	"CUSTOM ENTRY DETAIL SECRET",
-	"COMPACTION DETAIL SECRET",
-	"BRANCH DETAIL SECRET",
-]) {
-	ok(`forbidden payload is not indexed: ${forbidden}`, !serializedBlocks.includes(forbidden));
-}
+	it("argument helper is flattened and compact", () => {
+		assert.strictEqual(flattenArguments({ path: "src/a.ts", nested: { limit: 2 } }), "path=src/a.ts nested.limit=2");
+	});
 
-// Truncation retains only declared metadata and full-output paths.
-eq("tool truncation metadata", readBlock?.truncation, {
-	truncated: true,
-	metadata: {
-		truncated: true,
-		truncatedBy: "lines",
-		totalLines: 9_000,
-		totalBytes: 90_000,
-		outputLines: 2_000,
-		outputBytes: 20_000,
-		maxLines: 2_000,
-		maxBytes: 50_000,
-		lastLinePartial: false,
-		firstLineExceedsLimit: false,
-	},
-	fullOutputPath: "/surviving/full-read-output.txt",
+	it("long base64-shaped plain arguments remain canonical", () => {
+		assert.ok(formatToolArguments({ content: "a".repeat(128) }).includes("a".repeat(128)));
+	});
+
+	it("generic non-image base64 arguments remain canonical", () => {
+		assert.ok(formatToolArguments({ base64: "QUJDRA==" }).includes("QUJDRA=="));
+	});
+
+	it("raw image-key base64 arguments are redacted", () => {
+		assert.ok(!formatToolArguments({ image: "a".repeat(128) }).includes("a".repeat(128)));
+	});
+
+	it("formatted arguments redact image data", () => {
+		assert.ok(formatToolArguments({ image: { type: "image", data: "raw", mimeType: "image/png" } }).includes("raw") === false);
+	});
+
+	it("file helper extracts plural paths and explicit lines", () => {
+		assert.deepStrictEqual(extractFileReferences({ files: ["a.ts", "b.ts"], line: 12 }), [
+			{ path: "a.ts", line: 12 },
+			{ path: "b.ts", line: 12 },
+		]);
+	});
+
+	it("timestamp helper is deterministic", () => {
+		assert.strictEqual(formatTimestamp("2025-01-02T03:04:05.678Z"), "2025-01-02 03:04:05Z");
+	});
 });
-eq("bash truncation keeps full-output path", bashBlock?.truncation, {
-	truncated: true,
-	fullOutputPath: "/surviving/full-bash-output.txt",
-});
-
-// Custom, summary, and excluded entries follow display rules.
-eq("displayable custom sources", blocks.filter((block) => block.kind === "custom").map((block) => [block.title, block.body]), [
-	["visible-role", "displayable custom role"],
-	["visible-entry", "displayable custom entry\n[image]"],
-]);
-eq("summary sources", blocks.filter((block) => block.kind === "summary").map((block) => block.body), [
-	"top-level compaction summary",
-	"top-level branch summary",
-	"message-role branch summary",
-	"message-role compaction summary",
-]);
-for (const excludedId of ["cust0002", "cmsg0002", "state001", "model001", "think001", "info0001"]) {
-	eq(`excluded entry has no row: ${excludedId}`, byEntry(excludedId).length, 0);
-}
-
-// Exported helpers and registry make extraction behavior reusable.
-ok("registry exposes every current entry type", [
-	"message",
-	"custom_message",
-	"compaction",
-	"branch_summary",
-	"custom",
-	"label",
-	"model_change",
-	"thinking_level_change",
-	"session_info",
-].every((type) => typeof extractorRegistry[type] === "function"));
-eq("content helper never returns image data", contentToText([{ type: "image", data: "raw" }]), "[image]");
-eq("embedded image data becomes a placeholder", contentToText("before data:image/png;base64,QUJDRA== after"), "before [image] after");
-eq("argument helper is flattened and compact", flattenArguments({ path: "src/a.ts", nested: { limit: 2 } }), "path=src/a.ts nested.limit=2");
-ok("long base64-shaped plain arguments remain canonical", formatToolArguments({ content: "a".repeat(128) }).includes("a".repeat(128)));
-ok("generic non-image base64 arguments remain canonical", formatToolArguments({ base64: "QUJDRA==" }).includes("QUJDRA=="));
-ok("raw image-key base64 arguments are redacted", !formatToolArguments({ image: "a".repeat(128) }).includes("a".repeat(128)));
-ok("formatted arguments redact image data", formatToolArguments({ image: { type: "image", data: "raw", mimeType: "image/png" } }).includes("raw") === false);
-eq("file helper extracts plural paths and explicit lines", extractFileReferences({ files: ["a.ts", "b.ts"], line: 12 }), [
-	{ path: "a.ts", line: 12 },
-	{ path: "b.ts", line: 12 },
-]);
-eq("timestamp helper is deterministic", formatTimestamp("2025-01-02T03:04:05.678Z"), "2025-01-02 03:04:05Z");
-
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);

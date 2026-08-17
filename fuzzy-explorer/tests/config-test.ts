@@ -1,3 +1,5 @@
+import { after, describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -8,38 +10,13 @@ const importAgentDir = mkdtempSync(join(sandbox, "fuzzy-explorer-config-import-"
 process.env.PI_CODING_AGENT_DIR = importAgentDir;
 const { agentConfigDir, configFilePath, loadConfig } = await import("../config.ts");
 
-let pass = 0;
-let fail = 0;
-
-function eq(label: string, got: unknown, want: unknown): void {
-	const actual = JSON.stringify(got);
-	const expected = JSON.stringify(want);
-	if (actual === expected) {
-		pass++;
-		console.log(`  ok  ${label}`);
-	} else {
-		fail++;
-		console.log(`  FAIL ${label}: got ${actual}, want ${expected}`);
-	}
-}
-
-function throws(label: string, fn: () => void, contains: string): void {
-	try {
-		fn();
-		fail++;
-		console.log(`  FAIL ${label}: expected throw`);
-	} catch (error) {
-		if (String(error).includes(contains)) {
-			pass++;
-			console.log(`  ok  ${label}`);
-		} else {
-			fail++;
-			console.log(`  FAIL ${label}: message missing ${JSON.stringify(contains)}: ${String(error)}`);
-		}
-	}
-}
-
 const testRoot = mkdtempSync(join(sandbox, "fuzzy-explorer-config-"));
+
+after(() => {
+	rmSync(testRoot, { recursive: true, force: true });
+	rmSync(importAgentDir, { recursive: true, force: true });
+});
+
 let nextDirectory = 0;
 
 function dirWith(content: string | null): string {
@@ -53,176 +30,212 @@ const defaults = {
 	openMode: "list",
 };
 
-// Paths and the built-in defaults follow Pi's config-root convention.
-eq("default agent config directory", agentConfigDir({}), join(homedir(), ".pi", "agent"));
-eq("custom agent config directory", agentConfigDir({ PI_CODING_AGENT_DIR: "/configured/pi" }), "/configured/pi");
-eq(
-	"config file path",
-	configFilePath({ PI_CODING_AGENT_DIR: "/configured/pi" }),
-	join("/configured/pi", "fuzzy-explorer.json"),
-);
-eq("missing file uses defaults", loadConfig({ PI_CODING_AGENT_DIR: dirWith(null) }), defaults);
+describe("config", () => {
+	it("default agent config directory", () => {
+		assert.strictEqual(agentConfigDir({}), join(homedir(), ".pi", "agent"));
+	});
 
-// File values merge over defaults, and environment values win last.
-eq(
-	"full file applies",
-	loadConfig({
-		PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"alt+x","openMode":"filter"}'),
-	}),
-	{ openMode: "filter", openShortcut: "alt+x" },
-);
-eq(
-	"partial file keeps defaults",
-	loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"alt+x"}') }),
-	{ openMode: "list", openShortcut: "alt+x" },
-);
-eq(
-	"environment beats file",
-	loadConfig({
-		PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"alt+x","openMode":"list"}'),
-		PI_FUZZY_EXPLORER_OPEN_SHORTCUT: "ctrl+shift+f12",
-		PI_FUZZY_EXPLORER_OPEN_MODE: "filter",
-	}),
-	{ openMode: "filter", openShortcut: "ctrl+shift+f12" },
-);
-eq(
-	"only the documented environment names apply",
-	loadConfig({
-		PI_CODING_AGENT_DIR: dirWith(null),
-		PI_FUZZY_EXPLORER_SHORTCUT: "alt+x",
-		PI_FUZZY_EXPLORER_MODE: "filter",
-		PI_FUZZY_EXPLORER_LIST_ORDER: "relevance",
-	}),
-	defaults,
-);
+	it("custom agent config directory", () => {
+		assert.strictEqual(agentConfigDir({ PI_CODING_AGENT_DIR: "/configured/pi" }), "/configured/pi");
+	});
 
-// Open shortcuts accept modified Pi keys and bare function keys, but never ordinary editor input.
-const validShortcuts = [
-	"f12",
-	"ctrl++",
-	"ctrl+r",
-	"ctrl+x",
-	"ctrl+n",
-	"shift+f1",
-	"ctrl+shift+g",
-	"alt+ctrl+x",
-	"ctrl+shift+alt+x",
-	"ctrl+super+k",
-];
-for (const shortcut of validShortcuts) {
-	eq(
-		`valid KeyId ${JSON.stringify(shortcut)}`,
-		loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_FUZZY_EXPLORER_OPEN_SHORTCUT: shortcut })
-			.openShortcut,
-		shortcut,
-	);
-}
+	it("config file path", () => {
+		assert.strictEqual(
+			configFilePath({ PI_CODING_AGENT_DIR: "/configured/pi" }),
+			join("/configured/pi", "fuzzy-explorer.json"),
+		);
+	});
 
-const invalidShortcuts = ["", "R", "pageup", "f13", "meta+x", "ctrl+ctrl+x", "ctrl+", "ctrl +r", "ctrl+a+b"];
-for (const shortcut of invalidShortcuts) {
-	throws(
-		`invalid KeyId ${JSON.stringify(shortcut)}`,
-		() =>
+	it("missing file uses defaults", () => {
+		assert.deepStrictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith(null) }), defaults);
+	});
+
+	it("full file applies", () => {
+		assert.deepStrictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"alt+x","openMode":"filter"}'),
+			}),
+			{ openMode: "filter", openShortcut: "alt+x" },
+		);
+	});
+
+	it("partial file keeps defaults", () => {
+		assert.deepStrictEqual(
+			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"alt+x"}') }),
+			{ openMode: "list", openShortcut: "alt+x" },
+		);
+	});
+
+	it("environment beats file", () => {
+		assert.deepStrictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"alt+x","openMode":"list"}'),
+				PI_FUZZY_EXPLORER_OPEN_SHORTCUT: "ctrl+shift+f12",
+				PI_FUZZY_EXPLORER_OPEN_MODE: "filter",
+			}),
+			{ openMode: "filter", openShortcut: "ctrl+shift+f12" },
+		);
+	});
+
+	it("only the documented environment names apply", () => {
+		assert.deepStrictEqual(
 			loadConfig({
 				PI_CODING_AGENT_DIR: dirWith(null),
-				PI_FUZZY_EXPLORER_OPEN_SHORTCUT: shortcut,
+				PI_FUZZY_EXPLORER_SHORTCUT: "alt+x",
+				PI_FUZZY_EXPLORER_MODE: "filter",
+				PI_FUZZY_EXPLORER_LIST_ORDER: "relevance",
 			}),
-		"PI_FUZZY_EXPLORER_OPEN_SHORTCUT",
-	);
-}
+			defaults,
+		);
+	});
 
-for (const shortcut of [
-	"a", "9", "pageUp", "?", "+", "escape", "enter", "ctrl+c", "ctrl+g", "ctrl+p", "shift+ctrl+p",
-	"shift+tab", "shift+enter", "ctrl+a", "ctrl+b", "ctrl+e", "ctrl+f", "ctrl+u", "ctrl+w", "ctrl+y",
-	"ctrl+j", "ctrl+m", "ctrl+i", "ctrl+h", "ctrl+[", "ctrl+]", "ctrl+alt+]",
-	"shift+g", "shift+9", "shift+?", "shift+space", "alt+b", "alt+f", "alt+d",
-]) {
-	throws(
-		`reserved shortcut ${JSON.stringify(shortcut)}`,
-		() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_FUZZY_EXPLORER_OPEN_SHORTCUT: shortcut }),
-		"is reserved by Pi's main editor",
-	);
-}
+	it("open shortcuts accept modified Pi keys and bare function keys", () => {
+		const validShortcuts = [
+			"f12",
+			"ctrl++",
+			"ctrl+r",
+			"ctrl+x",
+			"ctrl+n",
+			"shift+f1",
+			"ctrl+shift+g",
+			"alt+ctrl+x",
+			"ctrl+shift+alt+x",
+			"ctrl+super+k",
+		];
+		for (const shortcut of validShortcuts) {
+			assert.strictEqual(
+				loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_FUZZY_EXPLORER_OPEN_SHORTCUT: shortcut })
+					.openShortcut,
+				shortcut,
+				`valid KeyId ${JSON.stringify(shortcut)}`,
+			);
+		}
+	});
 
-const badFileShortcutDir = dirWith('{"openShortcut":42}');
-throws(
-	"non-string file shortcut names its key",
-	() => loadConfig({ PI_CODING_AGENT_DIR: badFileShortcutDir }),
-	`${join(badFileShortcutDir, "fuzzy-explorer.json")}: openShortcut`,
-);
-throws(
-	"invalid file shortcut explains KeyId",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"control+r"}') }),
-	"use a Pi KeyId",
-);
+	it("malformed shortcuts are rejected with the environment name", () => {
+		const invalidShortcuts = ["", "R", "pageup", "f13", "meta+x", "ctrl+ctrl+x", "ctrl+", "ctrl +r", "ctrl+a+b"];
+		for (const shortcut of invalidShortcuts) {
+			assert.throws(
+				() =>
+					loadConfig({
+						PI_CODING_AGENT_DIR: dirWith(null),
+						PI_FUZZY_EXPLORER_OPEN_SHORTCUT: shortcut,
+					}),
+				/PI_FUZZY_EXPLORER_OPEN_SHORTCUT/,
+				`invalid KeyId ${JSON.stringify(shortcut)}`,
+			);
+		}
+	});
 
-// Every enum key rejects bad values from both file and environment layers.
-throws(
-	"invalid file open mode",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openMode":"search"}') }),
-	"valid values: list, filter",
-);
-throws(
-	"invalid environment open mode",
-	() =>
-		loadConfig({
-			PI_CODING_AGENT_DIR: dirWith(null),
-			PI_FUZZY_EXPLORER_OPEN_MODE: "LIST",
-		}),
-	"PI_FUZZY_EXPLORER_OPEN_MODE",
-);
-throws(
-	"empty environment open mode is rejected",
-	() =>
-		loadConfig({
-			PI_CODING_AGENT_DIR: dirWith(null),
-			PI_FUZZY_EXPLORER_OPEN_MODE: "",
-		}),
-	'openMode ""',
-);
-throws(
-	"the removed listOrder key is unknown",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"listOrder":"chronological"}') }),
-	"unknown key(s) listOrder",
-);
+	it("shortcuts reserved by Pi's main editor are rejected", () => {
+		for (const shortcut of [
+			"a", "9", "pageUp", "?", "+", "escape", "enter", "ctrl+c", "ctrl+g", "ctrl+p", "shift+ctrl+p",
+			"shift+tab", "shift+enter", "ctrl+a", "ctrl+b", "ctrl+e", "ctrl+f", "ctrl+u", "ctrl+w", "ctrl+y",
+			"ctrl+j", "ctrl+m", "ctrl+i", "ctrl+h", "ctrl+[", "ctrl+]", "ctrl+alt+]",
+			"shift+g", "shift+9", "shift+?", "shift+space", "alt+b", "alt+f", "alt+d",
+		]) {
+			assert.throws(
+				() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_FUZZY_EXPLORER_OPEN_SHORTCUT: shortcut }),
+				/is reserved by Pi's main editor/,
+				`reserved shortcut ${JSON.stringify(shortcut)}`,
+			);
+		}
+	});
 
-// Structural and syntax errors fail before environment overrides are considered.
-throws(
-	"unknown key",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openMod":"filter"}') }),
-	"unknown key(s) openMod",
-);
-throws(
-	"inherited object name is still unknown",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"toString":"filter"}') }),
-	"unknown key(s) toString",
-);
-throws(
-	"malformed JSON",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{broken") }),
-	"not valid JSON",
-);
-throws(
-	"array root",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("[]") }),
-	"must be a JSON object",
-);
-throws(
-	"null root",
-	() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("null") }),
-	"must be a JSON object",
-);
-throws(
-	"invalid file is not rescued by environment",
-	() =>
-		loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"openMode":"search"}'),
-			PI_FUZZY_EXPLORER_OPEN_MODE: "list",
-		}),
-	"openMode \"search\"",
-);
+	it("non-string file shortcut names its key", () => {
+		const badFileShortcutDir = dirWith('{"openShortcut":42}');
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: badFileShortcutDir }),
+			(error) => String(error).includes(`${join(badFileShortcutDir, "fuzzy-explorer.json")}: openShortcut`),
+		);
+	});
 
-rmSync(testRoot, { recursive: true, force: true });
-rmSync(importAgentDir, { recursive: true, force: true });
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
+	it("invalid file shortcut explains KeyId", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"control+r"}') }),
+			/use a Pi KeyId/,
+		);
+	});
+
+	it("invalid file open mode", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openMode":"search"}') }),
+			/valid values: list, filter/,
+		);
+	});
+
+	it("invalid environment open mode", () => {
+		assert.throws(
+			() =>
+				loadConfig({
+					PI_CODING_AGENT_DIR: dirWith(null),
+					PI_FUZZY_EXPLORER_OPEN_MODE: "LIST",
+				}),
+			/PI_FUZZY_EXPLORER_OPEN_MODE/,
+		);
+	});
+
+	it("empty environment open mode is rejected", () => {
+		assert.throws(
+			() =>
+				loadConfig({
+					PI_CODING_AGENT_DIR: dirWith(null),
+					PI_FUZZY_EXPLORER_OPEN_MODE: "",
+				}),
+			/openMode ""/,
+		);
+	});
+
+	it("the removed listOrder key is unknown", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"listOrder":"chronological"}') }),
+			/unknown key\(s\) listOrder/,
+		);
+	});
+
+	it("unknown key", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openMod":"filter"}') }),
+			/unknown key\(s\) openMod/,
+		);
+	});
+
+	it("inherited object name is still unknown", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"toString":"filter"}') }),
+			/unknown key\(s\) toString/,
+		);
+	});
+
+	it("malformed JSON", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{broken") }),
+			/not valid JSON/,
+		);
+	});
+
+	it("array root", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("[]") }),
+			/must be a JSON object/,
+		);
+	});
+
+	it("null root", () => {
+		assert.throws(
+			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("null") }),
+			/must be a JSON object/,
+		);
+	});
+
+	it("invalid file is not rescued by environment", () => {
+		assert.throws(
+			() =>
+				loadConfig({
+					PI_CODING_AGENT_DIR: dirWith('{"openMode":"search"}'),
+					PI_FUZZY_EXPLORER_OPEN_MODE: "list",
+				}),
+			/openMode "search"/,
+		);
+	});
+});

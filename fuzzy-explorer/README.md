@@ -63,7 +63,7 @@ Future extractors can add those excluded content kinds without changing the pick
 `tests/fixture-session.ts` builds a branched JSONL transcript for smoke testing. An optional second argument appends many user blocks for responsiveness checks:
 
 ```sh
-node --experimental-strip-types fuzzy-explorer/tests/fixture-session.ts .sandbox/fuzzy-explorer-fixture 5000
+node fuzzy-explorer/tests/fixture-session.ts .sandbox/fuzzy-explorer-fixture 5000
 ```
 
 Run the full non-mutating suite with `make check`.
