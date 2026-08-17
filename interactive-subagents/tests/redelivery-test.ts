@@ -2,8 +2,11 @@
 // drives parent run boundaries while manufactured stopped and ping records
 // exercise the real watcher finalizer. Missing message_end events represent
 // custom steers that Escape silently removed from Pi's queue.
+import { after, describe, it } from "node:test";
+import assert from "node:assert/strict";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createTestEventHarness } from "../../shared/test-event-harness.ts";
 import { agentEndWasNormal, needsRedelivery, registerDeliveryListener } from "../delivery.ts";
 import {
 	currentRunIndex,
@@ -16,14 +19,10 @@ import {
 } from "../state.ts";
 import { startFinalizer } from "../watcher.ts";
 
-let pass = 0, fail = 0;
-function eq(label: string, got: unknown, want: unknown): void {
-	const g = JSON.stringify(got), w = JSON.stringify(want);
-	if (g === w) { pass++; console.log(`  ok  ${label}`); }
-	else { fail++; console.log(`  FAIL ${label}: got ${g}, want ${w}`); }
-}
+after(() => {
+	resetForShutdown();
+});
 
-type Handler = (event: any, ctx: unknown) => void;
 type SendCall = { message: any; options: any };
 
 function fakePi(): {
@@ -32,20 +31,16 @@ function fakePi(): {
 	calls: SendCall[];
 	failuresRemaining: number;
 } {
-	const handlers = new Map<string, Handler[]>();
+	const events = createTestEventHarness<any, undefined>();
 	const fake = {
 		emit(type: string, event: any): void {
-			for (const handler of handlers.get(type) ?? []) handler(event, undefined);
+			events.emit(type, event, undefined);
 		},
 		calls: [] as SendCall[],
 		failuresRemaining: 0,
 	};
 	const api = {
-		on(type: string, handler: Handler): void {
-			const list = handlers.get(type) ?? [];
-			list.push(handler);
-			handlers.set(type, list);
-		},
+		on: events.on,
 		sendMessage(message: any, options: any): void {
 			fake.calls.push({ message, options });
 			if (fake.failuresRemaining > 0) {
@@ -141,219 +136,241 @@ function beginScenario(): ReturnType<typeof fakePi> {
 	return pi;
 }
 
-// Pure proof and outcome classifiers reject every ambiguous case.
-const proofFixture = stoppedRecord("proof000");
-proofFixture.sendAccepted = true;
-proofFixture.sendAcceptedRunIndex = 4;
-eq("proof accepts an older accepted-send stamp", needsRedelivery(proofFixture, 5), true);
-eq("proof rejects an equal accepted-send stamp", needsRedelivery(proofFixture, 4), false);
-proofFixture.sendAccepted = false;
-eq("proof accepts a send that threw", needsRedelivery(proofFixture, 4), true);
-proofFixture.sendAccepted = undefined;
-eq("proof rejects a finalizer that has not sent yet", needsRedelivery(proofFixture, 5), false);
-eq("normal classifier accepts a completed assistant", agentEndWasNormal({ messages: [{ role: "assistant", stopReason: "stop" }] }), true);
-eq("normal classifier rejects an aborted assistant", agentEndWasNormal({ messages: [{ role: "assistant", stopReason: "aborted" }] }), false);
-eq("normal classifier rejects an errored assistant", agentEndWasNormal({ messages: [{ role: "assistant", stopReason: "error" }] }), false);
-eq("normal classifier rejects a run without an assistant", agentEndWasNormal({ messages: [{ role: "user" }] }), false);
+describe("needsRedelivery", () => {
+	// The pure proof classifier rejects every ambiguous case.
+	it("accepts only a proven-lost accepted send from an older run", () => {
+		const proofFixture = stoppedRecord("proof000");
+		proofFixture.sendAccepted = true;
+		proofFixture.sendAcceptedRunIndex = 4;
+		assert.strictEqual(needsRedelivery(proofFixture, 5), true, "proof accepts an older accepted-send stamp");
+		assert.strictEqual(needsRedelivery(proofFixture, 4), false, "proof rejects an equal accepted-send stamp");
+		proofFixture.sendAccepted = false;
+		assert.strictEqual(needsRedelivery(proofFixture, 4), true, "proof accepts a send that threw");
+		proofFixture.sendAccepted = undefined;
+		assert.strictEqual(needsRedelivery(proofFixture, 5), false, "proof rejects a finalizer that has not sent yet");
+	});
+});
 
-// 1. Issue sequence: a stop queued in run N is dropped by Escape. The next
-// normal run proves the loss, sends the same envelope once, and landing it
-// clears the row permanently.
-{
-	const pi = beginScenario();
-	startRun(pi);
-	const record = stoppedRecord("issue001");
-	seed(record);
-	startFinalizer(pi.api, record);
-	eq("issue: initial stopped send is accepted", pi.calls.length, 1);
-	settle(pi, "aborted");
-	eq("issue: Escape settlement does not resend", pi.calls.length, 1);
-	startRun(pi);
-	settle(pi, "stop");
-	eq("issue: next normal settlement resends exactly once", pi.calls.length, 2);
-	eq("issue: resend preserves the envelope and options", pi.calls[1], pi.calls[0]);
-	land(pi, pi.calls[1]!);
-	eq("issue: landed resend clears the delivering row", deliveryRecord(record.id), undefined);
-	startRun(pi);
-	settle(pi, "stop");
-	eq("issue: later normal runs never send again", pi.calls.length, 2);
-}
+describe("agentEndWasNormal", () => {
+	it("normal classifier accepts a completed assistant", () => {
+		assert.strictEqual(agentEndWasNormal({ messages: [{ role: "assistant", stopReason: "stop" }] }), true);
+	});
 
-// The first prepared payload is process-stable too: a resume may append a
-// newer assistant message to the same session while the old result is queued,
-// but redelivery must retain the old child's exact response and identity.
-{
-	const pi = beginScenario();
-	mkdirSync(".sandbox", { recursive: true });
-	const sessionFile = `.sandbox/redelivery-session-${process.pid}.jsonl`;
-	writeFileSync(sessionFile, sessionMessage("original child response", "old-message"));
-	startRun(pi);
-	const record = completedRecord("cached01", sessionFile);
-	seed(record);
-	startFinalizer(pi.api, record);
-	settle(pi, "aborted");
-	appendFileSync(sessionFile, sessionMessage("new response from a resume", "new-message"));
-	startRun(pi);
-	settle(pi, "stop");
-	eq("cache: redelivery reuses the first prepared payload", pi.calls[1], pi.calls[0]);
-	eq("cache: old response remains in the retried result", pi.calls[1]?.message.content.includes("original child response"), true);
-	eq("cache: resumed response cannot replace the old result", pi.calls[1]?.message.content.includes("new response from a resume"), false);
-	rmSync(sessionFile, { force: true });
-}
+	it("normal classifier rejects an aborted assistant", () => {
+		assert.strictEqual(agentEndWasNormal({ messages: [{ role: "assistant", stopReason: "aborted" }] }), false);
+	});
 
-// 2. A result observed landing before proof is removed and never retried.
-{
-	const pi = beginScenario();
-	startRun(pi);
-	const record = stoppedRecord("landed02");
-	seed(record);
-	startFinalizer(pi.api, record);
-	settle(pi, "aborted");
-	startRun(pi);
-	land(pi, pi.calls[0]!);
-	settle(pi, "stop");
-	eq("landed: an observed result is never resent", pi.calls.length, 1);
-	eq("landed: its row stays cleared", delivering.has(record.id), false);
-}
+	it("normal classifier rejects an errored assistant", () => {
+		assert.strictEqual(agentEndWasNormal({ messages: [{ role: "assistant", stopReason: "error" }] }), false);
+	});
 
-// 3. Even when a send predates a later run, an aborted settlement proves
-// nothing. A subsequent normal settlement performs the sole retry.
-{
-	const pi = beginScenario();
-	startRun(pi);
-	const record = stoppedRecord("abort003");
-	seed(record);
-	startFinalizer(pi.api, record);
-	settle(pi, "aborted");
-	startRun(pi);
-	settle(pi, "aborted");
-	eq("aborted: later aborted run still does not resend", pi.calls.length, 1);
-	startRun(pi);
-	settle(pi, "stop");
-	eq("aborted: following normal run resends", pi.calls.length, 2);
-}
+	it("normal classifier rejects a run without an assistant", () => {
+		assert.strictEqual(agentEndWasNormal({ messages: [{ role: "user" }] }), false);
+	});
+});
 
-// 4. A steer accepted after a run's last queue poll has the same stamp as
-// that run. Its settlement waits; the next normal run proves the loss.
-{
-	const pi = beginScenario();
-	const runIndex = startRun(pi);
-	const record = stoppedRecord("late0004");
-	seed(record);
-	startFinalizer(pi.api, record);
-	eq("late: send is stamped with its current run", record.sendAcceptedRunIndex, runIndex);
-	settle(pi, "stop");
-	eq("late: equal run stamp is not retried", pi.calls.length, 1);
-	startRun(pi);
-	settle(pi, "stop");
-	eq("late: next normal run retries it", pi.calls.length, 2);
-}
+describe("durable result delivery", () => {
+	// 1. Issue sequence: a stop queued in run N is dropped by Escape. The next
+	// normal run proves the loss, sends the same envelope once, and landing it
+	// clears the row permanently.
+	it("a dropped stop is resent once by the next normal run and clears when it lands", () => {
+		const pi = beginScenario();
+		startRun(pi);
+		const record = stoppedRecord("issue001");
+		seed(record);
+		startFinalizer(pi.api, record);
+		assert.strictEqual(pi.calls.length, 1, "issue: initial stopped send is accepted");
+		settle(pi, "aborted");
+		assert.strictEqual(pi.calls.length, 1, "issue: Escape settlement does not resend");
+		startRun(pi);
+		settle(pi, "stop");
+		assert.strictEqual(pi.calls.length, 2, "issue: next normal settlement resends exactly once");
+		assert.deepStrictEqual(pi.calls[1], pi.calls[0], "issue: resend preserves the envelope and options");
+		land(pi, pi.calls[1]!);
+		assert.strictEqual(deliveryRecord(record.id), undefined, "issue: landed resend clears the delivering row");
+		startRun(pi);
+		settle(pi, "stop");
+		assert.strictEqual(pi.calls.length, 2, "issue: later normal runs never send again");
+	});
 
-// 5. Multiple records are proved, resent, and cleared independently. Only
-// each retry lands, so the parent transcript receives one outcome per id.
-{
-	const pi = beginScenario();
-	startRun(pi);
-	const first = stoppedRecord("multi005");
-	const second = stoppedRecord("multi006");
-	seed(first);
-	seed(second);
-	startFinalizer(pi.api, first);
-	startFinalizer(pi.api, second);
-	settle(pi, "aborted");
-	startRun(pi);
-	settle(pi, "stop");
-	const ids = pi.calls.map((call) => call.message.details.id);
-	eq("multiple: each child is resent exactly once", ids, [first.id, second.id, first.id, second.id]);
-	const landedIds = [land(pi, pi.calls[2]!), land(pi, pi.calls[3]!)];
-	eq("multiple: one outcome per child lands", landedIds, [first.id, second.id]);
-	eq("multiple: both rows clear independently", delivering.size, 0);
-	startRun(pi);
-	settle(pi, "stop");
-	eq("multiple: cleared records never resend", pi.calls.length, 4);
-}
+	// The first prepared payload is process-stable too: a resume may append a
+	// newer assistant message to the same session while the old result is queued,
+	// but redelivery must retain the old child's exact response and identity.
+	it("redelivery reuses the first prepared payload after a resume appends a newer response", (t) => {
+		const pi = beginScenario();
+		const sessionFile = `.sandbox/redelivery-session-${process.pid}.jsonl`;
+		t.after(() => rmSync(sessionFile, { force: true }));
+		mkdirSync(".sandbox", { recursive: true });
+		writeFileSync(sessionFile, sessionMessage("original child response", "old-message"));
+		startRun(pi);
+		const record = completedRecord("cached01", sessionFile);
+		seed(record);
+		startFinalizer(pi.api, record);
+		settle(pi, "aborted");
+		appendFileSync(sessionFile, sessionMessage("new response from a resume", "new-message"));
+		startRun(pi);
+		settle(pi, "stop");
+		assert.deepStrictEqual(pi.calls[1], pi.calls[0], "cache: redelivery reuses the first prepared payload");
+		assert.strictEqual(pi.calls[1]?.message.content.includes("original child response"), true,
+			"cache: old response remains in the retried result");
+		assert.strictEqual(pi.calls[1]?.message.content.includes("new response from a resume"), false,
+			"cache: resumed response cannot replace the old result");
+	});
 
-// 6. Ping records use the same proof and finalizer path as terminal results.
-{
-	const pi = beginScenario();
-	startRun(pi);
-	const record = pingRecord("ping0006");
-	seed(record);
-	startFinalizer(pi.api, record);
-	settle(pi, "aborted");
-	startRun(pi);
-	settle(pi, "stop");
-	eq("ping: a dropped ping is resent once", pi.calls.length, 2);
-	eq("ping: retry retains its custom type", pi.calls[1]?.message.customType, "subagent_ping");
-	land(pi, pi.calls[1]!);
-	eq("ping: landed retry clears its row", delivering.has(record.id), false);
-}
+	// 2. A result observed landing before proof is removed and never retried.
+	it("a result observed landing before proof is never resent", () => {
+		const pi = beginScenario();
+		startRun(pi);
+		const record = stoppedRecord("landed02");
+		seed(record);
+		startFinalizer(pi.api, record);
+		settle(pi, "aborted");
+		startRun(pi);
+		land(pi, pi.calls[0]!);
+		settle(pi, "stop");
+		assert.strictEqual(pi.calls.length, 1, "landed: an observed result is never resent");
+		assert.strictEqual(delivering.has(record.id), false, "landed: its row stays cleared");
+	});
 
-// 7. A synchronous send failure has no queued copy, so any normal settlement
-// can safely re-arm it without waiting for a later run index.
-{
-	const pi = beginScenario();
-	const record = stoppedRecord("failed07");
-	seed(record);
-	pi.failuresRemaining = 1;
-	startFinalizer(pi.api, record);
-	eq("failed send: record is marked unaccepted", record.sendAccepted, false);
-	startRun(pi);
-	settle(pi, "stop");
-	eq("failed send: normal settlement makes one retry", pi.calls.length, 2);
-	eq("failed send: retry is accepted", record.sendAccepted, true);
-}
+	// 3. Even when a send predates a later run, an aborted settlement proves
+	// nothing. A subsequent normal settlement performs the sole retry.
+	it("an aborted settlement proves nothing; only a normal settlement retries", () => {
+		const pi = beginScenario();
+		startRun(pi);
+		const record = stoppedRecord("abort003");
+		seed(record);
+		startFinalizer(pi.api, record);
+		settle(pi, "aborted");
+		startRun(pi);
+		settle(pi, "aborted");
+		assert.strictEqual(pi.calls.length, 1, "aborted: later aborted run still does not resend");
+		startRun(pi);
+		settle(pi, "stop");
+		assert.strictEqual(pi.calls.length, 2, "aborted: following normal run resends");
+	});
 
-// 8. Whichever terminal record wins is immutable. A late stop cannot replace
-// an accepted completion, and a late finalizer entry cannot duplicate a stop.
-{
-	const pi = beginScenario();
-	startRun(pi);
-	const completed = completedRecord("racecomp", "/missing/completed-session.jsonl");
-	completed.child.model = "spawn/model";
-	completed.child.thinking = "high";
-	completed.child.activity = {
-		watchdogStartMs: 0,
-		snapshot: {
-			version: 1,
-			runId: completed.id,
-			pid: 1,
-			sequence: 1,
-			updatedAt: 1,
-			inRun: false,
-			runsCompleted: 1,
-			activeTools: [],
-			modelId: "actual/model",
-			context: { tokens: null, window: 200_000, percent: null },
-			costUsd: 0,
-		},
-	};
-	seed(completed);
-	startFinalizer(pi.api, completed);
-	eq("race: liveness telemetry overrides the spawn model and preserves compacted context", {
-		model: pi.calls[0]?.message.details.model,
-		effort: pi.calls[0]?.message.details.effort,
-		contextTokens: pi.calls[0]?.message.details.contextTokens,
-		contextWindow: pi.calls[0]?.message.details.contextWindow,
-	}, { model: "actual/model", effort: "high", contextTokens: null, contextWindow: 200_000 });
-	eq("race: compacted context is omitted from the prose envelope",
-	pi.calls[0]?.message.content.includes("Context:"), false);
-	completed.child.stopRequester = "user";
-	completed.finalizerGeneration = undefined;
-	startFinalizer(pi.api, completed);
-	eq("race: completion winner remains the sole envelope after a late stop", pi.calls.length, 1);
-	eq("race: completion winner retains its exit reason", pi.calls[0]?.message.details.reason, "exited");
+	// 4. A steer accepted after a run's last queue poll has the same stamp as
+	// that run. Its settlement waits; the next normal run proves the loss.
+	it("a steer stamped with the current run waits for the next normal run", () => {
+		const pi = beginScenario();
+		const runIndex = startRun(pi);
+		const record = stoppedRecord("late0004");
+		seed(record);
+		startFinalizer(pi.api, record);
+		assert.strictEqual(record.sendAcceptedRunIndex, runIndex, "late: send is stamped with its current run");
+		settle(pi, "stop");
+		assert.strictEqual(pi.calls.length, 1, "late: equal run stamp is not retried");
+		startRun(pi);
+		settle(pi, "stop");
+		assert.strictEqual(pi.calls.length, 2, "late: next normal run retries it");
+	});
 
-	resetForShutdown();
-	const stopped = stoppedRecord("racestop");
-	seed(stopped);
-	startFinalizer(pi.api, stopped);
-	stopped.finalizerGeneration = undefined;
-	startFinalizer(pi.api, stopped);
-	eq("race: stop winner remains the sole envelope after late finalization", pi.calls.length, 2);
-	eq("race: stop winner retains its terminal reason", pi.calls[1]?.message.details.reason, "stopped");
-}
+	// 5. Multiple records are proved, resent, and cleared independently. Only
+	// each retry lands, so the parent transcript receives one outcome per id.
+	it("multiple records are proved, resent, and cleared independently", () => {
+		const pi = beginScenario();
+		startRun(pi);
+		const first = stoppedRecord("multi005");
+		const second = stoppedRecord("multi006");
+		seed(first);
+		seed(second);
+		startFinalizer(pi.api, first);
+		startFinalizer(pi.api, second);
+		settle(pi, "aborted");
+		startRun(pi);
+		settle(pi, "stop");
+		const ids = pi.calls.map((call) => call.message.details.id);
+		assert.deepStrictEqual(ids, [first.id, second.id, first.id, second.id],
+			"multiple: each child is resent exactly once");
+		const landedIds = [land(pi, pi.calls[2]!), land(pi, pi.calls[3]!)];
+		assert.deepStrictEqual(landedIds, [first.id, second.id], "multiple: one outcome per child lands");
+		assert.strictEqual(delivering.size, 0, "multiple: both rows clear independently");
+		startRun(pi);
+		settle(pi, "stop");
+		assert.strictEqual(pi.calls.length, 4, "multiple: cleared records never resend");
+	});
 
-resetForShutdown();
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
+	// 6. Ping records use the same proof and finalizer path as terminal results.
+	it("ping records use the same proof and finalizer path as terminal results", () => {
+		const pi = beginScenario();
+		startRun(pi);
+		const record = pingRecord("ping0006");
+		seed(record);
+		startFinalizer(pi.api, record);
+		settle(pi, "aborted");
+		startRun(pi);
+		settle(pi, "stop");
+		assert.strictEqual(pi.calls.length, 2, "ping: a dropped ping is resent once");
+		assert.strictEqual(pi.calls[1]?.message.customType, "subagent_ping", "ping: retry retains its custom type");
+		land(pi, pi.calls[1]!);
+		assert.strictEqual(delivering.has(record.id), false, "ping: landed retry clears its row");
+	});
+
+	// 7. A synchronous send failure has no queued copy, so any normal settlement
+	// can safely re-arm it without waiting for a later run index.
+	it("a synchronous send failure re-arms on any normal settlement", () => {
+		const pi = beginScenario();
+		const record = stoppedRecord("failed07");
+		seed(record);
+		pi.failuresRemaining = 1;
+		startFinalizer(pi.api, record);
+		assert.strictEqual(record.sendAccepted, false, "failed send: record is marked unaccepted");
+		startRun(pi);
+		settle(pi, "stop");
+		assert.strictEqual(pi.calls.length, 2, "failed send: normal settlement makes one retry");
+		assert.strictEqual(record.sendAccepted, true, "failed send: retry is accepted");
+	});
+
+	// 8. Whichever terminal record wins is immutable. A late stop cannot replace
+	// an accepted completion, and a late finalizer entry cannot duplicate a stop.
+	it("the winning terminal record is immutable", () => {
+		const pi = beginScenario();
+		startRun(pi);
+		const completed = completedRecord("racecomp", "/missing/completed-session.jsonl");
+		completed.child.model = "spawn/model";
+		completed.child.thinking = "high";
+		completed.child.activity = {
+			watchdogStartMs: 0,
+			snapshot: {
+				version: 1,
+				runId: completed.id,
+				pid: 1,
+				sequence: 1,
+				updatedAt: 1,
+				inRun: false,
+				runsCompleted: 1,
+				activeTools: [],
+				modelId: "actual/model",
+				context: { tokens: null, window: 200_000, percent: null },
+				costUsd: 0,
+			},
+		};
+		seed(completed);
+		startFinalizer(pi.api, completed);
+		assert.deepStrictEqual({
+			model: pi.calls[0]?.message.details.model,
+			effort: pi.calls[0]?.message.details.effort,
+			contextTokens: pi.calls[0]?.message.details.contextTokens,
+			contextWindow: pi.calls[0]?.message.details.contextWindow,
+		}, { model: "actual/model", effort: "high", contextTokens: null, contextWindow: 200_000 },
+			"race: liveness telemetry overrides the spawn model and preserves compacted context");
+		assert.strictEqual(pi.calls[0]?.message.content.includes("Context:"), false,
+			"race: compacted context is omitted from the prose envelope");
+		completed.child.stopRequester = "user";
+		completed.finalizerGeneration = undefined;
+		startFinalizer(pi.api, completed);
+		assert.strictEqual(pi.calls.length, 1, "race: completion winner remains the sole envelope after a late stop");
+		assert.strictEqual(pi.calls[0]?.message.details.reason, "exited",
+			"race: completion winner retains its exit reason");
+
+		resetForShutdown();
+		const stopped = stoppedRecord("racestop");
+		seed(stopped);
+		startFinalizer(pi.api, stopped);
+		stopped.finalizerGeneration = undefined;
+		startFinalizer(pi.api, stopped);
+		assert.strictEqual(pi.calls.length, 2, "race: stop winner remains the sole envelope after late finalization");
+		assert.strictEqual(pi.calls[1]?.message.details.reason, "stopped",
+			"race: stop winner retains its terminal reason");
+	});
+});

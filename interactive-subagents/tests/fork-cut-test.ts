@@ -1,5 +1,16 @@
+import { after, describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { seedForkSession } from "../session.ts";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+const sandbox = join(process.cwd(), ".sandbox");
+mkdirSync(sandbox, { recursive: true });
+const root = mkdtempSync(join(sandbox, "fork-cut-"));
+
+after(() => {
+	rmSync(root, { recursive: true, force: true });
+});
 
 function entry(o: unknown): string { return JSON.stringify(o); }
 function readTypes(f: string): string[] {
@@ -9,49 +20,44 @@ function readTypes(f: string): string[] {
 	});
 }
 
-// Case A: wake turn triggered by a custom_message (steered subagent result),
-// with an in-flight assistant toolCall. Cut must land at the custom_message,
-// preserving the completed first exchange.
-const parentA = "/tmp/fork-test-parent-a.jsonl";
-writeFileSync(parentA, [
-	entry({ type: "session", version: 3, id: "p", cwd: "/tmp" }),
-	entry({ type: "message", id: "1", message: { role: "user", content: [{ type: "text", text: "hi" }] } }),
-	entry({ type: "message", id: "2", message: { role: "assistant", content: [{ type: "text", text: "spawning..." }] } }),
-	entry({ type: "custom_message", id: "3", customType: "subagent_result", content: "child A done" }),
-	entry({ type: "message", id: "4", message: { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "subagent_spawn" }] } }),
-].join("\n") + "\n");
-const childA = "/tmp/fork-test-child-a.jsonl";
-seedForkSession({ parentSessionFile: parentA, childSessionFile: childA, childCwd: "/tmp" });
-const gotA = readTypes(childA);
-const wantA = ["session", "message:user", "message:assistant"];
-console.log("A:", JSON.stringify(gotA), gotA.join(",") === wantA.join(",") ? "PASS" : "FAIL");
+describe("seedForkSession", () => {
+	it("a custom_message wake turn cuts at the custom_message, preserving the completed exchange", () => {
+		const parentA = join(root, "fork-test-parent-a.jsonl");
+		writeFileSync(parentA, [
+			entry({ type: "session", version: 3, id: "p", cwd: "/tmp" }),
+			entry({ type: "message", id: "1", message: { role: "user", content: [{ type: "text", text: "hi" }] } }),
+			entry({ type: "message", id: "2", message: { role: "assistant", content: [{ type: "text", text: "spawning..." }] } }),
+			entry({ type: "custom_message", id: "3", customType: "subagent_result", content: "child A done" }),
+			entry({ type: "message", id: "4", message: { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "subagent_spawn" }] } }),
+		].join("\n") + "\n");
+		const childA = join(root, "fork-test-child-a.jsonl");
+		seedForkSession({ parentSessionFile: parentA, childSessionFile: childA, childCwd: root });
+		assert.deepStrictEqual(readTypes(childA), ["session", "message:user", "message:assistant"]);
+	});
 
-// Case B: old behavior check — plain user-triggered turn still cuts at the
-// last user message.
-const parentB = "/tmp/fork-test-parent-b.jsonl";
-writeFileSync(parentB, [
-	entry({ type: "session", version: 3, id: "p", cwd: "/tmp" }),
-	entry({ type: "message", id: "1", message: { role: "user", content: [{ type: "text", text: "first" }] } }),
-	entry({ type: "message", id: "2", message: { role: "assistant", content: [{ type: "text", text: "reply" }] } }),
-	entry({ type: "message", id: "3", message: { role: "user", content: [{ type: "text", text: "spawn a fork" }] } }),
-	entry({ type: "message", id: "4", message: { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "subagent_spawn" }] } }),
-].join("\n") + "\n");
-const childB = "/tmp/fork-test-child-b.jsonl";
-seedForkSession({ parentSessionFile: parentB, childSessionFile: childB, childCwd: "/tmp" });
-const gotB = readTypes(childB);
-const wantB = ["session", "message:user", "message:assistant"];
-console.log("B:", JSON.stringify(gotB), gotB.join(",") === wantB.join(",") ? "PASS" : "FAIL");
+	it("a plain user-triggered turn still cuts at the last user message", () => {
+		const parentB = join(root, "fork-test-parent-b.jsonl");
+		writeFileSync(parentB, [
+			entry({ type: "session", version: 3, id: "p", cwd: "/tmp" }),
+			entry({ type: "message", id: "1", message: { role: "user", content: [{ type: "text", text: "first" }] } }),
+			entry({ type: "message", id: "2", message: { role: "assistant", content: [{ type: "text", text: "reply" }] } }),
+			entry({ type: "message", id: "3", message: { role: "user", content: [{ type: "text", text: "spawn a fork" }] } }),
+			entry({ type: "message", id: "4", message: { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "subagent_spawn" }] } }),
+		].join("\n") + "\n");
+		const childB = join(root, "fork-test-child-b.jsonl");
+		seedForkSession({ parentSessionFile: parentB, childSessionFile: childB, childCwd: root });
+		assert.deepStrictEqual(readTypes(childB), ["session", "message:user", "message:assistant"]);
+	});
 
-// Case C: no turn-start entry found at all + trailing dangling toolCall —
-// the safety net must trim the dangling assistant message.
-const parentC = "/tmp/fork-test-parent-c.jsonl";
-writeFileSync(parentC, [
-	entry({ type: "session", version: 3, id: "p", cwd: "/tmp" }),
-	entry({ type: "message", id: "1", message: { role: "assistant", content: [{ type: "text", text: "odd" }] } }),
-	entry({ type: "message", id: "2", message: { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "bash" }] } }),
-].join("\n") + "\n");
-const childC = "/tmp/fork-test-child-c.jsonl";
-seedForkSession({ parentSessionFile: parentC, childSessionFile: childC, childCwd: "/tmp" });
-const gotC = readTypes(childC);
-const wantC = ["session", "message:assistant"];
-console.log("C:", JSON.stringify(gotC), gotC.join(",") === wantC.join(",") ? "PASS" : "FAIL");
+	it("with no turn-start entry, the safety net trims a trailing dangling toolCall", () => {
+		const parentC = join(root, "fork-test-parent-c.jsonl");
+		writeFileSync(parentC, [
+			entry({ type: "session", version: 3, id: "p", cwd: "/tmp" }),
+			entry({ type: "message", id: "1", message: { role: "assistant", content: [{ type: "text", text: "odd" }] } }),
+			entry({ type: "message", id: "2", message: { role: "assistant", content: [{ type: "toolCall", id: "t1", name: "bash" }] } }),
+		].join("\n") + "\n");
+		const childC = join(root, "fork-test-child-c.jsonl");
+		seedForkSession({ parentSessionFile: parentC, childSessionFile: childC, childCwd: root });
+		assert.deepStrictEqual(readTypes(childC), ["session", "message:assistant"]);
+	});
+});

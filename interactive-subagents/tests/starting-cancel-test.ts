@@ -1,3 +1,5 @@
+import { after, describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
 	existsSync,
@@ -68,174 +70,183 @@ const { seedNewSession } = await import("../session.ts");
 type SpawnSpec = import("../capacity.ts").SpawnSpec;
 type ResumeSpec = import("../capacity.ts").ResumeSpec;
 
-let pass = 0, fail = 0;
-function eq(label: string, got: unknown, want: unknown): void {
-	const g = JSON.stringify(got), w = JSON.stringify(want);
-	if (g === w) { pass++; console.log(`  ok  ${label}`); }
-	else { fail++; console.log(`  FAIL ${label}: got ${g}, want ${w}`); }
-}
-function ok(label: string, condition: boolean): void {
-	if (condition) { pass++; console.log(`  ok  ${label}`); }
-	else { fail++; console.log(`  FAIL ${label}`); }
-}
-
-const pi = { sendMessage(): void {} } as unknown as ExtensionAPI;
-const spawnId = "worktr01";
-const spawnSpec: SpawnSpec = {
-	kind: "spawn",
-	id: spawnId,
-	name: "worktree cancellation",
-	task: "do not start",
-	agentName: "worker",
-	harness: "pi",
-	agentBody: "",
-	context: "new",
-	autoExit: true,
-	useWorktree: true,
-	parentCwd: repo,
-	parentSessionFile: join(root, "parent.jsonl"),
-	base: join(root, "artifacts"),
-	slug: "worktree-cancellation",
+const inFlightLaunches = new Set<Promise<unknown>>();
+const trackLaunch = <T>(promise: Promise<T>): Promise<T> => {
+	inFlightLaunches.add(promise);
+	void promise.then(
+		() => inFlightLaunches.delete(promise),
+		() => inFlightLaunches.delete(promise),
+	);
+	return promise;
 };
 
-eq("worktree spawn claims the only slot", capacity.admitLaunch(spawnSpec).status, "run");
-const spawnPromise = runSpawnLaunch(pi, spawnSpec);
-for (let tries = 0; tries < 500 && !existsSync(createdMarker); tries++) {
-	await new Promise((resolve) => setTimeout(resolve, 10));
-}
-ok("worktree creation reaches its controllable await", existsSync(createdMarker));
-eq("cancelling the parked launch resolves as starting",
-	requestCancel(pi, spawnId, "model").kind, "cancelled-starting");
-writeFileSync(releaseMarker, "release\n");
-let spawnError: unknown;
-try {
-	await spawnPromise;
-} catch (error) {
-	spawnError = error;
-} finally {
-	capacity.releaseClaim(spawnId);
-}
-ok("the resumed boundary throws requester-aware CancelLaunch",
-	spawnError instanceof capacity.CancelLaunch && spawnError.requester === "model");
-const worktreeDir = join(repo, `.cancel-wt-${spawnSpec.slug}-${spawnId}`);
-ok("cancelled starting spawn rolls back the fresh worktree", !existsSync(worktreeDir));
-eq("cancelled starting spawn registers no child, ledger entry, or claim", [
-	state.running.has(spawnId),
-	state.ledger.has(spawnId),
-	capacity.findPendingLaunch(spawnId),
-], [false, false, undefined]);
-const branch = execFileSync("git", ["branch", "--list", `pi/${spawnSpec.slug}-${spawnId}`], {
-	cwd: repo,
-	encoding: "utf8",
-}).trim();
-eq("worktree rollback removes its fresh branch", branch, "");
-
-capacity.clearQueueForShutdown();
-const failureId = "fail0001";
-const failureSpec: SpawnSpec = {
-	...spawnSpec,
-	id: failureId,
-	slug: "failure",
-	name: "failing worktree cancellation",
-};
-capacity.admitLaunch(failureSpec);
-const failurePromise = runSpawnLaunch(pi, failureSpec);
-for (let tries = 0; tries < 500 && !existsSync(failureMarker); tries++) {
-	await new Promise((resolve) => setTimeout(resolve, 10));
-}
-ok("failing worktree creation reaches its controllable await", existsSync(failureMarker));
-requestCancel(pi, failureId, "model");
-writeFileSync(releaseFailureMarker, "release\n");
-let failureError: unknown;
-try {
-	await failurePromise;
-} catch (error) {
-	failureError = error;
-} finally {
-	capacity.releaseClaim(failureId);
-}
-ok("a tombstone dominates an error from the awaited create step",
-	failureError instanceof capacity.CancelLaunch && failureError.requester === "model");
-
-capacity.clearQueueForShutdown();
-rmSync(createdMarker, { force: true });
-rmSync(releaseMarker, { force: true });
-const cleanupId = "clean001";
-const cleanupSpec: SpawnSpec = {
-	...spawnSpec,
-	id: cleanupId,
-	slug: "cleanup-failure",
-	name: "cleanup failure cancellation",
-};
-capacity.admitLaunch(cleanupSpec);
-const cleanupPromise = runSpawnLaunch(pi, cleanupSpec);
-for (let tries = 0; tries < 500 && !existsSync(createdMarker); tries++) {
-	await new Promise((resolve) => setTimeout(resolve, 10));
-}
-requestCancel(pi, cleanupId, "user");
-writeFileSync(releaseMarker, "release\n");
-let cleanupError: unknown;
-try {
-	await cleanupPromise;
-} catch (error) {
-	cleanupError = error;
-} finally {
-	capacity.releaseClaim(cleanupId);
-}
-ok("cancellation preserves a rollback-failure warning on CancelLaunch",
-	cleanupError instanceof capacity.CancelLaunch &&
-	cleanupError.cleanupFailure?.includes("intentional cleanup failure") === true &&
-	cleanupError.cleanupFailure.includes("remove") === true);
-const leakedWorktree = join(repo, `.cancel-wt-${cleanupSpec.slug}-${cleanupId}`);
-ok("the warning corresponds to the worktree left by failed cleanup", existsSync(leakedWorktree));
-execFileSync("git", ["worktree", "remove", "--force", leakedWorktree], { cwd: repo });
-execFileSync("git", ["branch", "-D", `pi/${cleanupSpec.slug}-${cleanupId}`], { cwd: repo, stdio: "ignore" });
-
-capacity.clearQueueForShutdown();
-const resumeId = "resume01";
-const sessionPath = join(repo, "resume.jsonl");
-seedNewSession({
-	parentSessionFile: join(root, "parent.jsonl"),
-	childSessionFile: sessionPath,
-	childCwd: repo,
-	name: "resume fixture",
+after(async () => {
+	// Release any create script still parked on a marker so a mid-test failure
+	// cannot leave its shell loop spinning after the fixture is removed.
+	writeFileSync(releaseMarker, "release\n");
+	writeFileSync(releaseFailureMarker, "release\n");
+	await Promise.allSettled([...inFlightLaunches]);
+	inFlightLaunches.clear();
+	capacity.clearQueueForShutdown();
+	state.resetForShutdown();
+	rmSync(root, { recursive: true, force: true });
 });
-const originalSession = readFileSync(sessionPath, "utf8");
-const resumeSpec: ResumeSpec = {
-	kind: "resume",
-	id: resumeId,
-	sessionPath,
-	name: "resume cancellation",
-	agent: "worker",
-	harness: "pi",
-	autoExit: true,
-	message: "continue",
-	context: "new",
-	cwd: repo,
-	cwdFromWorktree: false,
-	base: join(root, "artifacts"),
-	slug: "resume-cancellation",
-	expectsRun: true,
-};
-capacity.admitLaunch(resumeSpec);
-capacity.recordCancellation(resumeId, "user");
-let resumeError: unknown;
-try {
-	await runResumeLaunch(pi, resumeSpec);
-} catch (error) {
-	resumeError = error;
-} finally {
-	capacity.releaseClaim(resumeId);
-}
-ok("cancelled resume reaches the same requester-aware boundary",
-	resumeError instanceof capacity.CancelLaunch && resumeError.requester === "user");
-eq("cancelled resume preserves the earlier session file byte-for-byte",
-	readFileSync(sessionPath, "utf8"), originalSession);
-eq("cancelled resume registers no new run", [state.running.has(resumeId), state.ledger.has(resumeId)], [false, false]);
 
-capacity.clearQueueForShutdown();
-state.resetForShutdown();
-rmSync(root, { recursive: true, force: true });
+describe("cancelling a starting launch", () => {
+	it("rolls back worktrees and resolves every launch path at the requester-aware boundary", async () => {
+		const pi = { sendMessage(): void {} } as unknown as ExtensionAPI;
+		const spawnId = "worktr01";
+		const spawnSpec: SpawnSpec = {
+			kind: "spawn",
+			id: spawnId,
+			name: "worktree cancellation",
+			task: "do not start",
+			agentName: "worker",
+			harness: "pi",
+			agentBody: "",
+			context: "new",
+			autoExit: true,
+			useWorktree: true,
+			parentCwd: repo,
+			parentSessionFile: join(root, "parent.jsonl"),
+			base: join(root, "artifacts"),
+			slug: "worktree-cancellation",
+		};
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
+		assert.strictEqual(capacity.admitLaunch(spawnSpec).status, "run",
+			"worktree spawn claims the only slot");
+		const spawnPromise = trackLaunch(runSpawnLaunch(pi, spawnSpec));
+		for (let tries = 0; tries < 500 && !existsSync(createdMarker); tries++) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		assert.ok(existsSync(createdMarker), "worktree creation reaches its controllable await");
+		assert.strictEqual(requestCancel(pi, spawnId, "model").kind, "cancelled-starting",
+			"cancelling the parked launch resolves as starting");
+		writeFileSync(releaseMarker, "release\n");
+		try {
+			await assert.rejects(
+				spawnPromise,
+				(error) => error instanceof capacity.CancelLaunch && error.requester === "model",
+				"the resumed boundary throws requester-aware CancelLaunch",
+			);
+		} finally {
+			capacity.releaseClaim(spawnId);
+		}
+		const worktreeDir = join(repo, `.cancel-wt-${spawnSpec.slug}-${spawnId}`);
+		assert.ok(!existsSync(worktreeDir), "cancelled starting spawn rolls back the fresh worktree");
+		assert.deepStrictEqual([
+			state.running.has(spawnId),
+			state.ledger.has(spawnId),
+			capacity.findPendingLaunch(spawnId),
+		], [false, false, undefined],
+			"cancelled starting spawn registers no child, ledger entry, or claim");
+		const branch = execFileSync("git", ["branch", "--list", `pi/${spawnSpec.slug}-${spawnId}`], {
+			cwd: repo,
+			encoding: "utf8",
+		}).trim();
+		assert.strictEqual(branch, "", "worktree rollback removes its fresh branch");
+
+		capacity.clearQueueForShutdown();
+		const failureId = "fail0001";
+		const failureSpec: SpawnSpec = {
+			...spawnSpec,
+			id: failureId,
+			slug: "failure",
+			name: "failing worktree cancellation",
+		};
+		capacity.admitLaunch(failureSpec);
+		const failurePromise = trackLaunch(runSpawnLaunch(pi, failureSpec));
+		for (let tries = 0; tries < 500 && !existsSync(failureMarker); tries++) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		assert.ok(existsSync(failureMarker), "failing worktree creation reaches its controllable await");
+		requestCancel(pi, failureId, "model");
+		writeFileSync(releaseFailureMarker, "release\n");
+		try {
+			await assert.rejects(
+				failurePromise,
+				(error) => error instanceof capacity.CancelLaunch && error.requester === "model",
+				"a tombstone dominates an error from the awaited create step",
+			);
+		} finally {
+			capacity.releaseClaim(failureId);
+		}
+
+		capacity.clearQueueForShutdown();
+		rmSync(createdMarker, { force: true });
+		rmSync(releaseMarker, { force: true });
+		const cleanupId = "clean001";
+		const cleanupSpec: SpawnSpec = {
+			...spawnSpec,
+			id: cleanupId,
+			slug: "cleanup-failure",
+			name: "cleanup failure cancellation",
+		};
+		capacity.admitLaunch(cleanupSpec);
+		const cleanupPromise = trackLaunch(runSpawnLaunch(pi, cleanupSpec));
+		for (let tries = 0; tries < 500 && !existsSync(createdMarker); tries++) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		requestCancel(pi, cleanupId, "user");
+		writeFileSync(releaseMarker, "release\n");
+		try {
+			await assert.rejects(
+				cleanupPromise,
+				(error) =>
+					error instanceof capacity.CancelLaunch &&
+					error.cleanupFailure?.includes("intentional cleanup failure") === true &&
+					error.cleanupFailure.includes("remove") === true,
+				"cancellation preserves a rollback-failure warning on CancelLaunch",
+			);
+		} finally {
+			capacity.releaseClaim(cleanupId);
+		}
+		const leakedWorktree = join(repo, `.cancel-wt-${cleanupSpec.slug}-${cleanupId}`);
+		assert.ok(existsSync(leakedWorktree), "the warning corresponds to the worktree left by failed cleanup");
+		execFileSync("git", ["worktree", "remove", "--force", leakedWorktree], { cwd: repo });
+		execFileSync("git", ["branch", "-D", `pi/${cleanupSpec.slug}-${cleanupId}`], { cwd: repo, stdio: "ignore" });
+
+		capacity.clearQueueForShutdown();
+		const resumeId = "resume01";
+		const sessionPath = join(repo, "resume.jsonl");
+		seedNewSession({
+			parentSessionFile: join(root, "parent.jsonl"),
+			childSessionFile: sessionPath,
+			childCwd: repo,
+			name: "resume fixture",
+		});
+		const originalSession = readFileSync(sessionPath, "utf8");
+		const resumeSpec: ResumeSpec = {
+			kind: "resume",
+			id: resumeId,
+			sessionPath,
+			name: "resume cancellation",
+			agent: "worker",
+			harness: "pi",
+			autoExit: true,
+			message: "continue",
+			context: "new",
+			cwd: repo,
+			cwdFromWorktree: false,
+			base: join(root, "artifacts"),
+			slug: "resume-cancellation",
+			expectsRun: true,
+		};
+		capacity.admitLaunch(resumeSpec);
+		capacity.recordCancellation(resumeId, "user");
+		const resumePromise = trackLaunch(runResumeLaunch(pi, resumeSpec));
+		try {
+			await assert.rejects(
+				resumePromise,
+				(error) => error instanceof capacity.CancelLaunch && error.requester === "user",
+				"cancelled resume reaches the same requester-aware boundary",
+			);
+		} finally {
+			capacity.releaseClaim(resumeId);
+		}
+		assert.strictEqual(readFileSync(sessionPath, "utf8"), originalSession,
+			"cancelled resume preserves the earlier session file byte-for-byte");
+		assert.deepStrictEqual([state.running.has(resumeId), state.ledger.has(resumeId)], [false, false],
+			"cancelled resume registers no new run");
+	});
+});

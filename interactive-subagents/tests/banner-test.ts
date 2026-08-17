@@ -1,76 +1,114 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { formatBannerLine } from "../banner.ts";
-
-let pass = 0, fail = 0;
-function eq(label: string, got: unknown, want: unknown) {
-	const g = JSON.stringify(got), w = JSON.stringify(want);
-	if (g === w) { pass++; console.log(`  ok  ${label}`); }
-	else { fail++; console.log(`  FAIL ${label}:\n    got  ${g}\n    want ${w}`); }
-}
 
 const HUMAN_MODE = "⚠ human driving — next completed turn exits & reports to parent";
 const auto = { name: "recon", agent: "scout", autoExit: true, humanDriving: false };
 const interactive = { name: "recon", agent: "scout", autoExit: false, humanDriving: false };
 const human = { name: "recon", agent: "scout", autoExit: true, humanDriving: true };
 
-// the three mode states at a comfortable width; the rule fills exactly
-const autoBody = "─ SUBAGENT · recon [scout] · auto-exit ";
-eq("auto-exit line", formatBannerLine(auto, 72), autoBody + "─".repeat(72 - autoBody.length));
-const interactiveBody = "─ SUBAGENT · recon [scout] · interactive ";
-eq("interactive line", formatBannerLine(interactive, 72), interactiveBody + "─".repeat(72 - interactiveBody.length));
-const humanBody = `─ SUBAGENT · recon [scout] · ${HUMAN_MODE} `;
-eq("human-driving line", formatBannerLine(human, 100), humanBody + "─".repeat(100 - humanBody.length));
-eq("auto-exit line exactly width wide", formatBannerLine(auto, 72).length, 72);
-eq("human-driving line exactly width wide", formatBannerLine(human, 100).length, 100);
+describe("formatBannerLine", () => {
+	const autoBody = "─ SUBAGENT · recon [scout] · auto-exit ";
 
-// no agent → no bracket segment at all
-const bare = { name: "recon", autoExit: true, humanDriving: false };
-const bareBody = "─ SUBAGENT · recon · auto-exit ";
-eq("agent missing drops the bracket segment", formatBannerLine(bare, 60), bareBody + "─".repeat(60 - bareBody.length));
+	it("auto-exit line fills the width with the rule", () => {
+		assert.strictEqual(formatBannerLine(auto, 72), autoBody + "─".repeat(72 - autoBody.length));
+	});
 
-// name exactly fills the width: full name kept, trailing rule dropped
-eq("exact fit keeps full name, drops rule", formatBannerLine(auto, 38), "─ SUBAGENT · recon [scout] · auto-exit");
-eq("one leftover column: lone space, no dash", formatBannerLine(auto, 39), "─ SUBAGENT · recon [scout] · auto-exit ");
+	it("interactive line fills the width with the rule", () => {
+		const interactiveBody = "─ SUBAGENT · recon [scout] · interactive ";
+		assert.strictEqual(formatBannerLine(interactive, 72), interactiveBody + "─".repeat(72 - interactiveBody.length));
+	});
 
-// narrow width: the name gives way (ellipsis), tag and mode survive
-const narrow = formatBannerLine(
-	{ name: "a very long task name that cannot possibly fit", agent: "scout", autoExit: true, humanDriving: false }, 40);
-eq("narrow clips the name with ellipsis", narrow, "─ SUBAGENT · a very… [scout] · auto-exit");
-eq("narrow line fits width", narrow.length <= 40, true);
+	it("human-driving line fills the width with the rule", () => {
+		const humanBody = `─ SUBAGENT · recon [scout] · ${HUMAN_MODE} `;
+		assert.strictEqual(formatBannerLine(human, 100), humanBody + "─".repeat(100 - humanBody.length));
+	});
 
-// the line never exceeds the width, all the way down to degenerate sizes
-let allFit = true;
-for (let width = 0; width <= 90; width++) {
-	if (formatBannerLine(auto, width).length > width) allFit = false;
-	if (formatBannerLine(human, width).length > width) allFit = false;
-}
-eq("line never exceeds width (0..90, both modes)", allFit, true);
+	it("auto-exit line exactly width wide", () => {
+		assert.strictEqual(formatBannerLine(auto, 72).length, 72);
+	});
 
-// style hooks wrap the rule and the mode; layout math stays plain
-const markers = { dim: (t: string) => `<D>${t}</D>`, border: (t: string) => `<B>${t}</B>`, warn: (t: string) => `<W>${t}</W>` };
-const strip = (line: string) => line.replace(/<\/?[DBW]>/g, "");
-const styled = formatBannerLine(auto, 72, markers);
-eq("leading rule dash styled as border", styled.startsWith("<B>─</B> SUBAGENT · "), true);
-eq("identity segment stays unstyled", styled.includes(" SUBAGENT · recon [scout] · "), true);
-eq("auto-exit mode dimmed", styled.includes("· <D>auto-exit</D> "), true);
-eq("trailing rule styled as border", styled.endsWith(`<B>${"─".repeat(72 - autoBody.length)}</B>`), true);
-eq("styled output lays out identically", strip(styled), formatBannerLine(auto, 72));
-const styledHuman = formatBannerLine(human, 100, markers);
-eq("human-driving mode warn-wrapped whole", styledHuman.includes(`<W>${HUMAN_MODE}</W>`), true);
-eq("styled human line lays out identically", strip(styledHuman), formatBannerLine(human, 100));
-eq("styled narrow clip lays out identically",
-	strip(formatBannerLine(human, 45, markers)), formatBannerLine(human, 45));
+	it("human-driving line exactly width wide", () => {
+		assert.strictEqual(formatBannerLine(human, 100).length, 100);
+	});
 
-const hostileIdentity = formatBannerLine(
-	{
-		name: "safe\x1b]52;c;Zm9v\x07 name\0",
-		agent: "worker\x1b[2J",
-		autoExit: true,
-		humanDriving: false,
-	},
-	70,
-);
-eq("banner removes generated terminal controls", hostileIdentity.includes("\x1b"), false);
-eq("banner preserves safe generated identity", hostileIdentity.includes("safe name [worker]"), true);
+	it("agent missing drops the bracket segment", () => {
+		const bare = { name: "recon", autoExit: true, humanDriving: false };
+		const bareBody = "─ SUBAGENT · recon · auto-exit ";
+		assert.strictEqual(formatBannerLine(bare, 60), bareBody + "─".repeat(60 - bareBody.length));
+	});
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
+	it("exact fit keeps full name, drops rule", () => {
+		assert.strictEqual(formatBannerLine(auto, 38), "─ SUBAGENT · recon [scout] · auto-exit");
+	});
+
+	it("one leftover column: lone space, no dash", () => {
+		assert.strictEqual(formatBannerLine(auto, 39), "─ SUBAGENT · recon [scout] · auto-exit ");
+	});
+
+	it("narrow width clips the name with an ellipsis while tag and mode survive", () => {
+		const narrow = formatBannerLine(
+			{ name: "a very long task name that cannot possibly fit", agent: "scout", autoExit: true, humanDriving: false }, 40);
+		assert.strictEqual(narrow, "─ SUBAGENT · a very… [scout] · auto-exit", "narrow clips the name with ellipsis");
+		assert.strictEqual(narrow.length <= 40, true, "narrow line fits width");
+	});
+
+	it("line never exceeds width from 0 through 90 in both modes", () => {
+		for (let width = 0; width <= 90; width++) {
+			assert.ok(formatBannerLine(auto, width).length <= width, `auto line fits width ${width}`);
+			assert.ok(formatBannerLine(human, width).length <= width, `human line fits width ${width}`);
+		}
+	});
+
+	// style hooks wrap the rule and the mode; layout math stays plain
+	const markers = { dim: (t: string) => `<D>${t}</D>`, border: (t: string) => `<B>${t}</B>`, warn: (t: string) => `<W>${t}</W>` };
+	const strip = (line: string) => line.replace(/<\/?[DBW]>/g, "");
+	const styled = formatBannerLine(auto, 72, markers);
+	const styledHuman = formatBannerLine(human, 100, markers);
+
+	it("leading rule dash styled as border", () => {
+		assert.strictEqual(styled.startsWith("<B>─</B> SUBAGENT · "), true);
+	});
+
+	it("identity segment stays unstyled", () => {
+		assert.strictEqual(styled.includes(" SUBAGENT · recon [scout] · "), true);
+	});
+
+	it("auto-exit mode dimmed", () => {
+		assert.strictEqual(styled.includes("· <D>auto-exit</D> "), true);
+	});
+
+	it("trailing rule styled as border", () => {
+		assert.strictEqual(styled.endsWith(`<B>${"─".repeat(72 - autoBody.length)}</B>`), true);
+	});
+
+	it("styled output lays out identically", () => {
+		assert.strictEqual(strip(styled), formatBannerLine(auto, 72));
+	});
+
+	it("human-driving mode warn-wrapped whole", () => {
+		assert.strictEqual(styledHuman.includes(`<W>${HUMAN_MODE}</W>`), true);
+	});
+
+	it("styled human line lays out identically", () => {
+		assert.strictEqual(strip(styledHuman), formatBannerLine(human, 100));
+	});
+
+	it("styled narrow clip lays out identically", () => {
+		assert.strictEqual(strip(formatBannerLine(human, 45, markers)), formatBannerLine(human, 45));
+	});
+
+	it("banner sanitizes hostile generated identity", () => {
+		const hostileIdentity = formatBannerLine(
+			{
+				name: "safe\x1b]52;c;Zm9v\x07 name\0",
+				agent: "worker\x1b[2J",
+				autoExit: true,
+				humanDriving: false,
+			},
+			70,
+		);
+		assert.strictEqual(hostileIdentity.includes("\x1b"), false, "banner removes generated terminal controls");
+		assert.strictEqual(hostileIdentity.includes("safe name [worker]"), true, "banner preserves safe generated identity");
+	});
+});

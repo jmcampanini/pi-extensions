@@ -10,11 +10,7 @@ typecheck: ## Type-check all TypeScript without emitting files.
 	./node_modules/.bin/tsc --noEmit
 
 test: ## Run the TypeScript tests.
-	@set -e; \
-	for file in */tests/*-test.ts; do \
-		echo "==> $$file"; \
-		node --experimental-strip-types "$$file"; \
-	done
+	node --test */tests/*-test.ts
 
 check: typecheck test ## Run all non-mutating checks.
 
