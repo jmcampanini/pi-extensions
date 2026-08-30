@@ -10,7 +10,7 @@ import { join } from "node:path";
 // ── fixtures ───────────────────────────────────────────────────────────────
 
 // realpathSync because macOS's tmpdir is a symlink (/var -> /private/var) and
-// `git rev-parse --show-toplevel` prints the RESOLVED path — without this the
+// `git rev-parse --show-toplevel` prints the RESOLVED path - without this the
 // dir assertions would compare symlinked vs physical paths.
 function tempDir(prefix: string): string {
 	return realpathSync(mkdtempSync(join(tmpdir(), prefix)));
@@ -84,7 +84,7 @@ describe("createWorktree", () => {
 		assert.strictEqual(info.baseCommit, base, "create: baseCommit is parent HEAD");
 		assert.strictEqual(info.parentCwd, repo, "create: parentCwd recorded");
 		assert.ok(statSync(info.dir).isDirectory(), "create: worktree directory exists");
-		// The `*` gitignore makes .pi/worktrees/ self-ignoring — the parent repo
+		// The `*` gitignore makes .pi/worktrees/ self-ignoring - the parent repo
 		// must not see the new directory as untracked noise.
 		assert.strictEqual(git(repo, ["status", "--porcelain"]), "", "create: parent repo status stays clean");
 	});
@@ -108,7 +108,7 @@ describe("createWorktree", () => {
 			() => createWorktree({ name: "x", parentCwd: repo, command: `echo /definitely/not/a/real/dir` }),
 			["does not exist"],
 			"fail: nonexistent path");
-		// exit 0, directory exists, but it's not a git work tree — it must live
+		// exit 0, directory exists, but it's not a git work tree - it must live
 		// OUTSIDE the fixture repo, or git would just walk up and find the repo.
 		// git's own stderr must survive into the message, not just our framing.
 		const plain = tempDir("subagents-plain-");
@@ -121,14 +121,14 @@ describe("createWorktree", () => {
 			() => createWorktree({ name: "x", parentCwd: repo, command: `true` }),
 			["printed no directory"],
 			"fail: no stdout");
-		// exit 0 but the printed path is the PARENT checkout — accepting it would
+		// exit 0 but the printed path is the PARENT checkout - accepting it would
 		// silently defeat isolation, so the contract rejects it loudly
 		await rejectsWith(
 			() => createWorktree({ name: "x", parentCwd: repo, command: `echo .` }),
 			["parent checkout itself"],
 			"fail: parent checkout returned");
 		// killed by a signal (crash, OOM-kill, pkill): reported as the signal it
-		// was, never as a timeout — and stderr from before the kill survives
+		// was, never as a timeout - and stderr from before the kill survives
 		await rejectsWith(
 			() => createWorktree({ name: "x", parentCwd: repo, command: `echo crashed >&2; kill -KILL $$` }),
 			["was killed by signal SIGKILL", "crashed"],
@@ -182,7 +182,7 @@ describe("isWorktreeDirty", () => {
 		writeFileSync(join(modified.dir, "README.md"), "changed\n");
 		assert.strictEqual(await isWorktreeDirty(modified), true, "dirty: modified tracked file");
 
-		// committed work: status is clean but HEAD moved off baseCommit —
+		// committed work: status is clean but HEAD moved off baseCommit -
 		// the critical case, since removal would delete the branch and the work
 		const committed = await create(repo, "committed");
 		writeFileSync(join(committed.dir, "work.txt"), "done\n");
@@ -312,7 +312,7 @@ describe("linked worktree parents", () => {
 		assert.strictEqual(git(linked, ["status", "--porcelain"]), "",
 			"linked: linked parent status stays clean");
 
-		// removeWorktree is the unconditional path (spawn rollback uses it) —
+		// removeWorktree is the unconditional path (spawn rollback uses it) -
 		// exercise it directly from the linked parent.
 		assert.deepStrictEqual(
 			await removeWorktree(info, DEFAULT_WORKTREE_CLEANUP_COMMAND),

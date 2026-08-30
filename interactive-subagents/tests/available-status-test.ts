@@ -291,9 +291,9 @@ describe("tool registration", () => {
 describe("subagent_available", () => {
 	it("model content contains definition details and effective configuration only", () => {
 		assert.strictEqual(availableText,
-			"• scout (project, forked, interactive, worktree) — Maps relevant code paths before implementation begins.\n" +
+			"• scout (project, forked, interactive, worktree) - Maps relevant code paths before implementation begins.\n" +
 			"  config: source project · inherits model · context forked · interactive · worktree · harness pi\n" +
-			"• worker (default) — Builds focused changes and verifies them.\n" +
+			"• worker (default) - Builds focused changes and verifies them.\n" +
 			"  config: source global · inherits model · context new · autonomous · shared checkout · harness pi",
 			"available model content contains definition details and effective configuration only");
 		assert.ok(!availableText.includes("RUNTIME STATUS SENTINEL") &&
@@ -319,7 +319,7 @@ describe("subagent_available", () => {
 
 	it("external model content advertises new-only everywhere needed", () => {
 		assert.strictEqual(externalAvailableText,
-			"• claude-code (external: claude-code, new-only) — Direct means Claude Code runs through its native harness.\n" +
+			"• claude-code (external: claude-code, new-only) - Direct means Claude Code runs through its native harness.\n" +
 			"  config: source global · model claude-opus-4-8 · context new-only · autonomous · shared checkout · external: claude-code · pass-through --permission-mode auto");
 	});
 
@@ -337,8 +337,8 @@ describe("subagent_available", () => {
 			renderContext(false),
 		);
 		const collapsedAvailablePlain = stripVTControlCharacters(collapsedAvailable.render(120).join("\n"));
-		assert.ok(collapsedAvailablePlain.includes("scout · project · forked · interactive · worktree — Fast reconnaissance.") &&
-			collapsedAvailablePlain.includes("worker · default — General implementation."),
+		assert.ok(collapsedAvailablePlain.includes("scout · project · forked · interactive · worktree - Fast reconnaissance.") &&
+			collapsedAvailablePlain.includes("worker · default - General implementation."),
 			"collapsed available card shows compact definition markers and description headlines");
 		assert.ok(!collapsedAvailablePlain.includes("Maps relevant code paths"),
 			"collapsed available card omits expanded details");
@@ -378,7 +378,7 @@ describe("subagent_available", () => {
 			renderContext(false),
 		);
 		const collapsedExternalPlain = stripVTControlCharacters(collapsedExternal.render(120).join("\n"));
-		assert.ok(collapsedExternalPlain.includes("claude-code · external: claude-code · new-only — Direct Claude Code handoff."),
+		assert.ok(collapsedExternalPlain.includes("claude-code · external: claude-code · new-only - Direct Claude Code handoff."),
 			"collapsed external card advertises the harness and new-only capability");
 		const expandedExternal = availableRenderer(
 			externalAvailableResult,
@@ -546,7 +546,7 @@ describe("subagent_status", () => {
 		const queuedEntry = entries.find((entry) => entry.state === "queued");
 		assert.ok(Boolean(deliveringEntry?.state === "delivering" &&
 			deliveringEntry.description.includes("stopped after 1m 35s") &&
-			deliveringEntry.description.includes("its stopped notice is queued and arrives on its own — end your turn to receive it")),
+			deliveringEntry.description.includes("its stopped notice is queued and arrives on its own - end your turn to receive it")),
 			"stopped delivery stays model-facing delivering and queues its stopped notice");
 		assert.ok(Boolean(stalledEntry?.description.includes("this is a warning, not a failure") &&
 			stalledEntry.description.includes("inspect its pane through /subagent-status") &&
@@ -575,7 +575,7 @@ describe("subagent_status", () => {
 			contextWindow: null,
 			costUsd: null,
 			queuePosition: null,
-		}]), "• id agent 01 | agent worker | name \"Fix \\\"parser\\\"\" | active — working now" +
+		}]), "• id agent 01 | agent worker | name \"Fix \\\"parser\\\"\" | active - working now" +
 			"\n\nResults arrive on their own; if you are only waiting, end your turn.");
 	});
 
@@ -585,7 +585,7 @@ describe("subagent_status", () => {
 		assert.strictEqual(statusLines.length, entries.length,
 			"flat status emits exactly one ungrouped row per unresolved id");
 		assert.ok(statusLines.every((line, index) => line.startsWith(
-			`• id ${entries[index].id} | agent ${entries[index].agent} | name "${entries[index].name}" | ${entries[index].state} — `,
+			`• id ${entries[index].id} | agent ${entries[index].agent} | name "${entries[index].name}" | ${entries[index].state} - `,
 		)), "every flat status row is ID-first with agent, name, and exact state in order");
 		assert.strictEqual(statusReminder, "Results arrive on their own; if you are only waiting, end your turn.",
 			"unresolved status ends with the standing end-your-turn reminder");
@@ -677,7 +677,7 @@ describe("subagent_status", () => {
 			renderContext(true),
 		);
 		const expandedStatusPlain = stripVTControlCharacters(expandedStatus.render(180).join("\n"));
-		assert.ok(expandedStatusPlain.startsWith("\ndelivery1 · reviewer · Completed audit · delivering — stopped after") &&
+		assert.ok(expandedStatusPlain.startsWith("\ndelivery1 · reviewer · Completed audit · delivering - stopped after") &&
 			expandedStatusPlain.includes("running bash for 10s") &&
 			expandedStatusPlain.includes("starts automatically when capacity frees") &&
 			!expandedStatusPlain.includes("Summary:"),

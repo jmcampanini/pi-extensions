@@ -6,7 +6,7 @@ machinery at submit time.
 
 ## Usage
 
-Type `$` anywhere in the editor — start of the message, mid-sentence, any line.
+Type `$` anywhere in the editor - start of the message, mid-sentence, any line.
 A popup lists installed skills (name + description), narrowing with fuzzy
 matching as you type. Accepting inserts `$skill-name ` and you keep writing.
 
@@ -30,10 +30,10 @@ the trailing message.
 
 - Only exact installed-skill names expand. Typos and lookalikes (`$writepr`)
   pass through as plain text, silently. `$PATH`-style uppercase tokens can
-  never match — Pi skill names are lowercase `[a-z0-9-]` only.
+  never match - Pi skill names are lowercase `[a-z0-9-]` only.
 - Quoted (`"$name"`) and doubled (`$$name`) sigils never trigger.
 - One skill per message. Two or more known mentions block the send with an
-  error notification and restore your text to the editor — no guessing.
+  error notification and restore your text to the editor - no guessing.
 - Messages that already start with `/` are never touched.
 - Start-of-message `/skill:name` keeps working exactly as before.
 - In non-TUI modes (RPC), a multi-mention message passes through untransformed

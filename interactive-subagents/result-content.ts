@@ -243,7 +243,7 @@ export function buildSubagentResultMessage(input: SubagentResultMessageInput): S
 		preview = input.response ?? input.failureReason;
 	} else {
 		preview = (input.stopRequester === "user" ? "Stopped by the user" : "Stopped by the parent agent") +
-			" — no final result. Partial work may remain; expand for resume and worktree details.";
+			" - no final result. Partial work may remain; expand for resume and worktree details.";
 	}
 
 	return {

@@ -1,9 +1,9 @@
 /**
- * implant.ts — the extension that rides INSIDE every subagent.
+ * implant.ts - the extension that rides INSIDE every subagent.
  *
  * The parent launches children with `pi … -e <this file>`, so these tools
  * exist only in subagent sessions, never in normal ones. The implant's whole
- * identity comes from the env vars the parent baked into the launch command —
+ * identity comes from the env vars the parent baked into the launch command -
  * the `ChildEnvVars` half of the contract in protocol.ts:
  *
  *   PI_SUBAGENT_SESSION        where to write the `.exit` sidecar (required)
@@ -17,7 +17,7 @@
  * is harmless if it ever gets loaded into a regular session.
  *
  * The `.exit` sidecar (the `ExitSidecar` half of protocol.ts) is the child's
- * typed last word — done / ping / error — written next to the session file
+ * typed last word - done / ping / error - written next to the session file
  * and consumed (deleted) by the parent's poller. The result summary itself
  * never travels through the sidecar: it is the child's last assistant
  * message, already durable in the session .jsonl.
@@ -36,7 +36,7 @@ import { formatBannerLine } from "./banner.ts";
 import type { ChildEnvVars, ExitSidecar } from "./protocol.ts";
 
 // Sticky human-driving flag for the banner: set when a user aborts a turn
-// (Escape) in an auto-exit child, and never cleared — once a human has
+// (Escape) in an auto-exit child, and never cleared - once a human has
 // touched the session, the "next completed turn exits" warning stays up.
 let humanDriving = false;
 
@@ -49,7 +49,7 @@ export default function (pi: ExtensionAPI) {
 	const agentName = env.PI_SUBAGENT_AGENT;
 	const autoExit = env.PI_SUBAGENT_AUTO_EXIT === "1";
 
-	// Not launched as a subagent — do nothing.
+	// Not launched as a subagent - do nothing.
 	if (!sessionFile) return;
 	if (agentName !== undefined) assertValidAgentIdentifier(agentName, "PI_SUBAGENT_AGENT");
 
@@ -58,7 +58,7 @@ export default function (pi: ExtensionAPI) {
 	// every recorded pi event; the parent's watcher reads it to tell starting
 	// from active from stalled. When either var is missing there is no
 	// fallback: the recorder never registers and the parent shows starting
-	// then stalled — documented degradation, not an error.
+	// then stalled - documented degradation, not an error.
 	const runId = env.PI_SUBAGENT_ID;
 	const activityFile = env.PI_SUBAGENT_ACTIVITY_FILE;
 	if (runId && activityFile) registerActivityRecorder(pi, { runId, activityFile });
@@ -66,7 +66,7 @@ export default function (pi: ExtensionAPI) {
 	// ── the identity banner ────────────────────────────────────────────────
 	// banner.ts is the pure renderer; this pushes it into pi's UI. Passing a
 	// COMPONENT FACTORY (not plain lines) lets the banner render at the real
-	// terminal width — same pattern as running-widget.ts. render() reads
+	// terminal width - same pattern as running-widget.ts. render() reads
 	// `humanDriving` live, and re-calling setWidget after the flag flips
 	// forces the repaint.
 	function showBanner(ctx: ExtensionContext): void {
@@ -92,7 +92,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => showBanner(ctx));
 
 	/** True once any sidecar has been written this run. The first write is
-	 * the child's verdict — nothing may overwrite it (see agent_end below). */
+	 * the child's verdict - nothing may overwrite it (see agent_end below). */
 	let sidecarWritten = false;
 
 	/** Write the one-shot `.exit` sidecar. Best effort: if the write fails,
@@ -114,7 +114,7 @@ export default function (pi: ExtensionAPI) {
 		description:
 			"Call this when you have completed your task. It closes this session and " +
 			"reports back to the parent session. Your LAST assistant message before " +
-			"calling this becomes the summary the parent receives — write it first.",
+			"calling this becomes the summary the parent receives - write it first.",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			writeExitSidecar({ type: "done" });
@@ -129,7 +129,7 @@ export default function (pi: ExtensionAPI) {
 	// ── caller_ping: ask the parent for help (and exit) ────────────────────
 	// Help is exit-based, not wait-based: we write the question into the
 	// sidecar and shut down. The pane closes, nothing sits blocked. The parent
-	// answers by RESUMING this same session file later — the conversation
+	// answers by RESUMING this same session file later - the conversation
 	// context survives because the .jsonl file IS the context.
 	pi.registerTool({
 		name: "caller_ping",
@@ -170,7 +170,7 @@ export default function (pi: ExtensionAPI) {
 		pi.on("agent_end", (event, ctx) => {
 			// If a tool (subagent_done / caller_ping) already wrote a sidecar,
 			// the verdict is decided. pi defers our shutdown while the model is
-			// still streaming, so this handler can fire again afterwards — it
+			// still streaming, so this handler can fire again afterwards - it
 			// must never overwrite a ping with a "done". Just finish exiting.
 			if (sidecarWritten) {
 				ctx.shutdown();
@@ -186,7 +186,7 @@ export default function (pi: ExtensionAPI) {
 				.find((message) => message.role === "assistant");
 
 			if (lastAssistant?.stopReason === "aborted") {
-				// Escape — stay open, and flip the banner into its warning
+				// Escape - stay open, and flip the banner into its warning
 				// state: a human is driving now, but auto-exit is still armed,
 				// so the next completed turn WILL exit and report back.
 				humanDriving = true;

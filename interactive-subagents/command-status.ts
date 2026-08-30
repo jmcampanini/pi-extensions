@@ -1,5 +1,5 @@
 /**
- * command-status.ts — /subagent-status live lifecycle picker.
+ * command-status.ts - /subagent-status live lifecycle picker.
  *
  * The compact widget is capped; this bounded-height view refreshes the full
  * delivering, running-state, starting, and queued projection while open. It

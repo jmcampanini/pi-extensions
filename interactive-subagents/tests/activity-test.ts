@@ -1,4 +1,4 @@
-// Unit tests for activity.ts — the liveness snapshot contract. The parser's
+// Unit tests for activity.ts - the liveness snapshot contract. The parser's
 // strict-core / tolerant-periphery split, the (updatedAt, sequence) ordering,
 // the clock-jump guard, the skew-free tool elapsed formula, and the atomic
 // writer are all pinned here: these are the rules that keep a skewed or
@@ -48,7 +48,7 @@ function snap(overrides: Partial<ActivitySnapshot> = {}): ActivitySnapshot {
 }
 
 // Each core field wrong-typed or non-finite → invalid with a reason. JSON
-// cannot encode Infinity directly, but `1e999` parses to it — that is the
+// cannot encode Infinity directly, but `1e999` parses to it - that is the
 // non-finite shape a broken writer could actually produce.
 function corrupt(field: string, jsonValue: string): string {
 	const raw = JSON.stringify(snap());
@@ -249,7 +249,7 @@ describe("observeActivity", () => {
 	});
 
 	it("an older pair is kept out as a stale problem until the child catches up", () => {
-		// An older pair (child clock stepped back) is kept out — and it is a
+		// An older pair (child clock stepped back) is kept out - and it is a
 		// PROBLEM, kind "stale": it opens (or continues) the 60s window so rule 1
 		// can stall the child loudly instead of silently serving the frozen
 		// accepted state for the whole skew window.
@@ -463,7 +463,7 @@ describe("the atomic writer", () => {
 		clearActivityFile(sessionFile);
 		assert.ok(!existsSync(activityFile), "clearActivityFile removes the file");
 		assert.deepStrictEqual(readActivityFile(activityFile, "run1"), { kind: "missing" }, "cleared file reads missing");
-		// force: true — clearing a missing file is a no-op, not an error
+		// force: true - clearing a missing file is a no-op, not an error
 		assert.doesNotThrow(() => clearActivityFile(sessionFile), "clearing an already-missing file does not throw");
 	});
 });

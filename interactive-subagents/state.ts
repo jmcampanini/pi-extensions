@@ -188,7 +188,7 @@ function clearTrackedState(): RunningSubagent[] {
 }
 
 /** Stop old work while preserving live and finalizing records for adoption.
- * `extraPendingWork` arms the reaper even with nothing running — the caller
+ * `extraPendingWork` arms the reaper even with nothing running - the caller
  * has other state (queued launches) that must be discarded if no
  * replacement ever adopts. */
 export function prepareForReload(

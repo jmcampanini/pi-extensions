@@ -58,7 +58,7 @@ describe("registerInlineSkills", () => {
 		]);
 	});
 
-	it("only skill commands count — prompts and extension commands do not", () => {
+	it("only skill commands count - prompts and extension commands do not", () => {
 		const harness = setup();
 		const { ctx } = tuiContext();
 		const results = harness.emitResults("input", { text: "run $make-pr and $comment" }, ctx);

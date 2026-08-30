@@ -1,5 +1,5 @@
 /**
- * tool-status.ts — model-facing status for every unresolved subagent launch.
+ * tool-status.ts - model-facing status for every unresolved subagent launch.
  */
 
 import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -110,7 +110,7 @@ function runningEntry(id: string, state: SubagentRuntimeState, nowMs: number): S
 			: "";
 		description = `${stalledCondition(child.activity, nowMs)}; this is a warning, not a failure; wait, inspect its pane through /subagent-status, or use subagent_cancel if the work is no longer needed${telemetry} · elapsed ${humanElapsed(elapsedSeconds)}`;
 	} else {
-		description = `launch is underway; no active run has been observed · elapsed ${humanElapsed(elapsedSeconds)}; it proceeds on its own — use subagent_cancel if the work is no longer needed`;
+		description = `launch is underway; no active run has been observed · elapsed ${humanElapsed(elapsedSeconds)}; it proceeds on its own - use subagent_cancel if the work is no longer needed`;
 	}
 	return {
 		id: child.id,
@@ -136,8 +136,8 @@ function launchEntry(
 	const harness = spec.harness === "pi" ? null : spec.harness;
 	const harnessPrefix = harness === null ? "" : `harness ${sanitizeDisplayText(harness)} · `;
 	const description = queue
-		? `position ${queue.position} of ${queue.total}; starts automatically when capacity frees — use subagent_cancel if the work is no longer needed`
-		: `launch is underway; no activity report yet · elapsed ${humanElapsed(elapsedSeconds)}; it proceeds on its own — use subagent_cancel if the work is no longer needed`;
+		? `position ${queue.position} of ${queue.total}; starts automatically when capacity frees - use subagent_cancel if the work is no longer needed`
+		: `launch is underway; no activity report yet · elapsed ${humanElapsed(elapsedSeconds)}; it proceeds on its own - use subagent_cancel if the work is no longer needed`;
 	return {
 		id: spec.id,
 		agent: display.agent ?? "unknown",
@@ -176,8 +176,8 @@ export function collectStatusEntries(nowMs = Date.now()): StatusPresentationEntr
 				name: child.name,
 				state: "delivering",
 				description: child.stopped
-					? `${harness}stopped after ${humanElapsed(child.elapsedSeconds)}; its stopped notice is queued and arrives on its own — end your turn to receive it`
-					: `${harness}finished after ${humanElapsed(child.elapsedSeconds)}; its result is queued and arrives on its own — end your turn to receive it`,
+					? `${harness}stopped after ${humanElapsed(child.elapsedSeconds)}; its stopped notice is queued and arrives on its own - end your turn to receive it`
+					: `${harness}finished after ${humanElapsed(child.elapsedSeconds)}; its result is queued and arrives on its own - end your turn to receive it`,
 				harness: child.harness ?? null,
 				elapsedSeconds: child.elapsedSeconds,
 				contextTokens: null,
@@ -212,7 +212,7 @@ function safeInline(text: string): string {
 export function formatStatusModelText(entries: readonly StatusPresentationEntry[]): string {
 	if (entries.length === 0) return "No unresolved subagents.";
 	const rows = entries.map((entry) =>
-		`• id ${safeInline(entry.id)} | agent ${safeInline(entry.agent)} | name ${JSON.stringify(safeInline(entry.name))} | ${entry.state} — ${safeInline(entry.description)}`
+		`• id ${safeInline(entry.id)} | agent ${safeInline(entry.agent)} | name ${JSON.stringify(safeInline(entry.name))} | ${entry.state} - ${safeInline(entry.description)}`
 	).join("\n");
 	return `${rows}\n\nResults arrive on their own; if you are only waiting, end your turn.`;
 }
@@ -242,7 +242,7 @@ export function formatStatusCardLines(
 			name(safeInline(entry.name)) +
 			separator(" · ") +
 			state(entry.state, entry.state);
-		const text = expanded ? core + body(` — ${safeInline(entry.description)}`) : core;
+		const text = expanded ? core + body(` - ${safeInline(entry.description)}`) : core;
 		lines.push(...new Text(text, 0, 0).render(safeWidth));
 	}
 	return lines.map((line) => clampStyled(line, safeWidth));
@@ -284,7 +284,7 @@ export function registerSubagentStatusTool(pi: ExtensionAPI): void {
 		label: "Subagent Status",
 		description:
 			"Report every unresolved subagent instance in attention order: delivering, stalled, waiting, starting, active, then queued. " +
-			"Each row starts with the stable id used by subagent_cancel and later result and resume flows, followed by agent definition, display name, exact lifecycle state, relevant telemetry, and what—if anything—to do. " +
+			"Each row starts with the stable id used by subagent_cancel and later result and resume flows, followed by agent definition, display name, exact lifecycle state, relevant telemetry, and what-if anything-to do. " +
 			"This is a one-shot snapshot for coordination. Results arrive on their own; if you are only waiting for them, end your turn.",
 		parameters: Type.Object({}),
 		renderCall(_args, theme, context) {

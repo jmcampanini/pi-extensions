@@ -1,16 +1,16 @@
 /**
- * launch.ts — the ONE way a child pi process gets launched.
+ * launch.ts - the ONE way a child pi process gets launched.
  *
  * Both `subagent_spawn` (first launch) and `subagent_resume` (relaunch of
  * an existing session) go through the helpers in this file, so there is a
  * single place that decides what a child's command line looks like: the env
  * prefix, the pi flags, the control-tool union, and the prompt argument. If
  * spawn and resume ever behave differently, the difference is visible in
- * their own files — not hidden in two drifting copies of this logic.
+ * their own files - not hidden in two drifting copies of this logic.
  *
  * Also here: the `.meta` launch-metadata sidecar. It records the identity a
  * child was launched with (system prompt, tools, model, thinking, auto-exit)
- * so a later resume can reapply it — those settings live on the command
+ * so a later resume can reapply it - those settings live on the command
  * line, not in the conversation, so without `.meta` a resumed child would
  * silently lose them.
  */
@@ -153,10 +153,10 @@ export interface LaunchMeta {
 	thinking?: string;
 	systemPromptFile?: string;
 	autoExit?: boolean;
-	/** How the conversation started (new/forked) — display-only, so the
+	/** How the conversation started (new/forked) - display-only, so the
 	 * running widget can keep showing it after a resume. */
 	context?: "new" | "forked";
-	/** Set when the child ran in a git worktree — lets a resume keep the same
+	/** Set when the child ran in a git worktree - lets a resume keep the same
 	 * cleanup behavior, and lets it explain a worktree that was removed. */
 	worktree?: WorktreeInfo;
 	/** Which tool ran the child ("claude-code"); absent = pi. On resume this

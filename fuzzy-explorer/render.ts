@@ -427,7 +427,7 @@ export type SubagentSection =
 	| { type: "table"; text: string };
 
 /**
- * Ordered display sections for a subagent view — the single owner of the
+ * Ordered display sections for a subagent view - the single owner of the
  * layout policy: results show content, divider, table; tool calls show
  * fields, content; empty sections are dropped. Consumers style each section.
  */
@@ -552,7 +552,7 @@ export function formatTruncationMarker(
 
 /**
  * Format one list row: selection marker, aligned bold tag column, then detail
- * text — or a grep-style body excerpt when only the body matched.
+ * text - or a grep-style body excerpt when only the body matched.
  */
 export function formatResultRow(
 	value: RenderBlock,

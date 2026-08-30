@@ -1,9 +1,9 @@
 /**
- * tool-spawn.ts — the `subagent_spawn` tool: spawn a child pi session.
+ * tool-spawn.ts - the `subagent_spawn` tool: spawn a child pi session.
  *
  * pi API in play: `pi.registerTool(...)` exposes a tool to the MODEL. The
  * `description`, `promptGuidelines`, and every `parameters` field description
- * are read by the model when it decides whether and how to call the tool —
+ * are read by the model when it decides whether and how to call the tool -
  * they are prompts, not documentation, so they carry behavioral instructions
  * ("ending your turn is how you wait").
  * `execute(toolCallId, params, signal, onUpdate, ctx)` runs when the model
@@ -12,9 +12,9 @@
  *
  * The spawn itself: resolve the agent definition (explicit params beat
  * frontmatter beat built-in defaults) into a pure LAUNCH SPEC, then either
- * run the launch pipeline now (a concurrency slot was free — the tool
+ * run the launch pipeline now (a concurrency slot was free - the tool
  * returns 'started' as soon as the child is RUNNING) or queue the spec
- * (capacity.ts launches it when a slot frees — the tool returns 'queued'
+ * (capacity.ts launches it when a slot frees - the tool returns 'queued'
  * immediately). The pipeline writes the task and system prompt as artifact
  * files, builds the launch command (launch.ts), opens a pane (tmux.ts), and
  * hands the child to the watcher (watcher.ts). Results always arrive later
@@ -68,7 +68,7 @@ import { createWorktree, removeWorktree, type WorktreeInfo } from "./worktree.ts
 const SubagentSpawnParams = Type.Object({
 	name: Type.String({
 		description:
-			"Short display name describing the TASK, e.g. 'Auth flow' — shown in the widget next to the agent type, so do not repeat the agent type in it.",
+			"Short display name describing the TASK, e.g. 'Auth flow' - shown in the widget next to the agent type, so do not repeat the agent type in it.",
 	}),
 	task: Type.String({
 		description:
@@ -78,14 +78,14 @@ const SubagentSpawnParams = Type.Object({
 	agent: Type.Optional(
 		Type.String({
 			description:
-				"Agent definition identifier to load defaults from (a <name>.md file in <cwd>/.pi/subagents/ or the global subagents dir; no whitespace, at most 20 display columns; project shadows global — see subagent_available). Default: 'worker'",
+				"Agent definition identifier to load defaults from (a <name>.md file in <cwd>/.pi/subagents/ or the global subagents dir; no whitespace, at most 20 display columns; project shadows global - see subagent_available). Default: 'worker'",
 		}),
 	),
 	context: Type.Optional(
 		Type.Union([Type.Literal("new"), Type.Literal("forked")], {
 			description:
 				"'new' = no parent conversation (default; project files and instructions still load). Use for self-contained work and include all needed context in `task`. " +
-				"'forked' = copies this conversation up to the moment the child actually launches — immediately when a concurrency slot is free, or later when a queued launch starts. Use when the task materially depends on accumulated discussion, reads, or decisions that would be difficult or lossy to restate, or to try parallel approaches from the same starting point. " +
+				"'forked' = copies this conversation up to the moment the child actually launches - immediately when a concurrency slot is free, or later when a queued launch starts. Use when the task materially depends on accumulated discussion, reads, or decisions that would be difficult or lossy to restate, or to try parallel approaches from the same starting point. " +
 				"Forked history is sent to the child's selected model/provider, so prefer new when that history is unnecessary or sensitive. Use subagent_resume instead when a follow-up depends on a previous child's own context. Overrides the agent definition. " +
 				"'forked' requires the Pi harness; external sub-agents are new-only.",
 		}),
@@ -94,7 +94,7 @@ const SubagentSpawnParams = Type.Object({
 		Type.String({
 			description:
 				"Model override: 'provider/model' (e.g. 'openai-codex/gpt-5.5'), or a bare model id when exactly one configured provider offers it. " +
-				"Validated like the agent's models list — unknown or credential-less models error immediately.",
+				"Validated like the agent's models list - unknown or credential-less models error immediately.",
 		}),
 	),
 	tools: Type.Optional(Type.String({ description: "Comma-separated tool allowlist, e.g. 'read,bash' (overrides the agent default)" })),
@@ -108,7 +108,7 @@ const SubagentSpawnParams = Type.Object({
 		Type.String({
 			description:
 				"Working directory for the subagent (defaults to this session's cwd). " +
-				"Passing cwd also overrides an agent's frontmatter worktree default — the child runs here, not in a worktree.",
+				"Passing cwd also overrides an agent's frontmatter worktree default - the child runs here, not in a worktree.",
 		}),
 	),
 	worktree: Type.Optional(
@@ -211,19 +211,19 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 		name: "subagent_spawn",
 		label: "Spawn Subagent",
 		description:
-			"Spawn a sub-agent in a tmux pane to work on a task. ASYNC — this returns " +
+			"Spawn a sub-agent in a tmux pane to work on a task. ASYNC - this returns " +
 			"immediately with status 'started', or status 'queued' when " +
 			`${config.maxConcurrentSubagents} sub-agents (the concurrency limit, shared ` +
 			"with subagent_resume) are already running. Issue each spawn once: queued " +
 			"sub-agents start automatically, in order, as running ones finish. Either " +
 			"way the sub-agent's result is automatically steered into this conversation " +
 			"when it finishes, waking you in a new turn. Ending your turn is how you " +
-			"wait — it never abandons the work. While children run, work only on tasks " +
+			"wait - it never abandons the work. While children run, work only on tasks " +
 			"that need nothing from them; when your next step depends on a result, tell " +
 			"the user in one line what you are waiting on and end your turn. Call this " +
 			"multiple times only when tasks are independent, bounded, and able to proceed concurrently.",
 		promptGuidelines: [
-			"Use subagent_spawn with context 'new' by default for self-contained work; put all needed facts, constraints, and expected output in `task`. Use 'forked' only when the task materially depends on accumulated parent discussion, reads, or decisions that would be difficult or lossy to restate, and remember that the copied history goes to the child's selected model/provider — 'forked' requires the Pi harness; external sub-agents are new-only. Use subagent_resume instead when a follow-up depends on the child's own prior context.",
+			"Use subagent_spawn with context 'new' by default for self-contained work; put all needed facts, constraints, and expected output in `task`. Use 'forked' only when the task materially depends on accumulated parent discussion, reads, or decisions that would be difficult or lossy to restate, and remember that the copied history goes to the child's selected model/provider - 'forked' requires the Pi harness; external sub-agents are new-only. Use subagent_resume instead when a follow-up depends on the child's own prior context.",
 			"Use subagent_spawn only for concrete, bounded tasks that can proceed independently. Keep trivial tasks, tightly coupled or sequential work, and critical-path blockers in the parent. Never give parallel sub-agents overlapping write scopes in the same checkout; use disjoint scopes or worktree isolation.",
 		],
 		parameters: SubagentSpawnParams,
@@ -302,15 +302,15 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 
 			// Resolve agent defaults: explicit params beat frontmatter beats built-in defaults.
 			// There is no "bare" spawn: a call without `agent` IS the "worker"
-			// agent — same definition machinery, same file, same rules. If
+			// agent - same definition machinery, same file, same rules. If
 			// worker.md is missing that's a loud error telling you to create
 			// it, not a silently different kind of child.
 			const agentDef = loadAgentDefinition(agentName, ctx.cwd);
 			if (!agentDef) {
 				throw new Error(
 					params.agent
-						? `Unknown agent "${agentName}" — no ${agentName}.md in ${projectDefsDir(ctx.cwd)} or ${agentDefsDir()}. Use subagent_available to see available agents.`
-						: `No agent given, so this spawn defaults to "worker" — but ${join(agentDefsDir(), "worker.md")} does not exist. Create it (it defines the default sub-agent), or pass an agent explicitly.`,
+						? `Unknown agent "${agentName}" - no ${agentName}.md in ${projectDefsDir(ctx.cwd)} or ${agentDefsDir()}. Use subagent_available to see available agents.`
+						: `No agent given, so this spawn defaults to "worker" - but ${join(agentDefsDir(), "worker.md")} does not exist. Create it (it defines the default sub-agent), or pass an agent explicitly.`,
 				);
 			}
 			// Frontmatter problems (e.g. an unknown context or worktree value) fail the
@@ -331,7 +331,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 					`Agent "${agentName}" runs on the external harness "${harness}" - external sub-agents are new-only: a pi conversation cannot be transplanted into a different tool. Use context "new".`,
 				);
 			}
-			// An explicit param is just a one-entry candidate list — same
+			// An explicit param is just a one-entry candidate list - same
 			// resolution path as the agent's `models:` list, so a bad override
 			// fails fast with the same clear error. No candidates at all means
 			// the child inherits pi's default model. External model names are
@@ -364,13 +364,13 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			const tools = params.tools ?? agentDef.tools;
 			// Worktree isolation: param beats frontmatter, default off. An
 			// explicit cwd contradicts "run in a fresh worktree" (the worktree
-			// IS the child's cwd) — but only when BOTH were explicitly passed
+			// IS the child's cwd) - but only when BOTH were explicitly passed
 			// is that a caller error. When the worktree flag merely comes from
 			// the agent's frontmatter default, an explicit cwd param wins, the
 			// same way params beat frontmatter for every other setting.
 			if (params.worktree && params.cwd) {
 				throw new Error(
-					"The `worktree` and `cwd` parameters cannot be combined — the worktree becomes the sub-agent's working directory.",
+					"The `worktree` and `cwd` parameters cannot be combined - the worktree becomes the sub-agent's working directory.",
 				);
 			}
 
@@ -386,7 +386,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 
 			const id = randomUUID().slice(0, 8);
 
-			// Resolve a non-worktree cwd now — it is pure (worktree directories
+			// Resolve a non-worktree cwd now - it is pure (worktree directories
 			// are only created at launch time): relative paths resolve against
 			// this session's cwd and a leading ~ expands.
 			let cwd: string | undefined;
@@ -458,7 +458,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			} catch (error) {
 				error = resolveLaunchCancellation(id, error) ?? error;
 				releaseClaim(id);
-				// The failed launch freed its slot — without this, queued work
+				// The failed launch freed its slot - without this, queued work
 				// behind it could sit forever with capacity free (nothing else
 				// triggers a drain until some running child exits).
 				requestDrain(pi);
@@ -469,12 +469,12 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 					const by = error.requester === "user" ? "by the user" : "because you cancelled it";
 					const cleanup = error.cleanupFailure ? `\n\n${error.cleanupFailure}` : "";
 					throw new Error(
-						`Sub-agent launch was cancelled ${by} before it started — nothing is running and no result will arrive.${cleanup}`,
+						`Sub-agent launch was cancelled ${by} before it started - nothing is running and no result will arrive.${cleanup}`,
 					);
 				}
 				if (error instanceof RequeueLaunch || error instanceof AbandonLaunch) {
 					throw new Error(
-						"Sub-agent launch was interrupted by a session reload/shutdown before it started — " +
+						"Sub-agent launch was interrupted by a session reload/shutdown before it started - " +
 							"nothing is running. Re-issue the call if the work is still needed.",
 					);
 				}
@@ -525,7 +525,7 @@ interface LaunchedSpawn {
 }
 
 /**
- * The launch pipeline — every side effect of starting a child, in rollback
+ * The launch pipeline - every side effect of starting a child, in rollback
  * scopes. Runs inline (a slot was free at call time) or from the queue drain
  * (capacity.ts), which is why it takes a pure spec instead of tool params: by
  * the time a queued launch runs, the tool call that created it is long gone.
@@ -539,7 +539,7 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 
 	// Resolve the working directory. Worktree mode asks the user-pluggable
 	// create command for a fresh directory; a plain cwd was already validated
-	// at call time but is re-checked — it can vanish while a launch queues.
+	// at call time but is re-checked - it can vanish while a launch queues.
 	let cwd: string;
 	let worktree: WorktreeInfo | undefined;
 	if (spec.useWorktree) {
@@ -562,14 +562,14 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 
 	// Everything below has side effects (files on disk, a tmux pane, a
 	// watcher). If any of it throws after a worktree was created, roll
-	// the worktree back — it is seconds old and provably clean, so
-	// removing it cannot destroy work — then rethrow the real error.
+	// the worktree back - it is seconds old and provably clean, so
+	// removing it cannot destroy work - then rethrow the real error.
 	try {
 		const childSessionFile = generateChildSessionFile(cwd);
 		mkdirSync(dirname(childSessionFile), { recursive: true });
 		// Fresh UUID paths make a leftover sidecar, activity, or result
 		// file impossible today, but the poller and the liveness reader
-		// trust these paths completely — keep them provably clean.
+		// trust these paths completely - keep them provably clean.
 		clearExitSidecar(childSessionFile);
 		clearActivityFile(childSessionFile);
 		clearExternalResult(childSessionFile);
@@ -578,9 +578,9 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 		// shows a readable entry: the header's parentSession nests the child
 		// under THIS session in threaded view, and the seeded display name
 		// ("subagent › <agent> › <name>") replaces the raw @file task text.
-		// Forked additionally copies the parent's conversation — as of LAUNCH
+		// Forked additionally copies the parent's conversation - as of LAUNCH
 		// time, so a fork that waited in the queue forks the parent as of when
-		// it actually starts — and records the seed's entry count so the
+		// it actually starts - and records the seed's entry count so the
 		// eventual summary can only come from turns the CHILD added.
 		// External children get NO session file at all: the path is only the
 		// anchor their sidecars sit next to, so it never appears in pi's
@@ -608,20 +608,20 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 
 		// The child session file now exists on disk, so from here until the
 		// pane is created, a failure (tmux gone, pane limits, disk errors)
-		// must delete the seed again — otherwise every failed spawn leaves a
+		// must delete the seed again - otherwise every failed spawn leaves a
 		// phantom named session in pi's picker. Pane creation starts the child
 		// immediately, so once createPane succeeds the child owns the file and
-		// deleting it would corrupt a live session — hence this exact try range.
+		// deleting it would corrupt a live session - hence this exact try range.
 		// (The outer catch then rolls back the worktree, if any.)
 		const scriptPath = join(spec.base, "scripts", `${spec.slug}-${spec.id}.sh`);
 		let paneId: string | undefined;
 		try {
-			// The task the child receives — always delivered as a file: multi-KB
+			// The task the child receives - always delivered as a file: multi-KB
 			// tasks never touch the shell command line, tasks starting with "-" or
 			// "@" can't be misparsed as CLI flags, and the exact text stays
 			// inspectable under artifacts/. Forked children already carry the
 			// conversation so they get the raw task; new children also get
-			// instructions about how their run ends — from the profile for
+			// instructions about how their run ends - from the profile for
 			// external children, whose panes have no pi control tools.
 			const fullTask =
 				spec.context === "forked"
@@ -638,7 +638,7 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 			writeFileSync(taskFile, fullTask, "utf8");
 
 			// The agent's body becomes an appended system prompt. We pass a FILE
-			// PATH — pi auto-reads existing paths for --append-system-prompt —
+			// PATH - pi auto-reads existing paths for --append-system-prompt -
 			// which sidesteps shell-escaping of multiline text entirely.
 			let systemPromptFile: string | undefined;
 			if (spec.agentBody !== "") {
@@ -688,7 +688,7 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 			// Launch-metadata sidecar: records the child's identity settings so
 			// subagent_resume can reapply them later (system prompt, tools,
 			// model, thinking, auto-exit, worktree, harness). Without this, a
-			// resumed agent silently loses its system prompt and restrictions —
+			// resumed agent silently loses its system prompt and restrictions -
 			// they live on the command line, not in the conversation. The cwd is
 			// recorded only for external children, which have no session header
 			// to read it back from.
@@ -757,7 +757,7 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 		return { paneId, childSessionFile, scriptPath, worktree };
 	} catch (error) {
 		// Best-effort rollback; removeWorktree never throws, and the
-		// original launch error is what the model needs to see — but a
+		// original launch error is what the model needs to see - but a
 		// rollback that ITSELF failed must not be silent, or the leaked
 		// worktree (and branch) would linger with zero signal anywhere.
 		// The warning is appended to the ORIGINAL error rather than thrown
@@ -768,7 +768,7 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 			const rollback = await removeWorktree(worktree, config.worktreeCleanupCommand);
 			if (rollback.status === "cleanup-failed") {
 				const cleanupFailure =
-					`Rolling back the worktree failed (${rollback.error}) — remove ${worktree.dir} manually.`;
+					`Rolling back the worktree failed (${rollback.error}) - remove ${worktree.dir} manually.`;
 				const warning = `\n\nAlso: ${cleanupFailure}`;
 				const cancelled = resolveLaunchCancellation(spec.id, error);
 				if (cancelled) {

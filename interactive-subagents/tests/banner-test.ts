@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { formatBannerLine } from "../banner.ts";
 
-const HUMAN_MODE = "⚠ human driving — next completed turn exits & reports to parent";
+const HUMAN_MODE = "⚠ human driving - next completed turn exits & reports to parent";
 const auto = { name: "recon", agent: "scout", autoExit: true, humanDriving: false };
 const interactive = { name: "recon", agent: "scout", autoExit: false, humanDriving: false };
 const human = { name: "recon", agent: "scout", autoExit: true, humanDriving: true };

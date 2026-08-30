@@ -1,4 +1,4 @@
-// Unit tests for harnesses.ts — the external-tool profile seam. The exact
+// Unit tests for harnesses.ts - the external-tool profile seam. The exact
 // command bytes matter: the pane runs them verbatim.
 import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -74,7 +74,7 @@ describe("harness registry", () => {
 });
 
 // Verified against Claude Code 2.1.214: --effort accepts exactly low,
-// medium, high, xhigh, max, and only WARNS on anything else — so the
+// medium, high, xhigh, max, and only WARNS on anything else - so the
 // profile must reject unmappable values itself.
 describe("claudeCodeProfile.mapEffort", () => {
 	it("minimal maps down to low", () => {

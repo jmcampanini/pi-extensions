@@ -1,5 +1,5 @@
 /**
- * running-widget.ts — lifecycle projection plus the compact widget controller.
+ * running-widget.ts - lifecycle projection plus the compact widget controller.
  *
  * widget.ts is the pure renderer. This file snapshots every lifecycle
  * registry, orders rows by attention priority then launch time, caps the

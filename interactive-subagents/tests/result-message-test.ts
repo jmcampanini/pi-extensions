@@ -41,7 +41,7 @@ const details = (
 	presentation: resultPresentation(status, 134, preview),
 });
 const stoppedDetails = {
-	...details("stopped", "Stopped by the user — no final result. Partial work may remain; expand for resume and worktree details."),
+	...details("stopped", "Stopped by the user - no final result. Partial work may remain; expand for resume and worktree details."),
 	resultTokens: undefined,
 };
 const longPreview = Array.from({ length: 40 }, (_, index) => `finding-${index}`).join(" ");

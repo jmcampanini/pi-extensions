@@ -221,7 +221,7 @@ describe("buildSubagentResultMessage", () => {
 
 	it("stopped presentation retains requester-specific fixed prose", () => {
 		assert.strictEqual(stopped.details.presentation.preview,
-			"Stopped by the user — no final result. Partial work may remain; expand for resume and worktree details.");
+			"Stopped by the user - no final result. Partial work may remain; expand for resume and worktree details.");
 	});
 
 	it("builder preserves compacted context telemetry only in details", () => {

@@ -1,10 +1,10 @@
 /**
- * text-fit.ts — width-fitting for TUI lines without `\x1b[0m` resets.
+ * text-fit.ts - width-fitting for TUI lines without `\x1b[0m` resets.
  *
  * pi-tui's truncateToWidth wraps its cut point and ellipsis in full SGR
  * resets. theme.bg() styles a card line by wrapping it once, so a mid-line
  * `[0m` also resets the background and everything after it renders on the
- * terminal default — the stray bright cells of issue #93. These helpers cut
+ * terminal default - the stray bright cells of issue #93. These helpers cut
  * without ever emitting `[0m`: attributes left open at the cut are closed
  * individually, leaving any enclosing background untouched.
  */

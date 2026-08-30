@@ -31,7 +31,7 @@ import { collectAgentInventory, formatAgentCatalogue, type AgentInfo } from "./a
 export const WAITING_CONTRACT =
 	"Sub-agent results arrive on their own: when a child finishes, its result is " +
 	"steered into this conversation and starts a new turn for you. Ending your " +
-	"turn is how you wait — delivery wakes you, and the work continues from " +
+	"turn is how you wait - delivery wakes you, and the work continues from " +
 	"there. While children run, work only on tasks that need nothing from them; " +
 	"when your next step depends on a result, tell the user in one line what you " +
 	"are waiting on and end your turn.";

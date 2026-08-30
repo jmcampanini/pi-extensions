@@ -1,5 +1,5 @@
 /**
- * command-available.ts — /subagent-available: the HUMAN's view of the agents.
+ * command-available.ts - /subagent-available: the HUMAN's view of the agents.
  *
  * Shows the inventory (description headline, resolved model, non-default
  * config, problems) as one card per agent in a widget above the editor. It
@@ -11,9 +11,9 @@
  * pi API in play: `pi.registerCommand(name, { description, handler })` adds
  * a /command the human can type. The handler gets the live ExtensionContext.
  * `ctx.ui.setWidget` with a COMPONENT FACTORY (instead of plain lines) gets
- * the real terminal width and theme at render time — that is what powers
+ * the real terminal width and theme at render time - that is what powers
  * the dot leaders, right-anchored source column, and colors (agents.ts does
- * the actual layout). `pi.on("input", ...)` fires on every submitted input —
+ * the actual layout). `pi.on("input", ...)` fires on every submitted input -
  * that's the auto-dismiss hook.
  */
 

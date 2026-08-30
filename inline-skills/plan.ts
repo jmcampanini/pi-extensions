@@ -15,7 +15,7 @@ const MENTION_PATTERN = /(?:^|\s)\$([a-z0-9-]+)(?=$|\s|[.,;:!?)}\]])/g;
  * since native /skill: expansion can only apply a single skill per message.
  */
 export function planSubmit(text: string, knownSkillNames: ReadonlySet<string>): SubmitPlan {
-	// A leading "/" is an explicit command, skill, or template invocation —
+	// A leading "/" is an explicit command, skill, or template invocation -
 	// pi's own expanders own it, and hoisting would double-prefix.
 	if (text.startsWith("/")) return { kind: "pass" };
 

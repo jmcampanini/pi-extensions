@@ -59,7 +59,7 @@ Cost: $0.13
 <result>
 ## Relevant Files
 
-- \`render.ts\` — **tag** logic
+- \`render.ts\` - **tag** logic
 </result>
 
 Resume: subagent_resume({ id: "c853bdcf", message: "..." })

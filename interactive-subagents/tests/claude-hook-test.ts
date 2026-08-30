@@ -1,4 +1,4 @@
-// Unit tests for claude-hook.mjs — run as a real subprocess (exactly how
+// Unit tests for claude-hook.mjs - run as a real subprocess (exactly how
 // Claude Code invokes it) with fixture stdin payloads, then assert on the
 // sidecar files through the SAME readers the parent supervisor uses.
 import { describe, it } from "node:test";

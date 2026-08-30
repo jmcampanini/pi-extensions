@@ -35,7 +35,7 @@ export function configFilePath(env: Env = process.env): string {
 
 function requireEnabled(value: unknown, source: string): boolean {
 	if (typeof value === "boolean") return value;
-	throw new Error(`${source}: invalid enabled ${JSON.stringify(value)} — use true or false`);
+	throw new Error(`${source}: invalid enabled ${JSON.stringify(value)} - use true or false`);
 }
 
 function requireObject(value: unknown, source: string, shape: string): Record<string, unknown> {
@@ -48,7 +48,7 @@ function requireObject(value: unknown, source: string, shape: string): Record<st
 function rejectUnknownKeys(raw: Record<string, unknown>, source: string, validKeys: readonly string[]): void {
 	const unknownKeys = Object.keys(raw).filter((key) => !validKeys.includes(key));
 	if (unknownKeys.length > 0) {
-		throw new Error(`${source}: unknown key(s) ${unknownKeys.join(", ")} — valid keys: ${validKeys.join(", ")}`);
+		throw new Error(`${source}: unknown key(s) ${unknownKeys.join(", ")} - valid keys: ${validKeys.join(", ")}`);
 	}
 }
 
@@ -65,14 +65,14 @@ function requireThresholdSpec(value: unknown, source: string): ThresholdSpec {
 	if (hasTokens) {
 		const tokens = raw.thresholdTokens;
 		if (typeof tokens !== "number" || !Number.isInteger(tokens) || tokens < 1) {
-			throw new Error(`${source}: invalid thresholdTokens ${JSON.stringify(tokens)} — use a positive integer`);
+			throw new Error(`${source}: invalid thresholdTokens ${JSON.stringify(tokens)} - use a positive integer`);
 		}
 		return { thresholdTokens: tokens };
 	}
 
 	const percent = raw.thresholdPercent;
 	if (typeof percent !== "number" || !Number.isInteger(percent) || percent < 1 || percent > 100) {
-		throw new Error(`${source}: invalid thresholdPercent ${JSON.stringify(percent)} — use an integer from 1 through 100`);
+		throw new Error(`${source}: invalid thresholdPercent ${JSON.stringify(percent)} - use an integer from 1 through 100`);
 	}
 	return { thresholdPercent: percent };
 }
@@ -89,7 +89,7 @@ function requireClasses(value: unknown, source: string): WindowClass[] {
 
 		const { windowMax, ...spec } = raw;
 		if (typeof windowMax !== "number" || !Number.isInteger(windowMax) || windowMax < 1) {
-			throw new Error(`${entrySource}: invalid windowMax ${JSON.stringify(windowMax)} — use a positive integer`);
+			throw new Error(`${entrySource}: invalid windowMax ${JSON.stringify(windowMax)} - use a positive integer`);
 		}
 
 		return { windowMax, ...requireThresholdSpec(spec, entrySource) };

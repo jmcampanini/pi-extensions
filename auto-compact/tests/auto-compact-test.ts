@@ -206,7 +206,7 @@ describe("registerAutoCompact", () => {
 		assert.strictEqual(inFlight.compactions.length, 1, "in-flight compaction suppresses duplicate requests");
 		assert.deepStrictEqual(
 			inFlight.notifications,
-			[{ message: "Context at 180k/200k (90%) — auto-compacting.", level: "info" }],
+			[{ message: "Context at 180k/200k (90%) - auto-compacting.", level: "info" }],
 			"trigger notification is posted once",
 		);
 		inFlight.compactions[0]?.onComplete?.({} as never);
@@ -256,7 +256,7 @@ describe("registerAutoCompact", () => {
 			[
 				{
 					message:
-						"Context at 180k/200k (90%) — auto-compaction deferred after the aborted run; it will run after the next completed run.",
+						"Context at 180k/200k (90%) - auto-compaction deferred after the aborted run; it will run after the next completed run.",
 					level: "info",
 				},
 			],
@@ -311,7 +311,7 @@ describe("registerAutoCompact", () => {
 			cancelled.notifications.at(-1),
 			{
 				message:
-					"Compaction cancelled — auto-compaction paused until the next successful compaction or model switch.",
+					"Compaction cancelled - auto-compaction paused until the next successful compaction or model switch.",
 				level: "info",
 			},
 			"cancellation is reported as an info pause, not a failure",

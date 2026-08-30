@@ -1,10 +1,10 @@
 /**
- * watcher.ts — per-child supervision, and the words the parent model hears.
+ * watcher.ts - per-child supervision, and the words the parent model hears.
  *
  * The spawn tools return immediately, so the detached promise started by
  * trackChild() is a child's ONLY supervisor: it polls for the exit, cleans
  * up the pane, and steers the outcome back into the parent conversation.
- * It must never reject silently — every path ends in either a steered
+ * It must never reject silently - every path ends in either a steered
  * message or a deliberate no-op. Exit paths that send a message first park
  * the child in state.ts's delivering map, so its widget row survives until
  * delivery.ts sees the message land; the silent no-op path never parks one.
@@ -13,7 +13,7 @@
  * the parent model asynchronously. `customType` tags the entry in the
  * session file (our E2E tests grep for it), `content` is the prose the
  * model reads, `display: true` also shows it in the TUI, and `details` is
- * machine-readable metadata persisted with the entry — the MODEL NEVER SEES
+ * machine-readable metadata persisted with the entry - the MODEL NEVER SEES
  * `details`, which is why the content prose must carry everything the model
  * needs (ids, paths, next steps): the prose IS the protocol.
  * `{ triggerTurn: true, deliverAs: "steer" }` makes the message start/steer
@@ -71,12 +71,12 @@ import { finishWorktree, type WorktreeInfo, type WorktreeOutcome } from "./workt
  * `details`, so this text must carry everything it needs to act: the path,
  * the branch, what happened to them, and the next step (merge, inspect, or
  * clean up by hand). Branch phrasing is omitted when the worktree was on a
- * detached HEAD (`branch` is the literal "HEAD" — there is no branch to name).
+ * detached HEAD (`branch` is the literal "HEAD" - there is no branch to name).
  */
 function worktreeNote(info: WorktreeInfo, outcome: WorktreeOutcome): string {
 	const branch = info.branch === "HEAD" ? undefined : info.branch;
 	if (outcome.status === "removed") {
-		// The cleanup contract only promises the worktree goes away — branch
+		// The cleanup contract only promises the worktree goes away - branch
 		// deletion is a property of the DEFAULT command, so name the branch
 		// without asserting its fate (a grove-style override may keep it).
 		return branch
@@ -86,11 +86,11 @@ function worktreeNote(info: WorktreeInfo, outcome: WorktreeOutcome): string {
 	if (outcome.status === "kept") {
 		// The wording branches on WHY it was kept: "kept at <dir>" would be a
 		// lie for a vanished directory, and `git merge` only helps once work
-		// is committed — uncommitted changes live only in the worktree itself.
+		// is committed - uncommitted changes live only in the worktree itself.
 		if (outcome.code === "vanished") {
-			return `Worktree: its directory ${info.dir} no longer exists — nothing was cleaned up.`;
+			return `Worktree: its directory ${info.dir} no longer exists - nothing was cleaned up.`;
 		}
-		const where = `Worktree: kept at ${info.dir}` + (branch ? ` on branch ${branch}` : "") + ` — ${outcome.reason}.`;
+		const where = `Worktree: kept at ${info.dir}` + (branch ? ` on branch ${branch}` : "") + ` - ${outcome.reason}.`;
 		if (outcome.code === "dirty") {
 			return (
 				`${where} Inspect the changes there` +
@@ -100,19 +100,19 @@ function worktreeNote(info: WorktreeInfo, outcome: WorktreeOutcome): string {
 		}
 		return `${where} Inspect or remove the worktree when you are done with it.`;
 	}
-	// cleanup-failed: say only what is observable — the command may have
+	// cleanup-failed: say only what is observable - the command may have
 	// removed the directory before failing, or done nothing at all.
 	return existsSync(info.dir)
-		? `Worktree: the cleanup command failed (${outcome.error}) — it is still at ${info.dir}` +
+		? `Worktree: the cleanup command failed (${outcome.error}) - it is still at ${info.dir}` +
 				(branch ? ` on branch ${branch}` : "") +
 				"; remove it manually."
 		: `Worktree: the cleanup command failed (${outcome.error}) after removing the directory` +
-				(branch ? ` — check for a leftover branch ${branch}.` : ".");
+				(branch ? ` - check for a leftover branch ${branch}.` : ".");
 }
 
 // ── the liveness steers ──────────────────────────────────────────────────
 // Edge-triggered: one stalled steer when a child ENTERS stalled (capped at 3
-// episodes per child), one recovered steer when it leaves — never a message
+// episodes per child), one recovered steer when it leaves - never a message
 // per tick. Interactive (non-auto-exit) children get neither: a human is
 // expected to be looking at the pane, and the widget still shows their state.
 
@@ -128,7 +128,7 @@ function canSteer(child: RunningSubagent, signal: AbortSignal): boolean {
 
 /**
  * Why the watchdog fired, as prose. When the reads themselves were healthy
- * (no 60s-old problem window) the stall is rule 6 — the child's program is
+ * (no 60s-old problem window) the stall is rule 6 - the child's program is
  * up but the prompted run never began; otherwise the last problem kind
  * decides. `tool` names that program ("pi", "claude-code") so the prose fits
  * every harness. The missing/foreign phrasing branches on whether a snapshot
@@ -155,7 +155,7 @@ function stalledReason(obs: ActivityObservation, nowMs: number, launchElapsed: s
 
 /** The "may be stalled" warning. Explicitly NOT a failure: the child is
  * still supervised, and a result or failure message still arrives when it
- * exits — the prose says so, because the prose is the protocol. */
+ * exits - the prose says so, because the prose is the protocol. */
 function sendStalledSteer(pi: ExtensionAPI, child: RunningSubagent, obs: ActivityObservation, nowMs: number): void {
 	const elapsedSeconds = Math.round((nowMs - child.startTime) / 1000);
 	const reason = stalledReason(obs, nowMs, humanElapsed(elapsedSeconds), child.harness ?? "pi");
@@ -321,7 +321,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 			// the same cost class as the sidecar check the tick already does.
 			onTick: () => {
 				const now = Date.now();
-				noteTick(obs, now); // clock-jump guard first — suspend/wake must not fake a stall
+				noteTick(obs, now); // clock-jump guard first - suspend/wake must not fake a stall
 				observeActivity(obs, readActivityFile(activityFile, child.id), now);
 				const status = computeStatus({
 					nowMs: now,
@@ -332,7 +332,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 					problemSinceMs: obs.problemSinceMs,
 				});
 
-				// Edge detection. lastStatus is watcher-PRIVATE memory — the
+				// Edge detection. lastStatus is watcher-PRIVATE memory - the
 				// widget and subagent_status recompute status from the same
 				// observation fields, so they can never disagree with us.
 				const previous = child.lastStatus ?? "starting";
@@ -353,7 +353,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 				} else if (previous === "stalled") {
 					// Leaving stalled: the all-clear goes out only when the
 					// warning did, and the latch clears even when the send is
-					// suppressed — no phantom notification queues up.
+					// suppressed - no phantom notification queues up.
 					if (child.stallSteerSent && canSteer(child, signal)) sendRecoveredSteer(pi, child, status);
 					child.stallSteerSent = false;
 				}
@@ -409,7 +409,7 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 	updateRunningWidget();
 	if (running.size > 0) refreshLayout();
 	startFinalizer(pi, record);
-	// The exit above released a concurrency slot — start queued launches.
+	// The exit above released a concurrency slot - start queued launches.
 	// (The silent-abort path earlier never drains: it only runs when this
 	// module generation is dying, and drainQueue no-ops on an aborted
 	// generation anyway; the replacement drains after adoption instead.)
