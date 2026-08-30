@@ -1,4 +1,4 @@
-// Unit tests for launch.ts — the single place child launch commands are built.
+// Unit tests for launch.ts - the single place child launch commands are built.
 // The exact command bytes matter: the E2E suite greps launch scripts for
 // `--model '...'` / `--thinking '...'`.
 import { after, describe, it } from "node:test";

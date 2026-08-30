@@ -1,5 +1,5 @@
 /**
- * worktree.ts — git worktree isolation for subagents.
+ * worktree.ts - git worktree isolation for subagents.
  *
  * A subagent can run in its own git worktree (own directory + own branch) so
  * parallel agents never trample each other's edits. Creation and cleanup are
@@ -18,12 +18,12 @@
  *     `>/dev/null 2>&1`) stalls the runner until the timeout fires.
  *
  * Cleanup is deliberately cautious: a worktree is only auto-removed when the
- * child SUCCEEDED and the worktree is provably clean — uncommitted changes,
+ * child SUCCEEDED and the worktree is provably clean - uncommitted changes,
  * untracked files, or a moved HEAD (i.e. the subagent committed work) all
  * count as "dirty", because removing the worktree AND its branch would
  * destroy that work. When git itself can't answer, we assume dirty and keep.
  *
- * Like models.ts, this is a leaf module: it does NOT import config.ts — the
+ * Like models.ts, this is a leaf module: it does NOT import config.ts - the
  * commands and cleanup mode arrive as parameters, so it unit-tests with a
  * throwaway git repo and no config fixtures.
  */
@@ -35,13 +35,13 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-/** Snapshot taken at creation time — everything cleanup needs later. */
+/** Snapshot taken at creation time - everything cleanup needs later. */
 export interface WorktreeInfo {
 	/** Absolute path to the worktree directory (the subagent's cwd). */
 	dir: string;
 	/** Branch checked out in the worktree; the literal "HEAD" means detached. */
 	branch: string;
-	/** Commit the worktree started on — HEAD moving off it counts as changes. */
+	/** Commit the worktree started on - HEAD moving off it counts as changes. */
 	baseCommit: string;
 	/** The parent session's cwd; the cleanup command runs from here. */
 	parentCwd: string;
@@ -56,10 +56,10 @@ const MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 
 /**
  * Turn an execFile failure into a plain Error that says what actually
- * happened. Node sets `killed` only when IT initiated the kill — i.e. our
+ * happened. Node sets `killed` only when IT initiated the kill - i.e. our
  * timeout fired; any other signal means the command crashed or was killed
  * from outside. The trimmed stderr rides along because it is usually the
- * only real clue (e.g. git's "not a git repository"). Exported for tests —
+ * only real clue (e.g. git's "not a git repository"). Exported for tests -
  * the timeout branch cannot be exercised through the 120s public timeouts.
  */
 export function describeExecError(error: unknown, what: string, timeoutMs: number): Error {
@@ -76,7 +76,7 @@ export function describeExecError(error: unknown, what: string, timeoutMs: numbe
 // ASYNC on purpose: this module runs inside pi's TUI process, and a sync
 // child call would freeze the whole interface for up to 120 seconds while a
 // slow create command fetches. Failures become plain Errors that carry the
-// exit code and the command's trimmed stderr — that stderr is usually the
+// exit code and the command's trimmed stderr - that stderr is usually the
 // only clue to what went wrong (e.g. git's "not a git repository").
 async function runCommand(
 	what: string,
@@ -97,7 +97,7 @@ async function runCommand(
 
 // Local git reads (status, rev-parse) are ALSO async: they run inside pi's
 // TUI process, and `git status` on a freshly created worktree has a cold stat
-// cache — seconds on a big repo, which would freeze rendering if run sync.
+// cache - seconds on a big repo, which would freeze rendering if run sync.
 // stderr is captured (not inherited) so git's chatter never leaks into the
 // TUI, and failures go through the same honest classifier as the commands.
 async function gitOutput(dir: string, args: string[]): Promise<string> {
@@ -132,7 +132,7 @@ export function lastNonEmptyLine(text: string): string | null {
 /**
  * Run the create command and validate what it produced: the printed path must
  * exist, be a directory, and be a git work tree (we need a branch/baseCommit
- * snapshot for the dirty check at cleanup time). Any violation throws — the
+ * snapshot for the dirty check at cleanup time). Any violation throws - the
  * spawn fails fast before a pane ever opens.
  */
 export async function createWorktree(opts: {
@@ -162,7 +162,7 @@ export async function createWorktree(opts: {
 		throw new Error(`worktree create command printed "${line}" but ${dir} does not exist or is not a directory`);
 	}
 
-	// Snapshot the branch and base commit NOW — the dirty check at cleanup
+	// Snapshot the branch and base commit NOW - the dirty check at cleanup
 	// compares against these. `--abbrev-ref HEAD` prints the literal "HEAD"
 	// when the worktree is detached.
 	let branch: string;
@@ -172,19 +172,19 @@ export async function createWorktree(opts: {
 		baseCommit = await gitOutput(dir, ["rev-parse", "HEAD"]);
 	} catch (error) {
 		// Keep git's own words: an unborn HEAD (e.g. `git worktree add
-		// --orphan`) IS a git work tree, just unusable here — the dirty check
+		// --orphan`) IS a git work tree, just unusable here - the dirty check
 		// needs a base commit to compare against.
 		const detail = error instanceof Error ? error.message : String(error);
 		throw new Error(
-			`worktree create command printed ${dir}, but snapshotting HEAD there failed — ` +
+			`worktree create command printed ${dir}, but snapshotting HEAD there failed - ` +
 				`not a git work tree, or it has no commits yet (the dirty check needs a base commit): ${detail}`,
 		);
 	}
 
 	// A misconfigured command that echoes the PARENT checkout would silently
-	// defeat isolation (the child would edit the shared tree) — and cleanup
+	// defeat isolation (the child would edit the shared tree) - and cleanup
 	// could later try to remove the parent's own worktree. Fail fast instead.
-	// When the parent cwd is not itself in a git work tree, skip the check —
+	// When the parent cwd is not itself in a git work tree, skip the check -
 	// there is nothing to collide with.
 	let sameAsParent = false;
 	try {
@@ -195,7 +195,7 @@ export async function createWorktree(opts: {
 	}
 	if (sameAsParent) {
 		throw new Error(
-			`worktree create command printed ${dir}, which is the parent checkout itself — ` +
+			`worktree create command printed ${dir}, which is the parent checkout itself - ` +
 				`it must create a FRESH worktree (its own directory and branch), not reuse the current one`,
 		);
 	}
@@ -208,10 +208,10 @@ export async function createWorktree(opts: {
 /**
  * "Dirty" means the subagent left work behind, in any form: uncommitted or
  * untracked files (`git status --porcelain` non-empty) OR a HEAD that moved
- * off the creation-time base commit — a subagent that COMMITTED its work has
+ * off the creation-time base commit - a subagent that COMMITTED its work has
  * a clean status, and auto-removing the worktree + branch would destroy it.
  * THROWS when git itself fails (directory deleted mid-check, corruption, a
- * timed-out status) — finishWorktree turns that into its own honest "kept"
+ * timed-out status) - finishWorktree turns that into its own honest "kept"
  * reason instead of this function silently claiming "it has changes".
  */
 export async function isWorktreeDirty(info: WorktreeInfo): Promise<boolean> {
@@ -231,7 +231,7 @@ export type WorktreeOutcome =
 	| { status: "cleanup-failed"; error: string };
 
 /**
- * Run the cleanup command UNCONDITIONALLY (no dirty check — that's
+ * Run the cleanup command UNCONDITIONALLY (no dirty check - that's
  * finishWorktree's job). Also used by the spawn path to roll back a
  * seconds-old worktree when the launch fails after creation. A failing
  * command becomes a "cleanup-failed" outcome instead of a throw, so callers
@@ -243,7 +243,7 @@ export async function removeWorktree(info: WorktreeInfo, command: string): Promi
 			cwd: info.parentCwd,
 			env: {
 				PI_SUBAGENT_WORKTREE_DIR: info.dir,
-				// Detached worktrees have no branch to delete — the contract is
+				// Detached worktrees have no branch to delete - the contract is
 				// an EMPTY string, which the default command's `[ -n ]` guard skips.
 				PI_SUBAGENT_WORKTREE_BRANCH: info.branch === "HEAD" ? "" : info.branch,
 			},
@@ -257,7 +257,7 @@ export async function removeWorktree(info: WorktreeInfo, command: string): Promi
 
 /**
  * End-of-run policy: decide whether the worktree should be removed, and do
- * it. Never throws — this runs right before the result message is delivered
+ * it. Never throws - this runs right before the result message is delivered
  * to the parent, and cleanup problems must not block that.
  *
  * Kept (in decision order) when: the directory already vanished, the mode is

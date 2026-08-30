@@ -37,7 +37,7 @@ Effect of the defaults across common context windows:
 
 Pi performs its native compaction check before the extension evaluates usage at `agent_settled`. Native compaction can be disabled and its reserved-token setting is configurable, but those effective settings are not exposed to extensions. Auto Compact therefore does not predict Pi's threshold: when native compaction runs, the resulting unknown or reduced usage prevents a duplicate request; when usage remains at or above the configured Auto Compact threshold, the extension compacts it.
 
-When Pi reports an actual native threshold compaction, the extension posts a one-time warning for that model. A single large run can cross both thresholds, so repeated warnings—not one occurrence—suggest that the configured threshold is at or past Pi's native point. The adaptive-footer `compact @` chip shows the configured Auto Compact threshold followed by current progress toward it, and its context color bands also follow that target. Pi may compact earlier according to its own settings.
+When Pi reports an actual native threshold compaction, the extension posts a one-time warning for that model. A single large run can cross both thresholds, so repeated warnings-not one occurrence-suggest that the configured threshold is at or past Pi's native point. The adaptive-footer `compact @` chip shows the configured Auto Compact threshold followed by current progress toward it, and its context color bands also follow that target. Pi may compact earlier according to its own settings.
 
 ## When compaction runs
 
@@ -45,7 +45,7 @@ The threshold is evaluated at `agent_settled`, after the current agent workflow 
 
 The extension observes `agent_end` only to detect an aborted run. If the run was aborted, threshold compaction is deferred until the next completed workflow. Pi retains its own native compaction and overflow behavior according to its settings.
 
-Unknown context usage never triggers compaction. A compaction already in progress is not duplicated. After a threshold compaction failure, further attempts are disabled until a successful compaction or model switch prevents a retry loop. Cancelling an in-progress auto-compaction engages the same latch — reported as an informational pause rather than an error — so a declined compaction is not immediately re-requested. While the latch is engaged, the extension publishes an `auto-compact` status entry, which the adaptive-footer compact chip renders as paused.
+Unknown context usage never triggers compaction. A compaction already in progress is not duplicated. After a threshold compaction failure, further attempts are disabled until a successful compaction or model switch prevents a retry loop. Cancelling an in-progress auto-compaction engages the same latch - reported as an informational pause rather than an error - so a declined compaction is not immediately re-requested. While the latch is engaged, the extension publishes an `auto-compact` status entry, which the adaptive-footer compact chip renders as paused.
 
 ## Configuration
 

@@ -35,7 +35,7 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 		const status = `${formatTokens(usage.tokens)}/${formatTokens(usage.contextWindow)} (${percent}%)`;
 		if (lastRunAborted) {
 			ctx.ui.notify(
-				`Context at ${status} — auto-compaction deferred after the aborted run; it will run after the next completed run.`,
+				`Context at ${status} - auto-compaction deferred after the aborted run; it will run after the next completed run.`,
 				"info",
 			);
 			return;
@@ -44,7 +44,7 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 		if (!ctx.isIdle() || ctx.hasPendingMessages()) return;
 
 		inFlight = true;
-		ctx.ui.notify(`Context at ${status} — auto-compacting.`, "info");
+		ctx.ui.notify(`Context at ${status} - auto-compacting.`, "info");
 		return new Promise<void>((resolve) => {
 			const finishCompaction = () => {
 				inFlight = false;
@@ -59,7 +59,7 @@ export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompac
 					if (ctx.hasUI) ctx.ui.setStatus(AUTO_COMPACT_STATUS_KEY, "auto-compact paused");
 					if (/cancelled/i.test(error.message)) {
 						ctx.ui.notify(
-							"Compaction cancelled — auto-compaction paused until the next successful compaction or model switch.",
+							"Compaction cancelled - auto-compaction paused until the next successful compaction or model switch.",
 							"info",
 						);
 					} else {

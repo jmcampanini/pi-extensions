@@ -46,4 +46,4 @@ The default recognizes explicit `issue` and `issues` markers such as `feature/is
 
 ## Extension statuses
 
-Statuses published by other extensions render on a third footer line. Three keys are promoted out of that line: `elapsed-time` becomes its own right-aligned component, `fast-openai` folds into the runtime identity, and `auto-compact` folds into the compact-target as the paused marker. Promoting another status requires four edits in `index.ts` — the status-key import, the `ownedKeys` list in `partitionFooterStatuses`, its return record, and the render wiring. Miss the owned-keys entry and the status renders twice.
+Statuses published by other extensions render on a third footer line. Three keys are promoted out of that line: `elapsed-time` becomes its own right-aligned component, `fast-openai` folds into the runtime identity, and `auto-compact` folds into the compact-target as the paused marker. Promoting another status requires four edits in `index.ts` - the status-key import, the `ownedKeys` list in `partitionFooterStatuses`, its return record, and the render wiring. Miss the owned-keys entry and the status renders twice.

@@ -373,7 +373,7 @@ describe("formatRunningWidgetLines", () => {
 		assert.strictEqual(narrowState[1].length <= 30, true);
 	});
 
-	// no width may overflow — pi's TUI crashes on a widget line wider than the
+	// no width may overflow - pi's TUI crashes on a widget line wider than the
 	// terminal. Worst case: long tag, both marks, H:MM:SS clock, long name.
 	it("no line ever exceeds the render width", () => {
 		const overflowRows = [
@@ -404,7 +404,7 @@ describe("formatRunningWidgetLines", () => {
 	// ── v2 liveness: the status segment ──────────────────────────────────────
 
 	// A row without a status renders byte-identical to the v1 row even when the
-	// other segment fields are present — the whole v1 block above is the oracle.
+	// other segment fields are present - the whole v1 block above is the oracle.
 	it("rows without status retain the identity-name-clock layout", () => {
 		const v2NoStatusRows: WidgetRow[] = [
 			{ name: "Scout: Auth", agent: "scout", elapsedSeconds: 23, toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 },
@@ -529,7 +529,7 @@ describe("formatRunningWidgetLines", () => {
 	});
 
 	// Mixed tiers at ONE width: a full-segment row and a stalled row sharing a
-	// tagWidth — every line exactly the width, both clocks on the right edge.
+	// tagWidth - every line exactly the width, both clocks on the right edge.
 	const mixedTier = formatRunningWidgetLines(mixedTierRows, 60);
 
 	it("mixed tiers: full-segment row", () => {
@@ -580,7 +580,7 @@ describe("formatRunningWidgetLines", () => {
 		assert.strictEqual(warnFallback[2].includes(`<D>stalled${" ".repeat(7)}</D><D> · </D><D>01:12</D> `), true);
 	});
 
-	// Tool part renders only while active — waiting rows keep the tokens alone.
+	// Tool part renders only while active - waiting rows keep the tokens alone.
 	const waitingTool = formatRunningWidgetLines(
 		[{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting",
 		   toolName: "bash", toolElapsedSeconds: 9, contextTokens: 6_000 }] as WidgetRow[], 60);
@@ -705,7 +705,7 @@ describe("formatRunningWidgetLines", () => {
 
 	// Tabs/newlines/CRs in child-controlled text become single spaces: the shared
 	// sanitizer whitelists them for multi-line surfaces, but this renderer emits
-	// one terminal row per child — a surviving tab is 3 columns in pi-tui (fatal
+	// one terminal row per child - a surviving tab is 3 columns in pi-tui (fatal
 	// overflow) and a raw \n or \r corrupts the TUI's row accounting.
 	const whitespaceRows = formatRunningWidgetLines(
 		[{ name: "Au\tth", agent: "sc\nout", elapsedSeconds: 192, status: "active",
@@ -770,8 +770,8 @@ describe("formatRunningWidgetLines", () => {
 	});
 
 	// Width sweep with the v2 worst case: the longest possible segment on the
-	// long-tag long-name row, plus a stalled row. No width — including negative
-	// widths — may ever overflow (pi's TUI crashes on an overflowing line).
+	// long-tag long-name row, plus a stalled row. No width - including negative
+	// widths - may ever overflow (pi's TUI crashes on an overflowing line).
 	const v2OverflowRows: WidgetRow[] = [
 		{ name: "a very long task name that cannot possibly fit", agent: "code-reviewer", elapsedSeconds: 3723,
 		  forked: true, worktree: true, status: "active", toolName: "twelvechartool",

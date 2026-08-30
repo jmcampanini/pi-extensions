@@ -1,5 +1,5 @@
 /**
- * interactive-subagents — spawn sub-agents as real pi sessions in tmux panes.
+ * interactive-subagents - spawn sub-agents as real pi sessions in tmux panes.
  *
  * The parent model calls the `subagent_spawn` tool, which RETURNS IMMEDIATELY.
  * The child runs as a full `pi` process in its own tmux pane (watch it, or
@@ -16,7 +16,7 @@
  *                 ◀─── reads ─────  <session>.jsonl       ◀──  pi (the transcript)
  *   pi.sendMessage(steer) → parent model wakes with the result
  *
- * Where to find things — one file per job:
+ * Where to find things - one file per job:
  *
  *   protocol.ts          the parent↔child contract (env vars + .exit sidecar)
  *   config.ts            layered settings (defaults < subagents.json < env), fail-fast
@@ -94,13 +94,13 @@ export default function (pi: ExtensionAPI) {
 			// reaper must be armed for them even with nothing running.
 			prepareForReload((children) => {
 				for (const child of children) closePane(child.paneId);
-				// The reaper only fires when no replacement adopted — the
+				// The reaper only fires when no replacement adopted - the
 				// extension is gone, so queued launches can never start.
 				clearQueueForShutdown();
 			}, undefined, queuedCount() + pendingLaunchCount() > 0);
 			return;
 		}
-		// Destructive boundary: queued children never existed — drop them.
+		// Destructive boundary: queued children never existed - drop them.
 		clearQueueForShutdown();
 		for (const child of resetForShutdown()) closePane(child.paneId);
 	});

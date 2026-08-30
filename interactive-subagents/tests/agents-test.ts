@@ -1,5 +1,5 @@
-// Unit tests for agents.ts — definition parsing, project-shadows-global
-// loading, and the inventory (including how model problems are reported) —
+// Unit tests for agents.ts - definition parsing, project-shadows-global
+// loading, and the inventory (including how model problems are reported) -
 // plus catalogue.ts's system-prompt injection of the catalogue and the
 // waiting contract.
 //
@@ -95,7 +95,7 @@ describe("definition parsing", () => {
 	});
 
 	it("invalid context problem suggests the valid values", () => {
-		assert.strictEqual(badcontext.problems[0], 'invalid context "shared" — use "new" or "forked"');
+		assert.strictEqual(badcontext.problems[0], 'invalid context "shared" - use "new" or "forked"');
 	});
 
 	it("CRLF frontmatter still parses", () => {
@@ -241,7 +241,7 @@ describe("descriptionHeadline", () => {
 
 // Hostile shapes for the overview: a long agent name (eats the tag column), a
 // long tools allowlist (single meta part wider than the body). The width
-// contract is HARD — pi-tui treats an overlong rendered line as fatal — so
+// contract is HARD - pi-tui treats an overlong rendered line as fatal - so
 // every width must fit, down to absurd ones.
 writeFileSync(
 	join(globalDefs, "toolsy.md"),
@@ -376,7 +376,7 @@ describe("worktree frontmatter", () => {
 	});
 
 	it("any other value is a problem, not a silent default", () => {
-		// e.g. YAML's `yes` — spawning without isolation is exactly the hazard
+		// e.g. YAML's `yes` - spawning without isolation is exactly the hazard
 		// the flag prevents.
 		assert.strictEqual(sloppy.worktree, undefined, "worktree invalid value = undefined");
 		assert.strictEqual(sloppy.problems.length, 1, "worktree invalid value reported as problem");
@@ -392,7 +392,7 @@ describe("worktree frontmatter", () => {
 	});
 
 	it("overview tags exactly the one worktree agent", () => {
-		// The overview's meta row tags only agents that opted in — for an agent
+		// The overview's meta row tags only agents that opted in - for an agent
 		// whose only deviation is the worktree, the row is exactly "worktree".
 		const worktreeLines = formatAgentOverviewLines(withWorktree, 78, dirs);
 		assert.strictEqual(worktreeLines.filter((l) => l.trim() === "worktree").length, 1);
@@ -643,7 +643,7 @@ describe("the model-facing catalogue", () => {
 	});
 
 	it("control characters are stripped, not just flattened", () => {
-		// ANSI sequences, bells, and bare ESC bytes — the whitespace collapse
+		// ANSI sequences, bells, and bare ESC bytes - the whitespace collapse
 		// alone would let them ride into the parent's system prompt.
 		const controlCatalogue = formatAgentCatalogue([
 			info({ name: "sneakier", description: "x\u0007y \u001b[31mz \u001bw" }),

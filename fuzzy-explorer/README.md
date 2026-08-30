@@ -8,9 +8,9 @@ Open it with `/fuzzy-explorer`. It only reads `sessionManager.getBranch()` and n
 
 Plain terms are ANDed. Each term fuzzy-matches a block's short search key (kind, tool name, title, and argument subtitle), or substring-matches the complete text stored in a message/result body. Separators (`- _ . / :`) are normalized with a small ranking penalty, so `sub-agent` finds `subagent` and vice versa.
 
-- `is:user`, `is:assistant`, `is:tool`, `is:bash`, `is:custom`, `is:summary` — fuzzy patterns, so `is:s` keeps summaries and assistants
+- `is:user`, `is:assistant`, `is:tool`, `is:bash`, `is:custom`, `is:summary` - fuzzy patterns, so `is:s` keeps summaries and assistants
 - `tool:read`, `tool:bash`, or a fuzzy fragment of another tool name
-- `any:toolu_01` — substring search across everything indexed (arguments, tool call ids, entry ids, timestamps, full body) for hunting concrete needles
+- `any:toolu_01` - substring search across everything indexed (arguments, tool call ids, entry ids, timestamps, full body) for hunting concrete needles
 
 Paths stay intact, so `src/config.ts` is one term. Unknown operators are treated as plain terms.
 
@@ -22,7 +22,7 @@ List mode uses arrows or `j`/`k`, `u`/`d` to page, `g`/`G` for first/last, `/` t
 
 Detail mode uses arrows or `j`/`k` to scroll, `u`/`d` to page, `J`/`K` to visit adjacent filtered blocks, `y`/`o` for actions, and `h`, `q`, or Escape to return to the list.
 
-Detail content renders as markdown for the block kinds Pi's transcript renders that way — assistant text, user text, summaries, custom messages — plus `subagent_*` tool blocks; other tool and bash output stays raw. `m` toggles rendered/raw for the current block. `y` copy and `o` open always use the raw stored text.
+Detail content renders as markdown for the block kinds Pi's transcript renders that way - assistant text, user text, summaries, custom messages - plus `subagent_*` tool blocks; other tool and bash output stays raw. `m` toggles rendered/raw for the current block. `y` copy and `o` open always use the raw stored text.
 
 Subagent traffic gets structured treatment (via the shared envelope contract in `shared/subagent-envelope.ts`): spawn/resume rows show `name=… agent=…` metadata while the preview and detail show the full task prompt. Result rows keep name, agent, and status first, followed by the remaining envelope fields in canonical order. Rendered result previews and details show the delivered response first, unwrapped from its `<result>` markers, then a `result details` divider and an aligned metadata table containing the action, session, and worktree tail. Bounded previews keep the response and clip trailing table rows first; raw mode, copy, and open keep the stored envelope unchanged.
 

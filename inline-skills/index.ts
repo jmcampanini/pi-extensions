@@ -17,7 +17,7 @@ export function registerInlineSkills(pi: ExtensionAPI): void {
 			// message passes through untransformed rather than vanishing.
 			if (!ctx.hasUI) return { action: "continue" };
 			ctx.ui.notify(
-				`inline-skills: one skill per message — found ${plan.names.map((name) => `$${name}`).join(", ")}. Edit and resend.`,
+				`inline-skills: one skill per message - found ${plan.names.map((name) => `$${name}`).join(", ")}. Edit and resend.`,
 				"error",
 			);
 			ctx.ui.setEditorText(event.text);

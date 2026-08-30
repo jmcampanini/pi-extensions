@@ -72,7 +72,7 @@ describe("computeStatus", () => {
 
 	// A stale-pair problem window (observeActivity's kind "stale": the child
 	// clock stepped backwards and its writes are time-stamped before the
-	// accepted pair) stalls through the same rule-1 debounce — even while the
+	// accepted pair) stalls through the same rule-1 debounce - even while the
 	// frozen accepted snapshot still says active, and even with the latch set.
 	it("rule 1: 60s of stale reads overrides an accepted ACTIVE snapshot", () => {
 		assert.strictEqual(

@@ -56,8 +56,8 @@ describe("seedNewSession", () => {
 		assert.ok(typeof newEntries[1].id === "string" && (newEntries[1].id as string).length === 36, "A6 full-uuid id");
 	});
 
-	// Names are sanitized the way pi's own rename sanitizes them — newlines
-	// flattened to spaces — before they reach the session file.
+	// Names are sanitized the way pi's own rename sanitizes them - newlines
+	// flattened to spaces - before they reach the session file.
 	it("flattens newlines in names the way pi's rename does", () => {
 		const multilineFile = join(testRoot, "multiline.jsonl");
 		seedNewSession({
@@ -106,7 +106,7 @@ describe("seedForkSession", () => {
 	});
 
 	// A CORRUPT trailing line in the copied conversation must not become the
-	// name entry's parent — the name links to the last PARSEABLE entry, the
+	// name entry's parent - the name links to the last PARSEABLE entry, the
 	// same one pi treats as the leaf when it skips the corrupt line.
 	it("links the name past a corrupt trailing line to the last parseable entry", () => {
 		const corruptForkParent = join(testRoot, "corrupt-fork-parent.jsonl");

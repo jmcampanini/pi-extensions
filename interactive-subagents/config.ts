@@ -1,12 +1,12 @@
 /**
- * config.ts — extension configuration.
+ * config.ts - extension configuration.
  *
  * Settings resolve in three layers, later wins:
  *
  *   built-in defaults  <  config file  <  environment variables
  *
  * The config file is `subagents.json` in pi's config root
- * ($PI_CODING_AGENT_DIR, default ~/.pi/agent) — matching the `subagents/`
+ * ($PI_CODING_AGENT_DIR, default ~/.pi/agent) - matching the `subagents/`
  * directory the agent definitions live in. A missing file is fine (defaults apply); a
  * MALFORMED file or env value throws, and because `config` below is built at
  * module import, that failure happens at EXTENSION LOAD TIME: pi refuses to
@@ -43,7 +43,7 @@ export interface SubagentsConfig {
 	worktreeCleanupMode: "auto" | "never";
 }
 
-// The default worktree commands are plain shell strings — they double as
+// The default worktree commands are plain shell strings - they double as
 // documentation of the contract a replacement command must follow (users
 // override them to plug in tools like `grove`).
 //
@@ -54,7 +54,7 @@ export interface SubagentsConfig {
 export const DEFAULT_WORKTREE_CREATE_COMMAND = `ROOT="$(git rev-parse --show-toplevel)" && WT="$ROOT/.pi/worktrees/$PI_SUBAGENT_WORKTREE_NAME" && mkdir -p "$ROOT/.pi/worktrees" && printf '*\\n' >"$ROOT/.pi/worktrees/.gitignore" && git worktree add -b "pi/$PI_SUBAGENT_WORKTREE_NAME" "$WT" >&2 && echo "$WT"`;
 
 // Cleanup: gets PI_SUBAGENT_WORKTREE_DIR and PI_SUBAGENT_WORKTREE_BRANCH
-// (empty string when the worktree was on a detached HEAD — the `[ -n ]`
+// (empty string when the worktree was on a detached HEAD - the `[ -n ]`
 // guard skips branch deletion in that case).
 export const DEFAULT_WORKTREE_CLEANUP_COMMAND = `git worktree remove "$PI_SUBAGENT_WORKTREE_DIR" >&2 && if [ -n "$PI_SUBAGENT_WORKTREE_BRANCH" ]; then git branch -D "$PI_SUBAGENT_WORKTREE_BRANCH" >&2; fi`;
 
@@ -87,13 +87,13 @@ export function configFilePath(env: Env = process.env): string {
 
 function requireLayout(value: unknown, source: string): SubagentsConfig["layout"] {
 	if (value === "main" || value === "window" || value === "off") return value;
-	throw new Error(`${source}: invalid layout ${JSON.stringify(value)} — valid values: main, window, off`);
+	throw new Error(`${source}: invalid layout ${JSON.stringify(value)} - valid values: main, window, off`);
 }
 
 function requireMainWidth(value: unknown, source: string): string {
 	if (typeof value === "string" && /^\d+%?$/.test(value.trim())) return value.trim();
 	throw new Error(
-		`${source}: invalid mainWidth ${JSON.stringify(value)} — use a percentage like "60%" or columns like "120"`,
+		`${source}: invalid mainWidth ${JSON.stringify(value)} - use a percentage like "60%" or columns like "120"`,
 	);
 }
 
@@ -102,7 +102,7 @@ function requireMainWidth(value: unknown, source: string): string {
 function requireMaxConcurrent(value: unknown, source: string): number {
 	if (typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 9) return value;
 	throw new Error(
-		`${source}: invalid maxConcurrentSubagents ${JSON.stringify(value)} — use an integer from 1 through 9`,
+		`${source}: invalid maxConcurrentSubagents ${JSON.stringify(value)} - use an integer from 1 through 9`,
 	);
 }
 
@@ -113,7 +113,7 @@ function requirePreviewLines(value: unknown, source: string): number {
 
 function requirePositiveInteger(value: unknown, source: string): number {
 	if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
-	throw new Error(`${source}: invalid value ${JSON.stringify(value)} — use a positive integer`);
+	throw new Error(`${source}: invalid value ${JSON.stringify(value)} - use a positive integer`);
 }
 
 function coerceNumericEnvValue(value: string): number | string {
@@ -122,16 +122,16 @@ function coerceNumericEnvValue(value: string): number | string {
 }
 
 // Shared by both worktree commands: any non-empty string is a valid shell
-// command (we can't validate shell syntax here — bash reports that at run
+// command (we can't validate shell syntax here - bash reports that at run
 // time), but an empty/blank value would silently do nothing, so reject it.
 function requireCommandString(value: unknown, source: string): string {
 	if (typeof value === "string" && value.trim() !== "") return value;
-	throw new Error(`${source}: invalid command ${JSON.stringify(value)} — use a non-empty shell command string`);
+	throw new Error(`${source}: invalid command ${JSON.stringify(value)} - use a non-empty shell command string`);
 }
 
 function requireWorktreeCleanupMode(value: unknown, source: string): SubagentsConfig["worktreeCleanupMode"] {
 	if (value === "auto" || value === "never") return value;
-	throw new Error(`${source}: invalid worktreeCleanupMode ${JSON.stringify(value)} — valid values: auto, never`);
+	throw new Error(`${source}: invalid worktreeCleanupMode ${JSON.stringify(value)} - valid values: auto, never`);
 }
 
 // ── loading ──────────────────────────────────────────────────────────────
@@ -153,11 +153,11 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 		}
 		const file = raw as Record<string, unknown>;
 
-		// Unknown keys are almost always typos — reject them by name.
+		// Unknown keys are almost always typos - reject them by name.
 		const unknownKeys = Object.keys(file).filter((key) => !(key in DEFAULTS));
 		if (unknownKeys.length > 0) {
 			throw new Error(
-				`${filePath}: unknown key(s) ${unknownKeys.join(", ")} — valid keys: ${Object.keys(DEFAULTS).join(", ")}`,
+				`${filePath}: unknown key(s) ${unknownKeys.join(", ")} - valid keys: ${Object.keys(DEFAULTS).join(", ")}`,
 			);
 		}
 
@@ -253,5 +253,5 @@ export function loadConfig(env: Env = process.env): SubagentsConfig {
 	return result;
 }
 
-/** The resolved configuration — built (and validated) at extension load. */
+/** The resolved configuration - built (and validated) at extension load. */
 export const config = loadConfig();

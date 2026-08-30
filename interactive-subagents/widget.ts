@@ -1,5 +1,5 @@
 /**
- * widget.ts — rendering the running-subagents widget.
+ * widget.ts - rendering the running-subagents widget.
  *
  * Each row starts with an unbracketed agent identifier, padded to the widest
  * visible identifier, followed by only the marker columns used by visible
@@ -55,13 +55,13 @@ export interface WidgetStyle {
 	slot?: (text: string) => string;
 	/** Applied to the status segment when status is "stalled" (pi passes the
 	 * theme's warning color, same precedent as the implant banner). Falls
-	 * back to `dim` — one visual voice for telemetry; stalled is the only
+	 * back to `dim` - one visual voice for telemetry; stalled is the only
 	 * state that should pop. */
 	warn?: (text: string) => string;
 }
 
 export interface WidgetRow {
-	/** Display name — the `name` the model chose at spawn time. */
+	/** Display name - the `name` the model chose at spawn time. */
 	name: string;
 	/** Agent type ("worker", "scout", …). Missing only when a resume found no
 	 * `.meta` launch metadata (a session not launched by this extension). */
@@ -78,8 +78,8 @@ export interface WidgetRow {
 	/** Live status computed by the parent's watcher. All four segment fields
 	 * are optional; without a status the row uses only identity, task, markers,
 	 * and elapsed time. Two states never come from computeStatus: "delivering" (exit lifecycle
-	 * — the child has exited and its result message is still queued for the
-	 * parent) and "queued" (pre-launch — the child is waiting for a
+	 * - the child has exited and its result message is still queued for the
+	 * parent) and "queued" (pre-launch - the child is waiting for a
 	 * concurrency slot, see capacity.ts). The controller passes no tool/token
 	 * telemetry with either. Stopped deliveries use "stopped" for human
 	 * surfaces while remaining model-facing "delivering" lifecycle entries. */
@@ -142,7 +142,7 @@ export function formatElapsed(totalSeconds: number): string {
 }
 
 /** Coarse tool-run duration for the status segment: `42s` / `7m` / `1h3m`.
- * Deliberately coarser than the row clock — the segment is telemetry, and
+ * Deliberately coarser than the row clock - the segment is telemetry, and
  * a bounded width keeps the layout ladder's worst case predictable. */
 export function formatToolElapsed(totalSeconds: number): string {
 	// Clamp and floor: the input is a parent-side estimate that can be
@@ -158,7 +158,7 @@ export function formatToolElapsed(totalSeconds: number): string {
 /** Compact token counts. The tiers are copied EXACTLY from pi's own footer
  * (pi-coding-agent dist/modes/interactive/components/footer.js), not
  * hand-rolled, so a child's numbers read like the numbers the human sees in
- * their own footer — decimal below 10k, which is where small children live. */
+ * their own footer - decimal below 10k, which is where small children live. */
 export function formatTokens(count: number): string {
 	if (count < 1000) return count.toString();
 	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
@@ -177,14 +177,14 @@ export function formatCost(costUsd: number): string {
 
 /**
  * The agent column states the agent type, so a name that repeats it
- * ("Scout: Auth" next to scout) is redundant — strip the exact type prefix
+ * ("Scout: Auth" next to scout) is redundant - strip the exact type prefix
  * plus a separator, for DISPLAY only. Anything less exact stays untouched.
  */
 export function stripAgentPrefix(name: string, agent: string | undefined): string {
 	const safeName = sanitizeDisplayText(name);
 	const safeAgent = agent === undefined ? undefined : sanitizeDisplayText(agent);
 	if (!safeAgent) return safeName;
-	const match = safeName.match(/^(\S+)\s*[:\-–—]\s*(.+)$/);
+	const match = safeName.match(/^(\S+)\s*[:\-–-]\s*(.+)$/);
 	if (match && match[1].toLowerCase() === safeAgent.toLowerCase() && match[2].trim() !== "") {
 		return match[2].trim();
 	}
@@ -236,8 +236,8 @@ function stripTrailingLoneSurrogate(text: string): string {
 // seven-column suffix: ` · ` plus three right-aligned digits and `k`, or seven
 // blank columns when unknown. A ` · ` separator joins the segment to the clock.
 
-/** Tool names come out of the child's own activity writes — hostile by
- * definition — so they are sanitized AGAIN here regardless of what the
+/** Tool names come out of the child's own activity writes - hostile by
+ * definition - so they are sanitized AGAIN here regardless of what the
  * controller did, and clamped so one long MCP tool name cannot eat the row.
  * Exported for subagent_status, which shows the same clamped name in prose. */
 export function clampToolName(rawName: string): string {

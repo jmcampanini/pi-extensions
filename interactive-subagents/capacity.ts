@@ -1,5 +1,5 @@
 /**
- * capacity.ts — the concurrency limit and the launch queue.
+ * capacity.ts - the concurrency limit and the launch queue.
  *
  * At most `config.maxConcurrentSubagents` children run at once. A launch
  * that would exceed the limit is QUEUED instead of rejected: the tool call
@@ -11,11 +11,11 @@
  * 1. A queued entry is PURE DATA. All side effects (worktree, session seed,
  *    pane) happen at launch time, inside the launcher the tool registered.
  *    That is what makes cancel a splice, shutdown a clear, and /reload a
- *    non-event — a queued child that never launches simply never existed.
+ *    non-event - a queued child that never launches simply never existed.
  *
  * 2. Admission is SYNCHRONOUS. pi executes parallel tool calls concurrently,
  *    and a child only appears in state.ts's `running` map after the launch
- *    pipeline's awaits — so counting `running` alone would let N parallel
+ *    pipeline's awaits - so counting `running` alone would let N parallel
  *    spawns all pass the check. admitLaunch() claims a slot (or queues) with
  *    no await in between, and each in-flight launch holds its claim until
  *    the child is registered. Capacity = running + claims.
@@ -42,7 +42,7 @@ import type { WorktreeInfo } from "./worktree.ts";
 // ── launch specs: everything a deferred launch needs, as plain data ──────
 // Values are resolved and validated at CALL time (params beat frontmatter,
 // models resolved, cwd checked), so a queued launch behaves like the call
-// that created it — except side effects, which wait for the slot. The one
+// that created it - except side effects, which wait for the slot. The one
 // deliberate exception: a forked child's conversation is copied at LAUNCH
 // time, so a fork that waited in the queue forks the parent as of when it
 // actually starts.
@@ -68,7 +68,7 @@ export interface SpawnSpec {
 	useWorktree: boolean;
 	/** Resolved absolute cwd; absent when useWorktree (created at launch). */
 	cwd?: string;
-	/** The parent session's cwd — where the worktree create command runs. */
+	/** The parent session's cwd - where the worktree create command runs. */
 	parentCwd: string;
 	parentSessionFile: string;
 	/** artifactBase(ctx), captured at call time. */
@@ -156,7 +156,7 @@ interface CapacityStore {
 	abandonedClaims: Set<string>;
 	/** The NEWEST generation's bound drainQueue, armed at session_start. A
 	 * dying generation that unwinds a launch after its replacement already
-	 * drained calls this so the requeued entry is not stranded — its own
+	 * drained calls this so the requeued entry is not stranded - its own
 	 * drainQueue would no-op on the aborted module signal. */
 	drainHook?: () => void;
 	/** The newest generation's widget repaint, armed alongside drainHook: a
@@ -239,7 +239,7 @@ export function isPendingLaunch(id: string): boolean {
 	return store.claims.has(id) || findQueued(id) !== undefined;
 }
 
-/** True when a resume of this session is queued or mid-launch — the
+/** True when a resume of this session is queued or mid-launch - the
  * busy-guard's extension to work that has not reached `running` yet. Paths
  * are compared resolved on both sides: the specs store the caller's raw
  * path, and a non-canonical spelling must not slip past the guard. */
@@ -252,7 +252,7 @@ export function pendingResumeFor(resolvedSessionPath: string): boolean {
 	);
 }
 
-// ── admission (synchronous — see header invariant 2) ─────────────────────
+// ── admission (synchronous - see header invariant 2) ─────────────────────
 
 export type Admission = { status: "run" } | { status: "queued"; ahead: number };
 
@@ -261,7 +261,7 @@ export type Admission = { status: "run" } | { status: "queued"; ahead: number };
  * non-empty queue always queues (even when a slot just freed) so parallel
  * calls cannot jump ahead of already-waiting work. On "run" the caller MUST
  * launch and the pipeline MUST releaseClaim() in the same synchronous step
- * that registers the child (or on failure) — a leaked claim is a leaked slot.
+ * that registers the child (or on failure) - a leaked claim is a leaked slot.
  */
 export function admitLaunch(spec: LaunchSpec): Admission {
 	validateLaunchSpec(spec);
@@ -279,7 +279,7 @@ export function releaseClaim(id: string): void {
 	store.abandonedClaims.delete(id);
 }
 
-/** Remove a queued entry (picker cancel, or tests). Pure data — nothing to
+/** Remove a queued entry (picker cancel, or tests). Pure data - nothing to
  * roll back. Returns the entry so the caller can notify the model. */
 export function cancelQueued(id: string): QueuedLaunch | undefined {
 	const index = store.queue.findIndex((entry) => entry.spec.id === id);
@@ -305,10 +305,10 @@ export function clearQueueForShutdown(): void {
 // is registered in the same generation or the launch is unwound.
 
 /** Reload in progress: side effects are rolled back and the entry returns to
- * the FRONT of the queue — the replacement generation relaunches it. */
+ * the FRONT of the queue - the replacement generation relaunches it. */
 export class RequeueLaunch extends Error {
 	constructor() {
-		super("launch interrupted by reload — requeued");
+		super("launch interrupted by reload - requeued");
 	}
 }
 
@@ -341,7 +341,7 @@ export function resolveLaunchCancellation(id: string, error: unknown): CancelLau
 export function assertLaunchStillWanted(launchGeneration: number, specId: string): void {
 	// Generation change = resetForShutdown ran in THIS module (/new etc.).
 	// Abort without a generation change = prepareForReload (or this module
-	// was replaced by a new import) — the queue survives those on purpose.
+	// was replaced by a new import) - the queue survives those on purpose.
 	if (store.abandonedClaims.has(specId)) throw new AbandonLaunch();
 	const cancellation = cancellationFor(specId);
 	if (cancellation) throw new CancelLaunch(cancellation.requester);
@@ -391,7 +391,7 @@ export function drainQueue(pi: ExtensionAPI): void {
 /** Arm the drain trigger for possibly-stale callers. Called at every
  * session_start, so the hook always belongs to the NEWEST generation: a
  * dying generation that frees a slot (or requeues an interrupted launch)
- * after its replacement already drained can still start queued work — its
+ * after its replacement already drained can still start queued work - its
  * own drainQueue would no-op on the aborted module signal. */
 export function armDrainHook(pi: ExtensionAPI, onQueueChanged?: () => void): void {
 	store.drainHook = () => drainQueue(pi);
@@ -449,19 +449,19 @@ async function launchDequeued(pi: ExtensionAPI, entry: QueuedLaunch): Promise<vo
 				// A reload interrupted this launch mid-flight. The replacement
 				// generation's adoption drain may ALREADY have run (it races
 				// the unwind of this pipeline's awaits), so requeueing alone
-				// could strand the entry — ask the newest generation to drain.
+				// could strand the entry - ask the newest generation to drain.
 				store.queue.unshift(entry);
 				requestDrain(pi);
 				return;
 			}
 			if (resolvedError instanceof AbandonLaunch) {
 				// The boundary cleared the queue, but a NEW session may have
-				// queued work behind this dying launch's slot already — drain.
+				// queued work behind this dying launch's slot already - drain.
 				requestDrain(pi);
 				return;
 			}
 			notifyLaunchFailure(pi, entry.spec, resolvedError);
-			// The failed launch freed its slot — keep the queue moving.
+			// The failed launch freed its slot - keep the queue moving.
 			requestDrain(pi);
 		} finally {
 			// Whatever happened, the queued/starting rows changed.
@@ -472,7 +472,7 @@ async function launchDequeued(pi: ExtensionAPI, entry: QueuedLaunch): Promise<vo
 
 // ── the words the model hears ────────────────────────────────────────────
 // A deferred failure can land hours after the call, in a turn with no memory
-// of it — the prose must carry everything (see watcher.ts: the prose IS the
+// of it - the prose must carry everything (see watcher.ts: the prose IS the
 // protocol). Builders are pure and exported for tests.
 
 /** One-line preview of the queued task/message, so a failure notice landing

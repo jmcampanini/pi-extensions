@@ -1,5 +1,5 @@
 /**
- * tmux.ts — the terminal layer.
+ * tmux.ts - the terminal layer.
  *
  * Everything the orchestrator needs from tmux: stage a launch script, create
  * a pane that runs it, close it, and poll for the child's exit.
@@ -108,14 +108,14 @@ function titlePane(paneId: string, title: string): void {
 	try {
 		tmux(["select-pane", "-t", paneId, "-T", title]);
 	} catch {
-		// cosmetic — best effort
+		// cosmetic - best effort
 	}
 }
 
 /**
  * Re-flow the window containing `anchorPane` into main-vertical: the parent pi
  * (leftmost, oldest pane) becomes the fixed-width "main" pane, everything else
- * stacks in the right column. Layout is cosmetic — never fail a spawn over it.
+ * stacks in the right column. Layout is cosmetic - never fail a spawn over it.
  */
 function applyMainVertical(anchorPane: string): void {
 	try {
@@ -254,7 +254,7 @@ export function createPane(title: string, launchScriptPath: string): string {
 }
 
 /**
- * Move the user's focus to a pane — even one in another window: tmux resolves
+ * Move the user's focus to a pane - even one in another window: tmux resolves
  * a pane target to its window, so select-window brings that window to the
  * front first. `zoom` additionally toggles tmux's pane zoom (prefix+z
  * un-zooms). Throws if the pane no longer exists.
@@ -272,7 +272,7 @@ export function closePane(paneId: string): void {
 	try {
 		tmux(["kill-pane", "-t", paneId]);
 	} catch {
-		// already closed — fine
+		// already closed - fine
 	}
 }
 
@@ -290,7 +290,7 @@ export function refreshLayout(): void {
 		return;
 	}
 
-	// main — anchored on the parent pi's own pane.
+	// main - anchored on the parent pi's own pane.
 	const anchor = process.env.TMUX_PANE;
 	if (anchor) applyMainVertical(anchor);
 }
@@ -363,18 +363,18 @@ const DEAD_WITHOUT_STATUS_GRACE_TICKS = 2;
  * Wait for a child to finish, checking once per second by default, in
  * priority order:
  *
- *   1. The `.exit` sidecar file — the child's typed last word
+ *   1. The `.exit` sidecar file - the child's typed last word
  *      ({type: "done" | "ping" | "error"}). Most precise; deleted on read.
- *   2. A dead pane's tmux-recorded exit status — the crash net for a child
+ *   2. A dead pane's tmux-recorded exit status - the crash net for a child
  *      that exits without running our extension code. The sidecar is checked
  *      once more on the death tick so a simultaneous precise result wins.
  *      An empty status is confirmed on the next tick before status-less death
  *      is reported distinctly because tmux may publish status late.
- *   3. Pane gone + grace period expired — the child vanished before tmux
+ *   3. Pane gone + grace period expired - the child vanished before tmux
  *      could retain its status, with late sidecars checked during the grace.
  *
  * `onTick` fires once per loop. v1 passes nothing; v2 attaches liveness
- * snapshot observation here — this parameter is the designed seam.
+ * snapshot observation here - this parameter is the designed seam.
  */
 export async function pollForExit(options: {
 	paneId: string;
@@ -390,7 +390,7 @@ export async function pollForExit(options: {
 	let ticksSinceDeadWithoutStatus = 0;
 
 	while (true) {
-		// Parent session is shutting down / reloading — stop watching.
+		// Parent session is shutting down / reloading - stop watching.
 		if (signal.aborted) {
 			return { reason: "aborted", exitCode: 0 };
 		}

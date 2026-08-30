@@ -470,7 +470,7 @@ export function registerSubagentResultRenderer(pi: ExtensionAPI): void {
 	pi.registerMessageRenderer(SUBAGENT_RESULT_CUSTOM_TYPE, (message, { expanded, outputPad = 1 }, theme) => {
 		const details = parseSubagentResultDetails(message.details);
 		if (details === undefined) return undefined;
-		// A stop the user or parent asked for is not a failure — red stays
+		// A stop the user or parent asked for is not a failure - red stays
 		// reserved for runs that actually failed.
 		const background = STATUS_BACKGROUNDS[details.presentation.status];
 		const shell = (component: Component): Component =>

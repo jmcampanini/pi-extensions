@@ -1,10 +1,10 @@
 /**
- * activity.ts — the liveness snapshot: child-side recorder, parent-side reader.
+ * activity.ts - the liveness snapshot: child-side recorder, parent-side reader.
  *
  * v2 liveness rides on ONE small JSON file per child, `<session>.jsonl.activity`,
  * sibling of `.exit` and `.meta`. The child's implant overwrites it on every
  * recorded event; the parent's watcher reads it once per 1s poll tick. Both
- * halves of the contract live in this file so they can never drift apart —
+ * halves of the contract live in this file so they can never drift apart -
  * the same colocation property protocol.ts gives the env-var/sidecar contract.
  *
  * Ground rules:
@@ -15,11 +15,11 @@
  *     tool durations add two same-domain differences (toolElapsedSeconds), so
  *     clock skew between the processes can never fake or hide a stall.
  *   - Writes are atomic (tmp + rename) and try/catch-wrapped: a broken write
- *     must never throw into pi. Persistent failure degrades LOUD — the parent
- *     sees a missing/frozen snapshot and reports stalled — never WRONG.
+ *     must never throw into pi. Persistent failure degrades LOUD - the parent
+ *     sees a missing/frozen snapshot and reports stalled - never WRONG.
  *   - No timers, no throttling, no debounce, and none is needed: the recorded
  *     events are naturally sparse and each write is under 1 KB and
- *     synchronous. Do NOT add a debounce "just in case" — a valid snapshot
+ *     synchronous. Do NOT add a debounce "just in case" - a valid snapshot
  *     never has to prove freshness (see status.ts), so a heartbeat would add
  *     /reload-leak surface for zero correctness value.
  *
@@ -36,11 +36,11 @@ import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 export const ACTIVITY_VERSION = 1;
 
 /** One tool call currently executing in the child. Parallel tool execution
- * is pi's default, so this is a list keyed by toolCallId — a single
+ * is pi's default, so this is a list keyed by toolCallId - a single
  * "current tool" slot would corrupt the display under fan-out. */
 export interface ActivityToolRun {
 	toolCallId: string;
-	/** Raw toolName from tool_execution_start — child-written, so display
+	/** Raw toolName from tool_execution_start - child-written, so display
 	 * surfaces must sanitize it; the file keeps the raw truth. */
 	name: string;
 	/** Child clock at tool_execution_start. */
@@ -50,7 +50,7 @@ export interface ActivityToolRun {
 export interface ActivitySnapshot {
 	/** Readers reject anything but ACTIVITY_VERSION. */
 	version: 1;
-	/** PI_SUBAGENT_ID — the ownership fence. The parent trusts only snapshots
+	/** PI_SUBAGENT_ID - the ownership fence. The parent trusts only snapshots
 	 * stamped with the run id it minted for THIS launch, so a stale file that
 	 * survived a failed clear is inert. */
 	runId: string;
@@ -69,7 +69,7 @@ export interface ActivitySnapshot {
 	modelId: string | null;
 	/** Copied VERBATIM from ctx.getContextUsage() (contextWindow renamed to
 	 * window); null when it returns undefined. tokens/percent are null right
-	 * after a compaction until the next assistant reply — unknown is
+	 * after a compaction until the next assistant reply - unknown is
 	 * represented as null, never as 0. */
 	context: {
 		tokens: number | null;
@@ -93,12 +93,12 @@ export function activityFilePath(sessionFile: string): string {
 
 /**
  * Delete a session's activity file before (re)launching into it. Stale runs
- * are doubly fenced — the reader also rejects snapshots with a foreign
- * runId — but clearing keeps the common path clean. Tmp files are
+ * are doubly fenced - the reader also rejects snapshots with a foreign
+ * runId - but clearing keeps the common path clean. Tmp files are
  * pid-suffixed and orphan-rare; ignore them.
  *
  * Placement matters on resume: clear AFTER the still-running guard, never
- * before — a rejected resume of a busy child must not delete the live
+ * before - a rejected resume of a busy child must not delete the live
  * child's snapshot (that would manufacture a false stall ~60s later).
  */
 export function clearActivityFile(sessionFile: string): void {
@@ -108,12 +108,12 @@ export function clearActivityFile(sessionFile: string): void {
 // ── the atomic writer ────────────────────────────────────────────────────
 
 /**
- * Whole-file overwrite via tmp + rename — the codebase's first, deliberately
+ * Whole-file overwrite via tmp + rename - the codebase's first, deliberately
  * confined to this file. Writing `${activityFile}.tmp-<pid>` and renaming
  * onto the final name is atomic because both names are in the same directory
  * (same filesystem): a reader sees either the old complete file or the new
  * complete file, never a torn one. The pid suffix closes the real two-writer
- * window — between the parent's poller resolving on the `.exit` sidecar and
+ * window - between the parent's poller resolving on the `.exit` sidecar and
  * closePane killing the child, the dying child can still write; pid-salted
  * tmp names cannot collide, last rename wins, and `runId` decides trust.
  *
@@ -139,7 +139,7 @@ export function writeActivitySnapshot(activityFile: string, snapshot: ActivitySn
  * rewritten on every recorded event. Called once from implant.ts when both
  * PI_SUBAGENT_ID and PI_SUBAGENT_ACTIVITY_FILE are present; when they are
  * missing the recorder never registers and the parent shows starting then
- * stalled — documented degradation, not an error.
+ * stalled - documented degradation, not an error.
  *
  * Holds no globalThis state and registers no timers: a /reload inside the
  * child pane re-imports this module and re-registers with `sequence` back at
@@ -148,12 +148,12 @@ export function writeActivitySnapshot(activityFile: string, snapshot: ActivitySn
  *
  * Events deliberately NOT recorded:
  *
- *   - message_update: high frequency — listening to it would force the
+ *   - message_update: high frequency - listening to it would force the
  *     throttling this file promises not to need.
  *   - turn_start: agent_start is the run opener, so first-turn delivery
  *     quirks in pi's loop entry points cannot matter here.
  *   - agent_end: it fires while automatic retries, compaction, and queued
- *     continuations may still run (and can double-fire — see implant.ts);
+ *     continuations may still run (and can double-fire - see implant.ts);
  *     agent_settled is pi's own "truly idle" signal and closes the run.
  */
 export function registerActivityRecorder(pi: ExtensionAPI, options: { runId: string; activityFile: string }): void {
@@ -186,7 +186,7 @@ export function registerActivityRecorder(pi: ExtensionAPI, options: { runId: str
 		});
 	}
 
-	/** Copy ctx.getContextUsage() VERBATIM — never derive tokens from usage
+	/** Copy ctx.getContextUsage() VERBATIM - never derive tokens from usage
 	 * fields ourselves. getContextUsage is the exact method pi's own footer
 	 * renders, so the numbers match the child's footer by construction, and
 	 * it already skips aborted/error/zero-usage turns internally. */
@@ -195,7 +195,7 @@ export function registerActivityRecorder(pi: ExtensionAPI, options: { runId: str
 		context = usage ? { tokens: usage.tokens, window: usage.contextWindow, percent: usage.percent } : null;
 	}
 
-	// Snapshot #1: "pi is up, the implant is alive" — proves liveness before
+	// Snapshot #1: "pi is up, the implant is alive" - proves liveness before
 	// any run begins.
 	write();
 
@@ -246,7 +246,7 @@ export function registerActivityRecorder(pi: ExtensionAPI, options: { runId: str
 	// agent_settled, not agent_end, closes the run: settled fires only once
 	// no automatic retry, compaction, or queued continuation will run, so the
 	// parent's "waiting" can never flash mid retry-storm. tools.clear() is
-	// defensive — aborted turns can leave dangling start events.
+	// defensive - aborted turns can leave dangling start events.
 	pi.on("agent_settled", (_event, ctx) => {
 		inRun = false;
 		runsCompleted += 1;
@@ -266,7 +266,7 @@ export function registerActivityRecorder(pi: ExtensionAPI, options: { runId: str
 	// Best-effort final write. Fires on reload/new/resume/fork too, which is
 	// fine: a fresh import re-registers and writes anew. Note ctx.shutdown()
 	// called from a tool (subagent_done / caller_ping) is DEFERRED until
-	// agent_settled, so those tools do get their tool_execution_end — no
+	// agent_settled, so those tools do get their tool_execution_end - no
 	// dangling entry comes from them. This write's real jobs are the final
 	// inRun: false snapshot and clearing entries left dangling by tool loops
 	// aborted via a thrown error (also covered by agent_settled's defensive
@@ -335,7 +335,7 @@ export function parseActivitySnapshot(raw: string, expectedRunId: string): Activ
 		return { kind: "invalid", reason: "runsCompleted is not a finite number" };
 	}
 
-	// The ownership fence — checked only after the core is known-good, so a
+	// The ownership fence - checked only after the core is known-good, so a
 	// mangled runId reads as invalid (broken writer), not foreign.
 	if (data.runId !== expectedRunId) return { kind: "foreign" };
 
@@ -353,7 +353,7 @@ export function parseActivitySnapshot(raw: string, expectedRunId: string): Activ
 	}
 
 	// …keep context only when it is coherent (window a positive finite
-	// number, tokens/percent finite-or-null — null is pi's honest "unknown
+	// number, tokens/percent finite-or-null - null is pi's honest "unknown
 	// right after compaction" and must survive as null, never become 0)…
 	let context: ActivitySnapshot["context"] = null;
 	if (typeof data.context === "object" && data.context !== null) {
@@ -415,11 +415,11 @@ export interface ActivityObservation {
 	acceptedAtMs?: number;
 	/** Parent clock since reads have been CONTINUOUSLY missing/foreign/
 	 * invalid/stale; cleared by an accepted or same-pair valid read. After 60s
-	 * of continuous problem the status machine stalls the child — this is what
+	 * of continuous problem the status machine stalls the child - this is what
 	 * detects mid-run file deletion, corruption, a writer that died, or a
 	 * child clock stepped backwards, for the whole run and not just startup. */
 	problemSinceMs?: number;
-	/** For steer prose only — never drives state transitions. `stale` means
+	/** For steer prose only - never drives state transitions. `stale` means
 	 * valid reads keep arriving but time-stamped strictly BEFORE the accepted
 	 * pair (child clock stepped backwards). */
 	lastProblemKind?: "missing" | "foreign" | "invalid" | "stale";
@@ -428,7 +428,7 @@ export interface ActivityObservation {
 	 * counter is per-process and resets to 0 on an in-pane /reload; without
 	 * this latch a healthy reloaded idle child reads stalled forever and fires
 	 * a misleading "task never started" steer. Chosen tradeoff: a reload that
-	 * genuinely killed a run now reads waiting, not stalled — a human was at
+	 * genuinely killed a run now reads waiting, not stalled - a human was at
 	 * that pane to type /reload, and a false stall steer misleads the parent
 	 * model. */
 	everSawRun?: boolean;
@@ -450,12 +450,12 @@ export const CLOCK_JUMP_MS = 5_000;
 /**
  * Clock-jump guard: call once at the top of every onTick, BEFORE
  * observeActivity. A gap of CLOCK_JUMP_MS or more between 1s ticks means the
- * parent machine slept or its clock stepped forward — not that the child was
- * quiet — so shift the watchdog anchors forward by the whole gap: a laptop
+ * parent machine slept or its clock stepped forward - not that the child was
+ * quiet - so shift the watchdog anchors forward by the whole gap: a laptop
  * waking from sleep must not fire a spurious stall steer for every child.
  * ANY negative gap re-anchors too (shift by the gap, preserving the deltas
  * exactly): time never genuinely flows backward, and letting the durations
- * shrink is NOT safe — a backward step during a stall would flip the status
+ * shrink is NOT safe - a backward step during a stall would flip the status
  * to starting, fire a false recovered steer, and then a duplicate stalled
  * steer when the delta re-crosses 60s. Small FORWARD gaps stay untouched:
  * under CLOCK_JUMP_MS they are real elapsed time, not a jump.
@@ -480,14 +480,14 @@ export function noteTick(obs: ActivityObservation, nowMs: number): void {
  *             affect the ordering, and updatedAt-first absorbs an in-pane
  *             /reload's sequence reset. Accepting also clears the problem
  *             fields and latches everSawRun when the snapshot shows run
- *             history — the parent-side latch that survives the child-side
+ *             history - the parent-side latch that survives the child-side
  *             counter reset (see ActivityObservation.everSawRun).
  *             An EQUAL pair is the same write re-read: it clears the problem
- *             fields but changes nothing else — acceptedAtMs deliberately
+ *             fields but changes nothing else - acceptedAtMs deliberately
  *             stays put (it anchors the parent half of toolElapsedSeconds).
  *             An OLDER pair is a valid-but-stale file (child clock stepped
  *             back): keep the current snapshot, and open (or continue) the
- *             problem window as kind "stale" — after 60s of continuously
+ *             problem window as kind "stale" - after 60s of continuously
  *             stale reads the status machine stalls the child, the loud
  *             failure the README promises, instead of silently serving the
  *             frozen accepted state for the whole skew window.
@@ -495,7 +495,7 @@ export function noteTick(obs: ActivityObservation, nowMs: number): void {
  *   missing / foreign / invalid
  *           → start (or continue) the continuous-problem window and record
  *             the kind for steer prose. The previously accepted snapshot is
- *             NOT erased — a transient anomaly must not amnesia the child's
+ *             NOT erased - a transient anomaly must not amnesia the child's
  *             known state.
  */
 export function observeActivity(obs: ActivityObservation, read: ActivityRead, nowMs: number): void {
@@ -533,7 +533,7 @@ export function observeActivity(obs: ActivityObservation, read: ActivityRead, no
 
 /**
  * The tool both display surfaces (the widget segment and subagent_status)
- * show: the entry with the smallest startedAt — the longest-running one,
+ * show: the entry with the smallest startedAt - the longest-running one,
  * which is stable under parallel fan-out where newer tools come and go
  * around it. One shared helper so the two surfaces can never disagree.
  */

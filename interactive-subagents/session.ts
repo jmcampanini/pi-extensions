@@ -1,5 +1,5 @@
 /**
- * session.ts — working directly with pi session files.
+ * session.ts - working directly with pi session files.
  *
  * A pi session is a JSONL file: line 1 is a header entry
  * `{type: "session", version: 3, id, timestamp, cwd, parentSession?}` and
@@ -71,7 +71,7 @@ function headerLine(childCwd: string, parentSessionFile: string): string {
 
 /**
  * A `session_info` line carrying the session's display name. The picker
- * shows this name instead of the session's first message — which for our
+ * shows this name instead of the session's first message - which for our
  * children is unreadable `@file` task text. Same entry pi appends when a
  * human renames a session in the picker.
  */
@@ -119,14 +119,14 @@ export function seedNewSession(options: {
  * Two rules make this correct:
  *  1. Copy entries only UP TO (and excluding) the parent's most recent user
  *     message. That last user turn is the one that triggered this spawn and
- *     is still in flight in the parent — the child must not see it twice.
- *  2. Drop the parent's own `{type: "session"}` header line — the child gets
+ *     is still in flight in the parent - the child must not see it twice.
+ *  2. Drop the parent's own `{type: "session"}` header line - the child gets
  *     a fresh header (new id, its own cwd, and a `parentSession` pointer for
  *     lineage).
  *
  * Because the copied entries are byte-identical to the parent's, a fork child
  * that keeps the same model/tools presents an identical prompt prefix to the
- * provider — which is what makes prompt-cache reuse possible.
+ * provider - which is what makes prompt-cache reuse possible.
  */
 export function seedForkSession(options: {
 	parentSessionFile: string;
@@ -141,7 +141,7 @@ export function seedForkSession(options: {
 	// parsed entry: the seed is written from the original lines (byte-identical
 	// copies are what make prompt-cache reuse possible), while all the
 	// decisions below are made on the parsed entries. A corrupt line parses to
-	// `entry: null` and is kept — pi tolerates lines it can't read.
+	// `entry: null` and is kept - pi tolerates lines it can't read.
 	const parsed = raw
 		.split("\n")
 		.filter((line) => line.trim() !== "")
@@ -154,7 +154,7 @@ export function seedForkSession(options: {
 		});
 
 	// Walk backwards to find where the in-flight turn STARTED, then cut there.
-	// A turn can be started by a plain user message OR by a custom message —
+	// A turn can be started by a plain user message OR by a custom message -
 	// our own steered subagent results/pings are persisted as
 	// `{type: "custom_message"}` entries and trigger turns that contain no
 	// user message at all. Cutting only at user messages would, on such a
@@ -174,7 +174,7 @@ export function seedForkSession(options: {
 	const copied = parsed.slice(0, cutAt).filter(({ entry }) => entry?.type !== "session");
 
 	// Safety net: never let the seed END on an assistant message that makes
-	// tool calls — its tool RESULTS were cut away with the in-flight turn,
+	// tool calls - its tool RESULTS were cut away with the in-flight turn,
 	// and providers reject a conversation that stops on an unanswered tool
 	// call. Trim such trailing entries.
 	while (copied.length > 0) {
@@ -191,7 +191,7 @@ export function seedForkSession(options: {
 	// The display name goes AFTER the copied conversation. session_info is
 	// metadata, not a message, so the copied message prefix stays
 	// byte-identical and prompt-cache reuse is unaffected. It links to the
-	// last copied entry that PARSES and has an id — the same entry pi will
+	// last copied entry that PARSES and has an id - the same entry pi will
 	// treat as the leaf. (Linking to null past a corrupt trailing line would
 	// orphan the whole copied conversation: pi builds the child's context by
 	// walking parentId links backwards, and a null parent ends that walk.)
@@ -232,7 +232,7 @@ export function readSessionCwd(sessionFile: string): string | null {
 
 /**
  * Read the session's display name. pi renames by APPENDING session_info
- * entries rather than rewriting, so the LATEST one wins — and an empty name
+ * entries rather than rewriting, so the LATEST one wins - and an empty name
  * is an explicit "clear the name", not a missing entry.
  */
 export function readSessionName(sessionFile: string): string | undefined {
@@ -252,7 +252,7 @@ export function readSessionName(sessionFile: string): string | undefined {
 }
 
 /**
- * Append a display name to an EXISTING session file — the resume-time
+ * Append a display name to an EXISTING session file - the resume-time
  * backfill for children created before names were seeded at spawn. Must run
  * before the child pi process reopens the file, so there is only ever one
  * writer. Callers should check readSessionName() first: appending
@@ -262,7 +262,7 @@ export function appendSessionName(sessionFile: string, name: string): void {
 	const raw = readFileSync(sessionFile, "utf8");
 
 	// Link the new entry to the last real entry's id. The header line does
-	// not count — pi's entry chain starts at null, the header sits outside it.
+	// not count - pi's entry chain starts at null, the header sits outside it.
 	let parentId: string | null = null;
 	for (const line of raw.split("\n")) {
 		if (!line.trim()) continue;
@@ -274,7 +274,7 @@ export function appendSessionName(sessionFile: string, name: string): void {
 		}
 	}
 
-	// Guard against a file that ends without a trailing newline — appending
+	// Guard against a file that ends without a trailing newline - appending
 	// straight onto it would corrupt the last line.
 	const separator = raw === "" || raw.endsWith("\n") ? "" : "\n";
 	appendFileSync(sessionFile, separator + sessionInfoLine(name, parentId) + "\n", "utf8");
@@ -314,7 +314,7 @@ export function extractSummary(sessionFile: string, skipEntries = 0): string | n
 			.trim();
 		if (text !== "") return text;
 
-		// No text — was this an error turn (auto-retry exhausted)?
+		// No text - was this an error turn (auto-retry exhausted)?
 		if (msg.stopReason === "error" && msg.errorMessage?.trim()) {
 			return `Subagent error: ${msg.errorMessage.trim()}`;
 		}

@@ -1,14 +1,14 @@
 /**
- * models.ts — picking a usable model from an agent's candidate list.
+ * models.ts - picking a usable model from an agent's candidate list.
  *
  * Walk an ordered list of model candidates and pick the FIRST usable one.
  * An entry is either:
- *   - "provider/model" — fully qualified; wins if pi knows it AND that
+ *   - "provider/model" - fully qualified; wins if pi knows it AND that
  *     provider has credentials configured on this machine, or
- *   - a bare model id like "gpt-5.5" — wins if EXACTLY ONE configured
+ *   - a bare model id like "gpt-5.5" - wins if EXACTLY ONE configured
  *     provider offers that exact id here (so the same agent file picks the
  *     right provider on each machine). Two configured providers offering the
- *     same id is ambiguous and fails that entry — we never guess, and we
+ *     same id is ambiguous and fails that entry - we never guess, and we
  *     never fuzzy-match.
  *
  * Nothing matching is a hard, immediate error (fail fast so a broken agent
@@ -27,7 +27,7 @@ export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhig
 /** Fail fast on a typo'd thinking level instead of letting the child pane error. */
 export function assertValidThinkingLevel(level: string): void {
 	if (!(THINKING_LEVELS as readonly string[]).includes(level)) {
-		throw new Error(`Invalid thinking level "${level}" — valid levels: ${THINKING_LEVELS.join(", ")}.`);
+		throw new Error(`Invalid thinking level "${level}" - valid levels: ${THINKING_LEVELS.join(", ")}.`);
 	}
 }
 
@@ -46,11 +46,11 @@ export function resolveUsableModel(candidates: string[], registry: ModelLookup):
 	const reasons: string[] = [];
 
 	for (const entry of candidates) {
-		// The provider is everything before the FIRST slash (pi's own rule —
+		// The provider is everything before the FIRST slash (pi's own rule -
 		// some model ids contain slashes, e.g. openrouter/deepseek/deepseek-chat).
 		const slash = entry.indexOf("/");
 		if (slash === 0 || slash === entry.length - 1) {
-			reasons.push(`${entry} — malformed (use "provider/model" or a bare model id)`);
+			reasons.push(`${entry} - malformed (use "provider/model" or a bare model id)`);
 			continue;
 		}
 
@@ -65,14 +65,14 @@ export function resolveUsableModel(candidates: string[], registry: ModelLookup):
 			}
 			if (usable.length > 1) {
 				const providers = usable.map((m) => m.provider).join(", ");
-				reasons.push(`${entry} — ambiguous: offered by ${providers}; qualify it as "provider/${entry}"`);
+				reasons.push(`${entry} - ambiguous: offered by ${providers}; qualify it as "provider/${entry}"`);
 				continue;
 			}
 			const known = registry.getAll().filter((m) => m.id.toLowerCase() === id);
 			reasons.push(
 				known.length > 0
-					? `${entry} — known (${known.map((m) => m.provider).join(", ")}) but none of those providers have credentials on this machine`
-					: `${entry} — unknown model (not in pi's registry; see \`pi --list-models\`)`,
+					? `${entry} - known (${known.map((m) => m.provider).join(", ")}) but none of those providers have credentials on this machine`
+					: `${entry} - unknown model (not in pi's registry; see \`pi --list-models\`)`,
 			);
 			continue;
 		}
@@ -84,16 +84,16 @@ export function resolveUsableModel(candidates: string[], registry: ModelLookup):
 			.getAll()
 			.find((m) => m.provider.toLowerCase() === provider && m.id.toLowerCase() === id);
 		if (!model) {
-			reasons.push(`${entry} — unknown model (not in pi's registry; see \`pi --list-models\`)`);
+			reasons.push(`${entry} - unknown model (not in pi's registry; see \`pi --list-models\`)`);
 			continue;
 		}
 		if (!registry.hasConfiguredAuth(model)) {
-			reasons.push(`${entry} — provider "${model.provider}" has no credentials on this machine`);
+			reasons.push(`${entry} - provider "${model.provider}" has no credentials on this machine`);
 			continue;
 		}
 		return `${model.provider}/${model.id}`;
 	}
 
-	// Just the per-entry reasons — each one already says what to fix.
+	// Just the per-entry reasons - each one already says what to fix.
 	throw new Error(`No usable model. Tried, in order:\n${reasons.map((r) => `  - ${r}`).join("\n")}`);
 }

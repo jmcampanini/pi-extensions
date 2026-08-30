@@ -621,7 +621,7 @@ describe("registerSubagentSpawnTool", () => {
 
 	// The advertised limit must be the ENFORCED limit: the description is built
 	// from the same config singleton capacity.ts counts against, so it cannot
-	// drift — this assertion pins that derivation.
+	// drift - this assertion pins that derivation.
 	it("spawn description advertises the configured concurrency limit", () => {
 		assert.strictEqual(
 			spawnTool.description?.includes(

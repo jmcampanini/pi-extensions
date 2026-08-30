@@ -1,11 +1,11 @@
-// Unit tests for registerActivityRecorder — the child-side event wiring that
+// Unit tests for registerActivityRecorder - the child-side event wiring that
 // produces every liveness snapshot. The recorder is the SOLE producer feeding
 // the status machine, the widget, subagent_status, and the result economics,
 // so its handler bodies need a committed regression gate, not just one-time
 // e2e verification. It takes pi's ExtensionAPI as `import type` only, so a
 // stub object with a handler registry and a manual emit() drives it under
 // plain node. The single lifecycle test replays the design's section-3 event
-// table in order and asserts the snapshot that lands ON DISK — the file is
+// table in order and asserts the snapshot that lands ON DISK - the file is
 // the only thing the parent ever sees.
 import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -101,7 +101,7 @@ describe("registerActivityRecorder", () => {
 		assert.strictEqual(read().costUsd, 0.25, "assistant turn without usage sums harmlessly");
 
 		// The non-finite guard: hostile or broken cost values must never poison the
-		// accumulator (JSON could not even carry the poisoned sum — see the parser).
+		// accumulator (JSON could not even carry the poisoned sum - see the parser).
 		pi.emit("turn_end", { message: { role: "assistant", usage: { cost: { total: Number.POSITIVE_INFINITY } } } }, ctxFull);
 		pi.emit("turn_end", { message: { role: "assistant", usage: { cost: { total: Number.NaN } } } }, ctxFull);
 		pi.emit("turn_end", { message: { role: "assistant", usage: { cost: { total: "9" } } } }, ctxFull);
@@ -129,7 +129,7 @@ describe("registerActivityRecorder", () => {
 
 		// ── session_shutdown: the final write ────────────────────────────────
 		// ctx.shutdown() from a tool is deferred until agent_settled, so the only
-		// real dangling-start path is a tool loop aborted via a thrown error — the
+		// real dangling-start path is a tool loop aborted via a thrown error - the
 		// final write clears it and lands inRun: false.
 		pi.emit("agent_start", {}, ctxFull);
 		pi.emit("tool_execution_start", { toolCallId: "d1", toolName: "bash" }, ctxFull);
@@ -145,7 +145,7 @@ describe("registerActivityRecorder", () => {
 
 	// ── in-pane /reload: a fresh registration resets per-process counters ────
 	// The parent-side (updatedAt, sequence) ordering and the everSawRun latch
-	// absorb this — pinned in activity-test.ts and status-test.ts; here we pin
+	// absorb this - pinned in activity-test.ts and status-test.ts; here we pin
 	// only what the fresh process actually writes.
 	it("a fresh registration resets per-process counters", () => {
 		const piReloaded = createTestEventHarness();

@@ -9,7 +9,7 @@
 - Make context and filesystem isolation deliberate choices.
 - Provide one primitive, not a workflow engine. Use it for independent work, not trivial, tightly coupled, or critical-path tasks. Children cannot spawn children.
 
-The parent assigns work, the child owns its conversation and pane, and the result returns to the parent on its own, waking it in a new turn. Ending the parent turn is how the model waits: while children run it works only on tasks that need nothing from them, and when its next step depends on a result it says what it is waiting on and ends its turn. This waiting contract is stated positively everywhere the model reads it — the tool texts and a static block injected into the parent's system prompt alongside the agent catalogue.
+The parent assigns work, the child owns its conversation and pane, and the result returns to the parent on its own, waking it in a new turn. Ending the parent turn is how the model waits: while children run it works only on tasks that need nothing from them, and when its next step depends on a result it says what it is waiting on and ends its turn. This waiting contract is stated positively everywhere the model reads it - the tool texts and a static block injected into the parent's system prompt alongside the agent catalogue.
 
 ## First run
 
@@ -48,7 +48,7 @@ This uses the listed `worker` in the parent's working directory with explicit ne
 | Need | Choice |
 | --- | --- |
 | A self-contained task | Use `context: "new"`, the default. Project files and instructions still load. Include the objective, paths, facts, constraints, edit permission, output, and verification in the task. |
-| Parent discussion or decisions would be difficult or lossy to restate | Use `context: "forked"`. It copies completed parent history as of the moment the child launches — immediately when a concurrency slot is free, or when a queued launch starts. That history goes to the child's selected model and provider, so do not fork unnecessary or sensitive context. A first-turn fork may fail before the parent session is written. |
+| Parent discussion or decisions would be difficult or lossy to restate | Use `context: "forked"`. It copies completed parent history as of the moment the child launches - immediately when a concurrency slot is free, or when a queued launch starts. That history goes to the child's selected model and provider, so do not fork unnecessary or sensitive context. A first-turn fork may fail before the parent session is written. |
 | Follow-up depends on a child's findings or tool history | Use `subagent_resume` to continue that child's conversation. |
 | A human should drive the pane | Set `autoExit: false`. The child normally finishes by calling `subagent_done`, or can ask for help with `caller_ping`. |
 
@@ -108,11 +108,11 @@ Intentionally not included in v1: tools beyond Claude Code (the profile registry
 
 ## Concurrency and the launch queue
 
-At most `maxConcurrentSubagents` children run at once (default 9 — the most panes the dedicated tmux window tiles legibly). The limit counts every child holding a pane: autonomous, interactive, and external-harness children alike, from spawns and resumes. Children whose result is still `delivering` have already released their pane and do not count.
+At most `maxConcurrentSubagents` children run at once (default 9 - the most panes the dedicated tmux window tiles legibly). The limit counts every child holding a pane: autonomous, interactive, and external-harness children alike, from spawns and resumes. Children whose result is still `delivering` have already released their pane and do not count.
 
-A launch past the limit is queued, not rejected: the tool call returns `queued` immediately with the child's id, and the launch starts automatically, in call order, as running children exit. A queued entry is pure data — no worktree, session file, or pane exists until it actually starts — so cancelling it (with `subagent_cancel` or `x` in `/subagent-status`) cleans up nothing and guarantees that no result will arrive. Fan-out needs no batching logic: issue all the spawns at once and the queue self-batches through the limit. One semantic difference from an immediate start: a `forked` child copies the parent conversation at launch time, so a fork that waited in the queue sees the parent as of when it actually started.
+A launch past the limit is queued, not rejected: the tool call returns `queued` immediately with the child's id, and the launch starts automatically, in call order, as running children exit. A queued entry is pure data - no worktree, session file, or pane exists until it actually starts - so cancelling it (with `subagent_cancel` or `x` in `/subagent-status`) cleans up nothing and guarantees that no result will arrive. Fan-out needs no batching logic: issue all the spawns at once and the queue self-batches through the limit. One semantic difference from an immediate start: a `forked` child copies the parent conversation at launch time, so a fork that waited in the queue sees the parent as of when it actually started.
 
-Because side effects wait for the slot, a queued launch can fail when it finally starts (its directory vanished, tmux refused a pane). The failure arrives as a message naming the child, the error, and what to do — the entry is removed and nothing half-started is left behind. Both launch tool descriptions advertise the effective configured limit, and `/reload` preserves the queue along with running children; quit, `/new`, and `/resume` discard it.
+Because side effects wait for the slot, a queued launch can fail when it finally starts (its directory vanished, tmux refused a pane). The failure arrives as a message naming the child, the error, and what to do - the entry is removed and nothing half-started is left behind. Both launch tool descriptions advertise the effective configured limit, and `/reload` preserves the queue along with running children; quit, `/new`, and `/resume` discard it.
 
 ## Parallel edit safety
 

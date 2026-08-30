@@ -1,8 +1,8 @@
 /**
- * tool-resume.ts — the `subagent_resume` tool: reopen a child session.
+ * tool-resume.ts - the `subagent_resume` tool: reopen a child session.
  *
  * Used to answer a caller_ping, retry a failure, or send follow-up work.
- * Context survives because the child's .jsonl file IS the conversation —
+ * Context survives because the child's .jsonl file IS the conversation -
  * resuming just points a fresh pi process at the same file. The child's
  * launch identity (system prompt, tools, model, thinking, auto-exit) is
  * restored from its `.meta` sidecar; explicit params always win.
@@ -61,7 +61,7 @@ const ResumeParams = Type.Object({
 		Type.String({ description: "The sub-agent's short id from a result/ping message (preferred). Use sessionPath instead if pi was restarted since." }),
 	),
 	sessionPath: Type.Optional(
-		Type.String({ description: "Path to the child session .jsonl file — fallback when the id is no longer known (e.g. after a pi restart)" }),
+		Type.String({ description: "Path to the child session .jsonl file - fallback when the id is no longer known (e.g. after a pi restart)" }),
 	),
 	message: Type.Optional(Type.String({ description: "Follow-up prompt or answer to send to the resumed subagent" })),
 	name: Type.Optional(
@@ -104,10 +104,10 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 		description:
 			"Resume a previous sub-agent session with an optional follow-up message. Pass the `id` from a " +
 			"result/ping message (preferred), or `sessionPath` if the id is no longer known (e.g. after a restart). " +
-			"ASYNC — returns immediately with status 'started', or 'queued' when the concurrency limit of " +
+			"ASYNC - returns immediately with status 'started', or 'queued' when the concurrency limit of " +
 			`${config.maxConcurrentSubagents} sub-agents (shared with subagent_spawn) is reached; a queued ` +
 			"resume starts automatically as slots free. The result steers back automatically in a new " +
-			"turn — ending your turn is how you wait.",
+			"turn - ending your turn is how you wait.",
 		parameters: ResumeParams,
 		renderCall(args, theme, context) {
 			const presentation = resumeCallPresentation(args);
@@ -148,29 +148,29 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			}
 
 			// A queued or just-dequeued child has never run (it is not in the
-			// ledger yet), so there is no session to reopen — catch the id
+			// ledger yet), so there is no session to reopen - catch the id
 			// here for a better answer than "unknown id".
 			if (params.id && findQueued(params.id)) {
 				throw new Error(
-					`Sub-agent id "${params.id}" is still queued and has not started yet — there is nothing to resume. ` +
+					`Sub-agent id "${params.id}" is still queued and has not started yet - there is nothing to resume. ` +
 						"It launches automatically when a concurrency slot frees; wait for its result instead.",
 				);
 			}
 			if (params.id && isPendingLaunch(params.id)) {
 				throw new Error(
-					`Sub-agent id "${params.id}" is starting right now — there is nothing to resume yet. Wait for its result instead.`,
+					`Sub-agent id "${params.id}" is starting right now - there is nothing to resume yet. Wait for its result instead.`,
 				);
 			}
 
 			// Resolve which session to reopen: short id via this session's
-			// ledger (preferred — no long path to copy around), else an
+			// ledger (preferred - no long path to copy around), else an
 			// explicit path (survives parent restarts, when the ledger is gone).
 			let sessionPath = params.sessionPath;
 			if (!sessionPath && params.id) {
 				sessionPath = ledger.get(params.id)?.sessionFile;
 				if (!sessionPath) {
 					throw new Error(
-						`Unknown sub-agent id "${params.id}" — pass the sessionPath from the result/ping message instead.`,
+						`Unknown sub-agent id "${params.id}" - pass the sessionPath from the result/ping message instead.`,
 					);
 				}
 			}
@@ -190,7 +190,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			}
 
 			// Refuse to attach a second pi process to a session that is still
-			// running — two processes appending to one .jsonl corrupts it.
+			// running - two processes appending to one .jsonl corrupts it.
 			// Checked synchronously (before any await) against BOTH the running
 			// map and capacity.ts's queue/claims, so parallel resume calls
 			// cannot race each other into a double-attach: whichever call runs
@@ -203,13 +203,13 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			for (const child of running.values()) {
 				if (resolve(child.sessionFile) === targetPath) {
 					throw new Error(
-						`Sub-agent "${child.name}" (id ${child.id}) is still running on this session — wait for its result or ping before resuming.`,
+						`Sub-agent "${child.name}" (id ${child.id}) is still running on this session - wait for its result or ping before resuming.`,
 					);
 				}
 			}
 			if (pendingResumeFor(targetPath)) {
 				throw new Error(
-					"A resume of this session is already queued or starting — wait for its result instead of resuming again.",
+					"A resume of this session is already queued or starting - wait for its result instead of resuming again.",
 				);
 			}
 
@@ -221,7 +221,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			const autoExit = params.autoExit ?? meta.autoExit ?? true;
 			const tools = params.tools ?? meta.tools;
 			// Re-resolve the model on THIS machine (an old session may name a
-			// provider this computer has no credentials for — fail fast here,
+			// provider this computer has no credentials for - fail fast here,
 			// not in the pane). Param overrides go through the same check.
 			// External model names are the tool's own and are not in pi's
 			// registry: the requested or recorded name passes verbatim.
@@ -238,7 +238,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			// so auto-exit never fires and the watcher polls forever.
 			if (autoExit && !params.message) {
 				throw new Error(
-					"subagent_resume needs a `message` when the child is autonomous (autoExit) — pass your answer/follow-up, or set autoExit: false to hand the pane to a human.",
+					"subagent_resume needs a `message` when the child is autonomous (autoExit) - pass your answer/follow-up, or set autoExit: false to hand the pane to a human.",
 				);
 			}
 			const systemPromptFile =
@@ -259,7 +259,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			// A vanished cwd would otherwise fail OBSCURELY: the pane's `cd`
 			// fails, tmux records exit 1 on the dead pane, and the watcher
 			// delivers a misleading "failed" result with a stale summary. Catch
-			// it here and say what actually happened — for worktree children
+			// it here and say what actually happened - for worktree children
 			// that usually means auto-cleanup removed the directory. (The
 			// launch pipeline re-checks: a queued resume can outlive its cwd.)
 			if (sessionCwd && !existsSync(sessionCwd)) {
@@ -308,13 +308,13 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				externalSessionId,
 				base: artifactBase(ctx),
 				slug: slugify(name),
-				// A resume without a message hands the pane to a human — that
+				// A resume without a message hands the pane to a human - that
 				// child legitimately idles forever and must read "waiting", not
 				// stuck-at-"starting" (see status.ts).
 				expectsRun: Boolean(params.message),
 			};
 
-			// The fork: claim a slot and relaunch now, or join the queue — same
+			// The fork: claim a slot and relaunch now, or join the queue - same
 			// contract as subagent_spawn (see there for the race reasoning).
 			const admission = admitLaunch(spec);
 			if (admission.status === "queued") {
@@ -343,7 +343,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			} catch (error) {
 				error = resolveLaunchCancellation(id, error) ?? error;
 				releaseClaim(id);
-				// The failed launch freed its slot — without this, queued work
+				// The failed launch freed its slot - without this, queued work
 				// behind it could sit forever with capacity free (nothing else
 				// triggers a drain until some running child exits).
 				requestDrain(pi);
@@ -353,12 +353,12 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 				if (error instanceof CancelLaunch) {
 					const by = error.requester === "user" ? "by the user" : "because you cancelled it";
 					throw new Error(
-						`Sub-agent resume was cancelled ${by} before it started — nothing is running and no result will arrive.`,
+						`Sub-agent resume was cancelled ${by} before it started - nothing is running and no result will arrive.`,
 					);
 				}
 				if (error instanceof RequeueLaunch || error instanceof AbandonLaunch) {
 					throw new Error(
-						"Sub-agent resume was interrupted by a session reload/shutdown before it started — " +
+						"Sub-agent resume was interrupted by a session reload/shutdown before it started - " +
 							"nothing is running. Re-issue the call if the work is still needed.",
 					);
 				}
@@ -396,7 +396,7 @@ function vanishedCwdError(cwd: string, fromWorktree: boolean, worktreeDir?: stri
 }
 
 /**
- * The relaunch pipeline — every side effect of reopening a child session.
+ * The relaunch pipeline - every side effect of reopening a child session.
  * Runs inline or from the queue drain; same claim/rollback contract as
  * tool-spawn.ts's runSpawnLaunch. Unlike the old inline-only code, a failure
  * after the pane opened now closes it again instead of leaking it.
@@ -408,12 +408,12 @@ export async function runResumeLaunch(pi: ExtensionAPI, spec: ResumeSpec): Promi
 	// Re-run the two liveness checks that can change while a resume waits in
 	// the queue. The busy re-check is belt-and-braces (the admission dedupe
 	// makes a second attach impossible by construction); the cwd re-check is
-	// real — worktree auto-cleanup can remove it between queue and launch.
+	// real - worktree auto-cleanup can remove it between queue and launch.
 	const targetPath = resolve(spec.sessionPath);
 	for (const child of running.values()) {
 		if (resolve(child.sessionFile) === targetPath) {
 			throw new Error(
-				`Sub-agent "${child.name}" (id ${child.id}) is running on this session — the queued resume was skipped.`,
+				`Sub-agent "${child.name}" (id ${child.id}) is running on this session - the queued resume was skipped.`,
 			);
 		}
 	}
@@ -427,13 +427,13 @@ export async function runResumeLaunch(pi: ExtensionAPI, spec: ResumeSpec): Promi
 	// but clearing it while a child completes RIGHT NOW would delete its
 	// just-written marker; the guards above make this window writer-free.
 	// Clearing `.activity` for a live child would manufacture a false stall
-	// steer ~60s later — same reasoning.
+	// steer ~60s later - same reasoning.
 	clearExitSidecar(spec.sessionPath);
 	clearActivityFile(spec.sessionPath);
 
 	// Backfill: children spawned before display names were seeded show raw
 	// @file task text in pi's session picker. Give them the same
-	// "subagent › agent › name" label on resume — but only when the file
+	// "subagent › agent › name" label on resume - but only when the file
 	// STILL has no name (a human may have renamed it in the picker; decided
 	// at call time, re-checked here because a queued resume waits). Runs
 	// before the child pi process starts, so there is one writer. Never for

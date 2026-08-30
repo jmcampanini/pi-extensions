@@ -1,5 +1,5 @@
 /**
- * tool-available.ts — model-facing discovery of configured agent definitions.
+ * tool-available.ts - model-facing discovery of configured agent definitions.
  */
 
 import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -80,7 +80,7 @@ export function formatAvailableModelText(inventory: readonly AgentInfo[]): strin
 			...(agent.tools ? [`tools ${agent.tools}`] : []),
 			...(agent.harnessPassThrough ? [`pass-through ${agent.harnessPassThrough}`] : []),
 		];
-		return `• ${safeInline(agent.name)}${suffix}${problems} — ${description}\n  config: ${safeInline(config.join(" · "))}`;
+		return `• ${safeInline(agent.name)}${suffix}${problems} - ${description}\n  config: ${safeInline(config.join(" · "))}`;
 	}).join("\n");
 }
 
@@ -103,8 +103,8 @@ export function formatCollapsedAvailableLines(
 		const markers = availableMarkers(agent);
 		const markerText = markers.length > 0 ? metadata(` · ${markers.join(" · ")}`) : "";
 		const description = agent.description
-			? preview(` — ${descriptionHeadline(sanitizeDisplayText(agent.description))}`)
-			: preview(" — (no description)");
+			? preview(` - ${descriptionHeadline(sanitizeDisplayText(agent.description))}`)
+			: preview(" - (no description)");
 		const problem = agent.problems.length > 0 ? warning(" · not spawnable") : "";
 		lines.push(...new Text(name(sanitizeDisplayText(agent.name)) + markerText + problem + description, 0, 0).render(safeWidth));
 	}

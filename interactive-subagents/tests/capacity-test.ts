@@ -1,12 +1,12 @@
 /**
- * capacity-test.ts — pins the concurrency-limit and launch-queue contract:
+ * capacity-test.ts - pins the concurrency-limit and launch-queue contract:
  * synchronous admission (a parallel burst cannot race past the limit), FIFO
  * order with no queue-jumping, claim accounting, resume dedupe, drain
  * behavior (launch order, failure notices, requeue/abandon on boundaries),
  * and queue survival across a simulated /reload re-import.
  *
  * The config singleton is read at module import, so PI_CODING_AGENT_DIR is
- * pointed at an empty temp dir BEFORE the dynamic imports below — the tests
+ * pointed at an empty temp dir BEFORE the dynamic imports below - the tests
  * run against the default limit of 9 regardless of the developer's own
  * subagents.json.
  */
@@ -63,7 +63,7 @@ function resumeSpec(id: string, sessionPath: string): ResumeSpec {
 	};
 }
 
-/** A stand-in for a registered child — capacity only ever counts entries. */
+/** A stand-in for a registered child - capacity only ever counts entries. */
 function fakeRunning(id: string): void {
 	state.running.set(id, { id } as unknown as import("../state.ts").RunningSubagent);
 }

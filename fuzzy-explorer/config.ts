@@ -93,7 +93,7 @@ function isKeyId(value: string): value is KeyId {
 function requireOpenShortcut(value: unknown, source: string): KeyId {
 	if (typeof value !== "string" || !isKeyId(value)) {
 		throw new Error(
-			`${source}: invalid openShortcut ${JSON.stringify(value)} — use a Pi KeyId such as "ctrl+r"`,
+			`${source}: invalid openShortcut ${JSON.stringify(value)} - use a Pi KeyId such as "ctrl+r"`,
 		);
 	}
 	const normalized = value.toLowerCase();
@@ -110,7 +110,7 @@ function requireOpenShortcut(value: unknown, source: string): KeyId {
 
 function requireOpenMode(value: unknown, source: string): FuzzyExplorerConfig["openMode"] {
 	if (value === "list" || value === "filter") return value;
-	throw new Error(`${source}: invalid openMode ${JSON.stringify(value)} — valid values: list, filter`);
+	throw new Error(`${source}: invalid openMode ${JSON.stringify(value)} - valid values: list, filter`);
 }
 
 export function loadConfig(env: Env = process.env): FuzzyExplorerConfig {
@@ -134,7 +134,7 @@ export function loadConfig(env: Env = process.env): FuzzyExplorerConfig {
 		const unknownKeys = Object.keys(file).filter((key) => !VALID_KEYS.includes(key));
 		if (unknownKeys.length > 0) {
 			throw new Error(
-				`${filePath}: unknown key(s) ${unknownKeys.join(", ")} — valid keys: ${VALID_KEYS.join(", ")}`,
+				`${filePath}: unknown key(s) ${unknownKeys.join(", ")} - valid keys: ${VALID_KEYS.join(", ")}`,
 			);
 		}
 

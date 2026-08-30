@@ -1,10 +1,10 @@
 /**
- * banner.ts — rendering the child's identity banner.
+ * banner.ts - rendering the child's identity banner.
  *
  * A child pi session looks exactly like a normal one, which is dangerous:
  * a human who wanders into the pane has no way to know their keystrokes are
  * being watched by a parent agent, or that the session will vanish the
- * moment a turn completes. The banner is that missing label — one line,
+ * moment a turn completes. The banner is that missing label - one line,
  * pinned above the editor, stating WHO this session is and HOW it will end:
  *
  *   ─ SUBAGENT · recon [scout] · auto-exit ────────────────────────────────
@@ -15,11 +15,11 @@
  *
  *   auto-exit      the session closes itself when a turn completes
  *   interactive    it stays open until the model calls subagent_done
- *   ⚠ human driving …   an auto-exit child where the user pressed Escape —
+ *   ⚠ human driving …   an auto-exit child where the user pressed Escape -
  *                  the next completed turn WILL exit and report back
  *
  * When width runs short, the same philosophy as widget.ts applies: identity
- * and state win, the free-text name is sacrificial — it shrinks to a "…"
+ * and state win, the free-text name is sacrificial - it shrinks to a "…"
  * first, then the trailing rule disappears. Layout is computed on plain
  * text; styling hooks are applied last so ANSI codes never enter the width
  * math. Like widget.ts, this module imports nothing so it unit-tests under
@@ -30,7 +30,7 @@ import { sanitizeDisplayText } from "./display-text.ts";
 
 /** Everything the banner states about the session. */
 export interface BannerState {
-	/** Display name — the `name` the parent chose at spawn time. */
+	/** Display name - the `name` the parent chose at spawn time. */
 	name: string;
 	/** Agent-definition name ("scout", "worker"); absent = no bracket tag. */
 	agent?: string;
@@ -58,7 +58,7 @@ export function formatBannerLine(state: BannerState, width: number, style: Banne
 	const warn = style.warn ?? ((text: string) => text);
 
 	const modeText = state.humanDriving
-		? "⚠ human driving — next completed turn exits & reports to parent"
+		? "⚠ human driving - next completed turn exits & reports to parent"
 		: state.autoExit
 			? "auto-exit"
 			: "interactive";
@@ -77,7 +77,7 @@ export function formatBannerLine(state: BannerState, width: number, style: Banne
 		name = maxName >= 2 ? name.slice(0, maxName - 1) + "…" : maxName === 1 ? "…" : "";
 	}
 
-	// Degenerate widths — narrower than even the fixed parts with no name at
+	// Degenerate widths - narrower than even the fixed parts with no name at
 	// all. Hard-cut the plain text (no styling: wrapping a mid-word sliver in
 	// ANSI codes buys nothing) so the line still never exceeds the width.
 	const bodyLength = prefix.length + name.length + agentTag.length + modeSegment.length;
@@ -87,7 +87,7 @@ export function formatBannerLine(state: BannerState, width: number, style: Banne
 
 	// Trailing rule: a space, then dashes filling exactly to the width. When
 	// the (possibly clipped) name leaves no leftover room, the rule is the
-	// first thing to go — it is decoration, not information. (One leftover
+	// first thing to go - it is decoration, not information. (One leftover
 	// column means a lone space: there is no room for a dash to style.)
 	const fill = width - bodyLength - 1;
 	const tail = fill > 0 ? " " + border("─".repeat(fill)) : fill === 0 ? " " : "";

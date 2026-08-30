@@ -1,13 +1,13 @@
 /**
- * agents.ts — agent definition files, and everything derived from them.
+ * agents.ts - agent definition files, and everything derived from them.
  *
  * An agent definition is `<name>.md` in a subagents dir: a small frontmatter
  * block plus a body that becomes the child's appended system prompt. The
- * FILENAME is the agent name — there is no `name:` key. Definitions load
+ * FILENAME is the agent name - there is no `name:` key. Definitions load
  * from two places, most specific wins:
  *
- *   1. project — `<cwd>/.pi/subagents/`      (a repo's own agents)
- *   2. global  — `$PI_CODING_AGENT_DIR/subagents/`, default ~/.pi/agent/subagents/
+ *   1. project - `<cwd>/.pi/subagents/`      (a repo's own agents)
+ *   2. global  - `$PI_CODING_AGENT_DIR/subagents/`, default ~/.pi/agent/subagents/
  *
  * A project file SHADOWS a global one with the same name, so a repo can
  * specialize `worker.md` or `scout.md` for its own conventions.
@@ -58,7 +58,7 @@ export interface AgentDefinition {
 	 * Ordered model candidates, each fully qualified as "provider/model"
 	 * (e.g. "openai-codex/gpt-5.5"). At spawn time the FIRST entry that is
 	 * both known to pi and whose provider has credentials on this machine
-	 * wins — that's what makes one agent file portable across computers
+	 * wins - that's what makes one agent file portable across computers
 	 * with different provider setups.
 	 */
 	models?: string[];
@@ -104,7 +104,7 @@ function parseAgentMarkdown(
 	source: "project" | "global",
 	filePath: string,
 ): AgentDefinition {
-	// Normalize Windows line endings first — otherwise the fence regex below
+	// Normalize Windows line endings first - otherwise the fence regex below
 	// silently fails to match and the whole frontmatter is treated as body.
 	markdown = markdown.replace(/\r\n/g, "\n");
 	// Frontmatter = the block between the leading `---` fences (optional).
@@ -119,15 +119,15 @@ function parseAgentMarkdown(
 	const rawHarness = frontmatterValue(frontmatter, "harness");
 
 	const problems: string[] = [];
-	// Unknown values are problems, not silent defaults — a typo in `context:`
+	// Unknown values are problems, not silent defaults - a typo in `context:`
 	// quietly spawning a new child would hide a forked-context intent.
 	if (rawContext !== undefined && rawContext !== "new" && rawContext !== "forked") {
-		problems.push(`invalid context "${rawContext}" — use "new" or "forked"`);
+		problems.push(`invalid context "${rawContext}" - use "new" or "forked"`);
 	}
 	// Same loudness for worktree: `worktree: yes` silently spawning WITHOUT
 	// isolation would be exactly the parallel-edit hazard the flag prevents.
 	if (rawWorktree !== undefined && rawWorktree !== "true" && rawWorktree !== "false") {
-		problems.push(`invalid worktree "${rawWorktree}" — use "true" or "false"`);
+		problems.push(`invalid worktree "${rawWorktree}" - use "true" or "false"`);
 	}
 	// Harness names come from the profile registry; a typo silently spawning
 	// a pi child instead of the intended external tool would be the exact
@@ -167,7 +167,7 @@ function parseAgentMarkdown(
 
 export function loadAgentDefinition(name: string, cwd: string): AgentDefinition | null {
 	assertValidAgentIdentifier(name);
-	// Project first, then global — most specific wins, so a repo can
+	// Project first, then global - most specific wins, so a repo can
 	// specialize scout/worker for its own conventions.
 	const projectPath = join(projectDefsDir(cwd), `${name}.md`);
 	if (existsSync(projectPath)) {
@@ -205,12 +205,12 @@ export function listAgentDefinitions(cwd: string): AgentDefinition[] {
 // Everything a consumer could want to know about each agent, loaded once:
 // identity, source file, what would actually run on THIS machine, and any
 // problems that would break a spawn. The model-facing subagent_available tool
-// and the human-facing /subagent-available command are both views over this —
+// and the human-facing /subagent-available command are both views over this -
 // they differ only in how much of it they show.
 
 export interface AgentInfo {
 	name: string;
-	/** Which layer it came from — "project" (.pi/subagents) or "global". */
+	/** Which layer it came from - "project" (.pi/subagents) or "global". */
 	source: "project" | "global";
 	description?: string;
 	/** Expanded explanation for the detailed surfaces; absent = they fall
@@ -242,7 +242,7 @@ export function contextMode(agent: Pick<AgentInfo, "harness" | "context">): "new
 	return isExternalHarness(agent.harness) ? "new-only" : agent.context;
 }
 
-/** A thrown Error's message, trimmed. Line breaks are KEPT — each view
+/** A thrown Error's message, trimmed. Line breaks are KEPT - each view
  * decides for itself: the overview widget indents them, the terse
  * subagent_available tool flattens them. */
 function problemText(error: unknown): string {
@@ -359,7 +359,7 @@ export function formatAgentCatalogue(inventory: AgentInfo[]): string | undefined
 // One card per agent under a top rule: a bracketed name tag, the model that
 // would run, dim dot leaders out to a right-anchored source column, then the
 // description HEADLINE and only the non-default parts of the config. File
-// paths are deliberately absent — the name IS the filename, so the source
+// paths are deliberately absent - the name IS the filename, so the source
 // column already locates the file. Layout is computed on plain strings and
 // the styling hooks are applied last, so ANSI codes never enter the width
 // math (same pattern as widget.ts).
@@ -421,7 +421,7 @@ export function descriptionHeadline(description: string): string {
 	const boundaries: number[] = [];
 	const dash = description.indexOf(" — ");
 	if (dash >= 0) boundaries.push(dash);
-	// A sentence end is punctuation before a CAPITALIZED next word — a bare
+	// A sentence end is punctuation before a CAPITALIZED next word - a bare
 	// "period + space" would false-match abbreviations like "e.g." or "vs.".
 	const sentence = description.match(/[.!?](?=\s+[A-Z])/);
 	if (sentence?.index !== undefined) boundaries.push(sentence.index + 1);
@@ -506,7 +506,7 @@ export function formatAgentOverviewLines(
 		if (i > 0) lines.push("");
 
 		// Header row: [name]  model ······· source (· default). The model slot
-		// answers the #1 question — what would this agent run on. When
+		// answers the #1 question - what would this agent run on. When
 		// resolution failed it says so in red; when no models are listed the
 		// child inherits the active model, which reads quieter on purpose.
 		const slot = agent.resolvedModel
@@ -517,8 +517,8 @@ export function formatAgentOverviewLines(
 		const isDefault = inventory[i].name === "worker";
 		const right = agent.source + (isDefault ? " · default" : "");
 		// The dots absorb the leftover width (min 3); a too-long model slot
-		// gives way with an ellipsis — or vanishes entirely on an absurdly
-		// narrow pane — so the source column stays anchored.
+		// gives way with an ellipsis - or vanishes entirely on an absurdly
+		// narrow pane - so the source column stays anchored.
 		const maxSlot = Math.max(0, safeWidth - indent - visibleWidth(right) - 2 - 3);
 		const slotText = fitText(slot.text, maxSlot);
 		const dots = Math.max(3, safeWidth - indent - visibleWidth(slotText) - visibleWidth(right) - 2);
@@ -569,7 +569,7 @@ export function formatAgentOverviewLines(
 			}
 		}
 
-		// Meta row: only what deviates from a plain default agent — a fully
+		// Meta row: only what deviates from a plain default agent - a fully
 		// default one gets no row at all. Run-behavior deviations render loud.
 		const parts: { text: string; paint: (text: string) => string }[] = [];
 		const mode = contextMode(agent);
@@ -584,7 +584,7 @@ export function formatAgentOverviewLines(
 		if (agent.harnessPassThrough) parts.push({ text: `pass-through: ${agent.harnessPassThrough}`, paint: muted });
 		if (mode === "forked") parts.push({ text: mode, paint: warning });
 		if (!agent.autoExit) parts.push({ text: "interactive", paint: warning });
-		// Worktree isolation changes where the child runs — a run-behavior
+		// Worktree isolation changes where the child runs - a run-behavior
 		// deviation, so it renders loud like forked/interactive.
 		if (agent.worktree) parts.push({ text: "worktree", paint: warning });
 		let row = "";
