@@ -208,16 +208,15 @@ describe("inventory", () => {
 });
 
 describe("descriptionHeadline", () => {
-	it("headline cuts at the em-dash", () => {
-		assert.strictEqual(descriptionHeadline("Fast recon — finds code. More text."), "Fast recon");
-	});
-
 	it("headline cuts at the sentence end", () => {
 		assert.strictEqual(descriptionHeadline("Finds code. Say how thorough."), "Finds code.");
 	});
 
-	it("earliest boundary wins", () => {
-		assert.strictEqual(descriptionHeadline("Finds code. Then — something else."), "Finds code.");
+	it("dashes are not boundaries", () => {
+		assert.strictEqual(
+			descriptionHeadline("Fast recon - finds code. More text."),
+			"Fast recon - finds code.",
+		);
 	});
 
 	it("plain description stays whole", () => {
@@ -226,15 +225,15 @@ describe("descriptionHeadline", () => {
 
 	it("e.g. is not a sentence end", () => {
 		assert.strictEqual(
-			descriptionHeadline("Runs quick checks (e.g. lint) on the diff — pass a file path."),
-			"Runs quick checks (e.g. lint) on the diff",
+			descriptionHeadline("Runs quick checks (e.g. lint) on the diff - pass a file path."),
+			"Runs quick checks (e.g. lint) on the diff - pass a file path.",
 		);
 	});
 
 	it("vs. is not a sentence end", () => {
 		assert.strictEqual(
-			descriptionHeadline("Compares impl vs. spec — cite line numbers."),
-			"Compares impl vs. spec",
+			descriptionHeadline("Compares impl vs. spec - cite line numbers."),
+			"Compares impl vs. spec - cite line numbers.",
 		);
 	});
 });

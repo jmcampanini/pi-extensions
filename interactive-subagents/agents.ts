@@ -410,23 +410,18 @@ function tildify(path: string): string {
 }
 
 /**
- * The scannable headline of a description: everything before the first
- * " — " or first sentence end, whichever comes first. Definitions follow a
- * "headline — spawn-time guidance" shape, and the guidance is for the model
- * choosing an agent; the human overview only needs the headline (the
+ * The scannable headline of a description: the first sentence. Definitions
+ * lead with a short headline and follow with spawn-time guidance for the
+ * model choosing an agent; the human overview only needs the headline (the
  * subagent_available tool keeps the full text). The headline is never truncated,
  * only wrapped.
  */
 export function descriptionHeadline(description: string): string {
-	const boundaries: number[] = [];
-	const dash = description.indexOf(" — ");
-	if (dash >= 0) boundaries.push(dash);
 	// A sentence end is punctuation before a CAPITALIZED next word - a bare
 	// "period + space" would false-match abbreviations like "e.g." or "vs.".
 	const sentence = description.match(/[.!?](?=\s+[A-Z])/);
-	if (sentence?.index !== undefined) boundaries.push(sentence.index + 1);
-	if (boundaries.length === 0) return description;
-	return description.slice(0, Math.min(...boundaries)).trim();
+	if (sentence?.index === undefined) return description;
+	return description.slice(0, sentence.index + 1).trim();
 }
 
 export interface AgentOverviewOptions {
