@@ -269,6 +269,7 @@ describe("overview rendering", () => {
 			"empty state names both dirs");
 		assert.ok(formatAgentOverviewLines([], 40, dirs).every((l) => visibleWidth(l) <= 40),
 			"empty state fits the width");
+		assert.ok(formatAgentOverviewLines([], WIDTH, dirs, {}, { models: { ids: ["provider/model"] } }).includes(" provider/model"));
 	});
 
 	it("top rule carries the count", () => {
@@ -354,8 +355,9 @@ describe("overview rendering", () => {
 	it("an overlong models section is bounded and narrow widths give way", () => {
 		const ids = Array.from({ length: USABLE_MODELS_MAX_LISTED + 4 }, (_, i) => `provider/model-number-${i}`);
 
-		const boundedLines = formatAgentOverviewLines(inventory, WIDTH, dirs, {}, { models: { ids } });
+		const boundedLines = formatAgentOverviewLines(inventory, WIDTH, dirs, {}, { models: { ids, current: ids.at(-1) } });
 
+		assert.ok(boundedLines.some((l) => l === ` current: ${ids.at(-1)}`));
 		assert.ok(boundedLines.some((l) => l === " +4 more"));
 		for (const w of [1, 8, 20, 40]) {
 			assert.ok(formatAgentOverviewLines(inventory, w, dirs, {}, { models: { ids } }).every((l) => visibleWidth(l) <= w),

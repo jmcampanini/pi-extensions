@@ -503,6 +503,7 @@ export function formatAgentOverviewLines(
 				"Create <name>.md files there (frontmatter: description, details, models, thinking, tools, context, auto-exit, worktree, harness, harness-pass-through; body = system prompt).",
 				Math.max(1, safeWidth - 1),
 			).map((wrapped) => ` ${wrapped}`),
+			...(options.models ? ["", ...formatModelOverviewLines(options.models, safeWidth, { border, muted, accent, bold })] : []),
 		].map((line) => clampStyled(line, safeWidth));
 	}
 
@@ -663,6 +664,8 @@ function formatModelOverviewLines(
 	];
 
 	if (models.ids.length === 0) lines.push(style.muted(" none usable (no provider has credentials)"));
+	if (models.current && !models.ids.slice(0, USABLE_MODELS_MAX_LISTED).includes(models.current))
+		lines.push(style.muted(" current: ") + style.accent(sanitizedInline(models.current)));
 	for (const id of models.ids.slice(0, USABLE_MODELS_MAX_LISTED)) {
 		const isCurrent = id === models.current;
 		lines.push(` ${sanitizedInline(id)}` + (isCurrent ? style.muted(" · ") + style.accent("current") : ""));
