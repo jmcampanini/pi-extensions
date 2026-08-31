@@ -112,7 +112,13 @@ const availableContext = {
 	modelRegistry: {
 		getAll: () => [],
 		hasConfiguredAuth: () => false,
+		getAvailable: () => [{ provider: "lm-studio", id: "local/small" }],
 	},
+	scopedModels: [
+		{ model: { provider: "openai-codex", id: "gpt-5.6-sol" } },
+		{ model: { provider: "openai-codex", id: "gpt-5.6-terra" } },
+	],
+	model: { provider: "openai-codex", id: "gpt-5.6-sol" },
 } as unknown as ExtensionContext;
 const availableResult = await availableTool.execute("available-call", {}, undefined, undefined, availableContext);
 const availableText = availableResult.content.find((part) => part.type === "text")?.text ?? "";
@@ -132,7 +138,7 @@ const externalAgent: AgentInfo = {
 	harnessPassThrough: "--permission-mode auto",
 	problems: [],
 };
-const externalAvailableText = available.formatAvailableModelText([externalAgent]);
+const externalAvailableText = available.formatAvailableModelText([externalAgent], { ids: [] });
 const externalAvailableResult = {
 	...availableResult,
 	content: [{ type: "text" as const, text: externalAvailableText }],
@@ -294,8 +300,12 @@ describe("subagent_available", () => {
 			"• scout (project, forked, interactive, worktree) - Maps relevant code paths before implementation begins.\n" +
 			"  config: source project · inherits model · context forked · interactive · worktree · harness pi\n" +
 			"• worker (default) - Builds focused changes and verifies them.\n" +
-			"  config: source global · inherits model · context new · autonomous · shared checkout · harness pi",
-			"available model content contains definition details and effective configuration only");
+			"  config: source global · inherits model · context new · autonomous · shared checkout · harness pi\n" +
+			"\n" +
+			"Current model: openai-codex/gpt-5.6-sol\n" +
+			"Usable Pi models (exact `model` values for Pi-harness subagents): openai-codex/gpt-5.6-sol, openai-codex/gpt-5.6-terra\n" +
+			"Model precedence: explicit override, agent definition, then the child harness's normal model selection. External harnesses use their own model names.",
+			"available model content contains definition details, effective configuration, and the scoped model ids");
 		assert.ok(!availableText.includes("RUNTIME STATUS SENTINEL") &&
 			!availableText.includes("liveonly") &&
 			!/\b(?:starting|active|waiting|stalled|delivering|queued)\b/.test(availableText),
@@ -315,12 +325,24 @@ describe("subagent_available", () => {
 		}, "available details carry both definition directories");
 		assert.ok(!availableText.includes("external:") && !availableText.includes("new-only"),
 			"pi agents carry no external capability markers");
+		assert.deepStrictEqual(availableDetails.presentation.models, {
+			ids: ["openai-codex/gpt-5.6-sol", "openai-codex/gpt-5.6-terra"],
+			current: "openai-codex/gpt-5.6-sol",
+		}, "available details carry the scoped models and the current one");
+	});
+
+	it("scoped models shadow the available catalogue in model content", () => {
+		assert.ok(!availableText.includes("lm-studio/local/small"));
 	});
 
 	it("external model content advertises new-only everywhere needed", () => {
 		assert.strictEqual(externalAvailableText,
 			"• claude-code (external: claude-code, new-only) - Direct means Claude Code runs through its native harness.\n" +
-			"  config: source global · model claude-opus-4-8 · context new-only · autonomous · shared checkout · external: claude-code · pass-through --permission-mode auto");
+			"  config: source global · model claude-opus-4-8 · context new-only · autonomous · shared checkout · external: claude-code · pass-through --permission-mode auto\n" +
+			"\n" +
+			"Current model: none selected\n" +
+			"Usable Pi models (exact `model` values for Pi-harness subagents): none (no provider has credentials on this machine)\n" +
+			"Model precedence: explicit override, agent definition, then the child harness's normal model selection. External harnesses use their own model names.");
 	});
 
 	it("available call title uses bold tool-title styling", () => {
@@ -363,6 +385,9 @@ describe("subagent_available", () => {
 			"expanded available card uses the versioned inventory for full details");
 		assert.ok(!expandedAvailablePlain.includes("Sub-agents · 2") && !expandedAvailablePlain.includes("dismiss"),
 			"expanded available card suppresses command-only header and footer");
+		assert.ok(expandedAvailablePlain.includes("── Models · 2 ─") &&
+			expandedAvailablePlain.includes(" openai-codex/gpt-5.6-sol · current"),
+			"expanded available card lists the usable models with the current one marked");
 		assert.ok(["accent", "muted", "toolOutput", "dim", "warning"].every((token) => themeCalls.includes(token)),
 			"expanded available card uses semantic accent, metadata, output, tertiary, and warning tokens");
 		assert.ok(!expandedAvailablePlain.includes("external:") && !expandedAvailablePlain.includes("new-only"),
@@ -459,6 +484,20 @@ describe("subagent_available", () => {
 					component.render(width).every((line) => visibleWidth(line) <= width)), true,
 				`available collapsed and expanded rendering fit width ${width}`);
 		}
+	});
+
+	it("rows persisted before model presentation still render without a models section", () => {
+		const { models: _omitted, ...legacyPresentation } = availableDetails.presentation;
+		const legacyCard = availableRenderer(
+			{ ...availableResult, details: { presentation: legacyPresentation } },
+			{ expanded: true, isPartial: false },
+			markedTheme,
+			renderContext(true),
+		);
+
+		const legacyPlain = stripVTControlCharacters(legacyCard.render(120).join("\n"));
+
+		assert.ok(legacyPlain.includes("Maps relevant code paths") && !legacyPlain.includes("── Models"));
 	});
 
 	it("unknown presentation versions fall back to model content", () => {

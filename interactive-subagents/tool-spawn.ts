@@ -54,7 +54,7 @@ import {
 	slugify,
 	writeLaunchMeta,
 } from "./launch.ts";
-import { assertValidThinkingLevel, resolveUsableModel, THINKING_LEVELS } from "./models.ts";
+import { assertValidThinkingLevel, listUsableModels, resolveUsableModel, THINKING_LEVELS } from "./models.ts";
 import { countEntries, seedForkSession, seedNewSession } from "./session.ts";
 import { moduleGeneration } from "./state.ts";
 import { formatCollapsedSubagentCall, formatExpandedSubagentCall } from "./subagent-call.ts";
@@ -93,8 +93,8 @@ const SubagentSpawnParams = Type.Object({
 	model: Type.Optional(
 		Type.String({
 			description:
-				"Model override: 'provider/model' (e.g. 'openai-codex/gpt-5.5'), or a bare model id when exactly one configured provider offers it. " +
-				"Validated like the agent's models list - unknown or credential-less models error immediately.",
+				"Model override. Pi-harness agents accept an exact id from the usable-models list at the end of your system prompt (also returned by subagent_available), or a bare model id when exactly one configured provider offers it. External harnesses accept their own model names. " +
+				"When omitted, the agent definition's model choice applies; without one, the child harness selects normally. Pi model names are validated immediately, and failures name the usable ids.",
 		}),
 	),
 	tools: Type.Optional(Type.String({ description: "Comma-separated tool allowlist, e.g. 'read,bash' (overrides the agent default)" })),
@@ -341,7 +341,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			const model = profile
 				? modelCandidates[0]
 				: modelCandidates.length > 0
-					? resolveUsableModel(modelCandidates, ctx.modelRegistry)
+					? resolveUsableModel(modelCandidates, ctx.modelRegistry, listUsableModels(ctx).ids)
 					: undefined;
 			const presentation: SpawnBehaviorPresentation = {
 				version: 1,

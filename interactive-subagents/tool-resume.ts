@@ -43,7 +43,7 @@ import {
 	requireHarnessProfile,
 } from "./harnesses.ts";
 import { artifactBase, buildChildEnv, buildLaunchCommand, clearExitSidecar, readLaunchMeta, slugify } from "./launch.ts";
-import { resolveUsableModel } from "./models.ts";
+import { listUsableModels, resolveUsableModel } from "./models.ts";
 import { appendSessionName, countEntries, readSessionCwd, readSessionName } from "./session.ts";
 import {
 	formatCollapsedSubagentResumeCall,
@@ -229,7 +229,7 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			const model = profile
 				? modelCandidates[0]
 				: modelCandidates.length > 0
-					? resolveUsableModel(modelCandidates, ctx.modelRegistry)
+					? resolveUsableModel(modelCandidates, ctx.modelRegistry, listUsableModels(ctx).ids)
 					: undefined;
 			const thinking = meta.thinking;
 
