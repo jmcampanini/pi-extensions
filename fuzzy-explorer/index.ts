@@ -1,6 +1,7 @@
 import {
 	getAgentDir,
 	getMarkdownTheme,
+	highlightCode,
 	SettingsManager,
 	type ExtensionAPI,
 	type ExtensionContext,
@@ -52,6 +53,7 @@ export function registerFuzzyExplorer(pi: ExtensionAPI): void {
 					notify: (message, level) => ctx.ui.notify(message, level),
 					done,
 					markdownTheme: getMarkdownTheme(),
+					codeHighlighter: highlightCode,
 				}),
 				{
 					overlay: true,

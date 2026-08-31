@@ -1,4 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
+import { getLanguageFromPath } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, wrapTextWithAnsi, type MarkdownTheme } from "@earendil-works/pi-tui";
 import { clampStyled, fitText } from "../shared/text-fit.ts";
 import { SEPARATOR_CLASS, stripSeparators } from "./search.ts";
@@ -52,17 +53,47 @@ export const PLAIN_MARKDOWN_THEME: Readonly<MarkdownTheme> = Object.freeze({
 	underline: identity,
 });
 
+export type CodeHighlighter = (code: string, language: string) => string[];
+
+/** Highlighter used when Pi's theme is unavailable: one unstyled line per source line. */
+export const plainCodeHighlighter: CodeHighlighter = (code) => code.split("\n");
+
+/** The presentation `m` toggles into; raw is the other side of the toggle. */
+export type RenderedForm =
+	| { mode: "markdown" }
+	| { mode: "code"; language: string };
+
+const MARKDOWN_FORM: RenderedForm = { mode: "markdown" };
+const PROSE_KINDS = new Set<Block["kind"]>(["assistant", "user", "summary", "custom"]);
+
 /**
- * Blocks whose detail view renders as markdown by default: the kinds Pi's own
- * transcript renders through its markdown theme, plus subagent tool traffic,
- * whose bodies are prose reports. Tool output, bash output, and canonical
- * invocation text stay raw.
+ * Blocks whose detail view opens rendered: the kinds Pi's own transcript
+ * renders through its markdown theme, subagent tool traffic, whose bodies are
+ * prose reports, and read results of file types Pi's read renderer recognizes.
+ * Other tool output, bash output, and canonical invocation text open raw.
  */
-export function rendersMarkdownByDefault(block: Block): boolean {
-	if (block.kind === "assistant" || block.kind === "user" || block.kind === "summary" || block.kind === "custom") {
-		return true;
-	}
-	return block.kind === "tool" && (block.toolName?.startsWith("subagent_") ?? false);
+export function rendersByDefault(block: Block): boolean {
+	if (PROSE_KINDS.has(block.kind)) return true;
+	if (block.kind !== "tool") return false;
+	return (block.toolName?.startsWith("subagent_") ?? false) || readLanguage(block) !== undefined;
+}
+
+/**
+ * How a block looks when rendered: read results follow their file type like
+ * Pi's read renderer (markdown files render, code highlights); everything
+ * else is markdown.
+ */
+export function renderedForm(block: Block): RenderedForm {
+	const language = readLanguage(block);
+	if (language === undefined || language === "markdown") return MARKDOWN_FORM;
+	return { mode: "code", language };
+}
+
+/** Pi's language for a successful read result's file, or undefined when nothing identifies one. */
+function readLanguage(block: Block): string | undefined {
+	if (block.kind !== "tool" || block.toolName?.toLowerCase() !== "read") return undefined;
+	if (block.isError || block.fileReference === undefined) return undefined;
+	return getLanguageFromPath(block.fileReference.path);
 }
 
 function safeWidth(width: number): number {
@@ -420,7 +451,7 @@ export function formatSubagentResultDivider(width: number): string {
 	return prefix + "─".repeat(Math.max(0, maxWidth - visibleWidth(prefix)));
 }
 
-export type SubagentSection =
+export type DetailSection =
 	| { type: "fields"; fields: SubagentField[] }
 	| { type: "content"; text: string }
 	| { type: "divider" }
@@ -431,8 +462,8 @@ export type SubagentSection =
  * layout policy: results show content, divider, table; tool calls show
  * fields, content; empty sections are dropped. Consumers style each section.
  */
-export function subagentSections(view: SubagentView): SubagentSection[] {
-	const sections: SubagentSection[] = [];
+export function subagentSections(view: SubagentView): DetailSection[] {
+	const sections: DetailSection[] = [];
 	if (view.result) {
 		const table = formatSubagentTable(view);
 		if (view.content !== "") sections.push({ type: "content", text: view.content });
@@ -445,6 +476,26 @@ export function subagentSections(view: SubagentView): SubagentSection[] {
 	if (view.fields.length > 0) sections.push({ type: "fields", fields: view.fields });
 	if (view.content !== "") sections.push({ type: "content", text: view.content });
 	return sections;
+}
+
+/** Primitive tool-call arguments as key=value metadata, in argument order. */
+function toolArgumentFields(block: Block): SubagentField[] {
+	const parsed = block.toolArguments;
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return [];
+	return Object.entries(parsed)
+		.filter(([, value]) => typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+		.map(([key, value]) => ({ key, value: singleLine(String(value)) }));
+}
+
+/**
+ * Sections of a rendered detail view: subagent views own their layout; any
+ * other tool call leads with its arguments so the file behind a rendered read
+ * stays visible once the raw invocation header is gone.
+ */
+export function detailSections(block: Block): DetailSection[] {
+	const view = subagentView(block);
+	if (view !== undefined) return subagentSections(view);
+	return subagentSections({ fields: toolArgumentFields(block), content: block.body });
 }
 
 /** Displayed preview/detail text: parsed result responses precede their canonical metadata table. */
