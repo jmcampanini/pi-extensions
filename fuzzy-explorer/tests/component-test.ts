@@ -247,4 +247,66 @@ describe("ExplorerComponent", () => {
 		assert.ok(renderedDetail.at(-1)?.includes("m raw") === true && rawMarkdownDetail.at(-1)?.includes("m md") === true,
 			"hints flip between raw and md");
 	});
+
+	it("read results render by file type with raw behind the toggle", (t) => {
+		const tui = { terminal: { rows: 24 }, requestRender(): void {} } as unknown as TUI;
+		const theme = {
+			fg: (_token: string, text: string) => text,
+			bg: (_token: string, text: string) => text,
+			bold: (text: string) => text,
+		} as unknown as Theme;
+		const readState = new ExplorerState("list");
+		const readBlocks = [
+			makeBlock({
+				id: "read-md", kind: "tool", toolName: "read", title: "read", body: "# Guide\n\nUse **bold** text.",
+				toolArguments: { path: "docs/guide.md" }, fileReference: { path: "docs/guide.md" },
+			}),
+			makeBlock({
+				id: "read-ts", kind: "tool", toolName: "read", title: "read", body: "const answer = 42;\n\treturn answer;",
+				toolArguments: { path: "src/answer.ts", offset: 7 }, fileReference: { path: "src/answer.ts", line: 7 },
+			}),
+		];
+		const readComponent = new ExplorerComponent({
+			tui,
+			theme,
+			state: readState,
+			getBlocks: () => readBlocks,
+			actions: {
+				async copy(): Promise<void> {},
+				async open(): Promise<number | null> { return 0; },
+			},
+			notify: () => {},
+			done: () => {},
+			refreshIntervalMs: 60_000,
+			codeHighlighter: (code, language) => code.split("\n").map((line) => `«${language}» ${line}`),
+		});
+		t.after(() => readComponent.dispose());
+		readComponent.focused = true;
+		readComponent.render(80);
+
+		readComponent.handleInput("\r");
+		const codeDetail = readComponent.render(80);
+		assert.deepStrictEqual(
+			[codeDetail[1]?.startsWith("│ path=src/answer.ts"), codeDetail[2]?.startsWith("│ offset=7"),
+				codeDetail[4]?.startsWith("│ «typescript» const answer = 42;"),
+				codeDetail[5]?.startsWith("│ «typescript»    return answer;"), codeDetail.at(-1)?.includes("m raw")],
+			[true, true, true, true, true],
+			"a code read leads with its arguments, then highlighted lines with tabs as three spaces, and offers the raw toggle");
+		readComponent.handleInput("m");
+		const rawCode = readComponent.render(80);
+		assert.ok(rawCode[1]?.startsWith("│ const answer = 42;") === true && rawCode.at(-1)?.includes("m code") === true,
+			"m shows the stored text unhighlighted and offers the code toggle");
+
+		readComponent.handleInput("K");
+		const markdownDetail = readComponent.render(80);
+		assert.deepStrictEqual(
+			[markdownDetail[1]?.startsWith("│ path=docs/guide.md"), markdownDetail[3]?.startsWith("│ Guide"),
+				markdownDetail[5]?.startsWith("│ Use bold text."), markdownDetail.at(-1)?.includes("m raw")],
+			[true, true, true, true],
+			"a markdown read renders its markup after the path line");
+		readComponent.handleInput("m");
+		const rawMarkdown = readComponent.render(80);
+		assert.ok(rawMarkdown[1]?.startsWith("│ # Guide") === true && rawMarkdown.at(-1)?.includes("m md") === true,
+			"m reveals the raw markdown and offers the md toggle");
+	});
 });

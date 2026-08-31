@@ -91,17 +91,17 @@ describe("ExplorerState", () => {
 			"Escape returns from detail with selection synced");
 
 		state.enterDetail();
-		assert.strictEqual(state.detailMarkdownOverride, undefined,
+		assert.strictEqual(state.detailRenderedOverride, undefined,
 			"detail opens with the policy-default view");
 		state.setDetailPageSize(4);
 		state.scrollDetail(2, 20);
-		state.toggleDetailMarkdown(true);
-		assert.deepStrictEqual([state.detailMarkdownOverride, state.detailOffset], [false, 0],
+		state.toggleDetailRendered(true);
+		assert.deepStrictEqual([state.detailRenderedOverride, state.detailOffset], [false, 0],
 			"m overrides the default and rescrolls");
-		state.toggleDetailMarkdown(true);
-		assert.strictEqual(state.detailMarkdownOverride, true, "m toggles back to rendered");
+		state.toggleDetailRendered(true);
+		assert.strictEqual(state.detailRenderedOverride, true, "m toggles back to rendered");
 		state.jumpDetail(-1);
-		assert.strictEqual(state.detailMarkdownOverride, undefined,
+		assert.strictEqual(state.detailRenderedOverride, undefined,
 			"visiting another block returns to its policy default");
 		state.escape();
 	});

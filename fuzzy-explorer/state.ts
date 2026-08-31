@@ -19,7 +19,7 @@ export class ExplorerState {
 	listPageSize = 1;
 	detailPageSize = 1;
 	/** Explicit rendered/raw choice for the current detail view; undefined = policy default. */
-	detailMarkdownOverride: boolean | undefined;
+	detailRenderedOverride: boolean | undefined;
 
 	private blocks: readonly Block[] = [];
 	private fallbackIndex = 0;
@@ -101,7 +101,7 @@ export class ExplorerState {
 		if (!this.selected) return;
 		this.mode = "detail";
 		this.detailOffset = 0;
-		this.detailMarkdownOverride = undefined;
+		this.detailRenderedOverride = undefined;
 	}
 
 	jumpDetail(direction: -1 | 1): void {
@@ -110,11 +110,11 @@ export class ExplorerState {
 		if (target === this.selectedIndex) return;
 		this.selectIndex(target);
 		this.detailOffset = 0;
-		this.detailMarkdownOverride = undefined;
+		this.detailRenderedOverride = undefined;
 	}
 
-	toggleDetailMarkdown(defaultRendered: boolean): void {
-		this.detailMarkdownOverride = !(this.detailMarkdownOverride ?? defaultRendered);
+	toggleDetailRendered(defaultRendered: boolean): void {
+		this.detailRenderedOverride = !(this.detailRenderedOverride ?? defaultRendered);
 		this.detailOffset = 0;
 	}
 

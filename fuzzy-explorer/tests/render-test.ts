@@ -4,6 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	computeTagWidth,
+	detailSections,
 	formatBlockTag,
 	formatBorderLine,
 	formatDetailIdentity,
@@ -14,13 +15,14 @@ import {
 	formatPreviewLines,
 	formatResultRow,
 	formatTruncationMarker,
-	rendersMarkdownByDefault,
+	renderedForm,
+	rendersByDefault,
 	sanitizeTerminalText,
 	subagentSections,
 	tailAwareTruncate,
 	type RenderStyles,
 } from "../render.ts";
-import type { SearchResult } from "../types.ts";
+import type { Block, SearchResult } from "../types.ts";
 import { makeBlock } from "./block-factory.ts";
 
 function localShortTime(timestamp: string): string {
@@ -127,24 +129,91 @@ describe("block identity", () => {
 	});
 });
 
-// Markdown policy mirrors what Pi's transcript renders as markdown.
+// Rendering policy mirrors Pi's transcript: prose renders as markdown and
+// read results follow their file type.
 
-describe("rendersMarkdownByDefault", () => {
-	it("markdown-by-default covers prose kinds and subagent tool traffic", () => {
+function readBlock(path: string, overrides: Partial<Block> = {}): Block {
+	return makeBlock({
+		kind: "tool",
+		toolName: "read",
+		title: "read",
+		body: "file content",
+		toolArguments: { path },
+		fileReference: { path },
+		...overrides,
+	});
+}
+
+describe("rendersByDefault", () => {
+	it("prose kinds and subagent tool traffic open rendered", () => {
 		assert.deepStrictEqual([
-			rendersMarkdownByDefault(makeBlock({ kind: "assistant" })),
-			rendersMarkdownByDefault(makeBlock({ kind: "user" })),
-			rendersMarkdownByDefault(makeBlock({ kind: "summary", title: "Branch summary" })),
-			rendersMarkdownByDefault(makeBlock({ kind: "custom", title: "subagent_result" })),
-			rendersMarkdownByDefault(makeBlock({ kind: "tool", toolName: "subagent_spawn", title: "subagent_spawn" })),
+			rendersByDefault(makeBlock({ kind: "assistant" })),
+			rendersByDefault(makeBlock({ kind: "user" })),
+			rendersByDefault(makeBlock({ kind: "summary", title: "Branch summary" })),
+			rendersByDefault(makeBlock({ kind: "custom", title: "subagent_result" })),
+			rendersByDefault(makeBlock({ kind: "tool", toolName: "subagent_spawn", title: "subagent_spawn" })),
 		], [true, true, true, true, true]);
 	});
 
-	it("ordinary tool and bash output stays raw", () => {
+	it("reads of markdown and recognized code files open rendered", () => {
 		assert.deepStrictEqual([
-			rendersMarkdownByDefault(makeBlock({ kind: "tool", toolName: "read", title: "read" })),
-			rendersMarkdownByDefault(makeBlock({ kind: "bash", title: "Bash" })),
+			rendersByDefault(readBlock("docs/GUIDE.MD")),
+			rendersByDefault(readBlock("src/config.ts")),
+		], [true, true]);
+	});
+
+	it("reads that failed, lack a path, or have an unknown extension open raw", () => {
+		assert.deepStrictEqual([
+			rendersByDefault(readBlock("docs/guide.md", { isError: true })),
+			rendersByDefault(readBlock("docs/guide.md", { fileReference: undefined })),
+			rendersByDefault(readBlock("build.log")),
+		], [false, false, false]);
+	});
+
+	it("other tool and bash output stays raw", () => {
+		assert.deepStrictEqual([
+			rendersByDefault(makeBlock({ kind: "tool", toolName: "grep", title: "grep", fileReference: { path: "src/config.ts" } })),
+			rendersByDefault(makeBlock({ kind: "bash", title: "Bash" })),
 		], [false, false]);
+	});
+});
+
+describe("renderedForm", () => {
+	it("markdown reads render as markdown and code reads highlight in Pi's language", () => {
+		assert.deepStrictEqual([
+			renderedForm(readBlock("docs/guide.md")),
+			renderedForm(readBlock("src/config.ts")),
+			renderedForm(readBlock("scripts/run.py")),
+		], [{ mode: "markdown" }, { mode: "code", language: "typescript" }, { mode: "code", language: "python" }]);
+	});
+
+	it("everything else toggles into markdown", () => {
+		assert.deepStrictEqual([
+			renderedForm(readBlock("build.log")),
+			renderedForm(makeBlock({ kind: "assistant" })),
+			renderedForm(makeBlock({ kind: "bash", title: "Bash" })),
+		], [{ mode: "markdown" }, { mode: "markdown" }, { mode: "markdown" }]);
+	});
+});
+
+describe("detailSections", () => {
+	it("a rendered tool call leads with its primitive arguments, then the result", () => {
+		assert.deepStrictEqual(
+			detailSections(readBlock("docs/guide.md", {
+				toolArguments: { path: "docs/guide.md", offset: 3, nested: { skip: true } },
+			})),
+			[
+				{ type: "fields", fields: [{ key: "path", value: "docs/guide.md" }, { key: "offset", value: "3" }] },
+				{ type: "content", text: "file content" },
+			],
+		);
+	});
+
+	it("prose blocks are content only", () => {
+		assert.deepStrictEqual(
+			detailSections(makeBlock({ kind: "assistant", body: "answer" })),
+			[{ type: "content", text: "answer" }],
+		);
 	});
 });
 
