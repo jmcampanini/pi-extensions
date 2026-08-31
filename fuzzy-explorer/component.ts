@@ -15,6 +15,7 @@ import { clampStyled } from "../shared/text-fit.ts";
 import { describeSmartOpenSync, formatSmartOpenHint } from "./actions.ts";
 import {
 	computeTagWidth,
+	detailSections,
 	formatBorderLine,
 	formatDetailIdentity,
 	formatDetailLines,
@@ -26,10 +27,12 @@ import {
 	formatSubagentResultDivider,
 	formatTruncationMarker,
 	PLAIN_MARKDOWN_THEME,
-	rendersMarkdownByDefault,
+	plainCodeHighlighter,
+	renderedForm,
+	rendersByDefault,
 	sanitizeTerminalText,
-	subagentSections,
 	tailAwareTruncate,
+	type CodeHighlighter,
 	type RenderStyles,
 } from "./render.ts";
 import { ExplorerState } from "./state.ts";
@@ -55,6 +58,7 @@ export interface ExplorerComponentOptions {
 	done: () => void;
 	refreshIntervalMs?: number;
 	markdownTheme?: MarkdownTheme;
+	codeHighlighter?: CodeHighlighter;
 }
 
 /** Height budget shared by the overlay registration and the component's own cap. */
@@ -81,9 +85,11 @@ export class ExplorerComponent implements Component, Focusable {
 	private readonly done: () => void;
 	private readonly input = new Input();
 	private readonly markdown: Markdown;
+	private readonly codeHighlighter: CodeHighlighter;
 	private readonly refreshTimer: ReturnType<typeof setInterval>;
 	private lastBlocks: readonly Block[] | undefined;
 	private lastMarkdownText: string | undefined;
+	private highlighted: { text: string; language: string; lines: string[] } | undefined;
 	private lastWidth = 80;
 	private actionRunning = false;
 	private _focused = false;
@@ -97,6 +103,7 @@ export class ExplorerComponent implements Component, Focusable {
 		this.notify = options.notify;
 		this.done = options.done;
 		this.markdown = new Markdown("", 0, 0, options.markdownTheme ?? PLAIN_MARKDOWN_THEME);
+		this.codeHighlighter = options.codeHighlighter ?? plainCodeHighlighter;
 		this.input.setValue(this.state.query);
 		this.refreshTimer = setInterval(() => {
 			if (!this.syncBlocks()) return;
@@ -167,7 +174,7 @@ export class ExplorerComponent implements Component, Focusable {
 				"u/d page",
 				"J/K blocks",
 				"h/q/esc list",
-				`m ${this.detailMarkdown() ? "raw" : "md"}`,
+				this.renderToggleHint(),
 				"y copy",
 				`o ${openHint(this.state.selected?.block)}`,
 			];
@@ -273,44 +280,47 @@ export class ExplorerComponent implements Component, Focusable {
 		return lines;
 	}
 
-	/** Whether the current detail view shows rendered markdown (`m` overrides the policy). */
-	private detailMarkdown(): boolean {
+	/** Whether the current detail view shows its rendered form (`m` overrides the policy). */
+	private detailRendered(): boolean {
 		const block = this.state.selected?.block;
 		if (!block) return false;
 		if (block.body === "" && subagentView(block) === undefined) return false;
-		return this.state.detailMarkdownOverride ?? rendersMarkdownByDefault(block);
+		return this.state.detailRenderedOverride ?? rendersByDefault(block);
+	}
+
+	private renderToggleHint(): string {
+		if (this.detailRendered()) return "m raw";
+		const block = this.state.selected?.block;
+		return block !== undefined && renderedForm(block).mode === "code" ? "m code" : "m md";
 	}
 
 	private detailLines(width = this.lastWidth): string[] {
 		const selected = this.state.selected;
 		if (!selected) return [];
 		const innerWidth = Math.max(1, width - 4);
-		if (!this.detailMarkdown()) {
+		if (!this.detailRendered()) {
 			return formatDetailLines(selected, innerWidth, this.styles(), existsSync);
 		}
 
-		// Rendered markdown shows parsed content only; copy and open keep the raw text.
+		// Rendered detail shows parsed content only; copy and open keep the raw text.
 		const styles = this.styles();
-		const view = subagentView(selected.block);
-		const sections = subagentSections(view ?? { fields: [], content: selected.block.body });
+		const form = renderedForm(selected.block);
 		const lines: string[] = [];
 		const append = (chunk: string[]): void => {
 			if (chunk.length === 0) return;
 			if (lines.length > 0) lines.push("");
 			lines.push(...chunk);
 		};
-		for (const section of sections) {
+		for (const section of detailSections(selected.block)) {
 			if (section.type === "fields") {
 				append(section.fields.map((field) =>
 					clampStyled(styles.muted(sanitizeTerminalText(`${field.key}=${field.value}`)), innerWidth)));
 			} else if (section.type === "content") {
 				const text = sanitizeTerminalText(section.text);
 				if (text === "") continue;
-				if (text !== this.lastMarkdownText) {
-					this.markdown.setText(text);
-					this.lastMarkdownText = text;
-				}
-				append(this.markdown.render(innerWidth).map((line) => clampStyled(line, innerWidth)));
+				append(form.mode === "code"
+					? this.codeLines(text, form.language, innerWidth)
+					: this.markdownLines(text, innerWidth));
 			} else if (section.type === "divider") {
 				append([styles.muted(formatSubagentResultDivider(innerWidth))]);
 			} else {
@@ -321,6 +331,28 @@ export class ExplorerComponent implements Component, Focusable {
 		const marker = formatTruncationMarker(selected.block.truncation, existsSync);
 		if (marker !== undefined) lines.push(clampStyled(styles.dim(marker), innerWidth));
 		return lines;
+	}
+
+	private markdownLines(text: string, width: number): string[] {
+		if (text !== this.lastMarkdownText) {
+			this.markdown.setText(text);
+			this.lastMarkdownText = text;
+		}
+		return this.markdown.render(width).map((line) => clampStyled(line, width));
+	}
+
+	/**
+	 * Highlighting is cached per block text; only wrapping to the current width
+	 * repeats per render. Tabs become three spaces first, as in Pi's read
+	 * renderer, because pi-tui measures a tab as three columns while terminals
+	 * advance to the next tab stop.
+	 */
+	private codeLines(text: string, language: string, width: number): string[] {
+		if (this.highlighted?.text !== text || this.highlighted.language !== language) {
+			this.highlighted = { text, language, lines: this.codeHighlighter(text.replace(/\t/gu, "   "), language) };
+		}
+		return this.highlighted.lines.flatMap((line) =>
+			wrapTextWithAnsi(line, width).map((wrapped) => clampStyled(wrapped, width)));
 	}
 
 	private renderDetail(width: number, height: number): string[] {
@@ -400,17 +432,17 @@ export class ExplorerComponent implements Component, Focusable {
 		else if (matchesKey(data, "d")) this.state.pageDetail(1, detailLineCount);
 		else if (matchesKey(data, "shift+j")) this.state.jumpDetail(1);
 		else if (matchesKey(data, "shift+k")) this.state.jumpDetail(-1);
-		else if (matchesKey(data, "m")) this.toggleDetailMarkdown();
+		else if (matchesKey(data, "m")) this.toggleDetailRendered();
 		else if (matchesKey(data, "y")) this.runCopy();
 		else if (matchesKey(data, "o")) this.runOpen();
 		else return;
 		this.tui.requestRender();
 	}
 
-	private toggleDetailMarkdown(): void {
+	private toggleDetailRendered(): void {
 		const block = this.state.selected?.block;
 		if (!block) return;
-		this.state.toggleDetailMarkdown(rendersMarkdownByDefault(block));
+		this.state.toggleDetailRendered(rendersByDefault(block));
 	}
 
 	private runCopy(): void {

@@ -15,6 +15,19 @@ const usage = {
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
+const FIXTURE_GUIDE_MARKDOWN = [
+	"# Fixture guide",
+	"",
+	"Rendered reads show **bold**, `code`, and lists:",
+	"",
+	"- markdown files render",
+	"- code files highlight",
+	"",
+	"```ts",
+	"export const answer = 42;",
+	"```",
+].join("\n");
+
 /** Build a deterministic branched transcript used by unit and tmux smoke tests. */
 export function buildFixtureSession(directory: string, additionalMessages = 0): FixtureSession {
 	mkdirSync(directory, { recursive: true });
@@ -112,10 +125,19 @@ export function buildFixtureSession(directory: string, additionalMessages = 0): 
 		content: "HIDDEN_CUSTOM_NEVER_INDEX", display: false });
 	add({ ...base("0000000f", "0000000e", 17), type: "compaction", summary: "Compaction summary fixture text.",
 		firstKeptEntryId: "00000001", tokensBefore: 12345 });
-	add({ ...base("00000010", "0000000f", 18), type: "message", message: {
+	add({ ...base("00000011", "0000000f", 18), type: "message", message: {
+		role: "assistant",
+		content: [{ type: "toolCall", id: "call-read-md", name: "read", arguments: { path: "docs/guide.md" } }],
+		api: "openai-completions", provider: "openai", model: "fixture", usage, stopReason: "toolUse", timestamp: 18,
+	} });
+	add({ ...base("00000012", "00000011", 19), type: "message", message: {
+		role: "toolResult", toolCallId: "call-read-md", toolName: "read",
+		content: [{ type: "text", text: FIXTURE_GUIDE_MARKDOWN }], details: {}, isError: false, timestamp: 19,
+	} });
+	add({ ...base("00000010", "00000012", 20), type: "message", message: {
 		role: "user", content: [{ type: "text", text: "latest active user block" }, {
 			type: "image", data: "BASE64_IMAGE_NEVER_INDEX", mimeType: "image/png",
-		}], timestamp: 18,
+		}], timestamp: 20,
 	} });
 
 	let parentId = "00000010";
