@@ -26,6 +26,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createTestEventHarness } from "../../shared/test-event-harness.ts";
+import { USABLE_MODELS_MAX_LISTED } from "../models.ts";
 
 // A throwaway global config root and a throwaway project cwd.
 const globalRoot = mkdtempSync(join(tmpdir(), "subagents-global-"));
@@ -160,8 +161,9 @@ const registry = {
 	],
 	hasConfiguredAuth: (m: { provider: string }) => m.provider === "openai-codex",
 };
+const usableIds = ["openai-codex/gpt-5.5"];
 
-const inventory = collectAgentInventory(registry, cwd);
+const inventory = collectAgentInventory(registry, cwd, usableIds);
 const scoutInfo = inventory.find((a) => a.name === "scout")!;
 const workerInfo = inventory.find((a) => a.name === "worker")!;
 
@@ -169,7 +171,7 @@ const workerInfo = inventory.find((a) => a.name === "worker")!;
 // per-entry reasons, keeping the message's own line breaks (each view
 // decides how to flatten or indent them).
 writeFileSync(join(globalDefs, "broken.md"), "---\nmodels: anthropic/claude-x\nthinking: ultra\n---\nB.\n");
-const broken = collectAgentInventory(registry, cwd).find((a) => a.name === "broken")!;
+const broken = collectAgentInventory(registry, cwd, usableIds).find((a) => a.name === "broken")!;
 
 describe("inventory", () => {
 	it("first usable model wins", () => {
@@ -250,8 +252,8 @@ writeFileSync(
 	join(globalDefs, "integration-test-orchestrator.md"),
 	"---\ndescription: Runs the suite and reports findings back to the caller.\n---\nI.\n",
 );
-const hostile = collectAgentInventory(registry, cwd);
-const brokenInventory = collectAgentInventory(registry, cwd);
+const hostile = collectAgentInventory(registry, cwd, usableIds);
+const brokenInventory = collectAgentInventory(registry, cwd, usableIds);
 
 describe("overview rendering", () => {
 	const dirs = { global: globalDefs, project: projectDefs };
@@ -335,6 +337,32 @@ describe("overview rendering", () => {
 		assert.ok(hostileFlat.includes("notebook, todo"));
 	});
 
+	it("the models section lists ids, marks the current one, and fits the width", () => {
+		const models = { ids: ["openai-codex/gpt-5.6-sol", "openai-codex/gpt-5.6-terra"], current: "openai-codex/gpt-5.6-terra" };
+
+		const modelLines = formatAgentOverviewLines(inventory, WIDTH, dirs, {}, { models });
+		const modelFlat = modelLines.join("\n");
+
+		assert.ok(modelFlat.includes("── Models · 2 ─"));
+		assert.ok(modelLines.some((l) => l === " openai-codex/gpt-5.6-sol"));
+		assert.ok(modelLines.some((l) => l === " openai-codex/gpt-5.6-terra · current"));
+		assert.ok(modelFlat.indexOf("[worker]") < modelFlat.indexOf("── Models"), "models follow the agent cards");
+		assert.ok(modelFlat.indexOf("── Models") < modelFlat.indexOf("dismiss"), "the dismiss hint stays last");
+		assert.ok(modelLines.every((l) => visibleWidth(l) <= WIDTH));
+	});
+
+	it("an overlong models section is bounded and narrow widths give way", () => {
+		const ids = Array.from({ length: USABLE_MODELS_MAX_LISTED + 4 }, (_, i) => `provider/model-number-${i}`);
+
+		const boundedLines = formatAgentOverviewLines(inventory, WIDTH, dirs, {}, { models: { ids } });
+
+		assert.ok(boundedLines.some((l) => l === " +4 more"));
+		for (const w of [1, 8, 20, 40]) {
+			assert.ok(formatAgentOverviewLines(inventory, w, dirs, {}, { models: { ids } }).every((l) => visibleWidth(l) <= w),
+				`models section fits width ${w}`);
+		}
+	});
+
 	it("a broken agent gets a red header slot and structured ⚠ blocks", () => {
 		const brokenLines = formatAgentOverviewLines(brokenInventory, WIDTH, dirs);
 		assert.ok(brokenLines.some((l) => l.includes("[broken]") && l.includes("✗ no usable model")),
@@ -345,6 +373,8 @@ describe("overview rendering", () => {
 			"problem bullets keep their shape");
 		assert.ok(brokenLines.some((l) => l.includes("⚠ Invalid thinking level")),
 			"second problem gets its own block");
+		assert.ok(brokenLines.some((l) => l.includes("Usable models") && l.includes("openai-codex/gpt-5.5")),
+			"the problem block names the ids to use instead");
 		assert.ok(brokenLines.every((l) => visibleWidth(l) <= WIDTH),
 			"broken view still fits the width");
 	});
@@ -357,7 +387,7 @@ writeFileSync(join(globalDefs, "isolated.md"), "---\nworktree: true\n---\nI.\n")
 writeFileSync(join(globalDefs, "shared.md"), "---\nworktree: false\n---\nS.\n");
 writeFileSync(join(globalDefs, "sloppy.md"), "---\nworktree: yes\n---\nY.\n");
 const sloppy = loadAgentDefinition("sloppy", cwd)!;
-const withWorktree = collectAgentInventory(registry, cwd);
+const withWorktree = collectAgentInventory(registry, cwd, usableIds);
 
 describe("worktree frontmatter", () => {
 	const dirs = { global: globalDefs, project: projectDefs };
@@ -412,10 +442,10 @@ writeFileSync(join(globalDefs, "extforked.md"), "---\nharness: claude-code\ncont
 const extforked = loadAgentDefinition("extforked", cwd)!;
 writeFileSync(join(globalDefs, "shadowed-harness.md"), "---\nharness: claude-code\n---\nG.\n");
 writeFileSync(join(projectDefs, "shadowed-harness.md"), "---\ndescription: plain pi\n---\nP.\n");
-const extInventory = collectAgentInventory(registry, cwd);
+const extInventory = collectAgentInventory(registry, cwd, usableIds);
 const extInfo = extInventory.find((a) => a.name === "ext")!;
 writeFileSync(join(globalDefs, "extoff.md"), "---\nharness: claude-code\nthinking: off\n---\nO.\n");
-const extoff = collectAgentInventory(registry, cwd).find((a) => a.name === "extoff")!;
+const extoff = collectAgentInventory(registry, cwd, usableIds).find((a) => a.name === "extoff")!;
 
 describe("external harnesses", () => {
 	it("harness parses", () => {
@@ -503,7 +533,7 @@ writeFileSync(
 	"---\ndescription: Compact routing line.\ndetails: A much longer explanation for humans and explicit discovery.\n---\nD.\n",
 );
 const detailed = loadAgentDefinition("detailed", cwd)!;
-const detailedInfo = collectAgentInventory(registry, cwd).find((a) => a.name === "detailed")!;
+const detailedInfo = collectAgentInventory(registry, cwd, usableIds).find((a) => a.name === "detailed")!;
 
 describe("description vs details", () => {
 	it("details parses", () => {
@@ -543,6 +573,9 @@ function info(overrides: Partial<AgentInfo> & { name: string }): AgentInfo {
 	};
 }
 
+/** The agent half of the catalogue, with no models: the model rows have their own tests below. */
+const catalogueOf = (agents: AgentInfo[]) => formatAgentCatalogue(agents, []);
+
 describe("the model-facing catalogue", () => {
 	it("pi new context mode", () => {
 		assert.strictEqual(contextMode(info({ name: "pi-new" })), "new");
@@ -557,10 +590,10 @@ describe("the model-facing catalogue", () => {
 	});
 
 	it("empty inventory = no catalogue", () => {
-		assert.strictEqual(formatAgentCatalogue([]), undefined);
+		assert.strictEqual(catalogueOf([]), undefined);
 	});
 
-	const catalogue = formatAgentCatalogue([
+	const catalogue = catalogueOf([
 		info({ name: "broken", description: "Secretly fine.", problems: ["invalid context"] }),
 		info({ name: "cc-worker", description: "Bounded edit tasks.", harness: "claude-code" }),
 		info({ name: "pair", description: "Live pairing session.", autoExit: false }),
@@ -612,7 +645,7 @@ describe("the model-facing catalogue", () => {
 	});
 
 	it("markers combine into one paren group", () => {
-		const combined = formatAgentCatalogue([info({ name: "worker", description: "W.", autoExit: false })])!;
+		const combined = catalogueOf([info({ name: "worker", description: "W.", autoExit: false })])!;
 		assert.ok(combined.includes("- worker (default, interactive): W."), "combined markers share one group");
 		assert.ok(!combined.includes("external:") && !combined.includes("new-only"),
 			"pi catalogue agents have no external capability markers");
@@ -620,7 +653,7 @@ describe("the model-facing catalogue", () => {
 
 	it("overlong descriptions are cut to the cap with an ellipsis", () => {
 		const long = "x".repeat(CATALOGUE_DESCRIPTION_MAX_CHARS + 100);
-		const bounded = formatAgentCatalogue([info({ name: "chatty", description: long })])!;
+		const bounded = catalogueOf([info({ name: "chatty", description: long })])!;
 		const chattyLine = bounded.split("\n").find((l) => l.startsWith("- chatty"))!;
 		assert.strictEqual(chattyLine.length, "- chatty: ".length + CATALOGUE_DESCRIPTION_MAX_CHARS,
 			"overlong description is capped");
@@ -629,13 +662,13 @@ describe("the model-facing catalogue", () => {
 
 	it("description at the cap is untouched", () => {
 		const exact = "y".repeat(CATALOGUE_DESCRIPTION_MAX_CHARS);
-		assert.ok(formatAgentCatalogue([info({ name: "exact", description: exact })])!.includes(`- exact: ${exact}`));
+		assert.ok(catalogueOf([info({ name: "exact", description: exact })])!.includes(`- exact: ${exact}`));
 	});
 
 	it("hostile description flattens to one line", () => {
 		// Newlines and tabs flatten to one clean line (the frontmatter parser is
 		// single-line, but the bound must hold for ANY input).
-		const hostileCatalogue = formatAgentCatalogue([
+		const hostileCatalogue = catalogueOf([
 			info({ name: "sneaky", description: "line one\nline\ttwo end" }),
 		])!;
 		assert.ok(hostileCatalogue.includes("- sneaky: line one line two end"));
@@ -644,7 +677,7 @@ describe("the model-facing catalogue", () => {
 	it("control characters are stripped, not just flattened", () => {
 		// ANSI sequences, bells, and bare ESC bytes - the whitespace collapse
 		// alone would let them ride into the parent's system prompt.
-		const controlCatalogue = formatAgentCatalogue([
+		const controlCatalogue = catalogueOf([
 			info({ name: "sneakier", description: "x\u0007y \u001b[31mz \u001bw" }),
 		])!;
 		assert.ok(controlCatalogue.includes("- sneakier: xy z w"), "ANSI, bell, and bare ESC are stripped");
@@ -668,6 +701,37 @@ describe("the model-facing catalogue", () => {
 		assert.ok(!hostileOverview.join("\n").includes("\u001b"), "no escape byte survives into the overview");
 	});
 
+	const withModels = formatAgentCatalogue([info({ name: "worker", description: "W." })], ["openai-codex/gpt-5.6-terra", "openai-codex/gpt-5.6-sol"])!;
+
+	it("usable models follow the agents as exact ids for the model parameter", () => {
+		assert.ok(withModels.includes("`model` parameter of subagent_spawn"));
+		assert.ok(withModels.includes("- openai-codex/gpt-5.6-terra\n- openai-codex/gpt-5.6-sol"));
+		assert.ok(withModels.indexOf("- worker (default): W.") < withModels.indexOf("- openai-codex/gpt-5.6-terra"));
+	});
+
+	it("no usable models means no models section", () => {
+		assert.ok(!catalogueOf([info({ name: "worker", description: "W." })])!.includes("Usable models"));
+	});
+
+	it("models alone never create a catalogue", () => {
+		assert.strictEqual(formatAgentCatalogue([], ["openai-codex/gpt-5.6-sol"]), undefined);
+	});
+
+	it("a long model list is bounded with a pointer", () => {
+		const ids = Array.from({ length: USABLE_MODELS_MAX_LISTED + 2 }, (_, i) => `p/m${i}`);
+
+		const bounded = formatAgentCatalogue([info({ name: "worker", description: "W." })], ids)!;
+
+		assert.ok(bounded.includes(`- p/m${USABLE_MODELS_MAX_LISTED - 1}\n- +2 more (call subagent_available for the full list)`));
+		assert.ok(!bounded.includes(`- p/m${USABLE_MODELS_MAX_LISTED}\n`));
+	});
+
+	it("model ids are flattened and stripped like descriptions", () => {
+		const hostile = formatAgentCatalogue([info({ name: "worker", description: "W." })], ["p/m\u001b[31m\nx"])!;
+
+		assert.ok(hostile.includes("- p/m x") && !hostile.includes("\u001b"));
+	});
+
 	it("the system-prompt injection rides only when spawning is possible", () => {
 		const events = createTestEventHarness<
 			{ systemPrompt: string },
@@ -681,7 +745,7 @@ describe("the model-facing catalogue", () => {
 		} as unknown as Parameters<typeof registerCatalogue>[0]);
 		const beforeAgentStart = (systemPrompt: string) =>
 			events.emitResults("before_agent_start", { systemPrompt }, undefined)[0];
-		updateCatalogue([info({ name: "worker", description: "W." })]);
+		updateCatalogue([info({ name: "worker", description: "W." })], []);
 		const injected = beforeAgentStart("BASE");
 		assert.ok(Boolean(injected?.systemPrompt.startsWith("BASE\n\n") &&
 			injected.systemPrompt.includes("- worker (default): W.") &&
@@ -694,7 +758,7 @@ describe("the model-facing catalogue", () => {
 		assert.strictEqual(beforeAgentStart("BASE"), undefined,
 			"nothing is injected while subagent_spawn is inactive");
 		activeTools = ["subagent_spawn"];
-		updateCatalogue([]);
+		updateCatalogue([], []);
 		assert.strictEqual(beforeAgentStart("BASE"), undefined,
 			"nothing is injected while no agents exist");
 	});

@@ -25,7 +25,13 @@ import { clampStyled, fitText } from "../shared/text-fit.ts";
 import { agentConfigDir } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { harnessProfile, isExternalHarness, validHarnessValues } from "./harnesses.ts";
-import { assertValidThinkingLevel, resolveUsableModel, type ModelLookup } from "./models.ts";
+import {
+	assertValidThinkingLevel,
+	resolveUsableModel,
+	USABLE_MODELS_MAX_LISTED,
+	type ModelLookup,
+	type UsableModels,
+} from "./models.ts";
 
 // ── where definitions live ───────────────────────────────────────────────
 
@@ -250,7 +256,9 @@ function problemText(error: unknown): string {
 	return message.trim();
 }
 
-export function collectAgentInventory(registry: ModelLookup, cwd: string): AgentInfo[] {
+/** `usableModelIds` (models.ts listUsableModels) only feeds the "what to use
+ * instead" trailer of a failed model resolution. */
+export function collectAgentInventory(registry: ModelLookup, cwd: string, usableModelIds: readonly string[]): AgentInfo[] {
 	return listAgentDefinitions(cwd).map((def) => {
 		const problems: string[] = [...def.problems];
 		let resolvedModel: string | undefined;
@@ -265,7 +273,7 @@ export function collectAgentInventory(registry: ModelLookup, cwd: string): Agent
 				resolvedModel = def.models[0];
 			} else {
 				try {
-					resolvedModel = resolveUsableModel(def.models, registry);
+					resolvedModel = resolveUsableModel(def.models, registry, usableModelIds);
 				} catch (error) {
 					problems.push(problemText(error));
 				}
@@ -330,8 +338,13 @@ function boundedDescription(description: string | undefined): string {
  * agent shows no description at all: advertising its purpose would invite
  * calls that can only fail, while the name + pointer still explains where
  * the details live.
+ *
+ * The usable model ids follow the agents so the parent can translate a
+ * nickname ("terra") into the exact id the spawn requires without a round
+ * trip. The list is bounded like the descriptions: an unscoped machine with
+ * hundreds of models shows the first USABLE_MODELS_MAX_LISTED and a pointer.
  */
-export function formatAgentCatalogue(inventory: AgentInfo[]): string | undefined {
+export function formatAgentCatalogue(inventory: AgentInfo[], usableModelIds: readonly string[]): string | undefined {
 	if (inventory.length === 0) return undefined;
 	const lines = inventory.map((agent) => {
 		if (agent.problems.length > 0) {
@@ -351,7 +364,20 @@ export function formatAgentCatalogue(inventory: AgentInfo[]): string | undefined
 	return (
 		"Available sub-agents (values for the `agent` parameter of subagent_spawn):\n" +
 		`${lines.join("\n")}\n\n` +
-		"Descriptions above are abbreviated. Call subagent_available for expanded descriptions and configuration details."
+		"Descriptions above are abbreviated. Call subagent_available for expanded descriptions and configuration details." +
+		formatModelCatalogue(usableModelIds)
+	);
+}
+
+/** The models section of the catalogue block; empty when nothing is usable. */
+function formatModelCatalogue(usableModelIds: readonly string[]): string {
+	if (usableModelIds.length === 0) return "";
+	const shown = usableModelIds.slice(0, USABLE_MODELS_MAX_LISTED).map((id) => `- ${sanitizedInline(id)}`);
+	const hidden = usableModelIds.length - shown.length;
+	if (hidden > 0) shown.push(`- +${hidden} more (call subagent_available for the full list)`);
+	return (
+		"\n\nUsable models (exact values for the `model` parameter of subagent_spawn; omit `model` to inherit this session's model):\n" +
+		shown.join("\n")
 	);
 }
 
@@ -428,6 +454,8 @@ export interface AgentOverviewOptions {
 	header?: boolean;
 	footer?: string | false;
 	fullDescriptionFallback?: boolean;
+	/** When present, a Models section follows the agent cards. */
+	models?: UsableModels;
 }
 
 /** The detailed inventory rendering shared by /subagent-available and the
@@ -605,6 +633,8 @@ export function formatAgentOverviewLines(
 		flushRow();
 	}
 
+	if (options.models) lines.push("", ...formatModelOverviewLines(options.models, safeWidth, { border, muted, accent, bold }));
+
 	const footer = options.footer === undefined
 		? "run /subagent-available again or send a message to dismiss"
 		: options.footer;
@@ -615,4 +645,30 @@ export function formatAgentOverviewLines(
 		}
 	}
 	return lines.map((line) => clampStyled(line, safeWidth));
+}
+
+/** The Models section of the overview: a rule with the count, then one id
+ * per row with the parent's current model marked, bounded like the catalogue. */
+function formatModelOverviewLines(
+	models: UsableModels,
+	width: number,
+	style: Required<Pick<OverviewStyle, "border" | "muted" | "accent" | "bold">>,
+): string[] {
+	const head = `── Models · ${models.ids.length} `;
+	const lines = [
+		style.border("── ") +
+			style.bold("Models") +
+			style.muted(` · ${models.ids.length} `) +
+			style.border("─".repeat(Math.max(0, width - visibleWidth(head)))),
+	];
+
+	if (models.ids.length === 0) lines.push(style.muted(" none usable (no provider has credentials)"));
+	for (const id of models.ids.slice(0, USABLE_MODELS_MAX_LISTED)) {
+		const isCurrent = id === models.current;
+		lines.push(` ${sanitizedInline(id)}` + (isCurrent ? style.muted(" · ") + style.accent("current") : ""));
+	}
+	const hidden = models.ids.length - USABLE_MODELS_MAX_LISTED;
+	if (hidden > 0) lines.push(style.muted(` +${hidden} more`));
+
+	return lines.map((line) => clampStyled(line, width));
 }

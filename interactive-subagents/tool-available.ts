@@ -7,21 +7,23 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import {
 	agentDefsDir,
-	collectAgentInventory,
 	contextMode,
 	descriptionHeadline,
 	formatAgentOverviewLines,
 	projectDefsDir,
 	type AgentInfo,
 } from "./agents.ts";
-import { updateCatalogue } from "./catalogue.ts";
+import { snapshotInventory } from "./catalogue.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
+import type { UsableModels } from "./models.ts";
 import { clampStyled } from "../shared/text-fit.ts";
 
 export interface AvailablePresentation {
 	version: 1;
 	inventory: AgentInfo[];
 	dirs: { global: string; project: string };
+	/** Optional so persisted rows from before model presentation still render. */
+	models?: UsableModels;
 }
 
 export interface AvailableToolDetails {
@@ -54,8 +56,23 @@ function availableMarkers(agent: AgentInfo): string[] {
 	return markers;
 }
 
-export function formatAvailableModelText(inventory: readonly AgentInfo[]): string {
-	if (inventory.length === 0) return "No available subagent definitions.";
+export function formatAvailableModelText(inventory: readonly AgentInfo[], models: UsableModels): string {
+	const agents = inventory.length === 0 ? "No available subagent definitions." : formatAgentLines(inventory);
+	return `${agents}\n\n${formatModelLines(models)}`;
+}
+
+/** The parent's current model and the exact ids a spawn may name: live on
+ * every call, and only here, so the cached system prompt never carries the
+ * current model. */
+function formatModelLines(models: UsableModels): string {
+	const current = models.current ? safeInline(models.current) : "none selected";
+	const usable = models.ids.length > 0
+		? models.ids.map(safeInline).join(", ")
+		: "none (no provider has credentials on this machine)";
+	return `Current model: ${current}\nUsable models (exact values for the \`model\` parameter of subagent_spawn): ${usable}`;
+}
+
+function formatAgentLines(inventory: readonly AgentInfo[]): string {
 	return inventory.map((agent) => {
 		const markers = availableMarkers(agent);
 		const mode = contextMode(agent);
@@ -138,6 +155,14 @@ function isAgentInfo(value: unknown): value is AgentInfo {
 		&& agent.problems.every((problem) => typeof problem === "string");
 }
 
+function isUsableModels(value: unknown): value is UsableModels {
+	if (!value || typeof value !== "object") return false;
+	const models = value as Partial<UsableModels>;
+	return Array.isArray(models.ids)
+		&& models.ids.every((id) => typeof id === "string")
+		&& (models.current === undefined || typeof models.current === "string");
+}
+
 function parseDetails(details: unknown): AvailablePresentation | undefined {
 	if (!details || typeof details !== "object") return undefined;
 	const presentation = (details as { presentation?: unknown }).presentation;
@@ -145,6 +170,7 @@ function parseDetails(details: unknown): AvailablePresentation | undefined {
 	const candidate = presentation as Partial<AvailablePresentation>;
 	if (candidate.version !== 1 || !Array.isArray(candidate.inventory) || !candidate.inventory.every(isAgentInfo)) return undefined;
 	if (!candidate.dirs || typeof candidate.dirs.global !== "string" || typeof candidate.dirs.project !== "string") return undefined;
+	if (candidate.models !== undefined && !isUsableModels(candidate.models)) return undefined;
 	return candidate as AvailablePresentation;
 }
 
@@ -154,7 +180,8 @@ export function registerSubagentAvailableTool(pi: ExtensionAPI): void {
 		label: "Available Subagents",
 		description:
 			"List the available agent definitions (<name>.md files from the project's .pi/subagents/ or the global subagents directory; project definitions shadow global ones). " +
-			"Use the returned definition name as the `agent` parameter of subagent_spawn. Reports expanded descriptions, effective defaults, and problems that make a definition unspawnable. " +
+			"Use the returned definition name as the `agent` parameter of subagent_spawn. Reports expanded descriptions, effective defaults, and problems that make a definition unspawnable, " +
+			"then this session's current model and the exact model ids the `model` parameter accepts. " +
 			"Use subagent_status instead to inspect launched work.",
 		parameters: Type.Object({}),
 		renderCall(_args, theme) {
@@ -200,18 +227,17 @@ export function registerSubagentAvailableTool(pi: ExtensionAPI): void {
 						border: (text) => theme.fg("borderMuted", text),
 						bold: (text) => theme.bold(text),
 						italic: (text) => theme.italic(text),
-					}, { header: false, footer: false, fullDescriptionFallback: true });
+					}, { header: false, footer: false, fullDescriptionFallback: true, models: presentation.models });
 				},
 			};
 		},
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-			const inventory = collectAgentInventory(ctx.modelRegistry, ctx.cwd);
-			updateCatalogue(inventory);
+			const { inventory, models } = snapshotInventory(ctx);
 			const dirs = { global: agentDefsDir(), project: projectDefsDir(ctx.cwd) };
 			return {
-				content: [{ type: "text", text: formatAvailableModelText(inventory) }],
+				content: [{ type: "text", text: formatAvailableModelText(inventory, models) }],
 				details: {
-					presentation: { version: 1, inventory, dirs },
+					presentation: { version: 1, inventory, dirs, models },
 				} satisfies AvailableToolDetails,
 			};
 		},

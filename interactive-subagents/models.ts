@@ -1,5 +1,6 @@
 /**
- * models.ts - picking a usable model from an agent's candidate list.
+ * models.ts - picking a usable model from an agent's candidate list, and
+ * listing the models a spawn may name at all.
  *
  * Walk an ordered list of model candidates and pick the FIRST usable one.
  * An entry is either:
@@ -13,8 +14,10 @@
  *
  * Nothing matching is a hard, immediate error (fail fast so a broken agent
  * file gets fixed, instead of a child pane dying later with a confusing
- * provider error). Winners are returned in canonical "provider/model" form,
- * so the launch script always records exactly what ran.
+ * provider error). The error ends with the usable ids, so a nickname guess
+ * like "terra" corrects itself in one step instead of a `pi --list-models`
+ * detour. Winners are returned in canonical "provider/model" form, so the
+ * launch script always records exactly what ran.
  *
  * This module is dependency-free on purpose: it sees pi's model registry
  * through the minimal ModelLookup interface below, which keeps it unit-
@@ -31,7 +34,7 @@ export function assertValidThinkingLevel(level: string): void {
 	}
 }
 
-interface KnownModel {
+export interface KnownModel {
 	provider: string;
 	id: string;
 }
@@ -42,7 +45,55 @@ export interface ModelLookup {
 	hasConfiguredAuth(model: KnownModel): boolean;
 }
 
-export function resolveUsableModel(candidates: string[], registry: ModelLookup): string {
+/** Where the usable-model list comes from; pi's ExtensionContext satisfies it. */
+export interface UsableModelSource {
+	/** The session's scoped models (`enabledModels` / `--models`); empty = unscoped. */
+	scopedModels: readonly { model: KnownModel }[];
+	modelRegistry: { getAvailable(): KnownModel[] };
+	/** The parent's active model, if one is selected. */
+	model: KnownModel | undefined;
+}
+
+export interface UsableModels {
+	/** Canonical "provider/model" ids a spawn may name, in catalogue order. */
+	ids: string[];
+	/** The parent's active model in canonical form; absent when none is selected. */
+	current?: string;
+}
+
+/** Rows shown before a "+N more" trailer wherever the list is bounded. */
+export const USABLE_MODELS_MAX_LISTED = 20;
+
+/**
+ * The models a spawn may name on this machine: the session's scoped models
+ * when the user scoped any (mirroring pi's own model picker), else every
+ * model whose provider has credentials.
+ */
+export function listUsableModels(source: UsableModelSource): UsableModels {
+	const models = source.scopedModels.length > 0
+		? source.scopedModels.map((scoped) => scoped.model)
+		: source.modelRegistry.getAvailable();
+
+	const ids = models.map(canonicalId);
+	return source.model ? { ids, current: canonicalId(source.model) } : { ids };
+}
+
+/** A bounded, comma-separated rendering of usable ids for prose and errors. */
+export function summarizeUsableModels(ids: readonly string[], max = USABLE_MODELS_MAX_LISTED): string {
+	const hidden = ids.length - max;
+	if (hidden <= 0) return ids.join(", ");
+	return `${ids.slice(0, max).join(", ")}, +${hidden} more (call subagent_available for the full list)`;
+}
+
+function canonicalId(model: KnownModel): string {
+	return `${model.provider}/${model.id}`;
+}
+
+export function resolveUsableModel(
+	candidates: string[],
+	registry: ModelLookup,
+	usableModelIds: readonly string[],
+): string {
 	const reasons: string[] = [];
 
 	for (const entry of candidates) {
@@ -61,7 +112,7 @@ export function resolveUsableModel(candidates: string[], registry: ModelLookup):
 				.getAll()
 				.filter((m) => m.id.toLowerCase() === id && registry.hasConfiguredAuth(m));
 			if (usable.length === 1) {
-				return `${usable[0].provider}/${usable[0].id}`;
+				return canonicalId(usable[0]);
 			}
 			if (usable.length > 1) {
 				const providers = usable.map((m) => m.provider).join(", ");
@@ -72,7 +123,7 @@ export function resolveUsableModel(candidates: string[], registry: ModelLookup):
 			reasons.push(
 				known.length > 0
 					? `${entry} - known (${known.map((m) => m.provider).join(", ")}) but none of those providers have credentials on this machine`
-					: `${entry} - unknown model (not in pi's registry; see \`pi --list-models\`)`,
+					: `${entry} - unknown model (not in pi's registry)`,
 			);
 			continue;
 		}
@@ -84,16 +135,19 @@ export function resolveUsableModel(candidates: string[], registry: ModelLookup):
 			.getAll()
 			.find((m) => m.provider.toLowerCase() === provider && m.id.toLowerCase() === id);
 		if (!model) {
-			reasons.push(`${entry} - unknown model (not in pi's registry; see \`pi --list-models\`)`);
+			reasons.push(`${entry} - unknown model (not in pi's registry)`);
 			continue;
 		}
 		if (!registry.hasConfiguredAuth(model)) {
 			reasons.push(`${entry} - provider "${model.provider}" has no credentials on this machine`);
 			continue;
 		}
-		return `${model.provider}/${model.id}`;
+		return canonicalId(model);
 	}
 
-	// Just the per-entry reasons - each one already says what to fix.
-	throw new Error(`No usable model. Tried, in order:\n${reasons.map((r) => `  - ${r}`).join("\n")}`);
+	// Per-entry reasons say what was wrong; the usable list says what to use.
+	const usable = usableModelIds.length > 0
+		? `\nUsable models (exact ids): ${summarizeUsableModels(usableModelIds)}`
+		: "";
+	throw new Error(`No usable model. Tried, in order:\n${reasons.map((r) => `  - ${r}`).join("\n")}${usable}`);
 }
