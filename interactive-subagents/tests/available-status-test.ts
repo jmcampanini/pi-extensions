@@ -303,7 +303,8 @@ describe("subagent_available", () => {
 			"  config: source global · inherits model · context new · autonomous · shared checkout · harness pi\n" +
 			"\n" +
 			"Current model: openai-codex/gpt-5.6-sol\n" +
-			"Usable models (exact values for the `model` parameter of subagent_spawn): openai-codex/gpt-5.6-sol, openai-codex/gpt-5.6-terra",
+			"Usable Pi models (exact `model` values for Pi-harness subagents): openai-codex/gpt-5.6-sol, openai-codex/gpt-5.6-terra\n" +
+			"Model precedence: explicit override, agent definition, then the child harness's normal model selection. External harnesses use their own model names.",
 			"available model content contains definition details, effective configuration, and the scoped model ids");
 		assert.ok(!availableText.includes("RUNTIME STATUS SENTINEL") &&
 			!availableText.includes("liveonly") &&
@@ -340,7 +341,8 @@ describe("subagent_available", () => {
 			"  config: source global · model claude-opus-4-8 · context new-only · autonomous · shared checkout · external: claude-code · pass-through --permission-mode auto\n" +
 			"\n" +
 			"Current model: none selected\n" +
-			"Usable models (exact values for the `model` parameter of subagent_spawn): none (no provider has credentials on this machine)");
+			"Usable Pi models (exact `model` values for Pi-harness subagents): none (no provider has credentials on this machine)\n" +
+			"Model precedence: explicit override, agent definition, then the child harness's normal model selection. External harnesses use their own model names.");
 	});
 
 	it("available call title uses bold tool-title styling", () => {

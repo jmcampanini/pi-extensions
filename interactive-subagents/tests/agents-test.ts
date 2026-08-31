@@ -705,14 +705,15 @@ describe("the model-facing catalogue", () => {
 
 	const withModels = formatAgentCatalogue([info({ name: "worker", description: "W." })], ["openai-codex/gpt-5.6-terra", "openai-codex/gpt-5.6-sol"])!;
 
-	it("usable models follow the agents as exact ids for the model parameter", () => {
-		assert.ok(withModels.includes("`model` parameter of subagent_spawn"));
+	it("usable Pi models follow the agents with their harness scope and precedence", () => {
+		assert.ok(withModels.includes("Usable Pi models") && withModels.includes("external harnesses use their own model names"));
 		assert.ok(withModels.includes("- openai-codex/gpt-5.6-terra\n- openai-codex/gpt-5.6-sol"));
+		assert.ok(withModels.includes("Model precedence: explicit override, agent definition, then the child harness's normal model selection."));
 		assert.ok(withModels.indexOf("- worker (default): W.") < withModels.indexOf("- openai-codex/gpt-5.6-terra"));
 	});
 
 	it("no usable models means no models section", () => {
-		assert.ok(!catalogueOf([info({ name: "worker", description: "W." })])!.includes("Usable models"));
+		assert.ok(!catalogueOf([info({ name: "worker", description: "W." })])!.includes("Usable Pi models"));
 	});
 
 	it("models alone never create a catalogue", () => {

@@ -631,6 +631,12 @@ describe("registerSubagentSpawnTool", () => {
 		);
 	});
 
+	it("model schema distinguishes Pi ids, external names, and omission precedence", () => {
+		const description = (spawnTool.parameters as { properties?: { model?: { description?: string } } }).properties?.model?.description;
+		assert.ok(description?.includes("External harnesses accept their own model names."));
+		assert.ok(description?.includes("When omitted, the agent definition's model choice applies"));
+	});
+
 	it("registered renderer resolves the configured expansion binding", () => {
 		const toolSource = readFileSync(new URL("../tool-spawn.ts", import.meta.url), "utf8");
 		assert.strictEqual(toolSource.includes('keyText("app.tools.expand")'), true);

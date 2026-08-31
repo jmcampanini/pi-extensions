@@ -93,8 +93,8 @@ const SubagentSpawnParams = Type.Object({
 	model: Type.Optional(
 		Type.String({
 			description:
-				"Model override: an exact id from the usable-models list at the end of your system prompt (also returned by subagent_available), as 'provider/model' or as a bare model id when exactly one configured provider offers it. " +
-				"Omit to inherit this session's model. Validated like the agent's models list - unknown or credential-less models error immediately, and the error names the usable ids.",
+				"Model override. Pi-harness agents accept an exact id from the usable-models list at the end of your system prompt (also returned by subagent_available), or a bare model id when exactly one configured provider offers it. External harnesses accept their own model names. " +
+				"When omitted, the agent definition's model choice applies; without one, the child harness selects normally. Pi model names are validated immediately, and failures name the usable ids.",
 		}),
 	),
 	tools: Type.Optional(Type.String({ description: "Comma-separated tool allowlist, e.g. 'read,bash' (overrides the agent default)" })),

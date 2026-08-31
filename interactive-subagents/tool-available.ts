@@ -61,15 +61,14 @@ export function formatAvailableModelText(inventory: readonly AgentInfo[], models
 	return `${agents}\n\n${formatModelLines(models)}`;
 }
 
-/** The parent's current model and the exact ids a spawn may name: live on
- * every call, and only here, so the cached system prompt never carries the
- * current model. */
+/** The parent's current model and exact Pi-model ids: live on every call,
+ * and only here, so the cached system prompt never carries the current model. */
 function formatModelLines(models: UsableModels): string {
 	const current = models.current ? safeInline(models.current) : "none selected";
 	const usable = models.ids.length > 0
 		? models.ids.map(safeInline).join(", ")
 		: "none (no provider has credentials on this machine)";
-	return `Current model: ${current}\nUsable models (exact values for the \`model\` parameter of subagent_spawn): ${usable}`;
+	return `Current model: ${current}\nUsable Pi models (exact \`model\` values for Pi-harness subagents): ${usable}\nModel precedence: explicit override, agent definition, then the child harness's normal model selection. External harnesses use their own model names.`;
 }
 
 function formatAgentLines(inventory: readonly AgentInfo[]): string {
@@ -181,7 +180,7 @@ export function registerSubagentAvailableTool(pi: ExtensionAPI): void {
 		description:
 			"List the available agent definitions (<name>.md files from the project's .pi/subagents/ or the global subagents directory; project definitions shadow global ones). " +
 			"Use the returned definition name as the `agent` parameter of subagent_spawn. Reports expanded descriptions, effective defaults, and problems that make a definition unspawnable, " +
-			"then this session's current model and the exact model ids the `model` parameter accepts. " +
+			"then this session's current model and the exact Pi model ids accepted for Pi-harness children; external harnesses use their own model names. " +
 			"Use subagent_status instead to inspect launched work.",
 		parameters: Type.Object({}),
 		renderCall(_args, theme) {

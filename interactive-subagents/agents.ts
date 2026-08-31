@@ -376,8 +376,9 @@ function formatModelCatalogue(usableModelIds: readonly string[]): string {
 	const hidden = usableModelIds.length - shown.length;
 	if (hidden > 0) shown.push(`- +${hidden} more (call subagent_available for the full list)`);
 	return (
-		"\n\nUsable models (exact values for the `model` parameter of subagent_spawn; omit `model` to inherit this session's model):\n" +
-		shown.join("\n")
+		"\n\nUsable Pi models (exact `model` values for Pi-harness subagents; external harnesses use their own model names):\n" +
+		shown.join("\n") +
+		"\nModel precedence: explicit override, agent definition, then the child harness's normal model selection."
 	);
 }
 
