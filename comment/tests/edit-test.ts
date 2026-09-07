@@ -18,7 +18,7 @@ function fakeTui() {
 describe("editTextExternally", () => {
 	it("successful edit returns the file text and restarts the TUI", async () => {
 		const { tui, calls } = fakeTui();
-		const outcome = await editTextExternally(tui, "sh -c 'printf \" world\" >> \"$0\"'", "hello");
+		const outcome = await editTextExternally(tui, 'sh -c \'printf " world" >> "$0"\'', "hello");
 		assert.deepStrictEqual(outcome, { exitCode: 0, text: "hello world" });
 		assert.deepStrictEqual(calls, ["stop", "start", "render(true)"]);
 	});
@@ -39,7 +39,7 @@ describe("editTextExternally", () => {
 
 	it("unparseable editor command reports an error without touching the TUI", async () => {
 		const { tui, calls } = fakeTui();
-		const outcome = await editTextExternally(tui, "\"unclosed", "hello");
+		const outcome = await editTextExternally(tui, '"unclosed', "hello");
 		assert.deepStrictEqual([outcome.exitCode, outcome.error !== undefined], [null, true]);
 		assert.deepStrictEqual(calls, []);
 	});

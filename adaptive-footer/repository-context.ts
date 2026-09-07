@@ -11,11 +11,7 @@ export interface ExecResult {
 	killed: boolean;
 }
 
-export type CommandRunner = (
-	command: string,
-	args: string[],
-	options?: ExecOptions,
-) => Promise<ExecResult>;
+export type CommandRunner = (command: string, args: string[], options?: ExecOptions) => Promise<ExecResult>;
 
 export type PullRequestState = "o" | "d" | "c" | "m";
 export type IssueState = "o" | "c";
@@ -95,6 +91,7 @@ export function inferIssueNumber(
 }
 
 function canonicalHttpUrl(value: unknown): string | undefined {
+	// oxlint-disable-next-line no-control-regex -- Reject terminal control bytes before creating clickable URLs.
 	if (typeof value !== "string" || /[\u0000-\u001f\u007f]/.test(value)) return undefined;
 	try {
 		const parsed = new URL(value);
@@ -154,14 +151,10 @@ export async function discoverRepositoryContext(
 	const prPromise = isAttachedBranch(input.branch)
 		? runGhJson(run, ["pr", "view", "--json", "number,url,state,isDraft"], input.cwd, signal)
 		: Promise.resolve(undefined);
-	const issuePromise = issueNumber === undefined
-		? Promise.resolve(undefined)
-		: runGhJson(
-			run,
-			["issue", "view", String(issueNumber), "--json", "number,url,state"],
-			input.cwd,
-			signal,
-		);
+	const issuePromise =
+		issueNumber === undefined
+			? Promise.resolve(undefined)
+			: runGhJson(run, ["issue", "view", String(issueNumber), "--json", "number,url,state"], input.cwd, signal);
 	const [rawPr, rawIssue] = await Promise.all([prPromise, issuePromise]);
 	const context: RepositoryContext = {};
 

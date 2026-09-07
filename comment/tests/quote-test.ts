@@ -48,12 +48,7 @@ describe("getLastAssistantText", () => {
 
 	it("looks past later non-assistant entries", () => {
 		assert.strictEqual(
-			getLastAssistantText([
-				assistant("stop", text("Answer")),
-				user,
-				toolResult,
-				entry("label"),
-			]),
+			getLastAssistantText([assistant("stop", text("Answer")), user, toolResult, entry("label")]),
 			"Answer",
 		);
 	});

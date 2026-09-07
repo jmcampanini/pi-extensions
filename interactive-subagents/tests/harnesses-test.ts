@@ -135,7 +135,10 @@ describe("claudeCodeProfile.completionInstruction", () => {
 	});
 
 	it("instructions never name pi control tools", () => {
-		for (const [label, text] of [["autonomous", auto], ["human", human]] as const) {
+		for (const [label, text] of [
+			["autonomous", auto],
+			["human", human],
+		] as const) {
 			assert.ok(
 				!text.includes("subagent_done") && !text.includes("caller_ping"),
 				`${label} instruction never names pi control tools`,
@@ -202,9 +205,15 @@ describe("claudeCodeProfile.buildLaunchCommand", () => {
 
 	it("launch validates the effort mapping itself", () => {
 		assert.throws(
-			() => claudeCodeProfile.buildLaunchCommand({
-				cwd: "/w", anchor: ANCHOR, runId: RUN_ID, autoExit: true, thinking: "off", taskFile: "/t.md",
-			}),
+			() =>
+				claudeCodeProfile.buildLaunchCommand({
+					cwd: "/w",
+					anchor: ANCHOR,
+					runId: RUN_ID,
+					autoExit: true,
+					thinking: "off",
+					taskFile: "/t.md",
+				}),
 			/no claude-code effort mapping/,
 		);
 	});
@@ -273,7 +282,11 @@ describe("external sidecar readers", () => {
 		writeFileSync(externalResultPath(anchor), "   \n", "utf8");
 		assert.strictEqual(readExternalResult(anchor), null, "blank result reads null");
 		writeFileSync(externalResultPath(anchor), "The default branch is main.\n\nVerified.", "utf8");
-		assert.strictEqual(readExternalResult(anchor), "The default branch is main.\n\nVerified.", "result reads verbatim");
+		assert.strictEqual(
+			readExternalResult(anchor),
+			"The default branch is main.\n\nVerified.",
+			"result reads verbatim",
+		);
 		clearExternalResult(anchor);
 		assert.ok(!existsSync(externalResultPath(anchor)), "clear removes the result file");
 		clearExternalResult(anchor); // idempotent on a missing file

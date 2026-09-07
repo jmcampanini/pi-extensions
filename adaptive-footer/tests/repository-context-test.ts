@@ -23,11 +23,7 @@ after(() => {
 	rmSync(fixture, { recursive: true, force: true });
 });
 
-function jsonRunner(
-	pr: unknown,
-	issue: unknown,
-	calls: string[][] = [],
-): CommandRunner {
+function jsonRunner(pr: unknown, issue: unknown, calls: string[][] = []): CommandRunner {
 	return async (_command, args) => {
 		calls.push(args);
 		return {
@@ -39,10 +35,7 @@ function jsonRunner(
 	};
 }
 
-const replacementPatterns = [
-	String.raw`ticket-(?<number>[1-9][0-9]*)`,
-	String.raw`bug-(?<number>[1-9][0-9]*)`,
-];
+const replacementPatterns = [String.raw`ticket-(?<number>[1-9][0-9]*)`, String.raw`bug-(?<number>[1-9][0-9]*)`];
 
 describe("inferIssueNumber", () => {
 	it("branch inference wins over cwd basename", () => {
@@ -89,22 +82,37 @@ describe("discoverRepositoryContext", () => {
 		const commandCalls: string[][] = [];
 		const complete = await discoverRepositoryContext(
 			jsonRunner(
-				{ number: 123, url: "https://github.enterprise/acme/payments/pull/123", state: "MERGED", isDraft: false },
+				{
+					number: 123,
+					url: "https://github.enterprise/acme/payments/pull/123",
+					state: "MERGED",
+					isDraft: false,
+				},
 				{ number: 456, url: "https://github.enterprise/acme/payments/issues/456", state: "CLOSED" },
 				commandCalls,
 			),
 			{ cwd: "/work/issue-456", branch: "feature/issue-456", issuePatterns: DEFAULT_ISSUE_PATTERNS },
 		);
-		assert.deepStrictEqual(complete.issue,
+		assert.deepStrictEqual(
+			complete.issue,
 			{ number: 456, url: "https://github.enterprise/acme/payments/issues/456", state: "c" },
-			"verified issue preserves its canonical Enterprise URL");
-		assert.deepStrictEqual(complete.pr,
+			"verified issue preserves its canonical Enterprise URL",
+		);
+		assert.deepStrictEqual(
+			complete.pr,
 			{ number: 123, url: "https://github.enterprise/acme/payments/pull/123", state: "m" },
-			"current-branch PR preserves its canonical Enterprise URL");
-		assert.deepStrictEqual(commandCalls[0], ["pr", "view", "--json", "number,url,state,isDraft"],
-			"PR discovery asks gh for draft-aware state");
-		assert.deepStrictEqual(commandCalls[1], ["issue", "view", "456", "--json", "number,url,state"],
-			"issue verification asks gh for the inferred number");
+			"current-branch PR preserves its canonical Enterprise URL",
+		);
+		assert.deepStrictEqual(
+			commandCalls[0],
+			["pr", "view", "--json", "number,url,state,isDraft"],
+			"PR discovery asks gh for draft-aware state",
+		);
+		assert.deepStrictEqual(
+			commandCalls[1],
+			["issue", "view", "456", "--json", "number,url,state"],
+			"issue verification asks gh for the inferred number",
+		);
 	});
 
 	it("issue verification rejects a mismatched returned number", async () => {
@@ -139,44 +147,58 @@ describe("discoverRepositoryContext", () => {
 
 	it("subprocess-backed discovery renders linked issue, PR, and branch at the fitted width", async () => {
 		const fakeGh = join(fixture, "gh");
-		writeFileSync(fakeGh, `#!/usr/bin/env node
+		writeFileSync(
+			fakeGh,
+			`#!/usr/bin/env node
 const [kind] = process.argv.slice(2);
 if (kind === "pr") process.stdout.write(JSON.stringify({number:123,url:"https://git.acme.test/acme/payments/pull/123",state:"OPEN",isDraft:true}));
 else process.stdout.write(JSON.stringify({number:456,url:"https://git.acme.test/acme/payments/issues/456",state:"OPEN"}));
-`);
-		chmodSync(fakeGh, 0o755);
-		const processRunner: CommandRunner = (_command, args, options) => new Promise((resolve, reject) => {
-			execFile(fakeGh, args, { cwd: options?.cwd, timeout: options?.timeout }, (error, stdout, stderr) => {
-				if (error) {
-					reject(error);
-					return;
-				}
-				resolve({ stdout, stderr, code: 0, killed: false });
-			});
-		});
-		const processContext = await discoverRepositoryContext(
-			processRunner,
-			{ cwd: fixture, branch: "feature/issue-456", issuePatterns: DEFAULT_ISSUE_PATTERNS },
+`,
 		);
-		const endToEndLayout = fitRepositoryLayout({
-			cwd: cwdVariants("/Users/dev/Code/acme/payments/main", "/Users/dev"),
-			session: "footer links",
+		chmodSync(fakeGh, 0o755);
+		const processRunner: CommandRunner = (_command, args, options) =>
+			new Promise((resolve, reject) => {
+				execFile(fakeGh, args, { cwd: options?.cwd, timeout: options?.timeout }, (error, stdout, stderr) => {
+					if (error) {
+						reject(error);
+						return;
+					}
+					resolve({ stdout, stderr, code: 0, killed: false });
+				});
+			});
+		const processContext = await discoverRepositoryContext(processRunner, {
+			cwd: fixture,
 			branch: "feature/issue-456",
-			context: processContext,
-		}, 120);
+			issuePatterns: DEFAULT_ISSUE_PATTERNS,
+		});
+		const endToEndLayout = fitRepositoryLayout(
+			{
+				cwd: cwdVariants("/Users/dev/Code/acme/payments/main", "/Users/dev"),
+				session: "footer links",
+				branch: "feature/issue-456",
+				context: processContext,
+			},
+			120,
+		);
 		const endToEndLine = styleRepositorySpans(
 			endToEndLayout.spans,
 			(text) => text,
 			(text, url) => hyperlink(`\x1b[4m${text}\x1b[24m`, url),
 		);
-		assert.strictEqual(endToEndLayout.right, "is#456 o • pr#123 d • feature/issue-456",
-			"subprocess-backed discovery renders issue, PR, then branch");
-		assert.ok(endToEndLine.includes("\x1b]8;;https://git.acme.test/acme/payments/issues/456\x1b\\"),
-			"subprocess-backed issue URL reaches OSC 8 output");
-		assert.ok(endToEndLine.includes("\x1b]8;;https://git.acme.test/acme/payments/pull/123\x1b\\"),
-			"subprocess-backed PR URL reaches OSC 8 output");
-		assert.strictEqual(visibleWidth(endToEndLine), 120,
-			"subprocess-backed styled output retains its fitted width");
+		assert.strictEqual(
+			endToEndLayout.right,
+			"is#456 o • pr#123 d • feature/issue-456",
+			"subprocess-backed discovery renders issue, PR, then branch",
+		);
+		assert.ok(
+			endToEndLine.includes("\x1b]8;;https://git.acme.test/acme/payments/issues/456\x1b\\"),
+			"subprocess-backed issue URL reaches OSC 8 output",
+		);
+		assert.ok(
+			endToEndLine.includes("\x1b]8;;https://git.acme.test/acme/payments/pull/123\x1b\\"),
+			"subprocess-backed PR URL reaches OSC 8 output",
+		);
+		assert.strictEqual(visibleWidth(endToEndLine), 120, "subprocess-backed styled output retains its fitted width");
 	});
 });
 
@@ -204,8 +226,7 @@ describe("createRepositoryContextRefresher", () => {
 		assert.strictEqual(discoveryCalls, 2, "a queued refresh starts after the in-flight lookup");
 		pending.shift()?.({ pr: { number: 2, url: "https://example.test/pull/2", state: "o" } });
 		await Promise.all([firstRefresh, secondRefresh]);
-		assert.strictEqual(refresher.get().pr?.number, 2,
-			"stale discovery results never replace the latest context");
+		assert.strictEqual(refresher.get().pr?.number, 2, "stale discovery results never replace the latest context");
 		assert.strictEqual(changes, 1, "coalesced discovery renders only the latest result");
 		refresher.dispose();
 	});

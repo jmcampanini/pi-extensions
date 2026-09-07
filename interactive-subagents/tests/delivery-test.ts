@@ -52,7 +52,10 @@ describe("deliveredChildId", () => {
 
 	// Hostile / mismatched shapes: every one returns undefined without throwing.
 	it("matcher rejects a non-custom role", () => {
-		assert.strictEqual(deliveredChildId({ role: "assistant", customType: "subagent_result", details: { id: "abc12345" } }), undefined);
+		assert.strictEqual(
+			deliveredChildId({ role: "assistant", customType: "subagent_result", details: { id: "abc12345" } }),
+			undefined,
+		);
 	});
 
 	it("matcher rejects a missing role", () => {
@@ -64,7 +67,10 @@ describe("deliveredChildId", () => {
 	});
 
 	it("matcher rejects null details", () => {
-		assert.strictEqual(deliveredChildId({ role: "custom", customType: "subagent_result", details: null }), undefined);
+		assert.strictEqual(
+			deliveredChildId({ role: "custom", customType: "subagent_result", details: null }),
+			undefined,
+		);
 	});
 
 	it("matcher rejects a non-string id", () => {

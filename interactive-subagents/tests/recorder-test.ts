@@ -50,11 +50,21 @@ describe("registerActivityRecorder", () => {
 		assert.strictEqual(s.runId, "run1", "initial write: runId stamped");
 		assert.strictEqual(s.pid, process.pid, "initial write: pid is this process");
 		assert.deepStrictEqual(
-			{ inRun: s.inRun, runsCompleted: s.runsCompleted, activeTools: s.activeTools, modelId: s.modelId, context: s.context, costUsd: s.costUsd },
+			{
+				inRun: s.inRun,
+				runsCompleted: s.runsCompleted,
+				activeTools: s.activeTools,
+				modelId: s.modelId,
+				context: s.context,
+				costUsd: s.costUsd,
+			},
 			{ inRun: false, runsCompleted: 0, activeTools: [], modelId: null, context: null, costUsd: 0 },
-			"initial write: idle empty state");
-		assert.ok(s.updatedAt >= beforeRegister && s.updatedAt <= Date.now(),
-			"initial write: updatedAt stamped from the child clock");
+			"initial write: idle empty state",
+		);
+		assert.ok(
+			s.updatedAt >= beforeRegister && s.updatedAt <= Date.now(),
+			"initial write: updatedAt stamped from the child clock",
+		);
 
 		// ── session_start: model + context refresh ───────────────────────────
 		pi.emit("session_start", { reason: "start" }, ctxNoUsage);
@@ -74,14 +84,21 @@ describe("registerActivityRecorder", () => {
 		pi.emit("tool_execution_start", { toolCallId: "t2", toolName: "read" }, ctxFull);
 		s = read();
 		assert.deepStrictEqual(
-			s.activeTools.map((t) => `${t.toolCallId}:${t.name}`), ["t1:bash", "t2:read"],
-			"parallel tools: both recorded, insertion order");
-		assert.ok(s.activeTools.every((t) => t.startedAt >= beforeRegister),
-			"tool start stamps a child-clock startedAt");
+			s.activeTools.map((t) => `${t.toolCallId}:${t.name}`),
+			["t1:bash", "t2:read"],
+			"parallel tools: both recorded, insertion order",
+		);
+		assert.ok(
+			s.activeTools.every((t) => t.startedAt >= beforeRegister),
+			"tool start stamps a child-clock startedAt",
+		);
 
 		pi.emit("tool_execution_end", { toolCallId: "t1", toolName: "bash" }, ctxFull);
-		assert.deepStrictEqual(read().activeTools.map((t) => t.toolCallId), ["t2"],
-			"end removes only its own tool");
+		assert.deepStrictEqual(
+			read().activeTools.map((t) => t.toolCallId),
+			["t2"],
+			"end removes only its own tool",
+		);
 		pi.emit("tool_execution_end", { toolCallId: "t2", toolName: "read" }, ctxFull);
 		assert.deepStrictEqual(read().activeTools, [], "all ends leave the map empty");
 
@@ -89,8 +106,11 @@ describe("registerActivityRecorder", () => {
 		pi.emit("turn_end", { message: { role: "assistant", usage: { cost: { total: 0.25 } } } }, ctxFull);
 		s = read();
 		assert.strictEqual(s.costUsd, 0.25, "assistant turn_end accumulates cost");
-		assert.deepStrictEqual(s.context, { tokens: 84_000, window: 200_000, percent: 42 },
-			"assistant turn_end refreshes context");
+		assert.deepStrictEqual(
+			s.context,
+			{ tokens: 84_000, window: 200_000, percent: 42 },
+			"assistant turn_end refreshes context",
+		);
 
 		const sequenceBeforeUserTurn = read().sequence;
 		pi.emit("turn_end", { message: { role: "user", usage: { cost: { total: 99 } } } }, ctxFull);
@@ -102,7 +122,11 @@ describe("registerActivityRecorder", () => {
 
 		// The non-finite guard: hostile or broken cost values must never poison the
 		// accumulator (JSON could not even carry the poisoned sum - see the parser).
-		pi.emit("turn_end", { message: { role: "assistant", usage: { cost: { total: Number.POSITIVE_INFINITY } } } }, ctxFull);
+		pi.emit(
+			"turn_end",
+			{ message: { role: "assistant", usage: { cost: { total: Number.POSITIVE_INFINITY } } } },
+			ctxFull,
+		);
 		pi.emit("turn_end", { message: { role: "assistant", usage: { cost: { total: Number.NaN } } } }, ctxFull);
 		pi.emit("turn_end", { message: { role: "assistant", usage: { cost: { total: "9" } } } }, ctxFull);
 		assert.strictEqual(read().costUsd, 0.25, "non-finite and non-number costs are ignored");
@@ -117,15 +141,21 @@ describe("registerActivityRecorder", () => {
 		assert.strictEqual(s.inRun, false, "settled: inRun false");
 		assert.strictEqual(s.runsCompleted, 1, "settled: runsCompleted increments");
 		assert.deepStrictEqual(s.activeTools, [], "settled: dangling tools cleared defensively");
-		assert.deepStrictEqual(s.context, { tokens: null, window: 200_000, percent: null },
-			"settled: post-compaction nulls survive as null, never 0");
+		assert.deepStrictEqual(
+			s.context,
+			{ tokens: null, window: 200_000, percent: null },
+			"settled: post-compaction nulls survive as null, never 0",
+		);
 
 		// ── model_select: keeps the percent denominator honest ───────────────
 		pi.emit("model_select", { model: { id: "prov/other" } }, ctxOtherModel);
 		s = read();
 		assert.strictEqual(s.modelId, "prov/other", "model_select: model updated");
-		assert.deepStrictEqual(s.context, { tokens: 84_000, window: 200_000, percent: 42 },
-			"model_select: context refreshed");
+		assert.deepStrictEqual(
+			s.context,
+			{ tokens: 84_000, window: 200_000, percent: 42 },
+			"model_select: context refreshed",
+		);
 
 		// ── session_shutdown: the final write ────────────────────────────────
 		// ctx.shutdown() from a tool is deferred until agent_settled, so the only
@@ -152,7 +182,10 @@ describe("registerActivityRecorder", () => {
 		registerActivityRecorder(piReloaded as unknown as ExtensionAPI, { runId: "run1", activityFile });
 		const s = read();
 		assert.strictEqual(s.sequence, 1, "reload: fresh process restarts at sequence 1");
-		assert.deepStrictEqual({ runs: s.runsCompleted, cost: s.costUsd }, { runs: 0, cost: 0 },
-			"reload: runsCompleted and cost reset to 0");
+		assert.deepStrictEqual(
+			{ runs: s.runsCompleted, cost: s.costUsd },
+			{ runs: 0, cost: 0 },
+			"reload: runsCompleted and cost reset to 0",
+		);
 	});
 });

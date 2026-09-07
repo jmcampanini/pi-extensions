@@ -7,15 +7,12 @@ import { registerBellWhenDone, type BellIO } from "../index.ts";
 function harness(env: BellIO["env"]) {
 	const pi = createTestEventHarness();
 	const writes: string[] = [];
-	registerBellWhenDone(
-		pi as unknown as ExtensionAPI,
-		{
-			env,
-			write: (text) => {
-				writes.push(text);
-			},
+	registerBellWhenDone(pi as unknown as ExtensionAPI, {
+		env,
+		write: (text) => {
+			writes.push(text);
 		},
-	);
+	});
 	return { emit: pi.emit, writes };
 }
 

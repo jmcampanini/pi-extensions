@@ -17,7 +17,8 @@ const spawnArguments = {
 	agent: "scout",
 	context: "new",
 };
-const spawnAck = 'Sub-agent "Message type recon" started (id c853bdcf, new context). One concise report is delivered when it exits; end your turn.';
+const spawnAck =
+	'Sub-agent "Message type recon" started (id c853bdcf, new context). One concise report is delivered when it exits; end your turn.';
 const spawnInvocation = `subagent_spawn ${JSON.stringify(spawnArguments, null, 2)}`;
 const spawnCanonical = `${spawnInvocation}\n\n${spawnAck}`;
 const spawnBlock = makeBlock({
@@ -25,7 +26,8 @@ const spawnBlock = makeBlock({
 	kind: "tool",
 	toolName: "subagent_spawn",
 	title: "subagent_spawn",
-	subtitle: "name=Message type recon task=## Goal Find **everything** relevant to message types. agent=scout context=new",
+	subtitle:
+		"name=Message type recon task=## Goal Find **everything** relevant to message types. agent=scout context=new",
 	body: spawnAck,
 	canonicalText: spawnCanonical,
 	canonicalBodyOffset: spawnCanonical.length - spawnAck.length,
@@ -85,8 +87,9 @@ describe("subagentView", () => {
 	});
 
 	it("spawn content is the task prompt followed by the ack", () => {
-		assert.ok(spawnView?.content.startsWith("## Goal") === true
-			&& spawnView?.content.endsWith("end your turn.") === true);
+		assert.ok(
+			spawnView?.content.startsWith("## Goal") === true && spawnView?.content.endsWith("end your turn.") === true,
+		);
 	});
 
 	it("pending spawn without a result still exposes the prompt", () => {
@@ -94,22 +97,43 @@ describe("subagentView", () => {
 	});
 
 	it("result fields retain canonical parsed order", () => {
-		assert.deepStrictEqual(resultView?.fields.map((field) => field.key), [
-			"status", "name", "agent", "id", "model", "effort", "mode", "tools", "elapsed",
-			"context", "result", "cost", "resume", "session", "worktree",
-		]);
+		assert.deepStrictEqual(
+			resultView?.fields.map((field) => field.key),
+			[
+				"status",
+				"name",
+				"agent",
+				"id",
+				"model",
+				"effort",
+				"mode",
+				"tools",
+				"elapsed",
+				"context",
+				"result",
+				"cost",
+				"resume",
+				"session",
+				"worktree",
+			],
+		);
 	});
 
 	it("result content is the unwrapped response", () => {
-		assert.ok(resultView?.content.startsWith("## Relevant Files") === true
-			&& resultView?.content.includes("<result>") === false);
+		assert.ok(
+			resultView?.content.startsWith("## Relevant Files") === true &&
+				resultView?.content.includes("<result>") === false,
+		);
 	});
 
 	it("non-subagent blocks have no view", () => {
-		assert.deepStrictEqual([
-			subagentView(makeBlock({ kind: "tool", toolName: "read", title: "read" })),
-			subagentView(makeBlock({ kind: "custom", title: "fixture-card", body: "plain card" })),
-		], [undefined, undefined]);
+		assert.deepStrictEqual(
+			[
+				subagentView(makeBlock({ kind: "tool", toolName: "read", title: "read" })),
+				subagentView(makeBlock({ kind: "custom", title: "fixture-card", body: "plain card" })),
+			],
+			[undefined, undefined],
+		);
 	});
 });
 
@@ -121,8 +145,12 @@ describe("formatResultRow", () => {
 
 	it("result rows lead with identity then retain canonical remaining fields", () => {
 		const resultRow = stripVTControlCharacters(formatResultRow(resultBlock, false, 500, 16));
-		assert.ok(resultRow.includes("name=Message type recon agent=scout status=completed id=c853bdcf "
-			+ "model=claude-sonnet-5 effort=high mode=forked · interactive · worktree tools=read,edit,bash"));
+		assert.ok(
+			resultRow.includes(
+				"name=Message type recon agent=scout status=completed id=c853bdcf " +
+					"model=claude-sonnet-5 effort=high mode=forked · interactive · worktree tools=read,edit,bash",
+			),
+		);
 	});
 });
 
@@ -134,9 +162,12 @@ describe("formatPreviewLines", () => {
 
 	it("result preview separates the response and aligned table with a labeled rule", () => {
 		const resultPreview = formatPreviewLines(resultBlock, 120, 20).join("\n");
-		assert.ok(resultPreview.includes("**tag** logic\n\n─ result details ─")
-			&& resultPreview.includes("\n\nstatus    completed")
-			&& resultPreview.includes("name      Message type recon") && !resultPreview.includes("<result>"));
+		assert.ok(
+			resultPreview.includes("**tag** logic\n\n─ result details ─") &&
+				resultPreview.includes("\n\nstatus    completed") &&
+				resultPreview.includes("name      Message type recon") &&
+				!resultPreview.includes("<result>"),
+		);
 	});
 
 	it("preview highlights re-derive against the parsed content", () => {
@@ -167,7 +198,9 @@ describe("ExplorerComponent subagent detail", () => {
 			getBlocks: () => blocks,
 			actions: {
 				async copy(): Promise<void> {},
-				async open(): Promise<number | null> { return 0; },
+				async open(): Promise<number | null> {
+					return 0;
+				},
 			},
 			notify: () => {},
 			done: () => {},
@@ -179,36 +212,54 @@ describe("ExplorerComponent subagent detail", () => {
 		component.handleInput("\r");
 		const resultDetail = component.render(90);
 		const resultDetailText = resultDetail.join("\n");
-		assert.ok(resultDetailText.indexOf("Relevant Files") < resultDetailText.indexOf("─ result details ─")
-			&& resultDetailText.indexOf("─ result details ─") < resultDetailText.indexOf("status    completed")
-			&& resultDetailText.indexOf("status    completed") < resultDetailText.indexOf("model     claude-sonnet-5")
-			&& resultDetailText.indexOf("model     claude-sonnet-5") < resultDetailText.indexOf("resume    subagent_resume")
-			&& resultDetailText.indexOf("resume    subagent_resume") < resultDetailText.indexOf("session   /sessions/child.jsonl")
-			&& resultDetailText.indexOf("session   /sessions/child.jsonl")
-				< resultDetailText.indexOf("worktree  kept at /repo/worktree"),
-			"result detail separates the response and complete canonical table with a labeled rule");
-		assert.ok(resultDetailText.includes("Relevant Files") && !resultDetailText.includes("## Relevant Files")
-			&& !resultDetailText.includes("<result>"),
-			"result detail renders the response as markdown");
+		assert.ok(
+			resultDetailText.indexOf("Relevant Files") < resultDetailText.indexOf("─ result details ─") &&
+				resultDetailText.indexOf("─ result details ─") < resultDetailText.indexOf("status    completed") &&
+				resultDetailText.indexOf("status    completed") <
+					resultDetailText.indexOf("model     claude-sonnet-5") &&
+				resultDetailText.indexOf("model     claude-sonnet-5") <
+					resultDetailText.indexOf("resume    subagent_resume") &&
+				resultDetailText.indexOf("resume    subagent_resume") <
+					resultDetailText.indexOf("session   /sessions/child.jsonl") &&
+				resultDetailText.indexOf("session   /sessions/child.jsonl") <
+					resultDetailText.indexOf("worktree  kept at /repo/worktree"),
+			"result detail separates the response and complete canonical table with a labeled rule",
+		);
+		assert.ok(
+			resultDetailText.includes("Relevant Files") &&
+				!resultDetailText.includes("## Relevant Files") &&
+				!resultDetailText.includes("<result>"),
+			"result detail renders the response as markdown",
+		);
 		component.handleInput("m");
 		const rawResultDetail = component.render(90).join("\n");
-		assert.ok(rawResultDetail.includes("Subagent result")
-			&& rawResultDetail.includes("<result>") && rawResultDetail.includes("Status: completed")
-			&& !rawResultDetail.includes("result details"),
-			"m still reveals the raw result envelope without the rendered divider");
+		assert.ok(
+			rawResultDetail.includes("Subagent result") &&
+				rawResultDetail.includes("<result>") &&
+				rawResultDetail.includes("Status: completed") &&
+				!rawResultDetail.includes("result details"),
+			"m still reveals the raw result envelope without the rendered divider",
+		);
 		component.handleInput("m");
 		component.handleInput("K");
 		const spawnDetail = component.render(90);
 		const spawnDetailText = spawnDetail.join("\n");
-		assert.ok(spawnDetail[1]?.startsWith("│ name=Message type recon") === true,
-			"spawn detail leads with metadata fields");
-		assert.ok(spawnDetailText.includes("Goal") && !spawnDetailText.includes("## Goal")
-			&& spawnDetailText.includes("Find everything relevant to message types."),
-			"spawn detail renders the prompt as markdown");
+		assert.ok(
+			spawnDetail[1]?.startsWith("│ name=Message type recon") === true,
+			"spawn detail leads with metadata fields",
+		);
+		assert.ok(
+			spawnDetailText.includes("Goal") &&
+				!spawnDetailText.includes("## Goal") &&
+				spawnDetailText.includes("Find everything relevant to message types."),
+			"spawn detail renders the prompt as markdown",
+		);
 		assert.ok(spawnDetailText.includes("end your turn."), "spawn detail keeps the ack");
 		component.handleInput("m");
 		const rawSpawnDetail = component.render(90).join("\n");
-		assert.ok(rawSpawnDetail.includes("subagent_spawn {") && rawSpawnDetail.includes("task"),
-			"m still reveals the raw canonical text");
+		assert.ok(
+			rawSpawnDetail.includes("subagent_spawn {") && rawSpawnDetail.includes("task"),
+			"m still reveals the raw canonical text",
+		);
 	});
 });

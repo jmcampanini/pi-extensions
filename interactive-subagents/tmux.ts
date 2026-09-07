@@ -83,20 +83,8 @@ export function shellQuote(value: string): string {
 //           "<parent window>-subagents", kept tiled.
 
 /** Create a pane with direct `bash <scriptPath>` argv and return its tmux id. */
-function createTmuxPane(
-	command: "new-window" | "split-window",
-	args: string[],
-	launchScriptPath: string,
-): string {
-	const paneId = tmux([
-		command,
-		...args,
-		"-e",
-		"PI_SUBAGENT_LAUNCH=1",
-		"--",
-		"bash",
-		launchScriptPath,
-	]).trim();
+function createTmuxPane(command: "new-window" | "split-window", args: string[], launchScriptPath: string): string {
+	const paneId = tmux([command, ...args, "-e", "PI_SUBAGENT_LAUNCH=1", "--", "bash", launchScriptPath]).trim();
 	if (!paneId.startsWith("%")) {
 		throw new Error(`tmux ${command} returned an unexpected pane id: "${paneId}"`);
 	}
@@ -319,10 +307,7 @@ export type ExitResult =
 	| { reason: "ping"; exitCode: number; pingMessage: string; pingName?: string }
 	| { reason: "error" | "pane-closed" | "killed"; exitCode: number; errorMessage: string };
 
-type PaneDeadState =
-	| { state: "alive" }
-	| { state: "dead"; exitCode: number | null }
-	| { state: "gone" };
+type PaneDeadState = { state: "alive" } | { state: "dead"; exitCode: number | null } | { state: "gone" };
 
 /** Read tmux's retained process state for a pane in one query. */
 function queryPaneDeadState(paneId: string): PaneDeadState {
@@ -419,7 +404,8 @@ export async function pollForExit(options: {
 					return {
 						reason: "killed",
 						exitCode: 1,
-						errorMessage: "The subagent's process died without reporting an exit status (killed by a signal or the system).",
+						errorMessage:
+							"The subagent's process died without reporting an exit status (killed by a signal or the system).",
 					};
 				}
 				break;

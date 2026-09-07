@@ -109,11 +109,12 @@ interface SubagentResultMessageBase {
 	worktreeNote?: string;
 }
 
-export type SubagentResultMessageInput = SubagentResultMessageBase & (
-	| { status: "completed"; response: string }
-	| { status: "failed"; response?: string; failureReason: string }
-	| { status: "stopped"; notice: string; stopRequester: "user" | "model" }
-);
+export type SubagentResultMessageInput = SubagentResultMessageBase &
+	(
+		| { status: "completed"; response: string }
+		| { status: "failed"; response?: string; failureReason: string }
+		| { status: "stopped"; notice: string; stopRequester: "user" | "model" }
+	);
 
 export interface SubagentResultMessage {
 	content: string;
@@ -153,9 +154,10 @@ export function resultPresentation(
 		version: 2,
 		status,
 		elapsedSeconds: Math.max(0, Math.floor(elapsedSeconds)),
-		preview: codePoints.length > MAX_STORED_PREVIEW_CODE_POINTS
-			? `${codePoints.slice(0, MAX_STORED_PREVIEW_CODE_POINTS).join("")}…`
-			: normalizedPreview,
+		preview:
+			codePoints.length > MAX_STORED_PREVIEW_CODE_POINTS
+				? `${codePoints.slice(0, MAX_STORED_PREVIEW_CODE_POINTS).join("")}…`
+				: normalizedPreview,
 	};
 }
 
@@ -242,7 +244,8 @@ export function buildSubagentResultMessage(input: SubagentResultMessageInput): S
 	} else if (input.status === "failed") {
 		preview = input.response ?? input.failureReason;
 	} else {
-		preview = (input.stopRequester === "user" ? "Stopped by the user" : "Stopped by the parent agent") +
+		preview =
+			(input.stopRequester === "user" ? "Stopped by the user" : "Stopped by the parent agent") +
 			" - no final result. Partial work may remain; expand for resume and worktree details.";
 	}
 

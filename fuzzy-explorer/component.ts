@@ -200,9 +200,10 @@ export class ExplorerComponent implements Component, Focusable {
 			const [line = ""] = this.input.render(Math.max(3, innerWidth));
 			return `${prefix}${line.startsWith("> ") ? line.slice(2) : line}`;
 		}
-		const query = this.state.query === ""
-			? this.theme.fg("dim", "/ to filter")
-			: this.theme.fg("accent", sanitizeTerminalText(this.state.query));
+		const query =
+			this.state.query === ""
+				? this.theme.fg("dim", "/ to filter")
+				: this.theme.fg("accent", sanitizeTerminalText(this.state.query));
 		return `${prefix}${query}`;
 	}
 
@@ -243,34 +244,39 @@ export class ExplorerComponent implements Component, Focusable {
 		const tagWidth = computeTagWidth(visible);
 		for (let index = 0; index < listRows; index++) {
 			const result = visible[index];
-			lines.push(formatFrameLine(
-				width,
-				result === undefined
-					? ""
-					: formatResultRow(
-						result,
-						this.state.listViewport + index === this.state.selectedIndex,
-						innerWidth,
-						tagWidth,
-						styles,
-					),
-				border,
-			));
+			lines.push(
+				formatFrameLine(
+					width,
+					result === undefined
+						? ""
+						: formatResultRow(
+								result,
+								this.state.listViewport + index === this.state.selectedIndex,
+								innerWidth,
+								tagWidth,
+								styles,
+							),
+					border,
+				),
+			);
 		}
 
 		if (previewRows > 0) {
 			const selected = this.state.selected;
 			lines.push(formatFrameLine(width, "", border));
-			lines.push(formatBorderLine(
-				width,
-				["├", "┤"],
-				selected === undefined ? "" : styles.accent(formatPreviewIdentity(selected.block)),
-				"",
-				border,
-			));
-			const preview = selected === undefined
-				? [styles.dim("no matching transcript blocks")]
-				: formatPreviewLines(selected, innerWidth, previewRows, styles, existsSync);
+			lines.push(
+				formatBorderLine(
+					width,
+					["├", "┤"],
+					selected === undefined ? "" : styles.accent(formatPreviewIdentity(selected.block)),
+					"",
+					border,
+				),
+			);
+			const preview =
+				selected === undefined
+					? [styles.dim("no matching transcript blocks")]
+					: formatPreviewLines(selected, innerWidth, previewRows, styles, existsSync);
 			for (let index = 0; index < previewRows; index++) {
 				lines.push(formatFrameLine(width, preview[index] ?? "", border));
 			}
@@ -313,19 +319,27 @@ export class ExplorerComponent implements Component, Focusable {
 		};
 		for (const section of detailSections(selected.block)) {
 			if (section.type === "fields") {
-				append(section.fields.map((field) =>
-					clampStyled(styles.muted(sanitizeTerminalText(`${field.key}=${field.value}`)), innerWidth)));
+				append(
+					section.fields.map((field) =>
+						clampStyled(styles.muted(sanitizeTerminalText(`${field.key}=${field.value}`)), innerWidth),
+					),
+				);
 			} else if (section.type === "content") {
 				const text = sanitizeTerminalText(section.text);
 				if (text === "") continue;
-				append(form.mode === "code"
-					? this.codeLines(text, form.language, innerWidth)
-					: this.markdownLines(text, innerWidth));
+				append(
+					form.mode === "code"
+						? this.codeLines(text, form.language, innerWidth)
+						: this.markdownLines(text, innerWidth),
+				);
 			} else if (section.type === "divider") {
 				append([styles.muted(formatSubagentResultDivider(innerWidth))]);
 			} else {
-				append(section.text.split("\n").flatMap((line) =>
-					wrapTextWithAnsi(sanitizeTerminalText(line), innerWidth).map(styles.muted)));
+				append(
+					section.text
+						.split("\n")
+						.flatMap((line) => wrapTextWithAnsi(sanitizeTerminalText(line), innerWidth).map(styles.muted)),
+				);
 			}
 		}
 		const marker = formatTruncationMarker(selected.block.truncation, existsSync);
@@ -352,7 +366,8 @@ export class ExplorerComponent implements Component, Focusable {
 			this.highlighted = { text, language, lines: this.codeHighlighter(text.replace(/\t/gu, "   "), language) };
 		}
 		return this.highlighted.lines.flatMap((line) =>
-			wrapTextWithAnsi(line, width).map((wrapped) => clampStyled(wrapped, width)));
+			wrapTextWithAnsi(line, width).map((wrapped) => clampStyled(wrapped, width)),
+		);
 	}
 
 	private renderDetail(width: number, height: number): string[] {
@@ -362,9 +377,8 @@ export class ExplorerComponent implements Component, Focusable {
 		const selected = this.state.selected;
 		const allLines = this.detailLines(width);
 		this.state.scrollDetail(0, allLines.length);
-		const position = this.state.results.length === 0
-			? "0/0"
-			: `${this.state.selectedIndex + 1}/${this.state.results.length}`;
+		const position =
+			this.state.results.length === 0 ? "0/0" : `${this.state.selectedIndex + 1}/${this.state.results.length}`;
 
 		const lines: string[] = [
 			formatBorderLine(
@@ -395,7 +409,8 @@ export class ExplorerComponent implements Component, Focusable {
 		else if (matchesKey(data, "g")) this.state.selectFirst();
 		else if (matchesKey(data, "shift+g")) this.state.selectLast();
 		else if (matchesKey(data, "/")) this.state.enterFilter();
-		else if (matchesKey(data, "enter") || matchesKey(data, "return") || matchesKey(data, "l")) this.state.enterDetail();
+		else if (matchesKey(data, "enter") || matchesKey(data, "return") || matchesKey(data, "l"))
+			this.state.enterDetail();
 		else if (matchesKey(data, "y")) this.runCopy();
 		else if (matchesKey(data, "o")) this.runOpen();
 		else return;
@@ -449,21 +464,34 @@ export class ExplorerComponent implements Component, Focusable {
 		const block = this.state.selected?.block;
 		if (!block || this.actionRunning) return;
 		this.actionRunning = true;
-		void this.actions.copy(block)
+		void this.actions
+			.copy(block)
 			.then(() => this.notify("Copied the complete block.", "info"))
-			.catch((error: unknown) => this.notify(`Copy failed: ${error instanceof Error ? error.message : String(error)}`, "error"))
-			.finally(() => { this.actionRunning = false; this.tui.requestRender(); });
+			.catch((error: unknown) =>
+				this.notify(`Copy failed: ${error instanceof Error ? error.message : String(error)}`, "error"),
+			)
+			.finally(() => {
+				this.actionRunning = false;
+				this.tui.requestRender();
+			});
 	}
 
 	private runOpen(): void {
 		const block = this.state.selected?.block;
 		if (!block || this.actionRunning) return;
 		this.actionRunning = true;
-		void this.actions.open(block)
+		void this.actions
+			.open(block)
 			.then((exitCode) => {
-				if (exitCode !== 0 && exitCode !== null) this.notify(`External editor exited with code ${exitCode}.`, "warning");
+				if (exitCode !== 0 && exitCode !== null)
+					this.notify(`External editor exited with code ${exitCode}.`, "warning");
 			})
-			.catch((error: unknown) => this.notify(`Open failed: ${error instanceof Error ? error.message : String(error)}`, "error"))
-			.finally(() => { this.actionRunning = false; this.tui.requestRender(true); });
+			.catch((error: unknown) =>
+				this.notify(`Open failed: ${error instanceof Error ? error.message : String(error)}`, "error"),
+			)
+			.finally(() => {
+				this.actionRunning = false;
+				this.tui.requestRender(true);
+			});
 	}
 }

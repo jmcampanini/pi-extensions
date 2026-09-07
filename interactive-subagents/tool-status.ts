@@ -70,7 +70,12 @@ function economics(child: { harness?: string; activity?: ActivityObservation }):
 	costUsd: number | null;
 } {
 	if (child.harness) {
-		return { text: [`harness ${sanitizeDisplayText(child.harness)}`], contextTokens: null, contextWindow: null, costUsd: null };
+		return {
+			text: [`harness ${sanitizeDisplayText(child.harness)}`],
+			contextTokens: null,
+			contextWindow: null,
+			costUsd: null,
+		};
 	}
 	const snapshot = child.activity?.snapshot;
 	const context = snapshot?.context;
@@ -97,9 +102,10 @@ function runningEntry(id: string, state: SubagentRuntimeState, nowMs: number): S
 	if (state === "active") {
 		const snapshot = child.activity?.snapshot;
 		const tool = snapshot?.inRun ? oldestActiveTool(snapshot.activeTools) : undefined;
-		const activity = tool && snapshot && child.activity?.acceptedAtMs !== undefined
-			? `running ${clampToolName(tool.name)} for ${formatToolElapsed(toolElapsedSeconds(snapshot, tool, child.activity.acceptedAtMs, nowMs))}`
-			: "working";
+		const activity =
+			tool && snapshot && child.activity?.acceptedAtMs !== undefined
+				? `running ${clampToolName(tool.name)} for ${formatToolElapsed(toolElapsedSeconds(snapshot, tool, child.activity.acceptedAtMs, nowMs))}`
+				: "working";
 		description = `${activity} · ${clauses.join(" · ")}`;
 	} else if (state === "waiting") {
 		description = `healthy but idle and may be waiting for human input in its pane · ${clauses.join(" · ")}`;
@@ -197,10 +203,12 @@ export function collectStatusEntries(nowMs = Date.now()): StatusPresentationEntr
 		const queued = queuedById.get(row.id);
 		if (!queued) continue;
 		const elapsedSeconds = Math.max(0, Math.round((nowMs - queued.entry.queuedAt) / 1000));
-		entries.push(launchEntry(queued.entry.spec, elapsedSeconds, {
-			position: queued.position,
-			total: queue.length,
-		}));
+		entries.push(
+			launchEntry(queued.entry.spec, elapsedSeconds, {
+				position: queued.position,
+				total: queue.length,
+			}),
+		);
 	}
 	return entries;
 }
@@ -211,9 +219,12 @@ function safeInline(text: string): string {
 
 export function formatStatusModelText(entries: readonly StatusPresentationEntry[]): string {
 	if (entries.length === 0) return "No unresolved subagents.";
-	const rows = entries.map((entry) =>
-		`• id ${safeInline(entry.id)} | agent ${safeInline(entry.agent)} | name ${JSON.stringify(safeInline(entry.name))} | ${entry.state} - ${safeInline(entry.description)}`
-	).join("\n");
+	const rows = entries
+		.map(
+			(entry) =>
+				`• id ${safeInline(entry.id)} | agent ${safeInline(entry.agent)} | name ${JSON.stringify(safeInline(entry.name))} | ${entry.state} - ${safeInline(entry.description)}`,
+		)
+		.join("\n");
 	return `${rows}\n\nResults arrive on their own; if you are only waiting, end your turn.`;
 }
 
@@ -235,7 +246,8 @@ export function formatStatusCardLines(
 
 	const lines: string[] = [""];
 	for (const entry of entries) {
-		const core = id(safeInline(entry.id)) +
+		const core =
+			id(safeInline(entry.id)) +
 			separator(" · ") +
 			agent(safeInline(entry.agent)) +
 			separator(" · ") +
@@ -260,13 +272,15 @@ const RUNTIME_STATES = new Set<SubagentRuntimeState>([
 function isStatusEntry(value: unknown): value is StatusPresentationEntry {
 	if (!value || typeof value !== "object") return false;
 	const entry = value as Partial<StatusPresentationEntry>;
-	return typeof entry.id === "string"
-		&& typeof entry.agent === "string"
-		&& typeof entry.name === "string"
-		&& typeof entry.state === "string"
-		&& RUNTIME_STATES.has(entry.state as SubagentRuntimeState)
-		&& typeof entry.description === "string"
-		&& typeof entry.elapsedSeconds === "number";
+	return (
+		typeof entry.id === "string" &&
+		typeof entry.agent === "string" &&
+		typeof entry.name === "string" &&
+		typeof entry.state === "string" &&
+		RUNTIME_STATES.has(entry.state as SubagentRuntimeState) &&
+		typeof entry.description === "string" &&
+		typeof entry.elapsedSeconds === "number"
+	);
 }
 
 function parseDetails(details: unknown): StatusPresentation | undefined {
@@ -274,7 +288,8 @@ function parseDetails(details: unknown): StatusPresentation | undefined {
 	const presentation = (details as { presentation?: unknown }).presentation;
 	if (!presentation || typeof presentation !== "object") return undefined;
 	const candidate = presentation as Partial<StatusPresentation>;
-	if (candidate.version !== 1 || !Array.isArray(candidate.entries) || !candidate.entries.every(isStatusEntry)) return undefined;
+	if (candidate.version !== 1 || !Array.isArray(candidate.entries) || !candidate.entries.every(isStatusEntry))
+		return undefined;
 	return candidate as StatusPresentation;
 }
 
@@ -289,7 +304,8 @@ export function registerSubagentStatusTool(pi: ExtensionAPI): void {
 		parameters: Type.Object({}),
 		renderCall(_args, theme, context) {
 			const hint = context.expanded ? "" : keyHint("app.tools.expand", "to expand");
-			const heading = theme.fg("toolTitle", theme.bold("subagent status")) +
+			const heading =
+				theme.fg("toolTitle", theme.bold("subagent status")) +
 				(hint ? theme.fg("dim", " (") + hint + theme.fg("dim", ")") : "");
 			return new Text(heading, 0, 0);
 		},

@@ -70,9 +70,10 @@ export const USABLE_MODELS_MAX_LISTED = 20;
  * model whose provider has credentials.
  */
 export function listUsableModels(source: UsableModelSource): UsableModels {
-	const models = source.scopedModels.length > 0
-		? source.scopedModels.map((scoped) => scoped.model)
-		: source.modelRegistry.getAvailable();
+	const models =
+		source.scopedModels.length > 0
+			? source.scopedModels.map((scoped) => scoped.model)
+			: source.modelRegistry.getAvailable();
 
 	const ids = models.map(canonicalId);
 	return source.model ? { ids, current: canonicalId(source.model) } : { ids };
@@ -108,9 +109,7 @@ export function resolveUsableModel(
 		// Bare model id: exact-id match among providers with credentials.
 		if (slash === -1) {
 			const id = entry.toLowerCase();
-			const usable = registry
-				.getAll()
-				.filter((m) => m.id.toLowerCase() === id && registry.hasConfiguredAuth(m));
+			const usable = registry.getAll().filter((m) => m.id.toLowerCase() === id && registry.hasConfiguredAuth(m));
 			if (usable.length === 1) {
 				return canonicalId(usable[0]);
 			}
@@ -131,9 +130,7 @@ export function resolveUsableModel(
 		// Fully qualified: case-insensitive exact match on provider + id.
 		const provider = entry.slice(0, slash).toLowerCase();
 		const id = entry.slice(slash + 1).toLowerCase();
-		const model = registry
-			.getAll()
-			.find((m) => m.provider.toLowerCase() === provider && m.id.toLowerCase() === id);
+		const model = registry.getAll().find((m) => m.provider.toLowerCase() === provider && m.id.toLowerCase() === id);
 		if (!model) {
 			reasons.push(`${entry} - unknown model (not in pi's registry)`);
 			continue;
@@ -146,8 +143,7 @@ export function resolveUsableModel(
 	}
 
 	// Per-entry reasons say what was wrong; the usable list says what to use.
-	const usable = usableModelIds.length > 0
-		? `\nUsable models (exact ids): ${summarizeUsableModels(usableModelIds)}`
-		: "";
+	const usable =
+		usableModelIds.length > 0 ? `\nUsable models (exact ids): ${summarizeUsableModels(usableModelIds)}` : "";
 	throw new Error(`No usable model. Tried, in order:\n${reasons.map((r) => `  - ${r}`).join("\n")}${usable}`);
 }

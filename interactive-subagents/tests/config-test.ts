@@ -26,22 +26,47 @@ const worktreeDefaults = {
 
 describe("loadConfig", () => {
 	it("defaults", () => {
-		assert.deepStrictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith(null) }),
-			{ layout: "window", mainWidth: "60%", ...previewDefaults, ...worktreeDefaults });
+		assert.deepStrictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith(null) }), {
+			layout: "window",
+			mainWidth: "60%",
+			...previewDefaults,
+			...worktreeDefaults,
+		});
 	});
 
 	it("file applies", () => {
-		assert.deepStrictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window","mainWidth":"120","maxConcurrentSubagents":4,"callPreviewLines":4,"resultPreviewLines":8,"widgetMaxRows":7}') }),
-			{ layout: "window", mainWidth: "120", maxConcurrentSubagents: 4, callPreviewLines: 4, resultPreviewLines: 8, widgetMaxRows: 7, ...worktreeDefaults });
+		assert.deepStrictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith(
+					'{"layout":"window","mainWidth":"120","maxConcurrentSubagents":4,"callPreviewLines":4,"resultPreviewLines":8,"widgetMaxRows":7}',
+				),
+			}),
+			{
+				layout: "window",
+				mainWidth: "120",
+				maxConcurrentSubagents: 4,
+				callPreviewLines: 4,
+				resultPreviewLines: 8,
+				widgetMaxRows: 7,
+				...worktreeDefaults,
+			},
+		);
 	});
 
 	it("partial file merges with defaults", () => {
-		assert.deepStrictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"off"}') }),
-			{ layout: "off", mainWidth: "60%", ...previewDefaults, ...worktreeDefaults });
+		assert.deepStrictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"off"}') }), {
+			layout: "off",
+			mainWidth: "60%",
+			...previewDefaults,
+			...worktreeDefaults,
+		});
 	});
 
 	it("env beats file", () => {
-		assert.strictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window"}'), PI_SUBAGENT_LAYOUT: "main" }).layout, "main");
+		assert.strictEqual(
+			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layout":"window"}'), PI_SUBAGENT_LAYOUT: "main" }).layout,
+			"main",
+		);
 	});
 
 	it("file accepts header-only call previews", () => {
@@ -49,32 +74,47 @@ describe("loadConfig", () => {
 	});
 
 	it("file accepts footer-only result cards", () => {
-		assert.strictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":0}') }).resultPreviewLines, 0);
+		assert.strictEqual(
+			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":0}') }).resultPreviewLines,
+			0,
+		);
 	});
 
 	it("file accepts the maximum result preview", () => {
-		assert.strictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":20}') }).resultPreviewLines, 20);
+		assert.strictEqual(
+			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":20}') }).resultPreviewLines,
+			20,
+		);
 	});
 
 	it("call preview env beats file", () => {
-		assert.strictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":2}'),
-			PI_SUBAGENT_CALL_PREVIEW_LINES: "7",
-		}).callPreviewLines, 7);
+		assert.strictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"callPreviewLines":2}'),
+				PI_SUBAGENT_CALL_PREVIEW_LINES: "7",
+			}).callPreviewLines,
+			7,
+		);
 	});
 
 	it("result preview env beats file", () => {
-		assert.strictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":2}'),
-			PI_SUBAGENT_RESULT_PREVIEW_LINES: "9",
-		}).resultPreviewLines, 9);
+		assert.strictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":2}'),
+				PI_SUBAGENT_RESULT_PREVIEW_LINES: "9",
+			}).resultPreviewLines,
+			9,
+		);
 	});
 
 	it("widget rows env beats file", () => {
-		assert.strictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":3}'),
-			PI_SUBAGENT_WIDGET_MAX_ROWS: "8",
-		}).widgetMaxRows, 8);
+		assert.strictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":3}'),
+				PI_SUBAGENT_WIDGET_MAX_ROWS: "8",
+			}).widgetMaxRows,
+			8,
+		);
 	});
 
 	it("widget rows accept one", () => {
@@ -82,17 +122,11 @@ describe("loadConfig", () => {
 	});
 
 	it("negative widget rows are rejected", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":-1}') }),
-			/positive integer/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":-1}') }), /positive integer/);
 	});
 
 	it("fractional widget rows are rejected", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":2.5}') }),
-			/positive integer/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"widgetMaxRows":2.5}') }), /positive integer/);
 	});
 
 	it("invalid widget rows env names the variable", () => {
@@ -103,14 +137,20 @@ describe("loadConfig", () => {
 	});
 
 	it("max concurrent accepts the minimum", () => {
-		assert.strictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":1}') }).maxConcurrentSubagents, 1);
+		assert.strictEqual(
+			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":1}') }).maxConcurrentSubagents,
+			1,
+		);
 	});
 
 	it("max concurrent env beats file", () => {
-		assert.strictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":3}'),
-			PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS: "5",
-		}).maxConcurrentSubagents, 5);
+		assert.strictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":3}'),
+				PI_SUBAGENT_MAX_CONCURRENT_SUBAGENTS: "5",
+			}).maxConcurrentSubagents,
+			5,
+		);
 	});
 
 	it("zero max concurrent is rejected", () => {
@@ -135,10 +175,7 @@ describe("loadConfig", () => {
 	});
 
 	it("string max concurrent in file is rejected", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":"9"}') }),
-			/"9"/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"maxConcurrentSubagents":"9"}') }), /"9"/);
 	});
 
 	it("invalid max concurrent env names the variable", () => {
@@ -149,24 +186,15 @@ describe("loadConfig", () => {
 	});
 
 	it("unknown key", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layot":"main"}') }),
-			/unknown key\(s\) layot/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"layot":"main"}') }), /unknown key\(s\) layot/);
 	});
 
 	it("bad json", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{nope") }),
-			/not valid JSON/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{nope") }), /not valid JSON/);
 	});
 
 	it("array root", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("[1]") }),
-			/must be a JSON object/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("[1]") }), /must be a JSON object/);
 	});
 
 	it("bad layout in file", () => {
@@ -184,10 +212,7 @@ describe("loadConfig", () => {
 	});
 
 	it("bad width", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"mainWidth":"12px"}') }),
-			/mainWidth/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"mainWidth":"12px"}') }), /mainWidth/);
 	});
 
 	it("uppercase layout in env is rejected", () => {
@@ -219,10 +244,7 @@ describe("loadConfig", () => {
 	});
 
 	it("string preview lines in file are rejected", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":"5"}') }),
-			/"5"/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"resultPreviewLines":"5"}') }), /"5"/);
 	});
 
 	it("invalid call preview env names the variable", () => {
@@ -241,41 +263,61 @@ describe("loadConfig", () => {
 
 	it("worktree create command from file", () => {
 		assert.strictEqual(
-			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":"grove create \\"$PI_SUBAGENT_WORKTREE_NAME\\""}') }).worktreeCreateCommand,
-			'grove create "$PI_SUBAGENT_WORKTREE_NAME"');
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith(
+					'{"worktreeCreateCommand":"grove create \\"$PI_SUBAGENT_WORKTREE_NAME\\""}',
+				),
+			}).worktreeCreateCommand,
+			'grove create "$PI_SUBAGENT_WORKTREE_NAME"',
+		);
 	});
 
 	it("worktree cleanup command from file", () => {
 		assert.strictEqual(
-			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupCommand":"grove remove \\"$PI_SUBAGENT_WORKTREE_DIR\\""}') }).worktreeCleanupCommand,
-			'grove remove "$PI_SUBAGENT_WORKTREE_DIR"');
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith(
+					'{"worktreeCleanupCommand":"grove remove \\"$PI_SUBAGENT_WORKTREE_DIR\\""}',
+				),
+			}).worktreeCleanupCommand,
+			'grove remove "$PI_SUBAGENT_WORKTREE_DIR"',
+		);
 	});
 
 	it("worktree cleanup mode from file", () => {
 		assert.strictEqual(
 			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupMode":"never"}') }).worktreeCleanupMode,
-			"never");
+			"never",
+		);
 	});
 
 	it("worktree create env beats file", () => {
-		assert.strictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":"from-file"}'),
-			PI_SUBAGENT_WORKTREE_CREATE_COMMAND: "from-env",
-		}).worktreeCreateCommand, "from-env");
+		assert.strictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"worktreeCreateCommand":"from-file"}'),
+				PI_SUBAGENT_WORKTREE_CREATE_COMMAND: "from-env",
+			}).worktreeCreateCommand,
+			"from-env",
+		);
 	});
 
 	it("worktree cleanup env beats file", () => {
-		assert.strictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupCommand":"from-file"}'),
-			PI_SUBAGENT_WORKTREE_CLEANUP_COMMAND: "from-env",
-		}).worktreeCleanupCommand, "from-env");
+		assert.strictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupCommand":"from-file"}'),
+				PI_SUBAGENT_WORKTREE_CLEANUP_COMMAND: "from-env",
+			}).worktreeCleanupCommand,
+			"from-env",
+		);
 	});
 
 	it("worktree mode env beats file", () => {
-		assert.strictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupMode":"never"}'),
-			PI_SUBAGENT_WORKTREE_CLEANUP_MODE: "auto",
-		}).worktreeCleanupMode, "auto");
+		assert.strictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"worktreeCleanupMode":"never"}'),
+				PI_SUBAGENT_WORKTREE_CLEANUP_MODE: "auto",
+			}).worktreeCleanupMode,
+			"auto",
+		);
 	});
 
 	it("bad worktree mode in file", () => {

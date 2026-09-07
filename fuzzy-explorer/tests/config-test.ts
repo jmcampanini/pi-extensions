@@ -60,10 +60,10 @@ describe("config", () => {
 	});
 
 	it("partial file keeps defaults", () => {
-		assert.deepStrictEqual(
-			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"alt+x"}') }),
-			{ openMode: "list", openShortcut: "alt+x" },
-		);
+		assert.deepStrictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"openShortcut":"alt+x"}') }), {
+			openMode: "list",
+			openShortcut: "alt+x",
+		});
 	});
 
 	it("environment beats file", () => {
@@ -129,10 +129,40 @@ describe("config", () => {
 
 	it("shortcuts reserved by Pi's main editor are rejected", () => {
 		for (const shortcut of [
-			"a", "9", "pageUp", "?", "+", "escape", "enter", "ctrl+c", "ctrl+g", "ctrl+p", "shift+ctrl+p",
-			"shift+tab", "shift+enter", "ctrl+a", "ctrl+b", "ctrl+e", "ctrl+f", "ctrl+u", "ctrl+w", "ctrl+y",
-			"ctrl+j", "ctrl+m", "ctrl+i", "ctrl+h", "ctrl+[", "ctrl+]", "ctrl+alt+]",
-			"shift+g", "shift+9", "shift+?", "shift+space", "alt+b", "alt+f", "alt+d",
+			"a",
+			"9",
+			"pageUp",
+			"?",
+			"+",
+			"escape",
+			"enter",
+			"ctrl+c",
+			"ctrl+g",
+			"ctrl+p",
+			"shift+ctrl+p",
+			"shift+tab",
+			"shift+enter",
+			"ctrl+a",
+			"ctrl+b",
+			"ctrl+e",
+			"ctrl+f",
+			"ctrl+u",
+			"ctrl+w",
+			"ctrl+y",
+			"ctrl+j",
+			"ctrl+m",
+			"ctrl+i",
+			"ctrl+h",
+			"ctrl+[",
+			"ctrl+]",
+			"ctrl+alt+]",
+			"shift+g",
+			"shift+9",
+			"shift+?",
+			"shift+space",
+			"alt+b",
+			"alt+f",
+			"alt+d",
 		]) {
 			assert.throws(
 				() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(null), PI_FUZZY_EXPLORER_OPEN_SHORTCUT: shortcut }),
@@ -208,24 +238,15 @@ describe("config", () => {
 	});
 
 	it("malformed JSON", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{broken") }),
-			/not valid JSON/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{broken") }), /not valid JSON/);
 	});
 
 	it("array root", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("[]") }),
-			/must be a JSON object/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("[]") }), /must be a JSON object/);
 	});
 
 	it("null root", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("null") }),
-			/must be a JSON object/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("null") }), /must be a JSON object/);
 	});
 
 	it("invalid file is not rescued by environment", () => {

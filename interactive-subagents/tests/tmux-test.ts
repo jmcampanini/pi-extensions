@@ -18,7 +18,11 @@ function tmuxAvailable(): boolean {
 
 if (!tmuxAvailable()) {
 	describe("tmux pane boundary", () => {
-		it("dead-pane launches are observable and closable in every layout", { skip: "tmux is not installed" }, () => {});
+		it(
+			"dead-pane launches are observable and closable in every layout",
+			{ skip: "tmux is not installed" },
+			() => {},
+		);
 	});
 } else {
 	const sandbox = join(process.cwd(), ".sandbox");
@@ -30,16 +34,12 @@ if (!tmuxAvailable()) {
 	const fakeDefaultShell = join(binDir, "hostile-shell");
 	mkdirSync(binDir);
 	mkdirSync(configDir);
-	writeFileSync(
-		join(binDir, "pi"),
-		"#!/bin/bash\nprintf 'stand-in pi crashed immediately\\n'\nexit 23\n",
-		{ mode: 0o755 },
-	);
-	writeFileSync(
-		fakeDefaultShell,
-		"#!/bin/bash\nprintf invoked >\"${0%/*}/default-shell-invoked\"\nexit 97\n",
-		{ mode: 0o755 },
-	);
+	writeFileSync(join(binDir, "pi"), "#!/bin/bash\nprintf 'stand-in pi crashed immediately\\n'\nexit 23\n", {
+		mode: 0o755,
+	});
+	writeFileSync(fakeDefaultShell, '#!/bin/bash\nprintf invoked >"${0%/*}/default-shell-invoked"\nexit 97\n', {
+		mode: 0o755,
+	});
 	writeFileSync(join(configDir, "subagents.json"), '{"layout":"off"}\n');
 
 	const socketName = `pi-subagents-test-${process.pid}`;
@@ -80,7 +80,9 @@ if (!tmuxAvailable()) {
 	}
 
 	after(() => {
-		try { isolatedTmux(["kill-server"]); } catch {}
+		try {
+			isolatedTmux(["kill-server"]);
+		} catch {}
 		restore("PATH");
 		restore("TMUX");
 		restore("TMUX_PANE");
@@ -128,7 +130,13 @@ if (!tmuxAvailable()) {
 			"on",
 			`${label}: remain-on-exit is on`,
 		);
-		const deadState = attachedTmux(["display-message", "-p", "-t", paneId, "#{pane_dead},#{pane_dead_status}"]).trim();
+		const deadState = attachedTmux([
+			"display-message",
+			"-p",
+			"-t",
+			paneId,
+			"#{pane_dead},#{pane_dead_status}",
+		]).trim();
 		assert.ok(
 			deadState === "1,23" || deadState === "1,",
 			`${label}: tmux reports the crash with or without an available status`,

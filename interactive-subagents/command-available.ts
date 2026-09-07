@@ -64,16 +64,22 @@ export function registerSubagentAvailableCommand(pi: ExtensionAPI): void {
 				(_tui, theme) => ({
 					invalidate(): void {},
 					render(width: number): string[] {
-						return formatAgentOverviewLines(inventory, width, dirs, {
-							dim: (text) => theme.fg("dim", text),
-							muted: (text) => theme.fg("muted", text),
-							accent: (text) => theme.fg("accent", text),
-							error: (text) => theme.fg("error", text),
-							warning: (text) => theme.fg("warning", text),
-							border: (text) => theme.fg("borderMuted", text),
-							bold: (text) => theme.bold(text),
-							italic: (text) => theme.italic(text),
-						}, { models });
+						return formatAgentOverviewLines(
+							inventory,
+							width,
+							dirs,
+							{
+								dim: (text) => theme.fg("dim", text),
+								muted: (text) => theme.fg("muted", text),
+								accent: (text) => theme.fg("accent", text),
+								error: (text) => theme.fg("error", text),
+								warning: (text) => theme.fg("warning", text),
+								border: (text) => theme.fg("borderMuted", text),
+								bold: (text) => theme.bold(text),
+								italic: (text) => theme.italic(text),
+							},
+							{ models },
+						);
 					},
 				}),
 				{ placement: "aboveEditor" },

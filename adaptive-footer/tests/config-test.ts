@@ -11,13 +11,7 @@ const importAgentDir = join(testRoot, "import");
 mkdirSync(importAgentDir);
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = importAgentDir;
-const {
-	DEFAULT_ISSUE_PATTERNS,
-	agentConfigDir,
-	config,
-	configFilePath,
-	loadConfig,
-} = await import("../config.ts");
+const { DEFAULT_ISSUE_PATTERNS, agentConfigDir, config, configFilePath, loadConfig } = await import("../config.ts");
 
 after(() => {
 	if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -76,10 +70,10 @@ describe("config", () => {
 	});
 
 	it("default accepts hash and slash marker separators", () => {
-		assert.deepStrictEqual([
-			matchNumber(DEFAULT_ISSUE_PATTERNS[0], "issue#81"),
-			matchNumber(DEFAULT_ISSUE_PATTERNS[0], "issues/82"),
-		], ["81", "82"]);
+		assert.deepStrictEqual(
+			[matchNumber(DEFAULT_ISSUE_PATTERNS[0], "issue#81"), matchNumber(DEFAULT_ISSUE_PATTERNS[0], "issues/82")],
+			["81", "82"],
+		);
 	});
 
 	it("default does not infer an unmarked number", () => {
@@ -99,10 +93,9 @@ describe("config", () => {
 	});
 
 	it("an empty pattern array disables issue inference", () => {
-		assert.deepStrictEqual(
-			loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"issuePatterns":[]}') }),
-			{ issuePatterns: [] },
-		);
+		assert.deepStrictEqual(loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"issuePatterns":[]}') }), {
+			issuePatterns: [],
+		});
 	});
 
 	it("unknown persisted keys are rejected", () => {
@@ -113,14 +106,15 @@ describe("config", () => {
 	});
 
 	it("invalid JSON is rejected", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{broken") }),
-			/not valid JSON/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{broken") }), /not valid JSON/);
 	});
 
 	it("non-object config roots are rejected", () => {
-		for (const [label, content] of [["null", "null"], ["array", "[]"], ["scalar", "42"]] as const) {
+		for (const [label, content] of [
+			["null", "null"],
+			["array", "[]"],
+			["scalar", "42"],
+		] as const) {
 			assert.throws(
 				() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(content) }),
 				/must be a JSON object/,

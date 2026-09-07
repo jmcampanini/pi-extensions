@@ -97,11 +97,12 @@ const SubagentSpawnParams = Type.Object({
 				"When omitted, the agent definition's model choice applies; without one, the child harness selects normally. Pi model names are validated immediately, and failures name the usable ids.",
 		}),
 	),
-	tools: Type.Optional(Type.String({ description: "Comma-separated tool allowlist, e.g. 'read,bash' (overrides the agent default)" })),
+	tools: Type.Optional(
+		Type.String({ description: "Comma-separated tool allowlist, e.g. 'read,bash' (overrides the agent default)" }),
+	),
 	thinking: Type.Optional(
 		Type.String({
-			description:
-				`Thinking/effort level override: ${THINKING_LEVELS.join(", ")}. Defaults to the agent definition's \`thinking:\` value.`,
+			description: `Thinking/effort level override: ${THINKING_LEVELS.join(", ")}. Defaults to the agent definition's \`thinking:\` value.`,
 		}),
 	),
 	cwd: Type.Optional(
@@ -160,11 +161,15 @@ function parseSpawnPresentation(details: unknown): ParsedSpawnPresentation | und
 	const candidate = presentation as Partial<SpawnBehaviorPresentation>;
 	if (candidate.version !== 1 || !candidate.behavior || typeof candidate.behavior !== "object") return undefined;
 	const behavior = candidate.behavior as Partial<EffectiveSpawnBehavior>;
-	if ((behavior.context !== "new" && behavior.context !== "forked")
-		|| typeof behavior.autoExit !== "boolean"
-		|| typeof behavior.useWorktree !== "boolean"
-		|| typeof behavior.harness !== "string") return undefined;
-	if (candidate.model !== undefined && candidate.model !== null && typeof candidate.model !== "string") return undefined;
+	if (
+		(behavior.context !== "new" && behavior.context !== "forked") ||
+		typeof behavior.autoExit !== "boolean" ||
+		typeof behavior.useWorktree !== "boolean" ||
+		typeof behavior.harness !== "string"
+	)
+		return undefined;
+	if (candidate.model !== undefined && candidate.model !== null && typeof candidate.model !== "string")
+		return undefined;
 	return { behavior: behavior as EffectiveSpawnBehavior, model: candidate.model };
 }
 
@@ -243,22 +248,25 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			return {
 				invalidate(): void {},
 				render(width: number): string[] {
-					const fallbackHasSelectedModel = fallbackPresentation.modelPending
-						|| fallbackPresentation.effectiveModel !== null;
-					const presentation = state.presentationSettled || state.effectiveBehavior
-						? {
-							...fallbackPresentation,
-							...args,
-							...(state.effectiveBehavior ?? {}),
-							effectiveModel: state.effectiveModel === undefined
-								? fallbackPresentation.effectiveModel
-								: state.effectiveModel,
-							modelPending: !state.presentationSettled && fallbackPresentation.modelPending,
-							modelUnknown: state.presentationSettled
-								&& state.effectiveModel === undefined
-								&& fallbackHasSelectedModel,
-						}
-						: fallbackPresentation;
+					const fallbackHasSelectedModel =
+						fallbackPresentation.modelPending || fallbackPresentation.effectiveModel !== null;
+					const presentation =
+						state.presentationSettled || state.effectiveBehavior
+							? {
+									...fallbackPresentation,
+									...args,
+									...state.effectiveBehavior,
+									effectiveModel:
+										state.effectiveModel === undefined
+											? fallbackPresentation.effectiveModel
+											: state.effectiveModel,
+									modelPending: !state.presentationSettled && fallbackPresentation.modelPending,
+									modelUnknown:
+										state.presentationSettled &&
+										state.effectiveModel === undefined &&
+										fallbackHasSelectedModel,
+								}
+							: fallbackPresentation;
 					if (context.expanded) {
 						return formatExpandedSubagentCall(presentation, width, CALL_TEXT_METRICS, style);
 					}
@@ -281,8 +289,10 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 				state.effectiveBehavior = presentation.behavior;
 				if (presentation.model !== undefined) state.effectiveModel = presentation.model;
 			}
-			return renderSubagentLaunchResult(result, context.isError, (text) =>
-				new Text(theme.fg("error", text), 0, 0),
+			return renderSubagentLaunchResult(
+				result,
+				context.isError,
+				(text) => new Text(theme.fg("error", text), 0, 0),
 			);
 		},
 		async execute(_toolCallId, params: SubagentSpawnParamsType, _signal, _onUpdate, ctx) {
@@ -455,8 +465,8 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			let launched: LaunchedSpawn;
 			try {
 				launched = await runSpawnLaunch(pi, spec);
-			} catch (error) {
-				error = resolveLaunchCancellation(id, error) ?? error;
+			} catch (cause) {
+				const error = resolveLaunchCancellation(id, cause) ?? cause;
 				releaseClaim(id);
 				// The failed launch freed its slot - without this, queued work
 				// behind it could sit forever with capacity free (nothing else
@@ -767,8 +777,7 @@ export async function runSpawnLaunch(pi: ExtensionAPI, spec: SpawnSpec): Promise
 		if (worktree && !(error instanceof CancelLaunch && error.preserveWorktree)) {
 			const rollback = await removeWorktree(worktree, config.worktreeCleanupCommand);
 			if (rollback.status === "cleanup-failed") {
-				const cleanupFailure =
-					`Rolling back the worktree failed (${rollback.error}) - remove ${worktree.dir} manually.`;
+				const cleanupFailure = `Rolling back the worktree failed (${rollback.error}) - remove ${worktree.dir} manually.`;
 				const warning = `\n\nAlso: ${cleanupFailure}`;
 				const cancelled = resolveLaunchCancellation(spec.id, error);
 				if (cancelled) {

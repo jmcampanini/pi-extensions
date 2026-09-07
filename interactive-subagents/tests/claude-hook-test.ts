@@ -36,7 +36,11 @@ describe("claude-hook.mjs", () => {
 	it("hook events maintain the activity snapshot, result, and completion sidecars across a session", () => {
 		// ── session-start writes the baseline snapshot ───────────────────
 
-		assert.strictEqual(runHook("session-start", { session_id: "sess-1", hook_event_name: "SessionStart" }), "", "hook prints nothing to stdout");
+		assert.strictEqual(
+			runHook("session-start", { session_id: "sess-1", hook_event_name: "SessionStart" }),
+			"",
+			"hook prints nothing to stdout",
+		);
 		let snap = snapshot();
 		assert.strictEqual(snap.sequence, 1, "baseline write has sequence 1");
 		assert.deepStrictEqual([snap.inRun, snap.runsCompleted, snap.activeTools], [false, 0, []], "baseline is idle");
@@ -56,22 +60,42 @@ describe("claude-hook.mjs", () => {
 		runHook("tool-start", { session_id: "sess-1", tool_name: "Bash", tool_use_id: "tu_1" });
 		snap = snapshot();
 		assert.strictEqual(snap.sequence, 3, "tool-start advances the counter");
-		assert.deepStrictEqual(snap.activeTools.map((t) => t.toolCallId), ["tu_1"], "tool entry keyed by tool_use_id");
+		assert.deepStrictEqual(
+			snap.activeTools.map((t) => t.toolCallId),
+			["tu_1"],
+			"tool entry keyed by tool_use_id",
+		);
 		assert.strictEqual(snap.activeTools[0].name, "Bash", "tool entry names the tool");
 
 		runHook("tool-start", { session_id: "sess-1", tool_name: "Read", tool_use_id: "tu_2" });
-		assert.deepStrictEqual(snapshot().activeTools.map((t) => t.toolCallId), ["tu_1", "tu_2"], "parallel tools coexist");
+		assert.deepStrictEqual(
+			snapshot().activeTools.map((t) => t.toolCallId),
+			["tu_1", "tu_2"],
+			"parallel tools coexist",
+		);
 
 		runHook("tool-end", { session_id: "sess-1", tool_name: "Bash", tool_use_id: "tu_1" });
 		snap = snapshot();
-		assert.deepStrictEqual(snap.activeTools.map((t) => t.toolCallId), ["tu_2"], "tool-end removes exactly its entry");
+		assert.deepStrictEqual(
+			snap.activeTools.map((t) => t.toolCallId),
+			["tu_2"],
+			"tool-end removes exactly its entry",
+		);
 		assert.strictEqual(snap.sequence, 5, "counter keeps advancing");
 
 		// Older payloads without tool_use_id fall back to the tool name as the key.
 		runHook("tool-start", { session_id: "sess-1", tool_name: "Grep" });
-		assert.deepStrictEqual(snapshot().activeTools.map((t) => t.toolCallId), ["tu_2", "Grep"], "no tool_use_id: keyed by name");
+		assert.deepStrictEqual(
+			snapshot().activeTools.map((t) => t.toolCallId),
+			["tu_2", "Grep"],
+			"no tool_use_id: keyed by name",
+		);
 		runHook("tool-end", { session_id: "sess-1", tool_name: "Grep" });
-		assert.deepStrictEqual(snapshot().activeTools.map((t) => t.toolCallId), ["tu_2"], "no tool_use_id: end matches by name");
+		assert.deepStrictEqual(
+			snapshot().activeTools.map((t) => t.toolCallId),
+			["tu_2"],
+			"no tool_use_id: end matches by name",
+		);
 
 		// ── turn-complete without --auto-exit (human-driven) ─────────────
 
@@ -97,26 +121,51 @@ describe("claude-hook.mjs", () => {
 				{ type: "text", text: "Part two." },
 			],
 		});
-		assert.strictEqual(readExternalResult(anchor), "Part one.\nPart two.", "multi-part message joins its text blocks");
+		assert.strictEqual(
+			readExternalResult(anchor),
+			"Part one.\nPart two.",
+			"multi-part message joins its text blocks",
+		);
 		assert.strictEqual(snapshot().runsCompleted, 2, "second run counted");
 
 		// ── an empty final message leaves the previous result alone ──────
 
 		runHook("turn-complete", { session_id: "sess-1", last_assistant_message: "   " });
-		assert.strictEqual(readExternalResult(anchor), "Part one.\nPart two.", "blank final message does not clobber the result");
+		assert.strictEqual(
+			readExternalResult(anchor),
+			"Part one.\nPart two.",
+			"blank final message does not clobber the result",
+		);
 
 		// ── turn-complete with --auto-exit writes the marker last ────────
 
 		runHook("turn-complete", { session_id: "sess-1", last_assistant_message: "All done." }, ["--auto-exit"]);
-		assert.deepStrictEqual(JSON.parse(readFileSync(`${anchor}.exit`, "utf8")), { type: "done" }, "autonomous turn writes the completion marker");
+		assert.deepStrictEqual(
+			JSON.parse(readFileSync(`${anchor}.exit`, "utf8")),
+			{ type: "done" },
+			"autonomous turn writes the completion marker",
+		);
 		assert.strictEqual(readExternalResult(anchor), "All done.", "marker turn also wrote the result first");
 
 		// ── ownership: a foreign snapshot is abandoned, not repaired ─────
 
-		writeFileSync(activityFile, JSON.stringify({
-			version: 1, runId: "someone-else", pid: 1, sequence: 99, updatedAt: 9, inRun: true,
-			runsCompleted: 7, activeTools: [], modelId: null, context: null, costUsd: 0,
-		}), "utf8");
+		writeFileSync(
+			activityFile,
+			JSON.stringify({
+				version: 1,
+				runId: "someone-else",
+				pid: 1,
+				sequence: 99,
+				updatedAt: 9,
+				inRun: true,
+				runsCompleted: 7,
+				activeTools: [],
+				modelId: null,
+				context: null,
+				costUsd: 0,
+			}),
+			"utf8",
+		);
 		runHook("prompt-start", { session_id: "sess-1" });
 		snap = snapshot();
 		assert.strictEqual(snap.sequence, 1, "foreign snapshot: fresh baseline (sequence restarts)");
@@ -124,10 +173,17 @@ describe("claude-hook.mjs", () => {
 
 		// ── hostile input never breaks the hook ──────────────────────────
 
-		const out = execFileSync("node", [HOOK, "turn-complete", anchor, RUN_ID], { input: "{not json", encoding: "utf8" });
+		const out = execFileSync("node", [HOOK, "turn-complete", anchor, RUN_ID], {
+			input: "{not json",
+			encoding: "utf8",
+		});
 		assert.strictEqual(out, "", "garbage stdin: silent stdout, exit 0");
 		assert.strictEqual(snapshot().sequence, 2, "garbage stdin still advances the snapshot");
-		assert.strictEqual(execFileSync("node", [HOOK, "bogus-event", anchor, RUN_ID], { input: "{}", encoding: "utf8" }), "", "unknown event exits quietly");
+		assert.strictEqual(
+			execFileSync("node", [HOOK, "bogus-event", anchor, RUN_ID], { input: "{}", encoding: "utf8" }),
+			"",
+			"unknown event exits quietly",
+		);
 	});
 
 	// Without the lock, parallel read-modify-writes lose updates: a stale write
@@ -139,15 +195,19 @@ describe("claude-hook.mjs", () => {
 		const anchor2 = join(dir2, "child.jsonl");
 		const run = (event: string, payload: unknown) =>
 			new Promise<void>((resolve, reject) => {
-				const proc = execFile("node", [HOOK, event, anchor2, RUN_ID], (error) => (error ? reject(error) : resolve()));
+				const proc = execFile("node", [HOOK, event, anchor2, RUN_ID], (error) =>
+					error ? reject(error) : resolve(),
+				);
 				proc.stdin!.end(JSON.stringify(payload));
 			});
 		const PAIRS = 8;
 		await Promise.all(
-			Array.from({ length: PAIRS }, (_, i) => (async () => {
-				await run("tool-start", { tool_name: "Bash", tool_use_id: `tu_${i}` });
-				await run("tool-end", { tool_name: "Bash", tool_use_id: `tu_${i}` });
-			})()),
+			Array.from({ length: PAIRS }, (_, i) =>
+				(async () => {
+					await run("tool-start", { tool_name: "Bash", tool_use_id: `tu_${i}` });
+					await run("tool-end", { tool_name: "Bash", tool_use_id: `tu_${i}` });
+				})(),
+			),
 		);
 		const read = readActivityFile(`${anchor2}.activity`, RUN_ID);
 		assert.ok(read.kind === "valid", "race: final snapshot is valid");

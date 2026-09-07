@@ -1,13 +1,5 @@
-import type {
-	ExtensionAPI,
-	ExtensionCommandContext,
-	ExtensionContext,
-} from "@earendil-works/pi-coding-agent";
-import {
-	FAST_OPENAI_STATUS_KEY,
-	FAST_OPENAI_STATUS_OFF,
-	FAST_OPENAI_STATUS_ON,
-} from "../shared/status-keys.ts";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_OFF, FAST_OPENAI_STATUS_ON } from "../shared/status-keys.ts";
 
 type PayloadRecord = Record<string, unknown>;
 type PiModel = NonNullable<ExtensionContext["model"]>;
@@ -22,13 +14,7 @@ type FastEligibility = {
 
 const SUPPORTED_PROVIDER = "openai-codex" as const;
 const SUPPORTED_API = "openai-codex-responses" as const;
-const DEFAULT_FAST_MODELS = new Set([
-	"gpt-5.4",
-	"gpt-5.5",
-	"gpt-5.6-luna",
-	"gpt-5.6-sol",
-	"gpt-5.6-terra",
-]);
+const DEFAULT_FAST_MODELS = new Set(["gpt-5.4", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]);
 const SUPPORTED_MODELS = new Set([...DEFAULT_FAST_MODELS, "gpt-6-astra"]);
 const PRIORITY_SERVICE_TIER = "priority" as const;
 
@@ -43,7 +29,10 @@ export default function (pi: ExtensionAPI): void {
 
 	function setFastMode(action: "on" | "off", ctx: ExtensionCommandContext): void {
 		if (action === "on" && !getFastEligibility(ctx, true).eligible) {
-			ctx.ui.notify("Fast mode is unavailable for this model, provider, or authentication. Use /fast status for details.", "warning");
+			ctx.ui.notify(
+				"Fast mode is unavailable for this model, provider, or authentication. Use /fast status for details.",
+				"warning",
+			);
 			return;
 		}
 

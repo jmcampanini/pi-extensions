@@ -28,11 +28,13 @@ const DEFAULT_CONFIG: AutoCompactConfig = {
 	default: { thresholdTokens: 400_000 },
 };
 
-function harness(options: {
-	config?: Partial<AutoCompactConfig>;
-	usage?: ContextUsage;
-	model?: FakeModel;
-} = {}) {
+function harness(
+	options: {
+		config?: Partial<AutoCompactConfig>;
+		usage?: ContextUsage;
+		model?: FakeModel;
+	} = {},
+) {
 	const pi = createTestEventHarness<unknown, unknown, void | Promise<void>>();
 	const state: HarnessState = {
 		usage: options.usage ?? { tokens: 180_000, contextWindow: 200_000, percent: 90 },
@@ -156,7 +158,11 @@ describe("registerAutoCompact", () => {
 			"an observed native threshold compaction warns once with the usage-derived threshold",
 		);
 		nativeWarn.recordCompaction("threshold");
-		assert.strictEqual(nativeWarn.notifications.length, 1, "repeated native compaction for the same model stays quiet");
+		assert.strictEqual(
+			nativeWarn.notifications.length,
+			1,
+			"repeated native compaction for the same model stays quiet",
+		);
 		nativeWarn.selectModel({ id: "tiny-sibling", provider: "openai", contextWindow: 128_000 });
 		nativeWarn.recordCompaction("threshold", true);
 		assert.strictEqual(
@@ -243,7 +249,11 @@ describe("registerAutoCompact", () => {
 		holdFailure.compactions[0]?.onError?.(new Error("summary failed"));
 		await failureSettlement;
 		assert.strictEqual(failureHandlerRan, true, "failure releases the settlement hold");
-		assert.strictEqual(holdFailure.notifications.at(-1)?.level, "error", "failure is reported before the hold releases");
+		assert.strictEqual(
+			holdFailure.notifications.at(-1)?.level,
+			"error",
+			"failure is reported before the hold releases",
+		);
 	});
 
 	it("an aborted run defers compaction until the next completed run", () => {
@@ -293,7 +303,11 @@ describe("registerAutoCompact", () => {
 			[],
 			"native fallback after an extension failure does not warn",
 		);
-		assert.strictEqual(latch.statuses.has(AUTO_COMPACT_STATUS_KEY), false, "clearing the latch clears the paused status");
+		assert.strictEqual(
+			latch.statuses.has(AUTO_COMPACT_STATUS_KEY),
+			false,
+			"clearing the latch clears the paused status",
+		);
 		latch.settle();
 		assert.strictEqual(latch.compactions.length, 2, "any successful compaction clears the failure latch");
 		latch.compactions[1]?.onError?.(new Error("failed again"));
@@ -337,7 +351,11 @@ describe("registerAutoCompact", () => {
 			() => shutdown.compactions[0]?.onError?.(new Error("cancelled during shutdown")),
 			"late compaction failure after shutdown does not use stale context",
 		);
-		assert.strictEqual(shutdown.notifications.length, 1, "late compaction failure after shutdown adds no notification");
+		assert.strictEqual(
+			shutdown.notifications.length,
+			1,
+			"late compaction failure after shutdown adds no notification",
+		);
 		assert.strictEqual(
 			shutdown.statuses.has(AUTO_COMPACT_STATUS_KEY),
 			false,

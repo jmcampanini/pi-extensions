@@ -47,7 +47,11 @@ describe("createInlineSkillsProvider", () => {
 		assert.deepEqual(result, {
 			prefix: "$",
 			items: [
-				{ value: "$write-pr-body", label: "$write-pr-body", description: "Write pull request titles and bodies" },
+				{
+					value: "$write-pr-body",
+					label: "$write-pr-body",
+					description: "Write pull request titles and bodies",
+				},
 				{ value: "$codex-web-search", label: "$codex-web-search", description: undefined },
 			],
 		});
@@ -57,7 +61,10 @@ describe("createInlineSkillsProvider", () => {
 		const provider = createInlineSkillsProvider(fakeCurrent().current, () => skills);
 		const result = await provider.getSuggestions(["$wri"], 0, 4, options);
 		assert.equal(result?.prefix, "$wri");
-		assert.deepEqual(result?.items.map((item) => item.value), ["$write-pr-body"]);
+		assert.deepEqual(
+			result?.items.map((item) => item.value),
+			["$write-pr-body"],
+		);
 	});
 
 	it("returns nothing for a $token matching no skill, without delegating", async () => {

@@ -113,7 +113,7 @@ export function activeMarkerColumns(rows: readonly WidgetRow[]): MarkerColumn[] 
 }
 
 export function formatMarkerCells(row: WidgetRow, columns: readonly MarkerColumn[]): string {
-	return columns.map((column) => column.applies(row) ? column.mark : " ").join("");
+	return columns.map((column) => (column.applies(row) ? column.mark : " ")).join("");
 }
 
 export interface WidgetSummary {
@@ -263,9 +263,10 @@ export function formatWidgetContextTokens(count: number): string {
 function buildSegments(row: WidgetRow): { core: string; full?: string } | undefined {
 	if (row.status === undefined) return undefined;
 	const contextTokens = row.contextTokens;
-	const contextPart = contextTokens !== undefined && Number.isFinite(contextTokens)
-		? ` · ${formatWidgetContextTokens(contextTokens)}`
-		: " ".repeat(CONTEXT_SUFFIX_WIDTH);
+	const contextPart =
+		contextTokens !== undefined && Number.isFinite(contextTokens)
+			? ` · ${formatWidgetContextTokens(contextTokens)}`
+			: " ".repeat(CONTEXT_SUFFIX_WIDTH);
 	const core = row.status + contextPart;
 	if (row.status !== "active" || row.toolName === undefined) return { core };
 
@@ -306,9 +307,7 @@ export function formatLifecycleRowLines(
 		name: singleLine(sanitizeDisplayText(row.name)),
 		agent: row.agent === undefined ? undefined : singleLine(sanitizeDisplayText(row.agent)),
 	}));
-	const agents = safeRows.map((row) =>
-		row.agent ? truncateToColumns(row.agent, AGENT_IDENTIFIER_MAX_COLUMNS) : "",
-	);
+	const agents = safeRows.map((row) => (row.agent ? truncateToColumns(row.agent, AGENT_IDENTIFIER_MAX_COLUMNS) : ""));
 	const agentWidth = Math.max(...agents.map(displayColumns), 0);
 	const elapsedValues = safeRows.map((row) => formatElapsed(row.elapsedSeconds));
 	const elapsedWidth = Math.max(...elapsedValues.map(displayColumns), 0);
@@ -325,9 +324,10 @@ export function formatLifecycleRowLines(
 		const leading = options.selectedIndex === undefined ? " " : `${selectionPointer} `;
 		const styledLeading = selected ? selectedStyle(selectionPointer) + " " : leading;
 		const prefix = `${leading}${agentWidth > 0 ? `${agent} ` : ""}`;
-		const styledAgent = agents[i] === ""
-			? agent
-			: agentStyle(agents[i]) + " ".repeat(Math.max(0, agentWidth - displayColumns(agents[i])));
+		const styledAgent =
+			agents[i] === ""
+				? agent
+				: agentStyle(agents[i]) + " ".repeat(Math.max(0, agentWidth - displayColumns(agents[i])));
 		const styledPrefix = `${styledLeading}${agentWidth > 0 ? `${styledAgent} ` : ""}`;
 		const markerCells = formatMarkerCells(row, markerColumns);
 		const markerPadding = markerColumns.length > 0 ? " " : "";
@@ -335,8 +335,12 @@ export function formatLifecycleRowLines(
 
 		// Right-anchor the clock one space off the edge. The optional tool gives
 		// way first, then the task name truncates around the required telemetry.
-		const baseWidth = displayColumns(prefix) + displayColumns(markerCells) + displayColumns(markerPadding)
-			+ displayColumns(elapsed) + 1;
+		const baseWidth =
+			displayColumns(prefix) +
+			displayColumns(markerCells) +
+			displayColumns(markerPadding) +
+			displayColumns(elapsed) +
+			1;
 		const segment = chooseSegment(row, width - baseWidth, displayColumns(name));
 		const segmentWidth = segment === "" ? 0 : displayColumns(segment) + CLOCK_SEPARATOR_WIDTH;
 		const fixedWidth = baseWidth + segmentWidth;
@@ -344,13 +348,25 @@ export function formatLifecycleRowLines(
 		const clippedName = truncateToColumns(name, maxName);
 		const gap = Math.max(0, width - fixedWidth - displayColumns(clippedName));
 		const segmentStyle = row.status === "stalled" ? warn : dim;
-		const plainLine = prefix + markerCells + markerPadding + clippedName + " ".repeat(gap)
-			+ (segment !== "" ? segment + CLOCK_SEPARATOR : "") + elapsed + " ";
+		const plainLine =
+			prefix +
+			markerCells +
+			markerPadding +
+			clippedName +
+			" ".repeat(gap) +
+			(segment !== "" ? segment + CLOCK_SEPARATOR : "") +
+			elapsed +
+			" ";
 		lines.push(
 			displayColumns(plainLine) <= width
-				? styledPrefix + (markerCells === "" ? "" : slotStyle(markerCells)) + markerPadding
-					+ nameStyle(clippedName) + " ".repeat(gap)
-					+ (segment !== "" ? segmentStyle(segment) + dim(CLOCK_SEPARATOR) : "") + dim(elapsed) + " "
+				? styledPrefix +
+						(markerCells === "" ? "" : slotStyle(markerCells)) +
+						markerPadding +
+						nameStyle(clippedName) +
+						" ".repeat(gap) +
+						(segment !== "" ? segmentStyle(segment) + dim(CLOCK_SEPARATOR) : "") +
+						dim(elapsed) +
+						" "
 				: clampToColumns(plainLine, safeWidth),
 		);
 	}

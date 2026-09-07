@@ -69,9 +69,13 @@ interface FooterComponent {
 
 type FooterFactory = (tui: FakeTui, theme: FakeTheme, footerData: FakeFooterData) => FooterComponent;
 function plain(line: string): string {
-	return line
-		.replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, "")
-		.replace(/\x1b\[[0-9;]*m/g, "");
+	return (
+		line
+			// oxlint-disable-next-line no-control-regex -- Remove OSC hyperlinks from terminal output assertions.
+			.replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, "")
+			// oxlint-disable-next-line no-control-regex -- Remove SGR styling from terminal output assertions.
+			.replace(/\x1b\[[0-9;]*m/g, "")
+	);
 }
 
 describe("registerAdaptiveFooter", () => {
@@ -120,7 +124,13 @@ describe("registerAdaptiveFooter", () => {
 						type: "message",
 						message: {
 							role: "assistant",
-							usage: { input: 305_000, output: 31_000, cacheRead: 0, cacheWrite: 0, cost: { total: 5.179 } },
+							usage: {
+								input: 305_000,
+								output: 31_000,
+								cacheRead: 0,
+								cacheWrite: 0,
+								cost: { total: 5.179 },
+							},
 						},
 					},
 				],
@@ -142,9 +152,7 @@ describe("registerAdaptiveFooter", () => {
 		const component = footerFactory(
 			{ requestRender: () => renders++ },
 			{
-				fg: (color, text) => color === "accent"
-					? `\x1b[36m${text}\x1b[39m`
-					: `\x1b[2m${text}\x1b[22m`,
+				fg: (color, text) => (color === "accent" ? `\x1b[36m${text}\x1b[39m` : `\x1b[2m${text}\x1b[22m`),
 				underline: (text) => `\x1b[4m${text}\x1b[24m`,
 			},
 			{
@@ -161,43 +169,68 @@ describe("registerAdaptiveFooter", () => {
 
 		const initialRender = component.render(120);
 		const initialLine = initialRender[0] ?? "";
-		const initialStats = plain(initialRender[1] ?? "").trimStart().split(/ {2,}/)[0];
+		const initialStats = plain(initialRender[1] ?? "")
+			.trimStart()
+			.split(/ {2,}/)[0];
 		assert.ok(renders > 0, "startup discovery requests a footer rerender");
 		assert.strictEqual(discoveryCalls, 1, "startup discovery runs once");
-		assert.strictEqual(plain(initialLine).trimStart().split(/ {2,}/)[0],
+		assert.strictEqual(
+			plain(initialLine).trimStart().split(/ {2,}/)[0],
 			"~/Code/acme/payments/main • footer links",
-			"extension render keeps the approved left ordering");
-		assert.ok(plain(initialLine).endsWith("is#456 o • pr#123 d • feature/issue-456"),
-			"extension render keeps issue, PR, and branch ordering");
-		assert.ok(initialLine.includes("\x1b]8;;https://git.acme.test/acme/payments/issues/456\x1b\\")
-			&& initialLine.includes("\x1b]8;;https://git.acme.test/acme/payments/pull/123\x1b\\"),
-			"extension render emits clickable issue and PR URLs");
-		assert.ok(initialLine.includes("\x1b[36m\x1b[4mis#456 o")
-			&& initialLine.includes("\x1b[36m\x1b[4mpr#123 d"),
-			"issue and PR links share the underlined accent treatment");
-		assert.strictEqual(initialStats,
+			"extension render keeps the approved left ordering",
+		);
+		assert.ok(
+			plain(initialLine).endsWith("is#456 o • pr#123 d • feature/issue-456"),
+			"extension render keeps issue, PR, and branch ordering",
+		);
+		assert.ok(
+			initialLine.includes("\x1b]8;;https://git.acme.test/acme/payments/issues/456\x1b\\") &&
+				initialLine.includes("\x1b]8;;https://git.acme.test/acme/payments/pull/123\x1b\\"),
+			"extension render emits clickable issue and PR URLs",
+		);
+		assert.ok(
+			initialLine.includes("\x1b[36m\x1b[4mis#456 o") && initialLine.includes("\x1b[36m\x1b[4mpr#123 d"),
+			"issue and PR links share the underlined accent treatment",
+		);
+		assert.strictEqual(
+			initialStats,
 			"↑305k ↓31k • $5.179 • 51% 140k/272k • compact @245k 57%",
-			"extension wires usage totals and context into the stats line");
-		assert.ok(plain(initialRender[1] ?? "").endsWith("no-model • fast"),
-			"extension places enabled fast mode after the model");
-		const responsiveStats = Array.from({ length: 121 }, (_, width) =>
-			plain(component.render(width)[1] ?? ""));
-		assert.ok(responsiveStats.some((line) => line.includes("C57%")),
-			"responsive footer uses compact progress form");
-		assert.ok(responsiveStats.some((line) => line.endsWith("no-model • f")),
-			"responsive footer shortens fast mode");
+			"extension wires usage totals and context into the stats line",
+		);
+		assert.ok(
+			plain(initialRender[1] ?? "").endsWith("no-model • fast"),
+			"extension places enabled fast mode after the model",
+		);
+		const responsiveStats = Array.from({ length: 121 }, (_, width) => plain(component.render(width)[1] ?? ""));
+		assert.ok(
+			responsiveStats.some((line) => line.includes("C57%")),
+			"responsive footer uses compact progress form",
+		);
+		assert.ok(
+			responsiveStats.some((line) => line.endsWith("no-model • f")),
+			"responsive footer shortens fast mode",
+		);
 
-		extensionStatuses = new Map([["fast-openai", "on"], ["auto-compact", "auto-compact paused"]]);
-		assert.strictEqual(plain(component.render(120)[1] ?? "").trimStart().split(/ {2,}/)[0],
+		extensionStatuses = new Map([
+			["fast-openai", "on"],
+			["auto-compact", "auto-compact paused"],
+		]);
+		assert.strictEqual(
+			plain(component.render(120)[1] ?? "")
+				.trimStart()
+				.split(/ {2,}/)[0],
 			"↑305k ↓31k • $5.179 • 51% 140k/272k • compact ⏸",
-			"published auto-compact pause replaces compact-target progress");
+			"published auto-compact pause replaces compact-target progress",
+		);
 		extensionStatuses = new Map([["fast-openai", "on"]]);
 
 		branch = "feature/issue-789";
 		branchChanged?.();
 		const invalidatedLine = plain(component.render(120)[0] ?? "");
-		assert.ok(!invalidatedLine.includes("is#456") && !invalidatedLine.includes("pr#123"),
-			"branch change clears stale remote links synchronously");
+		assert.ok(
+			!invalidatedLine.includes("is#456") && !invalidatedLine.includes("pr#123"),
+			"branch change clears stale remote links synchronously",
+		);
 		assert.ok(invalidatedLine.endsWith(branch), "branch text updates while remote discovery is pending");
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		const refreshedLine = plain(component.render(120)[0] ?? "");
@@ -212,14 +245,13 @@ describe("registerAdaptiveFooter", () => {
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		assert.strictEqual(discoveryCalls, 3, "settling after the refresh floor rediscovers repository context");
 
-		const wiredOverflowWidth = Array.from({ length: 121 }, (_, width) => width)
-			.find((width) => visibleWidth(component.render(width)[0] ?? "") > width);
-		assert.strictEqual(wiredOverflowWidth, undefined,
-			"wired footer line never overflows from width 0 through 120");
+		const wiredOverflowWidth = Array.from({ length: 121 }, (_, width) => width).find(
+			(width) => visibleWidth(component.render(width)[0] ?? "") > width,
+		);
+		assert.strictEqual(wiredOverflowWidth, undefined, "wired footer line never overflows from width 0 through 120");
 		component.dispose();
 		assert.strictEqual(unsubscribed, 1, "footer disposal removes the branch subscription");
 		await events.emitAsync("session_shutdown", { type: "session_shutdown" }, context);
-		assert.strictEqual(unsubscribed, 1,
-			"session shutdown does not dispose an already disposed footer twice");
+		assert.strictEqual(unsubscribed, 1, "session shutdown does not dispose an already disposed footer twice");
 	});
 });

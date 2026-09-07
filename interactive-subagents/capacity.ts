@@ -31,12 +31,7 @@ import { resolve } from "node:path";
 import { assertValidAgentIdentifier } from "./agent-identifier.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
-import {
-	moduleGeneration,
-	moduleSignal,
-	running,
-	type CancellationRequester,
-} from "./state.ts";
+import { moduleGeneration, moduleSignal, running, type CancellationRequester } from "./state.ts";
 import type { WorktreeInfo } from "./worktree.ts";
 
 // ── launch specs: everything a deferred launch needs, as plain data ──────
@@ -430,9 +425,7 @@ async function launchDequeued(pi: ExtensionAPI, entry: QueuedLaunch): Promise<vo
 	} catch (error) {
 		const abandoned = store.abandonedClaims.has(entry.spec.id);
 		releaseClaim(entry.spec.id);
-		const resolvedError = abandoned
-			? error
-			: (resolveLaunchCancellation(entry.spec.id, error) ?? error);
+		const resolvedError = abandoned ? error : (resolveLaunchCancellation(entry.spec.id, error) ?? error);
 		try {
 			if (abandoned) {
 				requestDrain(pi);
@@ -493,7 +486,10 @@ export function formatLaunchFailureNotice(spec: LaunchSpec, errorMessage: string
 			? `Retry with subagent_resume if you still need it (session: ${spec.sessionPath}).`
 			: "Re-issue subagent_spawn if you still need this work done.";
 	const preview = pendingWorkPreview(spec);
-	const workLine = preview === undefined ? "" : `\n${spec.kind === "resume" ? "Its follow-up message was" : "Its task was"}: ${preview}`;
+	const workLine =
+		preview === undefined
+			? ""
+			: `\n${spec.kind === "resume" ? "Its follow-up message was" : "Its task was"}: ${preview}`;
 	return (
 		`Queued sub-agent ${identity} failed to ${verb}: ${errorMessage}\n` +
 		`It was removed from the queue and nothing was started; no result will arrive for it. ` +
@@ -556,11 +552,7 @@ function notifyLaunchFailure(pi: ExtensionAPI, spec: LaunchSpec, error: unknown)
 	}
 }
 
-function notifyCancellationCleanupFailure(
-	pi: ExtensionAPI,
-	spec: LaunchSpec,
-	cleanupFailure: string,
-): void {
+function notifyCancellationCleanupFailure(pi: ExtensionAPI, spec: LaunchSpec, cleanupFailure: string): void {
 	const { name, agent } = specDisplay(spec);
 	const identity = `"${sanitizeDisplayText(name)}" (id ${spec.id}${agent ? `, agent ${sanitizeDisplayText(agent)}` : ""})`;
 	try {

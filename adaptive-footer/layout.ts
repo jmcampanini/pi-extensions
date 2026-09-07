@@ -82,10 +82,13 @@ function composeTwoSidedSpans<Span extends { text: string }>(
 	return { left, right, line: spans.map((span) => span.text).join(""), requiredWidth, spans };
 }
 
-function initialStates(components: ReadonlyMap<FooterComponentId, FooterComponent>): Record<FooterComponentId, FooterComponentState> {
-	return Object.fromEntries(
-		COMPONENT_IDS.map((id) => [id, components.has(id) ? "full" : "hidden"]),
-	) as Record<FooterComponentId, FooterComponentState>;
+function initialStates(
+	components: ReadonlyMap<FooterComponentId, FooterComponent>,
+): Record<FooterComponentId, FooterComponentState> {
+	return Object.fromEntries(COMPONENT_IDS.map((id) => [id, components.has(id) ? "full" : "hidden"])) as Record<
+		FooterComponentId,
+		FooterComponentState
+	>;
 }
 
 function composeSide(
@@ -109,7 +112,7 @@ export function styleFooterSpans(
 	styleComponent: (id: FooterComponentId, text: string) => string,
 ): string {
 	return spans
-		.map((span) => span.component ? styleComponent(span.component, span.text) : styleDefault(span.text))
+		.map((span) => (span.component ? styleComponent(span.component, span.text) : styleDefault(span.text)))
 		.join("");
 }
 
@@ -220,9 +223,7 @@ function isPathWithinHome(cwd: string, home: string): boolean {
 
 export function cwdVariants(cwd: string, home: string | undefined): CwdVariants {
 	const normalizedHome = home?.replace(/[\\/]+$/, "");
-	const full = normalizedHome && isPathWithinHome(cwd, normalizedHome)
-		? `~${cwd.slice(normalizedHome.length)}`
-		: cwd;
+	const full = normalizedHome && isPathWithinHome(cwd, normalizedHome) ? `~${cwd.slice(normalizedHome.length)}` : cwd;
 	const parts = full.split(/[\\/]/).filter(Boolean);
 	const compact = parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : full;
 	return { full, compact };
@@ -362,7 +363,5 @@ export function styleRepositorySpans(
 	styleDefault: (text: string) => string,
 	styleLink: (text: string, url: string) => string,
 ): string {
-	return spans
-		.map((span) => span.url ? styleLink(span.text, span.url) : styleDefault(span.text))
-		.join("");
+	return spans.map((span) => (span.url ? styleLink(span.text, span.url) : styleDefault(span.text))).join("");
 }

@@ -52,88 +52,118 @@ describe("auto-compact-config", () => {
 	});
 
 	it("full file applies", () => {
-		assert.deepStrictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith(
-				'{"enabled":false,"classes":[{"windowMax":256000,"thresholdPercent":85},{"windowMax":500000,"thresholdTokens":250000}],"default":{"thresholdPercent":50}}',
-			),
-		}), {
-			enabled: false,
-			classes: [
-				{ windowMax: 256_000, thresholdPercent: 85 },
-				{ windowMax: 500_000, thresholdTokens: 250_000 },
-			],
-			default: { thresholdPercent: 50 },
-		});
+		assert.deepStrictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith(
+					'{"enabled":false,"classes":[{"windowMax":256000,"thresholdPercent":85},{"windowMax":500000,"thresholdTokens":250000}],"default":{"thresholdPercent":50}}',
+				),
+			}),
+			{
+				enabled: false,
+				classes: [
+					{ windowMax: 256_000, thresholdPercent: 85 },
+					{ windowMax: 500_000, thresholdTokens: 250_000 },
+				],
+				default: { thresholdPercent: 50 },
+			},
+		);
 	});
 
 	it("partial enabled file merges with defaults", () => {
-		assert.deepStrictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"enabled":false}'),
-		}), {
-			enabled: false,
-			classes: DEFAULT_CLASSES,
-			default: { thresholdTokens: 400_000 },
-		});
+		assert.deepStrictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"enabled":false}'),
+			}),
+			{
+				enabled: false,
+				classes: DEFAULT_CLASSES,
+				default: { thresholdTokens: 400_000 },
+			},
+		);
 	});
 
 	it("partial classes file replaces the whole list", () => {
-		assert.deepStrictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":272000,"thresholdTokens":250000}]}'),
-		}), {
-			enabled: true,
-			classes: [{ windowMax: 272_000, thresholdTokens: 250_000 }],
-			default: { thresholdTokens: 400_000 },
-		});
+		assert.deepStrictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":272000,"thresholdTokens":250000}]}'),
+			}),
+			{
+				enabled: true,
+				classes: [{ windowMax: 272_000, thresholdTokens: 250_000 }],
+				default: { thresholdTokens: 400_000 },
+			},
+		);
 	});
 
 	it("partial default file merges with default classes", () => {
-		assert.deepStrictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":50}}'),
-		}), {
-			enabled: true,
-			classes: DEFAULT_CLASSES,
-			default: { thresholdPercent: 50 },
-		});
+		assert.deepStrictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":50}}'),
+			}),
+			{
+				enabled: true,
+				classes: DEFAULT_CLASSES,
+				default: { thresholdPercent: 50 },
+			},
+		);
 	});
 
 	it("empty classes list is legal and default-only", () => {
-		assert.deepStrictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"classes":[]}'),
-		}).classes, []);
+		assert.deepStrictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"classes":[]}'),
+			}).classes,
+			[],
+		);
 	});
 
 	it("single class is accepted", () => {
-		assert.deepStrictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":1,"thresholdTokens":1}]}'),
-		}).classes, [{ windowMax: 1, thresholdTokens: 1 }]);
+		assert.deepStrictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":1,"thresholdTokens":1}]}'),
+			}).classes,
+			[{ windowMax: 1, thresholdTokens: 1 }],
+		);
 	});
 
 	it("enabled env parses true", () => {
-		assert.strictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith(null),
-			PI_AUTO_COMPACT_ENABLED: "true",
-		}).enabled, true);
+		assert.strictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith(null),
+				PI_AUTO_COMPACT_ENABLED: "true",
+			}).enabled,
+			true,
+		);
 	});
 
 	it("enabled env parses false", () => {
-		assert.strictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith(null),
-			PI_AUTO_COMPACT_ENABLED: "false",
-		}).enabled, false);
+		assert.strictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith(null),
+				PI_AUTO_COMPACT_ENABLED: "false",
+			}).enabled,
+			false,
+		);
 	});
 
 	it("env beats file", () => {
-		assert.strictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"enabled":false}'),
-			PI_AUTO_COMPACT_ENABLED: "true",
-		}).enabled, true);
+		assert.strictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"enabled":false}'),
+				PI_AUTO_COMPACT_ENABLED: "true",
+			}).enabled,
+			true,
+		);
 	});
 
 	it("empty env value is unset", () => {
-		assert.strictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"enabled":false}'),
-			PI_AUTO_COMPACT_ENABLED: "",
-		}).enabled, false);
+		assert.strictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"enabled":false}'),
+				PI_AUTO_COMPACT_ENABLED: "",
+			}).enabled,
+			false,
+		);
 	});
 
 	it("enabled env rejects uppercase", () => {
@@ -158,10 +188,7 @@ describe("auto-compact-config", () => {
 	});
 
 	it("malformed JSON", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{nope") }),
-			/not valid JSON/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith("{nope") }), /not valid JSON/);
 	});
 
 	it("non-object config roots are rejected", () => {
@@ -170,11 +197,7 @@ describe("auto-compact-config", () => {
 			["array root", "[]"],
 			["scalar root", '"nope"'],
 		] as const) {
-			assert.throws(
-				() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(content) }),
-				/must be a JSON object/,
-				label,
-			);
+			assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith(content) }), /must be a JSON object/, label);
 		}
 	});
 
@@ -193,24 +216,15 @@ describe("auto-compact-config", () => {
 	});
 
 	it("enabled rejects strings", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"enabled":"false"}') }),
-			/"false"/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"enabled":"false"}') }), /"false"/);
 	});
 
 	it("enabled rejects numbers", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"enabled":1}') }),
-			/enabled/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"enabled":1}') }), /enabled/);
 	});
 
 	it("enabled rejects null", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"enabled":null}') }),
-			/enabled/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"enabled":null}') }), /enabled/);
 	});
 
 	it("classes rejects non-arrays", () => {
@@ -221,15 +235,15 @@ describe("auto-compact-config", () => {
 	});
 
 	it("class entries must be objects", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[42]}') }),
-			/classes\[0\]/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[42]}') }), /classes\[0\]/);
 	});
 
 	it("class rejects unknown keys", () => {
 		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":1000,"thresholdPercent":50,"extra":1}]}') }),
+			() =>
+				loadConfig({
+					PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":1000,"thresholdPercent":50,"extra":1}]}'),
+				}),
 			/unknown key\(s\) extra/,
 		);
 	});
@@ -250,21 +264,32 @@ describe("auto-compact-config", () => {
 
 	it("windowMax rejects fractions", () => {
 		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":1000.5,"thresholdPercent":50}]}') }),
+			() =>
+				loadConfig({
+					PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":1000.5,"thresholdPercent":50}]}'),
+				}),
 			/windowMax/,
 		);
 	});
 
 	it("windowMax rejects numeric strings", () => {
 		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":"1000","thresholdPercent":50}]}') }),
+			() =>
+				loadConfig({
+					PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":"1000","thresholdPercent":50}]}'),
+				}),
 			/"1000"/,
 		);
 	});
 
 	it("class rejects both threshold kinds", () => {
 		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"classes":[{"windowMax":1000,"thresholdPercent":50,"thresholdTokens":100}]}') }),
+			() =>
+				loadConfig({
+					PI_CODING_AGENT_DIR: dirWith(
+						'{"classes":[{"windowMax":1000,"thresholdPercent":50,"thresholdTokens":100}]}',
+					),
+				}),
 			/exactly one of thresholdTokens or thresholdPercent/,
 		);
 	});
@@ -278,31 +303,30 @@ describe("auto-compact-config", () => {
 
 	it("equal windowMax values are rejected", () => {
 		assert.throws(
-			() => loadConfig({
-				PI_CODING_AGENT_DIR: dirWith(
-					'{"classes":[{"windowMax":1000,"thresholdPercent":50},{"windowMax":1000,"thresholdPercent":60}]}',
-				),
-			}),
+			() =>
+				loadConfig({
+					PI_CODING_AGENT_DIR: dirWith(
+						'{"classes":[{"windowMax":1000,"thresholdPercent":50},{"windowMax":1000,"thresholdPercent":60}]}',
+					),
+				}),
 			/strictly ascending/,
 		);
 	});
 
 	it("descending windowMax values are rejected", () => {
 		assert.throws(
-			() => loadConfig({
-				PI_CODING_AGENT_DIR: dirWith(
-					'{"classes":[{"windowMax":2000,"thresholdPercent":50},{"windowMax":1000,"thresholdPercent":60}]}',
-				),
-			}),
+			() =>
+				loadConfig({
+					PI_CODING_AGENT_DIR: dirWith(
+						'{"classes":[{"windowMax":2000,"thresholdPercent":50},{"windowMax":1000,"thresholdPercent":60}]}',
+					),
+				}),
 			/strictly ascending/,
 		);
 	});
 
 	it("default must be an object", () => {
-		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":50}') }),
-			/must be a JSON object/,
-		);
+		assert.throws(() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":50}') }), /must be a JSON object/);
 	});
 
 	it("default rejects unknown keys", () => {
@@ -314,7 +338,10 @@ describe("auto-compact-config", () => {
 
 	it("default rejects both threshold kinds", () => {
 		assert.throws(
-			() => loadConfig({ PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":50,"thresholdTokens":100}}') }),
+			() =>
+				loadConfig({
+					PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":50,"thresholdTokens":100}}'),
+				}),
 			/exactly one of thresholdTokens or thresholdPercent/,
 		);
 	});
@@ -327,15 +354,21 @@ describe("auto-compact-config", () => {
 	});
 
 	it("percent accepts the minimum", () => {
-		assert.deepStrictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":1}}'),
-		}).default, { thresholdPercent: 1 });
+		assert.deepStrictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":1}}'),
+			}).default,
+			{ thresholdPercent: 1 },
+		);
 	});
 
 	it("percent accepts the maximum", () => {
-		assert.deepStrictEqual(loadConfig({
-			PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":100}}'),
-		}).default, { thresholdPercent: 100 });
+		assert.deepStrictEqual(
+			loadConfig({
+				PI_CODING_AGENT_DIR: dirWith('{"default":{"thresholdPercent":100}}'),
+			}).default,
+			{ thresholdPercent: 100 },
+		);
 	});
 
 	it("percent rejects zero", () => {

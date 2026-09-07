@@ -35,9 +35,10 @@ export class ExplorerState {
 
 	get selectedIndex(): number {
 		if (this.results.length === 0) return 0;
-		const index = this.selectedId === undefined
-			? -1
-			: this.results.findIndex((result) => result.block.id === this.selectedId);
+		const index =
+			this.selectedId === undefined
+				? -1
+				: this.results.findIndex((result) => result.block.id === this.selectedId);
 		return index < 0 ? Math.min(this.fallbackIndex, this.results.length - 1) : index;
 	}
 
@@ -161,18 +162,18 @@ export class ExplorerState {
 			return;
 		}
 
-		const survivingIndex = previousId === undefined
-			? -1
-			: this.results.findIndex((result) => result.block.id === previousId);
+		const survivingIndex =
+			previousId === undefined ? -1 : this.results.findIndex((result) => result.block.id === previousId);
 		if (survivingIndex >= 0) {
 			this.selectedId = previousId;
 			this.fallbackIndex = survivingIndex;
 		} else if (firstLoad || previousId === undefined) {
 			const resultIds = new Set(this.results.map((result) => result.block.id));
 			const newestId = [...this.blocks].reverse().find((block) => resultIds.has(block.id))?.id;
-			const newestIndex = newestId === undefined
-				? this.results.length - 1
-				: this.results.findIndex((result) => result.block.id === newestId);
+			const newestIndex =
+				newestId === undefined
+					? this.results.length - 1
+					: this.results.findIndex((result) => result.block.id === newestId);
 			this.selectIndex(newestIndex < 0 ? this.results.length - 1 : newestIndex);
 		} else {
 			this.selectIndex(Math.min(previousIndex, this.results.length - 1));
@@ -190,6 +191,9 @@ export class ExplorerState {
 		if (index >= this.listViewport + this.listPageSize) {
 			this.listViewport = index - this.listPageSize + 1;
 		}
-		this.listViewport = Math.max(0, Math.min(this.listViewport, Math.max(0, this.results.length - this.listPageSize)));
+		this.listViewport = Math.max(
+			0,
+			Math.min(this.listViewport, Math.max(0, this.results.length - this.listPageSize)),
+		);
 	}
 }

@@ -8,7 +8,9 @@ import { updateRunningWidget } from "./running-widget.ts";
 import { running } from "./state.ts";
 
 const CancelParams = Type.Object({
-	id: Type.String({ description: "The stable short id shown by subagent_status and returned by subagent_spawn/subagent_resume." }),
+	id: Type.String({
+		description: "The stable short id shown by subagent_status and returned by subagent_spawn/subagent_resume.",
+	}),
 });
 type CancelParamsType = Static<typeof CancelParams>;
 
@@ -21,9 +23,14 @@ function runningLine(): string {
 	return `Currently ${running.size} running, ${queuedCount()} queued.`;
 }
 
-function successText(outcome: Extract<CancelOutcome, {
-	kind: "cancelled-queued" | "cancelled-starting" | "stopping" | "already-stopping";
-}>): { text: string; status: "cancelled" | "stopping" } {
+function successText(
+	outcome: Extract<
+		CancelOutcome,
+		{
+			kind: "cancelled-queued" | "cancelled-starting" | "stopping" | "already-stopping";
+		}
+	>,
+): { text: string; status: "cancelled" | "stopping" } {
 	if (outcome.kind === "cancelled-queued") {
 		return {
 			status: "cancelled",
@@ -48,9 +55,7 @@ function successText(outcome: Extract<CancelOutcome, {
 				"Its stopped notice will still arrive on its own. Partial work may remain.",
 		};
 	}
-	const worktree = outcome.target.worktree
-		? " Its worktree is kept so it can be inspected or resumed."
-		: "";
+	const worktree = outcome.target.worktree ? " Its worktree is kept so it can be inspected or resumed." : "";
 	return {
 		status: "stopping",
 		text:
@@ -60,9 +65,14 @@ function successText(outcome: Extract<CancelOutcome, {
 	};
 }
 
-function rejectionMessage(outcome: Exclude<CancelOutcome, {
-	kind: "cancelled-queued" | "cancelled-starting" | "stopping" | "already-stopping";
-}>): string {
+function rejectionMessage(
+	outcome: Exclude<
+		CancelOutcome,
+		{
+			kind: "cancelled-queued" | "cancelled-starting" | "stopping" | "already-stopping";
+		}
+	>,
+): string {
 	switch (outcome.kind) {
 		case "delivering":
 			return outcome.stopped
@@ -89,7 +99,9 @@ export function registerSubagentCancelTool(pi: ExtensionAPI): void {
 		renderCall(args, theme) {
 			const id = sanitizeDisplayText(args.id).replace(/\s+/g, " ").trim();
 			return new Text(
-				theme.fg("toolTitle", theme.bold("subagent cancel")) + theme.fg("muted", " · ") + theme.fg("accent", id),
+				theme.fg("toolTitle", theme.bold("subagent cancel")) +
+					theme.fg("muted", " · ") +
+					theme.fg("accent", id),
 				0,
 				0,
 			);
@@ -109,10 +121,10 @@ export function registerSubagentCancelTool(pi: ExtensionAPI): void {
 			const outcome = requestCancel(pi, params.id, "model");
 			updateRunningWidget();
 			if (
-				outcome.kind === "cancelled-queued"
-				|| outcome.kind === "cancelled-starting"
-				|| outcome.kind === "stopping"
-				|| outcome.kind === "already-stopping"
+				outcome.kind === "cancelled-queued" ||
+				outcome.kind === "cancelled-starting" ||
+				outcome.kind === "stopping" ||
+				outcome.kind === "already-stopping"
 			) {
 				const result = successText(outcome);
 				return {

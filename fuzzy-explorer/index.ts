@@ -30,31 +30,35 @@ export function registerFuzzyExplorer(pi: ExtensionAPI): void {
 			const settingsManager = SettingsManager.create(ctx.cwd, getAgentDir(), {
 				projectTrusted: ctx.isProjectTrusted(),
 			});
-			const externalEditor = settingsManager.getProjectSettings().externalEditor
-				?? settingsManager.getGlobalSettings().externalEditor;
+			const externalEditor =
+				settingsManager.getProjectSettings().externalEditor ??
+				settingsManager.getGlobalSettings().externalEditor;
 
 			await ctx.ui.custom<void>(
-				(tui, theme, _keybindings, done) => new ExplorerComponent({
-					tui,
-					theme,
-					state,
-					getBlocks: () => branchIndex.update(ctx.sessionManager),
-					actions: {
-						copy: async (block) => { await copyBlockCanonicalText(block); },
-						open: async (block) => {
-							const result = await smartOpenBlock(block, {
-								tui,
-								settings: { externalEditor },
-								repositoryRoot: ctx.cwd,
-							});
-							return result.exitCode;
+				(tui, theme, _keybindings, done) =>
+					new ExplorerComponent({
+						tui,
+						theme,
+						state,
+						getBlocks: () => branchIndex.update(ctx.sessionManager),
+						actions: {
+							copy: async (block) => {
+								await copyBlockCanonicalText(block);
+							},
+							open: async (block) => {
+								const result = await smartOpenBlock(block, {
+									tui,
+									settings: { externalEditor },
+									repositoryRoot: ctx.cwd,
+								});
+								return result.exitCode;
+							},
 						},
-					},
-					notify: (message, level) => ctx.ui.notify(message, level),
-					done,
-					markdownTheme: getMarkdownTheme(),
-					codeHighlighter: highlightCode,
-				}),
+						notify: (message, level) => ctx.ui.notify(message, level),
+						done,
+						markdownTheme: getMarkdownTheme(),
+						codeHighlighter: highlightCode,
+					}),
 				{
 					overlay: true,
 					overlayOptions: {
@@ -67,7 +71,10 @@ export function registerFuzzyExplorer(pi: ExtensionAPI): void {
 				},
 			);
 		} catch (error) {
-			ctx.ui.notify(`Could not open fuzzy-explorer: ${error instanceof Error ? error.message : String(error)}`, "error");
+			ctx.ui.notify(
+				`Could not open fuzzy-explorer: ${error instanceof Error ? error.message : String(error)}`,
+				"error",
+			);
 		} finally {
 			opening = false;
 		}
@@ -75,7 +82,9 @@ export function registerFuzzyExplorer(pi: ExtensionAPI): void {
 
 	pi.registerCommand("fuzzy-explorer", {
 		description: "Search and inspect blocks on the active transcript branch",
-		handler: async (_args, ctx) => { await open(ctx); },
+		handler: async (_args, ctx) => {
+			await open(ctx);
+		},
 	});
 	if (config.openShortcut !== undefined) {
 		pi.registerShortcut(config.openShortcut, {

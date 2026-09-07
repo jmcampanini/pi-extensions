@@ -30,16 +30,10 @@ function keyTokenHit(token: string, searchKey: string): TokenHit | undefined {
 	const stripped = stripSeparators(token);
 	if (stripped === token || stripped === "") return undefined;
 	const fallback = fuzzyMatch(stripped, searchKey);
-	return fallback.matches
-		? { score: fallback.score + STRIPPED_TOKEN_PENALTY, matchedToken: stripped }
-		: undefined;
+	return fallback.matches ? { score: fallback.score + STRIPPED_TOKEN_PENALTY, matchedToken: stripped } : undefined;
 }
 
-function substringTokenHit(
-	token: string,
-	haystackLower: string,
-	strippedHaystackLower: string,
-): TokenHit | undefined {
+function substringTokenHit(token: string, haystackLower: string, strippedHaystackLower: string): TokenHit | undefined {
 	if (haystackLower.includes(token.toLowerCase())) return { score: 0, matchedToken: token };
 
 	const stripped = stripSeparators(token);
@@ -62,11 +56,7 @@ function operatorScore(operator: QueryOperator, block: Block): number | undefine
 		return tool.matches ? tool.score : undefined;
 	}
 	// `any:` hunts concrete needles across the full haystack: substring, never fuzzy.
-	return substringTokenHit(
-		operator.value,
-		block.anyText.toLowerCase(),
-		block.strippedAnyText.toLowerCase(),
-	)?.score;
+	return substringTokenHit(operator.value, block.anyText.toLowerCase(), block.strippedAnyText.toLowerCase())?.score;
 }
 
 export function matchBlock(query: ParsedQuery, block: Block): BlockMatch {
@@ -115,9 +105,8 @@ export function searchBlocks(blocks: readonly Block[], query: string | ParsedQue
 	});
 
 	if (!isEmptyQuery(parsed)) {
-		matches.sort((left, right) =>
-			left.match.score - right.match.score
-			|| right.chronologicalIndex - left.chronologicalIndex,
+		matches.sort(
+			(left, right) => left.match.score - right.match.score || right.chronologicalIndex - left.chronologicalIndex,
 		);
 	}
 

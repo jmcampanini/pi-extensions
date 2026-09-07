@@ -116,17 +116,11 @@ describe("definition parsing", () => {
 	});
 
 	it("explicit whitespace identifier is rejected", () => {
-		assert.throws(
-			() => loadAgentDefinition("code reviewer", cwd),
-			/whitespace/,
-		);
+		assert.throws(() => loadAgentDefinition("code reviewer", cwd), /whitespace/);
 	});
 
 	it("explicit overlong identifier is rejected", () => {
-		assert.throws(
-			() => loadAgentDefinition("abcdefghijklmnopqrstu", cwd),
-			/20 display columns/,
-		);
+		assert.throws(() => loadAgentDefinition("abcdefghijklmnopqrstu", cwd), /20 display columns/);
 	});
 });
 
@@ -201,11 +195,15 @@ describe("inventory", () => {
 
 	it("an all-unusable model list reports the real per-entry reasons", () => {
 		assert.strictEqual(broken.problems.length, 2, "problem count");
-		assert.ok(broken.problems[0].includes('provider "anthropic" has no credentials'),
-			"model problem names the provider reason");
+		assert.ok(
+			broken.problems[0].includes('provider "anthropic" has no credentials'),
+			"model problem names the provider reason",
+		);
 		assert.ok(broken.problems[0].includes("\n  - "), "model problem keeps its line breaks");
-		assert.ok(broken.problems[1].includes('Invalid thinking level "ultra"'),
-			"thinking problem names the bad level");
+		assert.ok(
+			broken.problems[1].includes('Invalid thinking level "ultra"'),
+			"thinking problem names the bad level",
+		);
 	});
 });
 
@@ -215,10 +213,7 @@ describe("descriptionHeadline", () => {
 	});
 
 	it("dashes are not boundaries", () => {
-		assert.strictEqual(
-			descriptionHeadline("Fast recon - finds code. More text."),
-			"Fast recon - finds code.",
-		);
+		assert.strictEqual(descriptionHeadline("Fast recon - finds code. More text."), "Fast recon - finds code.");
 	});
 
 	it("plain description stays whole", () => {
@@ -264,12 +259,23 @@ describe("overview rendering", () => {
 	const flat = lines.join("\n");
 
 	it("empty state names both dirs and fits the width", () => {
-		const emptyFlat = formatAgentOverviewLines([], WIDTH, { global: "/g/subagents", project: "/p/.pi/subagents" }).join("\n");
-		assert.ok(emptyFlat.includes("/g/subagents") && emptyFlat.includes("/p/.pi/subagents"),
-			"empty state names both dirs");
-		assert.ok(formatAgentOverviewLines([], 40, dirs).every((l) => visibleWidth(l) <= 40),
-			"empty state fits the width");
-		assert.ok(formatAgentOverviewLines([], WIDTH, dirs, {}, { models: { ids: ["provider/model"] } }).includes(" provider/model"));
+		const emptyFlat = formatAgentOverviewLines([], WIDTH, {
+			global: "/g/subagents",
+			project: "/p/.pi/subagents",
+		}).join("\n");
+		assert.ok(
+			emptyFlat.includes("/g/subagents") && emptyFlat.includes("/p/.pi/subagents"),
+			"empty state names both dirs",
+		);
+		assert.ok(
+			formatAgentOverviewLines([], 40, dirs).every((l) => visibleWidth(l) <= 40),
+			"empty state fits the width",
+		);
+		assert.ok(
+			formatAgentOverviewLines([], WIDTH, dirs, {}, { models: { ids: ["provider/model"] } }).includes(
+				" provider/model",
+			),
+		);
 	});
 
 	it("top rule carries the count", () => {
@@ -304,7 +310,12 @@ describe("overview rendering", () => {
 	});
 
 	it("deviations surface on the meta row", () => {
-		assert.ok(lines.some((l) => l.includes("thinking low") && l.includes("tools: read, bash") && l.includes("forked · interactive")));
+		assert.ok(
+			lines.some(
+				(l) =>
+					l.includes("thinking low") && l.includes("tools: read, bash") && l.includes("forked · interactive"),
+			),
+		);
 	});
 
 	it("frontmatter problems render as ⚠ blocks", () => {
@@ -322,14 +333,22 @@ describe("overview rendering", () => {
 	it("narrow terminals give way instead of overflowing", () => {
 		// everything (incl. the model slot and dismiss hint) must still give way
 		const narrowLines = formatAgentOverviewLines(inventory, 50, dirs);
-		assert.ok(narrowLines.every((l) => visibleWidth(l) <= 50), "narrow width still fits");
-		assert.ok(narrowLines.some((l) => l.includes("…")), "narrow model slot ellipsizes");
+		assert.ok(
+			narrowLines.every((l) => visibleWidth(l) <= 50),
+			"narrow width still fits",
+		);
+		assert.ok(
+			narrowLines.some((l) => l.includes("…")),
+			"narrow model slot ellipsizes",
+		);
 	});
 
 	it("hostile inventory fits every width", () => {
 		for (const w of [100, 78, 50, 34, 21]) {
-			assert.ok(formatAgentOverviewLines(hostile, w, dirs).every((l) => visibleWidth(l) <= w),
-				`hostile inventory fits width ${w}`);
+			assert.ok(
+				formatAgentOverviewLines(hostile, w, dirs).every((l) => visibleWidth(l) <= w),
+				`hostile inventory fits width ${w}`,
+			);
 		}
 	});
 
@@ -339,7 +358,10 @@ describe("overview rendering", () => {
 	});
 
 	it("the models section lists ids, marks the current one, and fits the width", () => {
-		const models = { ids: ["openai-codex/gpt-5.6-sol", "openai-codex/gpt-5.6-terra"], current: "openai-codex/gpt-5.6-terra" };
+		const models = {
+			ids: ["openai-codex/gpt-5.6-sol", "openai-codex/gpt-5.6-terra"],
+			current: "openai-codex/gpt-5.6-terra",
+		};
 
 		const modelLines = formatAgentOverviewLines(inventory, WIDTH, dirs, {}, { models });
 		const modelFlat = modelLines.join("\n");
@@ -355,30 +377,52 @@ describe("overview rendering", () => {
 	it("an overlong models section is bounded and narrow widths give way", () => {
 		const ids = Array.from({ length: USABLE_MODELS_MAX_LISTED + 4 }, (_, i) => `provider/model-number-${i}`);
 
-		const boundedLines = formatAgentOverviewLines(inventory, WIDTH, dirs, {}, { models: { ids, current: ids.at(-1) } });
+		const boundedLines = formatAgentOverviewLines(
+			inventory,
+			WIDTH,
+			dirs,
+			{},
+			{ models: { ids, current: ids.at(-1) } },
+		);
 
 		assert.ok(boundedLines.some((l) => l === ` current: ${ids.at(-1)}`));
 		assert.ok(boundedLines.some((l) => l === " +4 more"));
 		for (const w of [1, 8, 20, 40]) {
-			assert.ok(formatAgentOverviewLines(inventory, w, dirs, {}, { models: { ids } }).every((l) => visibleWidth(l) <= w),
-				`models section fits width ${w}`);
+			assert.ok(
+				formatAgentOverviewLines(inventory, w, dirs, {}, { models: { ids } }).every(
+					(l) => visibleWidth(l) <= w,
+				),
+				`models section fits width ${w}`,
+			);
 		}
 	});
 
 	it("a broken agent gets a red header slot and structured ⚠ blocks", () => {
 		const brokenLines = formatAgentOverviewLines(brokenInventory, WIDTH, dirs);
-		assert.ok(brokenLines.some((l) => l.includes("[broken]") && l.includes("✗ no usable model")),
-			"broken agent flagged in its header");
-		assert.ok(brokenLines.some((l) => l.trim().startsWith("⚠ No usable model.")),
-			"problem headline starts the block");
-		assert.ok(brokenLines.some((l) => l.trim().startsWith("- anthropic/claude-x")),
-			"problem bullets keep their shape");
-		assert.ok(brokenLines.some((l) => l.includes("⚠ Invalid thinking level")),
-			"second problem gets its own block");
-		assert.ok(brokenLines.some((l) => l.includes("Usable models") && l.includes("openai-codex/gpt-5.5")),
-			"the problem block names the ids to use instead");
-		assert.ok(brokenLines.every((l) => visibleWidth(l) <= WIDTH),
-			"broken view still fits the width");
+		assert.ok(
+			brokenLines.some((l) => l.includes("[broken]") && l.includes("✗ no usable model")),
+			"broken agent flagged in its header",
+		);
+		assert.ok(
+			brokenLines.some((l) => l.trim().startsWith("⚠ No usable model.")),
+			"problem headline starts the block",
+		);
+		assert.ok(
+			brokenLines.some((l) => l.trim().startsWith("- anthropic/claude-x")),
+			"problem bullets keep their shape",
+		);
+		assert.ok(
+			brokenLines.some((l) => l.includes("⚠ Invalid thinking level")),
+			"second problem gets its own block",
+		);
+		assert.ok(
+			brokenLines.some((l) => l.includes("Usable models") && l.includes("openai-codex/gpt-5.5")),
+			"the problem block names the ids to use instead",
+		);
+		assert.ok(
+			brokenLines.every((l) => visibleWidth(l) <= WIDTH),
+			"broken view still fits the width",
+		);
 	});
 });
 
@@ -473,8 +517,11 @@ describe("external harnesses", () => {
 	it("unknown harness names are problems, not silent pi children", () => {
 		// spawning the wrong tool is exactly the hazard the key exists to prevent
 		assert.strictEqual(badharness.harness, undefined, "unknown harness does not set harness");
-		assert.ok(badharness.problems[0].includes('invalid harness "codex"') && badharness.problems[0].includes("pi, claude-code"),
-			"unknown harness problem lists the valid values");
+		assert.ok(
+			badharness.problems[0].includes('invalid harness "codex"') &&
+				badharness.problems[0].includes("pi, claude-code"),
+			"unknown harness problem lists the valid values",
+		);
 	});
 
 	it("forked context cannot ride into a different tool", () => {
@@ -482,7 +529,8 @@ describe("external harnesses", () => {
 		assert.strictEqual(
 			extforked.problems[0],
 			'context "forked" requires the pi harness - external sub-agents are new-only (a pi conversation cannot be transplanted into a different tool)',
-			"forked + external problem explains why");
+			"forked + external problem explains why",
+		);
 	});
 
 	it("project shadows global harness", () => {
@@ -514,8 +562,10 @@ describe("external harnesses", () => {
 
 	it("unmappable external thinking is a problem from the profile", () => {
 		assert.strictEqual(extoff.problems.length, 1, "unmappable external thinking is a problem");
-		assert.ok(extoff.problems[0].includes("no claude-code effort mapping"),
-			"unmappable thinking problem comes from the profile");
+		assert.ok(
+			extoff.problems[0].includes("no claude-code effort mapping"),
+			"unmappable thinking problem comes from the profile",
+		);
 	});
 
 	it("overview renders the harness loudly and the pass-through muted", () => {
@@ -524,7 +574,10 @@ describe("external harnesses", () => {
 		assert.ok(extFlat.includes("claude-code"), "overview meta row names the harness");
 		assert.ok(extFlat.includes("claude-code · new-only"), "overview marks external agents new-only");
 		assert.ok(extFlat.includes("pass-through: --permission-mode acceptEdits"), "overview shows the pass-through");
-		assert.ok(extLines.every((l) => visibleWidth(l) <= 78), "external overview still fits the width");
+		assert.ok(
+			extLines.every((l) => visibleWidth(l) <= 78),
+			"external overview still fits the width",
+		);
 	});
 });
 
@@ -555,7 +608,10 @@ describe("description vs details", () => {
 		const detailFlat = detailLines.join("\n");
 		assert.ok(detailFlat.includes("Compact routing line."), "overview keeps the description headline");
 		assert.ok(detailFlat.includes("A much longer explanation"), "overview shows the details");
-		assert.ok(detailLines.every((l) => visibleWidth(l) <= 78), "details overview still fits the width");
+		assert.ok(
+			detailLines.every((l) => visibleWidth(l) <= 78),
+			"details overview still fits the width",
+		);
 	});
 });
 
@@ -641,24 +697,31 @@ describe("the model-facing catalogue", () => {
 	});
 
 	it("catalogue explains how to expand abbreviated descriptions", () => {
-		assert.ok(catalogue.includes(
-			"Descriptions above are abbreviated. Call subagent_available for expanded descriptions and configuration details.",
-		));
+		assert.ok(
+			catalogue.includes(
+				"Descriptions above are abbreviated. Call subagent_available for expanded descriptions and configuration details.",
+			),
+		);
 	});
 
 	it("markers combine into one paren group", () => {
 		const combined = catalogueOf([info({ name: "worker", description: "W.", autoExit: false })])!;
 		assert.ok(combined.includes("- worker (default, interactive): W."), "combined markers share one group");
-		assert.ok(!combined.includes("external:") && !combined.includes("new-only"),
-			"pi catalogue agents have no external capability markers");
+		assert.ok(
+			!combined.includes("external:") && !combined.includes("new-only"),
+			"pi catalogue agents have no external capability markers",
+		);
 	});
 
 	it("overlong descriptions are cut to the cap with an ellipsis", () => {
 		const long = "x".repeat(CATALOGUE_DESCRIPTION_MAX_CHARS + 100);
 		const bounded = catalogueOf([info({ name: "chatty", description: long })])!;
 		const chattyLine = bounded.split("\n").find((l) => l.startsWith("- chatty"))!;
-		assert.strictEqual(chattyLine.length, "- chatty: ".length + CATALOGUE_DESCRIPTION_MAX_CHARS,
-			"overlong description is capped");
+		assert.strictEqual(
+			chattyLine.length,
+			"- chatty: ".length + CATALOGUE_DESCRIPTION_MAX_CHARS,
+			"overlong description is capped",
+		);
 		assert.ok(chattyLine.endsWith("…"), "truncation ends in an ellipsis");
 	});
 
@@ -670,9 +733,7 @@ describe("the model-facing catalogue", () => {
 	it("hostile description flattens to one line", () => {
 		// Newlines and tabs flatten to one clean line (the frontmatter parser is
 		// single-line, but the bound must hold for ANY input).
-		const hostileCatalogue = catalogueOf([
-			info({ name: "sneaky", description: "line one\nline\ttwo end" }),
-		])!;
+		const hostileCatalogue = catalogueOf([info({ name: "sneaky", description: "line one\nline\ttwo end" })])!;
 		assert.ok(hostileCatalogue.includes("- sneaky: line one line two end"));
 	});
 
@@ -683,8 +744,10 @@ describe("the model-facing catalogue", () => {
 			info({ name: "sneakier", description: "x\u0007y \u001b[31mz \u001bw" }),
 		])!;
 		assert.ok(controlCatalogue.includes("- sneakier: xy z w"), "ANSI, bell, and bare ESC are stripped");
-		assert.ok(!controlCatalogue.includes("\u001b") && !controlCatalogue.includes("\u0007"),
-			"no escape byte survives into the catalogue");
+		assert.ok(
+			!controlCatalogue.includes("\u001b") && !controlCatalogue.includes("\u0007"),
+			"no escape byte survives into the catalogue",
+		);
 	});
 
 	it("the overview sanitizes hostile text and measures in terminal columns", () => {
@@ -699,16 +762,29 @@ describe("the model-facing catalogue", () => {
 			50,
 			{ global: globalDefs, project: projectDefs },
 		);
-		assert.ok(hostileOverview.every((l) => visibleWidth(l) <= 50), "hostile overview text fits the width");
+		assert.ok(
+			hostileOverview.every((l) => visibleWidth(l) <= 50),
+			"hostile overview text fits the width",
+		);
 		assert.ok(!hostileOverview.join("\n").includes("\u001b"), "no escape byte survives into the overview");
 	});
 
-	const withModels = formatAgentCatalogue([info({ name: "worker", description: "W." })], ["openai-codex/gpt-5.6-terra", "openai-codex/gpt-5.6-sol"])!;
+	const withModels = formatAgentCatalogue(
+		[info({ name: "worker", description: "W." })],
+		["openai-codex/gpt-5.6-terra", "openai-codex/gpt-5.6-sol"],
+	)!;
 
 	it("usable Pi models follow the agents with their harness scope and precedence", () => {
-		assert.ok(withModels.includes("Usable Pi models") && withModels.includes("external harnesses use their own model names"));
+		assert.ok(
+			withModels.includes("Usable Pi models") &&
+				withModels.includes("external harnesses use their own model names"),
+		);
 		assert.ok(withModels.includes("- openai-codex/gpt-5.6-terra\n- openai-codex/gpt-5.6-sol"));
-		assert.ok(withModels.includes("Model precedence: explicit override, agent definition, then the child harness's normal model selection."));
+		assert.ok(
+			withModels.includes(
+				"Model precedence: explicit override, agent definition, then the child harness's normal model selection.",
+			),
+		);
 		assert.ok(withModels.indexOf("- worker (default): W.") < withModels.indexOf("- openai-codex/gpt-5.6-terra"));
 	});
 
@@ -725,7 +801,11 @@ describe("the model-facing catalogue", () => {
 
 		const bounded = formatAgentCatalogue([info({ name: "worker", description: "W." })], ids)!;
 
-		assert.ok(bounded.includes(`- p/m${USABLE_MODELS_MAX_LISTED - 1}\n- +2 more (call subagent_available for the full list)`));
+		assert.ok(
+			bounded.includes(
+				`- p/m${USABLE_MODELS_MAX_LISTED - 1}\n- +2 more (call subagent_available for the full list)`,
+			),
+		);
 		assert.ok(!bounded.includes(`- p/m${USABLE_MODELS_MAX_LISTED}\n`));
 	});
 
@@ -750,19 +830,23 @@ describe("the model-facing catalogue", () => {
 			events.emitResults("before_agent_start", { systemPrompt }, undefined)[0];
 		updateCatalogue([info({ name: "worker", description: "W." })], []);
 		const injected = beforeAgentStart("BASE");
-		assert.ok(Boolean(injected?.systemPrompt.startsWith("BASE\n\n") &&
-			injected.systemPrompt.includes("- worker (default): W.") &&
-			injected.systemPrompt.endsWith(WAITING_CONTRACT)),
-			"catalogue and waiting contract are appended to the system prompt");
-		assert.ok(WAITING_CONTRACT.includes("Ending your turn is how you wait") &&
-			WAITING_CONTRACT.includes("tell the user in one line what you are waiting on and end your turn"),
-			"waiting contract prescribes the action instead of prohibiting");
+		assert.ok(
+			Boolean(
+				injected?.systemPrompt.startsWith("BASE\n\n") &&
+				injected.systemPrompt.includes("- worker (default): W.") &&
+				injected.systemPrompt.endsWith(WAITING_CONTRACT),
+			),
+			"catalogue and waiting contract are appended to the system prompt",
+		);
+		assert.ok(
+			WAITING_CONTRACT.includes("Ending your turn is how you wait") &&
+				WAITING_CONTRACT.includes("tell the user in one line what you are waiting on and end your turn"),
+			"waiting contract prescribes the action instead of prohibiting",
+		);
 		activeTools = [];
-		assert.strictEqual(beforeAgentStart("BASE"), undefined,
-			"nothing is injected while subagent_spawn is inactive");
+		assert.strictEqual(beforeAgentStart("BASE"), undefined, "nothing is injected while subagent_spawn is inactive");
 		activeTools = ["subagent_spawn"];
 		updateCatalogue([], []);
-		assert.strictEqual(beforeAgentStart("BASE"), undefined,
-			"nothing is injected while no agents exist");
+		assert.strictEqual(beforeAgentStart("BASE"), undefined, "nothing is injected while no agents exist");
 	});
 });

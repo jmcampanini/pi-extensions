@@ -11,7 +11,9 @@ import { registerSubagentResumeTool } from "../tool-resume.ts";
 import { registerSubagentSpawnTool } from "../tool-spawn.ts";
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-const wide = /^(?:\p{Extended_Pictographic}|\p{Script_Extensions=Han}|\p{Script_Extensions=Hiragana}|\p{Script_Extensions=Katakana}|\p{Script_Extensions=Hangul})$/u;
+const wide =
+	/^(?:\p{Extended_Pictographic}|\p{Script_Extensions=Han}|\p{Script_Extensions=Hiragana}|\p{Script_Extensions=Katakana}|\p{Script_Extensions=Hangul})$/u;
+// oxlint-disable-next-line no-control-regex -- Tokenize terminal escape sequences without counting them as visible text.
 const ansiAtStart = /^\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/;
 
 function graphemeWidth(grapheme: string): number {
@@ -51,7 +53,8 @@ const END_STYLES = "\x1b[39;22;23;24;27;29m";
 function fallbackCut(text: string, maxWidth: number, ellipsis: string): string {
 	const ellipsisWidth = fallbackVisibleWidth(ellipsis);
 	if (ellipsisWidth >= maxWidth) {
-		let result = "", used = 0;
+		let result = "",
+			used = 0;
 		for (const token of tokens(ellipsis)) {
 			if (used + token.width > maxWidth) break;
 			result += token.text;
@@ -59,7 +62,8 @@ function fallbackCut(text: string, maxWidth: number, ellipsis: string): string {
 		}
 		return result;
 	}
-	let kept = "", used = 0;
+	let kept = "",
+		used = 0;
 	for (const token of tokens(text)) {
 		if (used + token.width > maxWidth - ellipsisWidth) break;
 		kept += token.text;
@@ -87,7 +91,8 @@ function fallbackRenderText(text: string, width: number): string[] {
 			lines.push("");
 			continue;
 		}
-		let line = "", used = 0;
+		let line = "",
+			used = 0;
 		for (const token of tokens(logicalLine)) {
 			if (token.width > 0 && used > 0 && used + token.width > width) {
 				lines.push(line);
@@ -103,32 +108,33 @@ function fallbackRenderText(text: string, width: number): string[] {
 }
 
 const packageName = "@earendil-works/pi-tui";
-const tui = await import(packageName).catch(() => undefined) as
+const tui = (await import(packageName).catch(() => undefined)) as
 	| {
-		visibleWidth: (text: string) => number;
-		Text: new (text: string, paddingX: number, paddingY: number) => { render(width: number): string[] };
-	}
+			visibleWidth: (text: string) => number;
+			Text: new (text: string, paddingX: number, paddingY: number) => { render(width: number): string[] };
+	  }
 	| undefined;
 const textFitModule = "../../shared/text-fit.ts";
 const textFit = tui
-	? await import(textFitModule) as {
-		fitText: (text: string, maxWidth: number, ellipsis?: string) => string;
-		clampStyled: (line: string, maxWidth: number) => string;
-	}
+	? ((await import(textFitModule)) as {
+			fitText: (text: string, maxWidth: number, ellipsis?: string) => string;
+			clampStyled: (line: string, maxWidth: number) => string;
+		})
 	: undefined;
-const metrics = tui && textFit
-	? {
-		visibleWidth: tui.visibleWidth,
-		fitText: textFit.fitText,
-		clampStyled: textFit.clampStyled,
-		renderText: (text: string, width: number) => new tui.Text(text, 0, 0).render(width),
-	}
-	: {
-		visibleWidth: fallbackVisibleWidth,
-		fitText: fallbackFitText,
-		clampStyled: fallbackClampStyled,
-		renderText: fallbackRenderText,
-	};
+const metrics =
+	tui && textFit
+		? {
+				visibleWidth: tui.visibleWidth,
+				fitText: textFit.fitText,
+				clampStyled: textFit.clampStyled,
+				renderText: (text: string, width: number) => new tui.Text(text, 0, 0).render(width),
+			}
+		: {
+				visibleWidth: fallbackVisibleWidth,
+				fitText: fallbackFitText,
+				clampStyled: fallbackClampStyled,
+				renderText: fallbackRenderText,
+			};
 
 const {
 	formatCollapsedSubagentCall,
@@ -197,7 +203,10 @@ describe("formatCollapsedSubagentCall", () => {
 	});
 
 	it("narrow lines fit terminal columns", () => {
-		assert.strictEqual(narrow.every((line) => metrics.visibleWidth(line) <= 44), true);
+		assert.strictEqual(
+			narrow.every((line) => metrics.visibleWidth(line) <= 44),
+			true,
+		);
 	});
 
 	const threeLinePreview = formatCollapsedSubagentCall(
@@ -243,12 +252,7 @@ describe("formatCollapsedSubagentCall", () => {
 	});
 
 	it("maximum call preview line limit is honored after wrapped model metadata", () => {
-		const twentyLinePreview = formatCollapsedSubagentCall(
-			{ name: "Maximum", task: longTask },
-			10,
-			20,
-			metrics,
-		);
+		const twentyLinePreview = formatCollapsedSubagentCall({ name: "Maximum", task: longTask }, 10, 20, metrics);
 		assert.strictEqual(twentyLinePreview.length, 24);
 	});
 
@@ -270,7 +274,10 @@ describe("formatCollapsedSubagentCall", () => {
 	});
 
 	it("ANSI and wide/combining lines obey terminal width", () => {
-		assert.strictEqual(styled.every((line) => metrics.visibleWidth(line) <= 36), true);
+		assert.strictEqual(
+			styled.every((line) => metrics.visibleWidth(line) <= 36),
+			true,
+		);
 	});
 
 	it("wide/combining identity is preserved", () => {
@@ -304,7 +311,14 @@ describe("formatCollapsedSubagentCall", () => {
 
 	it("multiline task is normalized for preview", () => {
 		assert.deepStrictEqual(
-			plainLines(formatCollapsedSubagentCall({ name: "N", task: "Trace auth.\n\nReturn  file:\tline pointers." }, 100, 3, metrics)),
+			plainLines(
+				formatCollapsedSubagentCall(
+					{ name: "N", task: "Trace auth.\n\nReturn  file:\tline pointers." },
+					100,
+					3,
+					metrics,
+				),
+			),
 			["subagent spawn · worker · N", "inherits model", "", "Trace auth. Return file: line pointers."],
 		);
 	});
@@ -318,7 +332,9 @@ describe("formatCollapsedSubagentCall", () => {
 
 	it("collapsed call advertises expansion when task detail is hidden", () => {
 		assert.strictEqual(
-			plainLines(formatCollapsedSubagentCall({ name: "Tests", task: "first\nsecond" }, 100, 3, metrics, {}, "Ctrl+O")).at(-1),
+			plainLines(
+				formatCollapsedSubagentCall({ name: "Tests", task: "first\nsecond" }, 100, 3, metrics, {}, "Ctrl+O"),
+			).at(-1),
 			"(Ctrl+O to expand)",
 		);
 	});
@@ -330,14 +346,20 @@ describe("formatCollapsedSubagentCall", () => {
 		);
 	});
 
-	const longIdentity = plainLines(formatCollapsedSubagentCall(
-		{ name: "A very long invocation name that must yield space to metadata", agent: "code-reviewer", task: "first\nsecond" },
-		80,
-		3,
-		metrics,
-		{},
-		"Ctrl+O",
-	));
+	const longIdentity = plainLines(
+		formatCollapsedSubagentCall(
+			{
+				name: "A very long invocation name that must yield space to metadata",
+				agent: "code-reviewer",
+				task: "first\nsecond",
+			},
+			80,
+			3,
+			metrics,
+			{},
+			"Ctrl+O",
+		),
+	);
 
 	it("long names retain the agent profile before the clipped name", () => {
 		assert.strictEqual(longIdentity[0].includes("· code-reviewer ·"), true);
@@ -360,12 +382,9 @@ describe("formatCollapsedSubagentCall", () => {
 		assert.strictEqual(narrowUnstyled.join("").includes("\x1b"), false);
 	});
 
-	const narrowLongAgentHeading = plainLines(formatCollapsedSubagentCall(
-		{ name: "Auth flow", agent: "code-reviewer", task: "Run" },
-		30,
-		3,
-		metrics,
-	))[0];
+	const narrowLongAgentHeading = plainLines(
+		formatCollapsedSubagentCall({ name: "Auth flow", agent: "code-reviewer", task: "Run" }, 30, 3, metrics),
+	)[0];
 
 	it("narrow headers preserve the separator after a clipped agent", () => {
 		assert.strictEqual(narrowLongAgentHeading.includes("… · "), true);
@@ -387,10 +406,12 @@ describe("formatCollapsedSubagentCall", () => {
 	});
 
 	it("collapsed extreme width retains all content", () => {
-		assert.deepStrictEqual(
-			plainLines(formatCollapsedSubagentCall(args, 1_000_000, 3, metrics)),
-			["subagent spawn · scout · Auth flow", "inherits model", "", task],
-		);
+		assert.deepStrictEqual(plainLines(formatCollapsedSubagentCall(args, 1_000_000, 3, metrics)), [
+			"subagent spawn · scout · Auth flow",
+			"inherits model",
+			"",
+			task,
+		]);
 	});
 });
 
@@ -409,14 +430,16 @@ describe("formatCollapsedSubagentResumeCall", () => {
 		assert.strictEqual(plainLines(comfortableResume)[2], resumeArgs.message);
 	});
 
-	const multilineResume = plainLines(formatCollapsedSubagentResumeCall(
-		{ ...resumeArgs, message: "Apply the fix.\nRerun the tests." },
-		100,
-		3,
-		metrics,
-		{},
-		"Ctrl+O",
-	));
+	const multilineResume = plainLines(
+		formatCollapsedSubagentResumeCall(
+			{ ...resumeArgs, message: "Apply the fix.\nRerun the tests." },
+			100,
+			3,
+			metrics,
+			{},
+			"Ctrl+O",
+		),
+	);
 
 	it("multiline resume follow-up advertises expansion in the footer", () => {
 		assert.strictEqual(multilineResume.at(-1), "(Ctrl+O to expand)");
@@ -428,14 +451,9 @@ describe("formatCollapsedSubagentResumeCall", () => {
 
 	it("resume without a follow-up has a neutral preview and no expansion hint", () => {
 		assert.deepStrictEqual(
-			plainLines(formatCollapsedSubagentResumeCall(
-				{ name: "Auth flow", agent: "scout" },
-				100,
-				3,
-				metrics,
-				{},
-				"Ctrl+O",
-			)),
+			plainLines(
+				formatCollapsedSubagentResumeCall({ name: "Auth flow", agent: "scout" }, 100, 3, metrics, {}, "Ctrl+O"),
+			),
 			["subagent resume · scout · Auth flow", "", "No follow-up message."],
 		);
 	});
@@ -482,19 +500,24 @@ describe("formatCollapsedSubagentResumeCall", () => {
 	});
 
 	it("resume input keeps safe text", () => {
-		assert.deepStrictEqual(plainLines(hostileResume),
-			["subagent resume · scout · Auth flow", "", "Trace authentication."]);
+		assert.deepStrictEqual(plainLines(hostileResume), [
+			"subagent resume · scout · Auth flow",
+			"",
+			"Trace authentication.",
+		]);
 	});
 });
 
 describe("formatExpandedSubagentResumeCall", () => {
 	it("expanded resume preserves the complete follow-up", () => {
 		assert.deepStrictEqual(
-			plainLines(formatExpandedSubagentResumeCall(
-				{ ...resumeArgs, message: "Apply the fix.\n\nRerun the tests." },
-				100,
-				metrics,
-			)),
+			plainLines(
+				formatExpandedSubagentResumeCall(
+					{ ...resumeArgs, message: "Apply the fix.\n\nRerun the tests." },
+					100,
+					metrics,
+				),
+			),
 			["subagent resume · scout · Auth flow", "", "Apply the fix.", "", "Rerun the tests."],
 		);
 	});
@@ -502,15 +525,14 @@ describe("formatExpandedSubagentResumeCall", () => {
 
 describe("formatExpandedSubagentCall", () => {
 	const original = "first\tcolumn\rsecond\r\n界e\u0301";
-	const expanded = formatExpandedSubagentCall({ name: "Auth flow", agent: "scout", task: original }, 120, metrics)
-		.map((line) => line.trimEnd());
+	const expanded = formatExpandedSubagentCall(
+		{ name: "Auth flow", agent: "scout", task: original },
+		120,
+		metrics,
+	).map((line) => line.trimEnd());
 
 	it("expanded heading keeps identity and model", () => {
-		assert.deepStrictEqual(expanded.slice(0, 3), [
-			"subagent spawn · scout · Auth flow",
-			"inherits model",
-			"",
-		]);
+		assert.deepStrictEqual(expanded.slice(0, 3), ["subagent spawn · scout · Auth flow", "inherits model", ""]);
 	});
 
 	it("expanded uses Text tab display and safe CR line breaks", () => {
@@ -539,8 +561,9 @@ describe("formatExpandedSubagentCall", () => {
 
 	it("wide task remains visible when a grapheme fits", () => {
 		assert.strictEqual(
-			formatExpandedSubagentCall({ name: "N", task: "界" }, 2, metrics)
-				.some((line) => stripVTControlCharacters(line).includes("界")),
+			formatExpandedSubagentCall({ name: "N", task: "界" }, 2, metrics).some((line) =>
+				stripVTControlCharacters(line).includes("界"),
+			),
 			true,
 		);
 	});
@@ -598,25 +621,31 @@ describe("registerSubagentSpawnTool", () => {
 	});
 
 	it("spawn rejects whitespace in an explicit agent before launch guards", async () => {
-		await assert.rejects(() =>
-			spawnTool.execute(
-				"invalid-agent",
-				{ name: "Invalid", task: "Never launches", agent: "code reviewer" },
-				new AbortController().signal,
-				() => {},
-				{} as never,
-			), /whitespace/);
+		await assert.rejects(
+			() =>
+				spawnTool.execute(
+					"invalid-agent",
+					{ name: "Invalid", task: "Never launches", agent: "code reviewer" },
+					new AbortController().signal,
+					() => {},
+					{} as never,
+				),
+			/whitespace/,
+		);
 	});
 
 	it("spawn rejects an explicit agent over 20 display columns", async () => {
-		await assert.rejects(() =>
-			spawnTool.execute(
-				"overlong-agent",
-				{ name: "Invalid", task: "Never launches", agent: "abcdefghijklmnopqrstu" },
-				new AbortController().signal,
-				() => {},
-				{} as never,
-			), /20 display columns/);
+		await assert.rejects(
+			() =>
+				spawnTool.execute(
+					"overlong-agent",
+					{ name: "Invalid", task: "Never launches", agent: "abcdefghijklmnopqrstu" },
+					new AbortController().signal,
+					() => {},
+					{} as never,
+				),
+			/20 display columns/,
+		);
 	});
 
 	// The advertised limit must be the ENFORCED limit: the description is built
@@ -632,7 +661,8 @@ describe("registerSubagentSpawnTool", () => {
 	});
 
 	it("model schema distinguishes Pi ids, external names, and omission precedence", () => {
-		const description = (spawnTool.parameters as { properties?: { model?: { description?: string } } }).properties?.model?.description;
+		const description = (spawnTool.parameters as { properties?: { model?: { description?: string } } }).properties
+			?.model?.description;
 		assert.ok(description?.includes("External harnesses accept their own model names."));
 		assert.ok(description?.includes("When omitted, the agent definition's model choice applies"));
 	});
@@ -661,69 +691,102 @@ describe("registerSubagentSpawnTool", () => {
 				"---\ncontext: forked\nauto-exit: false\nworktree: true\n---\nWorker.\n",
 				"utf8",
 			);
-			writeFileSync(
-				join(rendererDefs, "external.md"),
-				"---\nharness: claude-code\n---\nExternal.\n",
-				"utf8",
-			);
+			writeFileSync(join(rendererDefs, "external.md"), "---\nharness: claude-code\n---\nExternal.\n", "utf8");
 			writeFileSync(
 				join(rendererDefs, "modeled.md"),
 				"---\nmodels: unavailable/model, openai-codex/gpt-5.5\n---\nModeled.\n",
 				"utf8",
 			);
-			const renderContext = (expanded: boolean, state: Record<string, unknown> = {}) => ({
-				args: {},
-				toolCallId: "call-1",
-				invalidate(): void {},
-				lastComponent: undefined,
-				state,
-				cwd: rendererCwd,
-				executionStarted: true,
-				argsComplete: true,
-				isPartial: false,
-				expanded,
-				showImages: false,
-				isError: false,
-			}) as Parameters<NonNullable<typeof callRenderer>>[2];
-			const renderArgs = { name: "Auth flow", agent: "worker", task: "first\nsecond" } as Parameters<NonNullable<typeof callRenderer>>[0];
+			const renderContext = (expanded: boolean, state: Record<string, unknown> = {}) =>
+				({
+					args: {},
+					toolCallId: "call-1",
+					invalidate(): void {},
+					lastComponent: undefined,
+					state,
+					cwd: rendererCwd,
+					executionStarted: true,
+					argsComplete: true,
+					isPartial: false,
+					expanded,
+					showImages: false,
+					isError: false,
+				}) as Parameters<NonNullable<typeof callRenderer>>[2];
+			const renderArgs = { name: "Auth flow", agent: "worker", task: "first\nsecond" } as Parameters<
+				NonNullable<typeof callRenderer>
+			>[0];
 			const collapsedOutput = callRenderer(renderArgs, markedTheme, renderContext(false)).render(120).join("\n");
 			const collapsedPlain = stripVTControlCharacters(collapsedOutput);
-			assert.strictEqual(collapsedOutput.includes("\x1b[31m\x1b[1msubagent spawn"), true,
-				"registered renderer styles the action title as a bold tool title");
-			assert.strictEqual(collapsedOutput.includes("\x1b[32mAuth flow\x1b[0m"), true,
-				"registered renderer styles the invocation name as the primary accent");
-			assert.strictEqual(collapsedOutput.includes("\x1b[33m · \x1b[0m"), true,
-				"registered renderer styles the leading separator as muted metadata");
-			assert.strictEqual(collapsedOutput.includes("\x1b[33mworker\x1b[0m"), true,
-				"registered renderer styles the unbracketed agent as muted metadata");
+			assert.strictEqual(
+				collapsedOutput.includes("\x1b[31m\x1b[1msubagent spawn"),
+				true,
+				"registered renderer styles the action title as a bold tool title",
+			);
+			assert.strictEqual(
+				collapsedOutput.includes("\x1b[32mAuth flow\x1b[0m"),
+				true,
+				"registered renderer styles the invocation name as the primary accent",
+			);
+			assert.strictEqual(
+				collapsedOutput.includes("\x1b[33m · \x1b[0m"),
+				true,
+				"registered renderer styles the leading separator as muted metadata",
+			);
+			assert.strictEqual(
+				collapsedOutput.includes("\x1b[33mworker\x1b[0m"),
+				true,
+				"registered renderer styles the unbracketed agent as muted metadata",
+			);
 			// keyText("app.tools.expand") resolves to no key in this bare process (a
 			// live session registers app keybindings), so the footer must be absent
 			// rather than dangling an empty "( to expand)".
-			assert.strictEqual(collapsedPlain.includes("to expand") || collapsedPlain.includes("()"), false,
-				"registered renderer omits the hint footer when no expand binding resolves");
-			assert.strictEqual(collapsedOutput.includes("\x1b[2mfirst second\x1b[0m"), true,
-				"registered renderer styles the task preview as dim");
+			assert.strictEqual(
+				collapsedPlain.includes("to expand") || collapsedPlain.includes("()"),
+				false,
+				"registered renderer omits the hint footer when no expand binding resolves",
+			);
+			assert.strictEqual(
+				collapsedOutput.includes("\x1b[2mfirst second\x1b[0m"),
+				true,
+				"registered renderer styles the task preview as dim",
+			);
 			assert.strictEqual(
 				collapsedPlain.includes("inherits model · context forked · interactive · worktree"),
 				true,
 				"registered renderer shows inherited model and effective spawn modes on a separate metadata line",
 			);
-			const externalOutput = stripVTControlCharacters(callRenderer(
-				{ name: "External", agent: "external", task: "Run" } as Parameters<NonNullable<typeof callRenderer>>[0],
-				markedTheme,
-				renderContext(false),
-			).render(120).join("\n"));
+			const externalOutput = stripVTControlCharacters(
+				callRenderer(
+					{ name: "External", agent: "external", task: "Run" } as Parameters<
+						NonNullable<typeof callRenderer>
+					>[0],
+					markedTheme,
+					renderContext(false),
+				)
+					.render(120)
+					.join("\n"),
+			);
 			assert.strictEqual(
-				externalOutput.includes("model harness default · context new · harness claude-code"), true,
-				"registered renderer names the external harness default model and effective harness");
-			const modelOverrideOutput = stripVTControlCharacters(callRenderer(
-				{ name: "Model override", agent: "worker", task: "Run", model: "provider/model" } as Parameters<NonNullable<typeof callRenderer>>[0],
-				markedTheme,
-				renderContext(false),
-			).render(120).join("\n"));
-			assert.strictEqual(modelOverrideOutput.split("\n")[1].trimEnd(),
+				externalOutput.includes("model harness default · context new · harness claude-code"),
+				true,
+				"registered renderer names the external harness default model and effective harness",
+			);
+			const modelOverrideOutput = stripVTControlCharacters(
+				callRenderer(
+					{ name: "Model override", agent: "worker", task: "Run", model: "provider/model" } as Parameters<
+						NonNullable<typeof callRenderer>
+					>[0],
+					markedTheme,
+					renderContext(false),
+				)
+					.render(120)
+					.join("\n"),
+			);
+			assert.strictEqual(
+				modelOverrideOutput.split("\n")[1].trimEnd(),
 				"model resolving · context forked · interactive · worktree",
-				"registered renderer avoids claiming an unresolved Pi model override");
+				"registered renderer avoids claiming an unresolved Pi model override",
+			);
 			const errorState: Record<string, unknown> = {};
 			const errorArgs = {
 				name: "Model error",
@@ -741,14 +804,18 @@ describe("registerSubagentSpawnTool", () => {
 			assert.strictEqual(
 				stripVTControlCharacters(errorComponent.render(120).join("\n")).split("\n")[1].trimEnd(),
 				"model unknown · context forked · interactive · worktree",
-				"settled spawn errors do not remain in a resolving state");
+				"settled spawn errors do not remain in a resolving state",
+			);
 			const candidateState: Record<string, unknown> = {};
-			const candidateArgs = { name: "Candidate fallback", agent: "modeled", task: "Run" } as Parameters<NonNullable<typeof callRenderer>>[0];
+			const candidateArgs = { name: "Candidate fallback", agent: "modeled", task: "Run" } as Parameters<
+				NonNullable<typeof callRenderer>
+			>[0];
 			const candidateComponent = callRenderer(candidateArgs, markedTheme, renderContext(false, candidateState));
 			assert.strictEqual(
 				stripVTControlCharacters(candidateComponent.render(120).join("\n")).split("\n")[1].trimEnd(),
 				"model resolving · context new",
-				"registered renderer does not present the first raw Pi model candidate as effective");
+				"registered renderer does not present the first raw Pi model candidate as effective",
+			);
 			spawnTool.renderResult?.(
 				{
 					content: [{ type: "text", text: "started" }],
@@ -767,42 +834,68 @@ describe("registerSubagentSpawnTool", () => {
 			assert.strictEqual(
 				stripVTControlCharacters(candidateComponent.render(120).join("\n")).split("\n")[1].trimEnd(),
 				"model openai-codex/gpt-5.5 · context new",
-				"settled rendering replaces candidate resolution with the canonical effective model");
-			const overriddenOutput = stripVTControlCharacters(callRenderer(
-				{
-					name: "Overrides",
-					agent: "worker",
-					task: "Run",
-					context: "new",
-					autoExit: true,
-					worktree: false,
-				} as Parameters<NonNullable<typeof callRenderer>>[0],
-				markedTheme,
-				renderContext(false),
-			).render(120).join("\n"));
-			assert.strictEqual(overriddenOutput.split("\n")[1].trimEnd(), "inherits model · context new",
-				"explicit call values override inherited spawn modes");
-			const cwdOverrideOutput = stripVTControlCharacters(callRenderer(
-				{ name: "Cwd override", agent: "worker", task: "Run", cwd: "nested" } as Parameters<NonNullable<typeof callRenderer>>[0],
-				markedTheme,
-				renderContext(false),
-			).render(120).join("\n"));
-			assert.strictEqual(cwdOverrideOutput.split("\n")[1].trimEnd(),
-				"inherits model · context forked · interactive",
-				"an explicit cwd disables an inherited worktree mode");
-			const expandedOutput = callRenderer(renderArgs, markedTheme, renderContext(true)).render(120).join("\n");
-			assert.strictEqual(expandedOutput.includes("\x1b[36mfirst"), true,
-				"registered renderer styles the expanded task body as tool output");
+				"settled rendering replaces candidate resolution with the canonical effective model",
+			);
+			const overriddenOutput = stripVTControlCharacters(
+				callRenderer(
+					{
+						name: "Overrides",
+						agent: "worker",
+						task: "Run",
+						context: "new",
+						autoExit: true,
+						worktree: false,
+					} as Parameters<NonNullable<typeof callRenderer>>[0],
+					markedTheme,
+					renderContext(false),
+				)
+					.render(120)
+					.join("\n"),
+			);
 			assert.strictEqual(
-				stripVTControlCharacters(expandedOutput).includes("context forked · interactive · worktree"), true,
-				"expanded renderer retains effective modes");
+				overriddenOutput.split("\n")[1].trimEnd(),
+				"inherits model · context new",
+				"explicit call values override inherited spawn modes",
+			);
+			const cwdOverrideOutput = stripVTControlCharacters(
+				callRenderer(
+					{ name: "Cwd override", agent: "worker", task: "Run", cwd: "nested" } as Parameters<
+						NonNullable<typeof callRenderer>
+					>[0],
+					markedTheme,
+					renderContext(false),
+				)
+					.render(120)
+					.join("\n"),
+			);
+			assert.strictEqual(
+				cwdOverrideOutput.split("\n")[1].trimEnd(),
+				"inherits model · context forked · interactive",
+				"an explicit cwd disables an inherited worktree mode",
+			);
+			const expandedOutput = callRenderer(renderArgs, markedTheme, renderContext(true)).render(120).join("\n");
+			assert.strictEqual(
+				expandedOutput.includes("\x1b[36mfirst"),
+				true,
+				"registered renderer styles the expanded task body as tool output",
+			);
+			assert.strictEqual(
+				stripVTControlCharacters(expandedOutput).includes("context forked · interactive · worktree"),
+				true,
+				"expanded renderer retains effective modes",
+			);
 			const sharedState: Record<string, unknown> = {};
-			writeFileSync(join(rendererDefs, "worker.md"), "---\ncontext: new\nauto-exit: true\nworktree: false\n---\nChanged.\n", "utf8");
+			writeFileSync(
+				join(rendererDefs, "worker.md"),
+				"---\ncontext: new\nauto-exit: true\nworktree: false\n---\nChanged.\n",
+				"utf8",
+			);
 			const reopenedComponent = callRenderer(renderArgs, markedTheme, renderContext(false, sharedState));
 			assert.strictEqual(
 				stripVTControlCharacters(reopenedComponent.render(120).join("\n")).split("\n")[1].trimEnd(),
 				"inherits model · context new",
-				"a reopened call initially falls back to current definition defaults");
+				"a reopened call initially falls back to current definition defaults",
+			);
 			spawnTool.renderResult?.(
 				{
 					content: [{ type: "text", text: "started" }],
@@ -821,7 +914,8 @@ describe("registerSubagentSpawnTool", () => {
 			assert.strictEqual(
 				stripVTControlCharacters(reopenedComponent.render(120).join("\n")).split("\n")[1].trimEnd(),
 				"model openai-codex/gpt-5.5 · context forked · interactive · worktree",
-				"persisted execution-time model and behavior replace changed definition defaults");
+				"persisted execution-time model and behavior replace changed definition defaults",
+			);
 			const legacyState: Record<string, unknown> = {};
 			const legacyComponent = callRenderer(candidateArgs, markedTheme, renderContext(false, legacyState));
 			spawnTool.renderResult?.(
@@ -841,7 +935,8 @@ describe("registerSubagentSpawnTool", () => {
 			assert.strictEqual(
 				stripVTControlCharacters(legacyComponent.render(120).join("\n")).split("\n")[1].trimEnd(),
 				"model unknown · context forked · interactive",
-				"settled historical v1 rows without model metadata do not remain in a resolving state");
+				"settled historical v1 rows without model metadata do not remain in a resolving state",
+			);
 		} finally {
 			rmSync(rendererCwd, { recursive: true, force: true });
 		}
@@ -850,9 +945,11 @@ describe("registerSubagentSpawnTool", () => {
 
 describe("registerSubagentResumeTool", () => {
 	it("resume autoExit schema documents restored launch identity and fallback", () => {
-		const resumeParameters = resumeTool.parameters as {
-			properties?: { autoExit?: { description?: string } };
-		} | undefined;
+		const resumeParameters = resumeTool.parameters as
+			| {
+					properties?: { autoExit?: { description?: string } };
+			  }
+			| undefined;
 		assert.strictEqual(
 			resumeParameters?.properties?.autoExit?.description,
 			"Override auto-exit behavior. If omitted, the child's original value is restored from launch metadata, falling back to true. " +
@@ -894,60 +991,107 @@ describe("registerSubagentResumeTool", () => {
 		writeFileSync(`${sessionPath}.meta`, JSON.stringify({ name: "Auth flow", agent: "scout" }), "utf8");
 		ledger.set(id, { sessionFile: sessionPath, name: "Ledger fallback" });
 		try {
-			const renderContext = (expanded: boolean) => ({
-				args: {},
-				toolCallId: "resume-call-1",
-				invalidate(): void {},
-				lastComponent: undefined,
-				state: {},
-				cwd: process.cwd(),
-				executionStarted: true,
-				argsComplete: true,
-				isPartial: false,
-				expanded,
-				showImages: false,
-				isError: false,
-			}) as Parameters<NonNullable<typeof resumeCallRenderer>>[2];
-			const renderArgs = { id, message: "Apply the fix.\nRerun the tests." } as Parameters<NonNullable<typeof resumeCallRenderer>>[0];
-			const collapsedOutput = resumeCallRenderer(renderArgs, markedTheme, renderContext(false)).render(120).join("\n");
+			const renderContext = (expanded: boolean) =>
+				({
+					args: {},
+					toolCallId: "resume-call-1",
+					invalidate(): void {},
+					lastComponent: undefined,
+					state: {},
+					cwd: process.cwd(),
+					executionStarted: true,
+					argsComplete: true,
+					isPartial: false,
+					expanded,
+					showImages: false,
+					isError: false,
+				}) as Parameters<NonNullable<typeof resumeCallRenderer>>[2];
+			const renderArgs = { id, message: "Apply the fix.\nRerun the tests." } as Parameters<
+				NonNullable<typeof resumeCallRenderer>
+			>[0];
+			const collapsedOutput = resumeCallRenderer(renderArgs, markedTheme, renderContext(false))
+				.render(120)
+				.join("\n");
 			const collapsedPlain = stripVTControlCharacters(collapsedOutput);
-			assert.strictEqual(collapsedPlain.includes("Auth flow"), true,
-				"resume renderer resolves the original name through the short-id ledger");
-			assert.strictEqual(collapsedPlain.includes("· scout ·"), true,
-				"resume renderer resolves the original agent through launch metadata");
-			assert.strictEqual(collapsedOutput.includes("\x1b[31m\x1b[1msubagent resume"), true,
-				"resume renderer styles the action title as a bold tool title");
-			assert.strictEqual(collapsedOutput.includes("\x1b[32mAuth flow\x1b[0m"), true,
-				"resume renderer styles the resolved name as the primary accent");
-			assert.strictEqual(collapsedOutput.includes("\x1b[33mscout\x1b[0m"), true,
-				"resume renderer styles the agent as muted metadata");
-			assert.strictEqual(collapsedOutput.includes("\x1b[2mApply the fix. Rerun the tests.\x1b[0m"), true,
-				"resume renderer styles the follow-up preview as dim");
-			assert.strictEqual(collapsedPlain.includes("to expand") || collapsedPlain.includes("()"), false,
-				"resume renderer omits the hint footer when no expand binding resolves");
-			const expandedOutput = resumeCallRenderer(renderArgs, markedTheme, renderContext(true)).render(120).join("\n");
-			assert.strictEqual(expandedOutput.includes("\x1b[36mApply the fix."), true,
-				"resume renderer styles the expanded follow-up as tool output");
+			assert.strictEqual(
+				collapsedPlain.includes("Auth flow"),
+				true,
+				"resume renderer resolves the original name through the short-id ledger",
+			);
+			assert.strictEqual(
+				collapsedPlain.includes("· scout ·"),
+				true,
+				"resume renderer resolves the original agent through launch metadata",
+			);
+			assert.strictEqual(
+				collapsedOutput.includes("\x1b[31m\x1b[1msubagent resume"),
+				true,
+				"resume renderer styles the action title as a bold tool title",
+			);
+			assert.strictEqual(
+				collapsedOutput.includes("\x1b[32mAuth flow\x1b[0m"),
+				true,
+				"resume renderer styles the resolved name as the primary accent",
+			);
+			assert.strictEqual(
+				collapsedOutput.includes("\x1b[33mscout\x1b[0m"),
+				true,
+				"resume renderer styles the agent as muted metadata",
+			);
+			assert.strictEqual(
+				collapsedOutput.includes("\x1b[2mApply the fix. Rerun the tests.\x1b[0m"),
+				true,
+				"resume renderer styles the follow-up preview as dim",
+			);
+			assert.strictEqual(
+				collapsedPlain.includes("to expand") || collapsedPlain.includes("()"),
+				false,
+				"resume renderer omits the hint footer when no expand binding resolves",
+			);
+			const expandedOutput = resumeCallRenderer(renderArgs, markedTheme, renderContext(true))
+				.render(120)
+				.join("\n");
+			assert.strictEqual(
+				expandedOutput.includes("\x1b[36mApply the fix."),
+				true,
+				"resume renderer styles the expanded follow-up as tool output",
+			);
 			const expandedPlainLines = plainLines(expandedOutput.split("\n"));
 			const followUpStart = expandedPlainLines.indexOf("Apply the fix.");
-			assert.strictEqual(expandedPlainLines[followUpStart + 1], "Rerun the tests.",
-				"resume renderer preserves expanded follow-up line structure");
+			assert.strictEqual(
+				expandedPlainLines[followUpStart + 1],
+				"Rerun the tests.",
+				"resume renderer preserves expanded follow-up line structure",
+			);
 			const noMessageOutput = resumeCallRenderer(
 				{ sessionPath, autoExit: false } as Parameters<NonNullable<typeof resumeCallRenderer>>[0],
 				markedTheme,
 				renderContext(false),
-			).render(120).join("\n");
-			assert.strictEqual(stripVTControlCharacters(noMessageOutput).includes("No follow-up message."), true,
-				"resume renderer shows the neutral missing-message preview");
-			assert.strictEqual(stripVTControlCharacters(noMessageOutput).includes("to expand"), false,
-				"resume renderer does not advertise expansion for a missing message");
+			)
+				.render(120)
+				.join("\n");
+			assert.strictEqual(
+				stripVTControlCharacters(noMessageOutput).includes("No follow-up message."),
+				true,
+				"resume renderer shows the neutral missing-message preview",
+			);
+			assert.strictEqual(
+				stripVTControlCharacters(noMessageOutput).includes("to expand"),
+				false,
+				"resume renderer does not advertise expansion for a missing message",
+			);
 			const renamedOutput = resumeCallRenderer(
 				{ sessionPath, name: "Verification" } as Parameters<NonNullable<typeof resumeCallRenderer>>[0],
 				markedTheme,
 				renderContext(false),
-			).render(120).join("\n");
-			assert.strictEqual(stripVTControlCharacters(renamedOutput).includes("· Verification"), true,
-				"explicit resume names override launch metadata");
+			)
+				.render(120)
+				.join("\n");
+			assert.strictEqual(
+				stripVTControlCharacters(renamedOutput).includes("· Verification"),
+				true,
+				"explicit resume names override launch metadata",
+			);
 		} finally {
 			ledger.delete(id);
 			rmSync(sandbox, { recursive: true, force: true });

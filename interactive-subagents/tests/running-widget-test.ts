@@ -132,7 +132,8 @@ describe("running widget", () => {
 		assert.deepStrictEqual(
 			controller.collectLifecycleWidgetRows(NOW).map((row) => row.id),
 			["earlier-active", "later-active"],
-			"launch time breaks ties within a status bucket");
+			"launch time breaks ties within a status bucket",
+		);
 		state.running.clear();
 
 		// Insert running rows in the inverse of their desired attention order.
@@ -167,34 +168,54 @@ describe("running widget", () => {
 				["active", "active"],
 				["queued", "queued"],
 			],
-			"attention priority overrides source lifecycle order");
+			"attention priority overrides source lifecycle order",
+		);
 		assert.deepStrictEqual(
-			rows.filter((row) => row.lifecycle === "running").map((row) => [row.id, row.forked, row.interactive, row.worktree, row.external]),
+			rows
+				.filter((row) => row.lifecycle === "running")
+				.map((row) => [row.id, row.forked, row.interactive, row.worktree, row.external]),
 			[
 				["stalled", true, false, false, false],
 				["waiting", false, true, false, false],
 				["starting", false, false, true, false],
 				["active", false, false, false, true],
 			],
-			"running flags remain derived after priority sorting");
+			"running flags remain derived after priority sorting",
+		);
 		assert.deepStrictEqual(
 			[rows[0].name, rows[0].harness, rows[5].name, rows[5].harness],
 			["delivery task", "claude-code", "active task", "claude-code"],
-			"external harness remains separate detailed metadata");
+			"external harness remains separate detailed metadata",
+		);
 
 		const compact = controller.compactWidgetSnapshot(NOW);
-		assert.deepStrictEqual(compact.rows.map((row) => row.id),
-			["delivery", "stalled", "waiting", "starting", "pending"],
-			"configured cap selects the priority prefix");
 		assert.deepStrictEqual(
-			[compact.totalRows, compact.hiddenRows, compact.hiddenStalledRows, compact.hiddenWaitingRows, compact.hiddenQueuedRows],
+			compact.rows.map((row) => row.id),
+			["delivery", "stalled", "waiting", "starting", "pending"],
+			"configured cap selects the priority prefix",
+		);
+		assert.deepStrictEqual(
+			[
+				compact.totalRows,
+				compact.hiddenRows,
+				compact.hiddenStalledRows,
+				compact.hiddenWaitingRows,
+				compact.hiddenQueuedRows,
+			],
 			[7, 2, 0, 0, 1],
-			"hidden subtype counts derive only from hidden rows");
+			"hidden subtype counts derive only from hidden rows",
+		);
 		const compactOne = controller.compactWidgetSnapshot(NOW, 1);
 		assert.deepStrictEqual(
-			[compactOne.hiddenRows, compactOne.hiddenStalledRows, compactOne.hiddenWaitingRows, compactOne.hiddenQueuedRows],
+			[
+				compactOne.hiddenRows,
+				compactOne.hiddenStalledRows,
+				compactOne.hiddenWaitingRows,
+				compactOne.hiddenQueuedRows,
+			],
 			[6, 1, 1, 1],
-			"hidden summary categories count stalled, waiting, and queued only");
+			"hidden summary categories count stalled, waiting, and queued only",
+		);
 
 		let widgetFactory: ((tui: unknown, theme: unknown) => { render(width: number): string[] }) | undefined;
 		let cleared = false;
@@ -211,23 +232,35 @@ describe("running widget", () => {
 		controller.updateRunningWidget();
 		const identityTheme = { fg: (_token: string, text: string) => text };
 		const rendered = widgetFactory?.({}, identityTheme).render(100) ?? [];
-		assert.strictEqual(rendered.length, 7,
-			"widget renders five detailed rows plus rule and conditional summary");
-		assert.ok(rendered.some((line) => line.includes("worker") && !line.includes("[worker]")),
-			"compact identifiers are unbracketed and full");
-		assert.ok(rendered.some((line) => line.includes("efi  delivery task") && line.includes("stopped"))
-			&& !rendered.some((line) => line.includes("claude-code")),
-			"compact stopped deliveries use stopped while keeping compact external markers");
+		assert.strictEqual(rendered.length, 7, "widget renders five detailed rows plus rule and conditional summary");
+		assert.ok(
+			rendered.some((line) => line.includes("worker") && !line.includes("[worker]")),
+			"compact identifiers are unbracketed and full",
+		);
+		assert.ok(
+			rendered.some((line) => line.includes("efi  delivery task") && line.includes("stopped")) &&
+				!rendered.some((line) => line.includes("claude-code")),
+			"compact stopped deliveries use stopped while keeping compact external markers",
+		);
 		const semanticTheme = { fg: (token: string, text: string) => `<${token}>${text}</${token}>` };
 		const semanticRendered = widgetFactory?.({}, semanticTheme).render(100) ?? [];
-		assert.ok(semanticRendered.some((line) => line.includes("<muted>worker</muted>")),
-			"compact agent identifiers use the muted semantic token");
-		assert.ok(semanticRendered.some((line) => line.includes("<muted>efi </muted> delivery task")),
-			"compact marker letters use the muted semantic token");
-		assert.strictEqual(rendered.at(-1), " +2 more · 1 queued · /subagent-status",
-			"summary reports hidden and hidden-queued counts only");
-		assert.ok(rendered.every((line) => visibleWidth(line) <= 100),
-			"every controller-rendered line is terminal-width safe");
+		assert.ok(
+			semanticRendered.some((line) => line.includes("<muted>worker</muted>")),
+			"compact agent identifiers use the muted semantic token",
+		);
+		assert.ok(
+			semanticRendered.some((line) => line.includes("<muted>efi </muted> delivery task")),
+			"compact marker letters use the muted semantic token",
+		);
+		assert.strictEqual(
+			rendered.at(-1),
+			" +2 more · 1 queued · /subagent-status",
+			"summary reports hidden and hidden-queued counts only",
+		);
+		assert.ok(
+			rendered.every((line) => visibleWidth(line) <= 100),
+			"every controller-rendered line is terminal-width safe",
+		);
 
 		// Drop below the cap: the summary line must disappear entirely.
 		state.running.delete("active");
@@ -235,8 +268,10 @@ describe("running widget", () => {
 		controller.updateRunningWidget();
 		const belowCap = widgetFactory?.({}, identityTheme).render(100) ?? [];
 		assert.strictEqual(belowCap.length, 6, "summary disappears when no rows are hidden");
-		assert.ok(!belowCap.some((line) => line.includes("/subagent-status")),
-			"no command hint remains without overflow");
+		assert.ok(
+			!belowCap.some((line) => line.includes("/subagent-status")),
+			"no command hint remains without overflow",
+		);
 
 		state.running.clear();
 		state.delivering.clear();
@@ -250,13 +285,21 @@ describe("running widget", () => {
 		const validDuringReload = runningChild("valid-during-reload", "active");
 		state.running.set(validDuringReload.id, validDuringReload);
 		assert.deepStrictEqual(
-			controller.collectLifecycleWidgetRows(NOW).map((row) => row.id), ["valid-during-reload"],
-			"invalid retained claims are quarantined from lifecycle projection");
-		assert.strictEqual(capacity.pendingLaunchCount(), 0,
-			"quarantined claims do not keep an empty pending row alive");
+			controller.collectLifecycleWidgetRows(NOW).map((row) => row.id),
+			["valid-during-reload"],
+			"invalid retained claims are quarantined from lifecycle projection",
+		);
+		assert.strictEqual(
+			capacity.pendingLaunchCount(),
+			0,
+			"quarantined claims do not keep an empty pending row alive",
+		);
 		controller.updateRunningWidget();
 		assert.ok(
-			(widgetFactory?.({}, identityTheme).render(100) ?? []).some((line) => line.includes("valid-during-reload task")),
-			"a valid child still renders beside a quarantined retained claim");
+			(widgetFactory?.({}, identityTheme).render(100) ?? []).some((line) =>
+				line.includes("valid-during-reload task"),
+			),
+			"a valid child still renders beside a quarantined retained claim",
+		);
 	});
 });

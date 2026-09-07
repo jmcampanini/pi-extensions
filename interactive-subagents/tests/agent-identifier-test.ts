@@ -43,38 +43,23 @@ describe("agent-identifier", () => {
 	});
 
 	it("empty identifiers are rejected", () => {
-		assert.throws(
-			() => assertValidAgentIdentifier(""),
-			/non-empty/,
-		);
+		assert.throws(() => assertValidAgentIdentifier(""), /non-empty/);
 	});
 
 	it("spaces are rejected", () => {
-		assert.throws(
-			() => assertValidAgentIdentifier("code reviewer"),
-			/whitespace/,
-		);
+		assert.throws(() => assertValidAgentIdentifier("code reviewer"), /whitespace/);
 	});
 
 	it("tabs are rejected", () => {
-		assert.throws(
-			() => assertValidAgentIdentifier("code\treviewer"),
-			/whitespace/,
-		);
+		assert.throws(() => assertValidAgentIdentifier("code\treviewer"), /whitespace/);
 	});
 
 	it("newlines are rejected", () => {
-		assert.throws(
-			() => assertValidAgentIdentifier("code\nreviewer"),
-			/whitespace/,
-		);
+		assert.throws(() => assertValidAgentIdentifier("code\nreviewer"), /whitespace/);
 	});
 
 	it("non-strings are rejected", () => {
-		assert.throws(
-			() => assertValidAgentIdentifier(20),
-			/non-empty string/,
-		);
+		assert.throws(() => assertValidAgentIdentifier(20), /non-empty string/);
 	});
 
 	it("problem reports measured overage", () => {

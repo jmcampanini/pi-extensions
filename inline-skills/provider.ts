@@ -1,8 +1,4 @@
-import {
-	fuzzyFilter,
-	type AutocompleteItem,
-	type AutocompleteProvider,
-} from "@earendil-works/pi-tui";
+import { fuzzyFilter, type AutocompleteItem, type AutocompleteProvider } from "@earendil-works/pi-tui";
 import type { InstalledSkill } from "./skills.ts";
 
 const TOKEN_BEFORE_CURSOR = /(?:^|[ \t])\$([a-z0-9-]*)$/;

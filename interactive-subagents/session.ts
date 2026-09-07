@@ -103,10 +103,7 @@ export function seedNewSession(options: {
 	childCwd: string;
 	name: string;
 }): void {
-	const lines = [
-		headerLine(options.childCwd, options.parentSessionFile),
-		sessionInfoLine(options.name, null),
-	];
+	const lines = [headerLine(options.childCwd, options.parentSessionFile), sessionInfoLine(options.name, null)];
 	mkdirSync(dirname(options.childSessionFile), { recursive: true });
 	writeFileSync(options.childSessionFile, lines.join("\n") + "\n", "utf8");
 }
@@ -180,8 +177,7 @@ export function seedForkSession(options: {
 	while (copied.length > 0) {
 		const last = copied[copied.length - 1].entry;
 		const isAssistant = last?.type === "message" && last.message?.role === "assistant";
-		const makesToolCalls =
-			isAssistant && (last?.message?.content ?? []).some((block) => block.type === "toolCall");
+		const makesToolCalls = isAssistant && (last?.message?.content ?? []).some((block) => block.type === "toolCall");
 		if (!makesToolCalls) break;
 		copied.pop();
 	}

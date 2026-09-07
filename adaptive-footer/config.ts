@@ -92,9 +92,7 @@ export function loadConfig(env: Env = process.env): AdaptiveFooterConfig {
 	const file = raw as Record<string, unknown>;
 	const unknownKeys = Object.keys(file).filter((key) => !VALID_KEYS.includes(key));
 	if (unknownKeys.length > 0) {
-		throw new Error(
-			`${filePath}: unknown key(s) ${unknownKeys.join(", ")} - valid keys: ${VALID_KEYS.join(", ")}`,
-		);
+		throw new Error(`${filePath}: unknown key(s) ${unknownKeys.join(", ")} - valid keys: ${VALID_KEYS.join(", ")}`);
 	}
 	if (Object.hasOwn(file, "issuePatterns")) {
 		result.issuePatterns = requireIssuePatterns(file.issuePatterns, filePath);

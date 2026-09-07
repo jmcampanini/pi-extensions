@@ -99,11 +99,13 @@ function completedRecord(id: string, sessionFile: string): DeliveryRecord {
 }
 
 function sessionMessage(text: string, id: string): string {
-	return JSON.stringify({
-		type: "message",
-		id,
-		message: { role: "assistant", content: [{ type: "text", text }], stopReason: "stop" },
-	}) + "\n";
+	return (
+		JSON.stringify({
+			type: "message",
+			id,
+			message: { role: "assistant", content: [{ type: "text", text }], stopReason: "stop" },
+		}) + "\n"
+	);
 }
 
 function seed(record: DeliveryRecord): void {
@@ -211,10 +213,16 @@ describe("durable result delivery", () => {
 		startRun(pi);
 		settle(pi, "stop");
 		assert.deepStrictEqual(pi.calls[1], pi.calls[0], "cache: redelivery reuses the first prepared payload");
-		assert.strictEqual(pi.calls[1]?.message.content.includes("original child response"), true,
-			"cache: old response remains in the retried result");
-		assert.strictEqual(pi.calls[1]?.message.content.includes("new response from a resume"), false,
-			"cache: resumed response cannot replace the old result");
+		assert.strictEqual(
+			pi.calls[1]?.message.content.includes("original child response"),
+			true,
+			"cache: old response remains in the retried result",
+		);
+		assert.strictEqual(
+			pi.calls[1]?.message.content.includes("new response from a resume"),
+			false,
+			"cache: resumed response cannot replace the old result",
+		);
 	});
 
 	// 2. A result observed landing before proof is removed and never retried.
@@ -280,8 +288,11 @@ describe("durable result delivery", () => {
 		startRun(pi);
 		settle(pi, "stop");
 		const ids = pi.calls.map((call) => call.message.details.id);
-		assert.deepStrictEqual(ids, [first.id, second.id, first.id, second.id],
-			"multiple: each child is resent exactly once");
+		assert.deepStrictEqual(
+			ids,
+			[first.id, second.id, first.id, second.id],
+			"multiple: each child is resent exactly once",
+		);
 		const landedIds = [land(pi, pi.calls[2]!), land(pi, pi.calls[3]!)];
 		assert.deepStrictEqual(landedIds, [first.id, second.id], "multiple: one outcome per child lands");
 		assert.strictEqual(delivering.size, 0, "multiple: both rows clear independently");
@@ -347,21 +358,30 @@ describe("durable result delivery", () => {
 		};
 		seed(completed);
 		startFinalizer(pi.api, completed);
-		assert.deepStrictEqual({
-			model: pi.calls[0]?.message.details.model,
-			effort: pi.calls[0]?.message.details.effort,
-			contextTokens: pi.calls[0]?.message.details.contextTokens,
-			contextWindow: pi.calls[0]?.message.details.contextWindow,
-		}, { model: "actual/model", effort: "high", contextTokens: null, contextWindow: 200_000 },
-			"race: liveness telemetry overrides the spawn model and preserves compacted context");
-		assert.strictEqual(pi.calls[0]?.message.content.includes("Context:"), false,
-			"race: compacted context is omitted from the prose envelope");
+		assert.deepStrictEqual(
+			{
+				model: pi.calls[0]?.message.details.model,
+				effort: pi.calls[0]?.message.details.effort,
+				contextTokens: pi.calls[0]?.message.details.contextTokens,
+				contextWindow: pi.calls[0]?.message.details.contextWindow,
+			},
+			{ model: "actual/model", effort: "high", contextTokens: null, contextWindow: 200_000 },
+			"race: liveness telemetry overrides the spawn model and preserves compacted context",
+		);
+		assert.strictEqual(
+			pi.calls[0]?.message.content.includes("Context:"),
+			false,
+			"race: compacted context is omitted from the prose envelope",
+		);
 		completed.child.stopRequester = "user";
 		completed.finalizerGeneration = undefined;
 		startFinalizer(pi.api, completed);
 		assert.strictEqual(pi.calls.length, 1, "race: completion winner remains the sole envelope after a late stop");
-		assert.strictEqual(pi.calls[0]?.message.details.reason, "exited",
-			"race: completion winner retains its exit reason");
+		assert.strictEqual(
+			pi.calls[0]?.message.details.reason,
+			"exited",
+			"race: completion winner retains its exit reason",
+		);
 
 		resetForShutdown();
 		const stopped = stoppedRecord("racestop");
@@ -370,7 +390,10 @@ describe("durable result delivery", () => {
 		stopped.finalizerGeneration = undefined;
 		startFinalizer(pi.api, stopped);
 		assert.strictEqual(pi.calls.length, 2, "race: stop winner remains the sole envelope after late finalization");
-		assert.strictEqual(pi.calls[1]?.message.details.reason, "stopped",
-			"race: stop winner retains its terminal reason");
+		assert.strictEqual(
+			pi.calls[1]?.message.details.reason,
+			"stopped",
+			"race: stop winner retains its terminal reason",
+		);
 	});
 });

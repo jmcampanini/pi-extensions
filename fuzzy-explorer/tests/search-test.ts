@@ -79,8 +79,8 @@ describe("matchBlock key and body matching", () => {
 
 	it("free tokens never search the fields blob", () => {
 		assert.ok(
-			!matchBlock(parseQuery("entry-42"), toolBlock).matches
-			&& !matchBlock(parseQuery("call-77"), toolBlock).matches,
+			!matchBlock(parseQuery("entry-42"), toolBlock).matches &&
+				!matchBlock(parseQuery("call-77"), toolBlock).matches,
 		);
 	});
 
@@ -127,16 +127,22 @@ describe("matchBlock separator fallback", () => {
 			fuzzyMatch("subagent", spawnBlock.searchKey).score + 5,
 			"stripped key fallback scores the stripped token plus the penalty",
 		);
-		assert.deepStrictEqual(strippedKey.keyTokens, ["subagent"],
-			"stripped key fallback reports the stripped token form");
+		assert.deepStrictEqual(
+			strippedKey.keyTokens,
+			["subagent"],
+			"stripped key fallback reports the stripped token form",
+		);
 	});
 
 	it("token without separators still matches a separator-bearing body", () => {
 		const strippedBodyMatch = matchBlock(parseQuery("subagent"), dashedBody);
 		assert.ok(strippedBodyMatch.matches);
 		assert.strictEqual(strippedBodyMatch.score, 5, "stripped body fallback carries the +5 penalty");
-		assert.deepStrictEqual(strippedBodyMatch.bodyTokens, ["subagent"],
-			"stripped body fallback reports the stripped form");
+		assert.deepStrictEqual(
+			strippedBodyMatch.bodyTokens,
+			["subagent"],
+			"stripped body fallback reports the stripped form",
+		);
 	});
 
 	it("token with separators matches a plain body through stripping", () => {
@@ -160,7 +166,7 @@ describe("matchBlock any: operator", () => {
 		title: "write",
 		fields: "role:assistant type:tool tool:write toolCallId:toolu_015abc entry:entry-9",
 		body: "short body",
-		canonicalText: "write {\n  \"path\": \"src/deep/value.ts\"\n}\n\nshort body",
+		canonicalText: 'write {\n  "path": "src/deep/value.ts"\n}\n\nshort body',
 	});
 
 	it("any: matches fields-blob needles free tokens cannot reach", () => {
@@ -177,8 +183,11 @@ describe("matchBlock any: operator", () => {
 
 	it("any: applies the separator-stripped fallback", () => {
 		assert.ok(matchBlock(parseQuery("any:toolu015"), anyBlock).matches);
-		assert.strictEqual(matchBlock(parseQuery("any:toolu015"), anyBlock).score, 5,
-			"any: stripped fallback carries the +5 penalty");
+		assert.strictEqual(
+			matchBlock(parseQuery("any:toolu015"), anyBlock).score,
+			5,
+			"any: stripped fallback carries the +5 penalty",
+		);
 	});
 
 	it("any: raw substring contributes score 0", () => {
@@ -223,24 +232,25 @@ describe("matchBlock is: and tool: operators", () => {
 	});
 
 	it("operator-looking body text cannot satisfy a recognized operator", () => {
-		assert.ok(!matchBlock(
-			parseQuery("tool:write"),
-			makeBlock({ kind: "tool", toolName: "read", title: "read", body: "tool:write" }),
-		).matches);
+		assert.ok(
+			!matchBlock(
+				parseQuery("tool:write"),
+				makeBlock({ kind: "tool", toolName: "read", title: "read", body: "tool:write" }),
+			).matches,
+		);
 	});
 
 	it("is:s ranks word-boundary kinds above interior hits", () => {
-		assert.deepStrictEqual(
-			ids(searchBlocks([assistant, summary], "is:s")),
-			["summary-block", "assistant-block"],
-		);
+		assert.deepStrictEqual(ids(searchBlocks([assistant, summary], "is:s")), ["summary-block", "assistant-block"]);
 	});
 
 	it("unknown operator-shaped token is searched normally", () => {
 		const pathKeyBlock = makeBlock({ searchKey: "assistant path:src/config.ts" });
 		assert.ok(matchBlock(parseQuery("path:src/config.ts"), pathKeyBlock).matches);
-		assert.ok(matchBlock(parseQuery("src/config.ts"), pathKeyBlock).matches,
-			"a slash path remains one searchable token");
+		assert.ok(
+			matchBlock(parseQuery("src/config.ts"), pathKeyBlock).matches,
+			"a slash path remains one searchable token",
+		);
 	});
 });
 
@@ -270,12 +280,8 @@ describe("matchBlock key versus body tier", () => {
 			body: "the needle sits in the stored body",
 		});
 		const noisyMatch = matchBlock(parseQuery("needle"), noisyKey);
-		assert.ok(fuzzyMatch("needle", noisyKey.searchKey).matches,
-			"the noisy key incidentally subsequence-matches");
-		assert.deepStrictEqual(
-			[noisyMatch.score, noisyMatch.keyTokens, noisyMatch.bodyTokens],
-			[0, [], ["needle"]],
-		);
+		assert.ok(fuzzyMatch("needle", noisyKey.searchKey).matches, "the noisy key incidentally subsequence-matches");
+		assert.deepStrictEqual([noisyMatch.score, noisyMatch.keyTokens, noisyMatch.bodyTokens], [0, [], ["needle"]]);
 	});
 });
 
@@ -299,7 +305,9 @@ describe("searchBlocks ordering", () => {
 
 	it("body-only matches score 0 and tie-break newest first", () => {
 		assert.deepStrictEqual(
-			searchBlocks(corpus, "needle").slice(1).map((result) => result.match.score),
+			searchBlocks(corpus, "needle")
+				.slice(1)
+				.map((result) => result.match.score),
 			[0, 0],
 		);
 	});
@@ -309,8 +317,13 @@ describe("searchBlocks ordering", () => {
 	});
 
 	it("empty query matches report no tokens", () => {
-		assert.ok(searchBlocks(corpus, "").every((result) =>
-			result.match.keyTokens.length === 0 && result.match.bodyTokens.length === 0 && result.match.score === 0,
-		));
+		assert.ok(
+			searchBlocks(corpus, "").every(
+				(result) =>
+					result.match.keyTokens.length === 0 &&
+					result.match.bodyTokens.length === 0 &&
+					result.match.score === 0,
+			),
+		);
 	});
 });

@@ -157,7 +157,10 @@ function parseAgentMarkdown(
 		description: frontmatterValue(frontmatter, "description"),
 		details: frontmatterValue(frontmatter, "details"),
 		models: rawModels
-			? rawModels.split(",").map((entry) => entry.trim()).filter((entry) => entry !== "")
+			? rawModels
+					.split(",")
+					.map((entry) => entry.trim())
+					.filter((entry) => entry !== "")
 			: undefined,
 		thinking: frontmatterValue(frontmatter, "thinking"),
 		tools: frontmatterValue(frontmatter, "tools"),
@@ -258,7 +261,11 @@ function problemText(error: unknown): string {
 
 /** `usableModelIds` (models.ts listUsableModels) only feeds the "what to use
  * instead" trailer of a failed model resolution. */
-export function collectAgentInventory(registry: ModelLookup, cwd: string, usableModelIds: readonly string[]): AgentInfo[] {
+export function collectAgentInventory(
+	registry: ModelLookup,
+	cwd: string,
+	usableModelIds: readonly string[],
+): AgentInfo[] {
 	return listAgentDefinitions(cwd).map((def) => {
 		const problems: string[] = [...def.problems];
 		let resolvedModel: string | undefined;
@@ -489,9 +496,8 @@ export function formatAgentOverviewLines(
 		thinking: agent.thinking === undefined ? undefined : sanitizedInline(agent.thinking),
 		tools: agent.tools === undefined ? undefined : sanitizedInline(agent.tools),
 		harness: sanitizedInline(agent.harness),
-		harnessPassThrough: agent.harnessPassThrough === undefined
-			? undefined
-			: sanitizedInline(agent.harnessPassThrough),
+		harnessPassThrough:
+			agent.harnessPassThrough === undefined ? undefined : sanitizedInline(agent.harnessPassThrough),
 		problems: agent.problems.map(sanitizeDisplayText),
 	}));
 
@@ -504,7 +510,9 @@ export function formatAgentOverviewLines(
 				"Create <name>.md files there (frontmatter: description, details, models, thinking, tools, context, auto-exit, worktree, harness, harness-pass-through; body = system prompt).",
 				Math.max(1, safeWidth - 1),
 			).map((wrapped) => ` ${wrapped}`),
-			...(options.models ? ["", ...formatModelOverviewLines(options.models, safeWidth, { border, muted, accent, bold })] : []),
+			...(options.models
+				? ["", ...formatModelOverviewLines(options.models, safeWidth, { border, muted, accent, bold })]
+				: []),
 		].map((line) => clampStyled(line, safeWidth));
 	}
 
@@ -517,14 +525,15 @@ export function formatAgentOverviewLines(
 	const body = Math.max(1, safeWidth - indent);
 
 	const head = `── Sub-agents · ${agents.length} `;
-	const lines: string[] = options.header === false
-		? []
-		: [
-			border("── ") +
-				bold("Sub-agents") +
-				muted(` · ${agents.length} `) +
-				border("─".repeat(Math.max(0, safeWidth - visibleWidth(head)))),
-		];
+	const lines: string[] =
+		options.header === false
+			? []
+			: [
+					border("── ") +
+						bold("Sub-agents") +
+						muted(` · ${agents.length} `) +
+						border("─".repeat(Math.max(0, safeWidth - visibleWidth(head)))),
+				];
 
 	for (let i = 0; i < agents.length; i++) {
 		const agent = agents[i];
@@ -578,9 +587,10 @@ export function formatAgentOverviewLines(
 		// columns. The command uses its headline; explicit tool discovery can
 		// request the full description when no separate details text exists.
 		if (agent.description) {
-			const description = options.fullDescriptionFallback && !agent.details
-				? agent.description
-				: descriptionHeadline(agent.description);
+			const description =
+				options.fullDescriptionFallback && !agent.details
+					? agent.description
+					: descriptionHeadline(agent.description);
 			for (const wrapped of wrapText(description, body)) {
 				lines.push(pad + output(wrapped));
 			}
@@ -635,11 +645,11 @@ export function formatAgentOverviewLines(
 		flushRow();
 	}
 
-	if (options.models) lines.push("", ...formatModelOverviewLines(options.models, safeWidth, { border, muted, accent, bold }));
+	if (options.models)
+		lines.push("", ...formatModelOverviewLines(options.models, safeWidth, { border, muted, accent, bold }));
 
-	const footer = options.footer === undefined
-		? "run /subagent-available again or send a message to dismiss"
-		: options.footer;
+	const footer =
+		options.footer === undefined ? "run /subagent-available again or send a message to dismiss" : options.footer;
 	if (footer !== false) {
 		lines.push("");
 		for (const wrapped of wrapText(footer, Math.max(1, safeWidth - 1))) {

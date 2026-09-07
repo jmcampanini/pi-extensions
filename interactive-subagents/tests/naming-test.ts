@@ -12,9 +12,14 @@ after(() => {
 	rmSync(testRoot, { recursive: true, force: true });
 });
 
-function entry(o: unknown): string { return JSON.stringify(o); }
+function entry(o: unknown): string {
+	return JSON.stringify(o);
+}
 function lines(f: string): Array<Record<string, unknown>> {
-	return readFileSync(f, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+	return readFileSync(f, "utf8")
+		.trim()
+		.split("\n")
+		.map((l) => JSON.parse(l));
 }
 
 const parentLines = [
@@ -42,18 +47,29 @@ describe("seedNewSession", () => {
 			"A1 shape",
 		);
 		assert.ok(
-			newEntries[0].version === 3 && newEntries[0].cwd === "/tmp/work" && newEntries[0].parentSession === parentFile,
+			newEntries[0].version === 3 &&
+				newEntries[0].cwd === "/tmp/work" &&
+				newEntries[0].parentSession === parentFile,
 			"A2 header",
 		);
 		assert.ok(
-			typeof newEntries[0].id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(newEntries[0].id as string),
+			typeof newEntries[0].id === "string" &&
+				/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+					newEntries[0].id as string,
+				),
 			"A3 UUIDv7 session id",
 		);
-		assert.ok(newEntries[1].name === "subagent › scout › wait 1" && newEntries[1].parentId === null, "A4 name entry");
+		assert.ok(
+			newEntries[1].name === "subagent › scout › wait 1" && newEntries[1].parentId === null,
+			"A4 name entry",
+		);
 		assert.strictEqual(readSessionName(newFile), "subagent › scout › wait 1", "A5 readSessionName");
 		// Full-uuid entry id: an 8-hex id could collide with a copied parent entry's
 		// id, which would shadow that entry in pi's index and hang its context walk.
-		assert.ok(typeof newEntries[1].id === "string" && (newEntries[1].id as string).length === 36, "A6 full-uuid id");
+		assert.ok(
+			typeof newEntries[1].id === "string" && (newEntries[1].id as string).length === 36,
+			"A6 full-uuid id",
+		);
 	});
 
 	// Names are sanitized the way pi's own rename sanitizes them - newlines
@@ -66,7 +82,11 @@ describe("seedNewSession", () => {
 			childCwd: "/tmp/work",
 			name: "subagent › scout › line one\nline two",
 		});
-		assert.strictEqual(readSessionName(multilineFile), "subagent › scout › line one line two", "G1 newlines flattened");
+		assert.strictEqual(
+			readSessionName(multilineFile),
+			"subagent › scout › line one line two",
+			"G1 newlines flattened",
+		);
 	});
 });
 
@@ -77,7 +97,12 @@ describe("seedForkSession", () => {
 		const forkParent = join(testRoot, "fork-parent.jsonl");
 		writeFileSync(forkParent, parentLines.join("\n") + "\n");
 		const forkFile = join(testRoot, "fork.jsonl");
-		seedForkSession({ parentSessionFile: forkParent, childSessionFile: forkFile, childCwd: "/tmp", name: "subagent › worker › follow-up" });
+		seedForkSession({
+			parentSessionFile: forkParent,
+			childSessionFile: forkFile,
+			childCwd: "/tmp",
+			name: "subagent › worker › follow-up",
+		});
 		const forkRaw = readFileSync(forkFile, "utf8").trim().split("\n");
 		const fork = lines(forkFile);
 		assert.ok(forkRaw[1] === parentLines[1] && forkRaw[2] === parentLines[2], "B1 copied bytes");
@@ -92,12 +117,24 @@ describe("seedForkSession", () => {
 	// the in-flight one) still seeds a valid named session.
 	it("seeds a valid named session when the cut leaves zero copied entries", () => {
 		const emptyForkParent = join(testRoot, "empty-fork-parent.jsonl");
-		writeFileSync(emptyForkParent, [
-			entry({ type: "session", version: 3, id: "p", cwd: "/tmp" }),
-			entry({ type: "message", id: "m1", message: { role: "user", content: [{ type: "text", text: "spawn now" }] } }),
-		].join("\n") + "\n");
+		writeFileSync(
+			emptyForkParent,
+			[
+				entry({ type: "session", version: 3, id: "p", cwd: "/tmp" }),
+				entry({
+					type: "message",
+					id: "m1",
+					message: { role: "user", content: [{ type: "text", text: "spawn now" }] },
+				}),
+			].join("\n") + "\n",
+		);
 		const emptyForkFile = join(testRoot, "empty-fork.jsonl");
-		seedForkSession({ parentSessionFile: emptyForkParent, childSessionFile: emptyForkFile, childCwd: "/tmp", name: "subagent › scout › empty" });
+		seedForkSession({
+			parentSessionFile: emptyForkParent,
+			childSessionFile: emptyForkFile,
+			childCwd: "/tmp",
+			name: "subagent › scout › empty",
+		});
 		const emptyFork = lines(emptyForkFile);
 		assert.ok(
 			emptyFork.length === 2 && emptyFork[1].type === "session_info" && emptyFork[1].parentId === null,
@@ -110,15 +147,35 @@ describe("seedForkSession", () => {
 	// same one pi treats as the leaf when it skips the corrupt line.
 	it("links the name past a corrupt trailing line to the last parseable entry", () => {
 		const corruptForkParent = join(testRoot, "corrupt-fork-parent.jsonl");
-		writeFileSync(corruptForkParent, [
-			entry({ type: "session", version: 3, id: "p", cwd: "/tmp" }),
-			entry({ type: "message", id: "m1", message: { role: "user", content: [{ type: "text", text: "hi" }] } }),
-			entry({ type: "message", id: "m2", message: { role: "assistant", content: [{ type: "text", text: "hello" }] } }),
-			'{"type":"message","id":"torn', // torn write from a crashed pi
-			entry({ type: "message", id: "m3", message: { role: "user", content: [{ type: "text", text: "spawn a fork" }] } }),
-		].join("\n") + "\n");
+		writeFileSync(
+			corruptForkParent,
+			[
+				entry({ type: "session", version: 3, id: "p", cwd: "/tmp" }),
+				entry({
+					type: "message",
+					id: "m1",
+					message: { role: "user", content: [{ type: "text", text: "hi" }] },
+				}),
+				entry({
+					type: "message",
+					id: "m2",
+					message: { role: "assistant", content: [{ type: "text", text: "hello" }] },
+				}),
+				'{"type":"message","id":"torn', // torn write from a crashed pi
+				entry({
+					type: "message",
+					id: "m3",
+					message: { role: "user", content: [{ type: "text", text: "spawn a fork" }] },
+				}),
+			].join("\n") + "\n",
+		);
 		const corruptForkFile = join(testRoot, "corrupt-fork.jsonl");
-		seedForkSession({ parentSessionFile: corruptForkParent, childSessionFile: corruptForkFile, childCwd: "/tmp", name: "subagent › scout › corrupt" });
+		seedForkSession({
+			parentSessionFile: corruptForkParent,
+			childSessionFile: corruptForkFile,
+			childCwd: "/tmp",
+			name: "subagent › scout › corrupt",
+		});
 		const corruptForkRaw = readFileSync(corruptForkFile, "utf8").trim().split("\n");
 		const corruptLast = JSON.parse(corruptForkRaw[corruptForkRaw.length - 1]);
 		assert.ok(
@@ -138,21 +195,27 @@ describe("readSessionName", () => {
 
 	it("the latest name entry wins", () => {
 		const renamedFile = join(testRoot, "renamed.jsonl");
-		writeFileSync(renamedFile, [
-			...parentLines,
-			entry({ type: "session_info", id: "s1", parentId: "m3", name: "first name" }),
-			entry({ type: "session_info", id: "s2", parentId: "s1", name: "second name" }),
-		].join("\n") + "\n");
+		writeFileSync(
+			renamedFile,
+			[
+				...parentLines,
+				entry({ type: "session_info", id: "s1", parentId: "m3", name: "first name" }),
+				entry({ type: "session_info", id: "s2", parentId: "s1", name: "second name" }),
+			].join("\n") + "\n",
+		);
 		assert.strictEqual(readSessionName(renamedFile), "second name", "C2 latest wins");
 	});
 
 	it("an empty name is an explicit clear", () => {
 		const clearedFile = join(testRoot, "cleared.jsonl");
-		writeFileSync(clearedFile, [
-			...parentLines,
-			entry({ type: "session_info", id: "s1", parentId: "m3", name: "was named" }),
-			entry({ type: "session_info", id: "s2", parentId: "s1", name: "" }),
-		].join("\n") + "\n");
+		writeFileSync(
+			clearedFile,
+			[
+				...parentLines,
+				entry({ type: "session_info", id: "s1", parentId: "m3", name: "was named" }),
+				entry({ type: "session_info", id: "s2", parentId: "s1", name: "" }),
+			].join("\n") + "\n",
+		);
 		assert.strictEqual(readSessionName(clearedFile), undefined, "C3 empty clears");
 	});
 });

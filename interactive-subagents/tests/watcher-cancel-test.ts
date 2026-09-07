@@ -72,37 +72,52 @@ describe("trackChild and adoptRunningChildren", () => {
 			baseCommit: "fixture",
 			parentCwd: process.cwd(),
 		};
-		assert.strictEqual(trackChild(pi, model).status, "tracked",
-			"model-stopped child registers before its pending exit is consumed");
+		assert.strictEqual(
+			trackChild(pi, model).status,
+			"tracked",
+			"model-stopped child registers before its pending exit is consumed",
+		);
 		assert.deepStrictEqual(
 			sent.map((message) => [message.customType, message.details?.id, message.details?.reason]),
 			[["subagent_result", "model001", "stopped"]],
-			"model stop emits one result");
-		assert.ok(sent[0]?.content?.includes("Stopped because you cancelled it") === true,
-			"model stop notice attributes the model request");
-		assert.deepStrictEqual({
-			exitCode: sent[0]?.details?.exitCode,
-			model: sent[0]?.details?.model,
-			effort: sent[0]?.details?.effort,
-			tools: sent[0]?.details?.tools,
-			forked: sent[0]?.details?.forked,
-			interactive: sent[0]?.details?.interactive,
-			worktree: sent[0]?.details?.worktree,
-			worktreeStatus: sent[0]?.details?.worktreeStatus,
-		}, {
-			exitCode: 130,
-			model: "configured/model",
-			effort: "high",
-			tools: "read,bash",
-			forked: true,
-			interactive: true,
-			worktree: true,
-			worktreeStatus: "kept",
-		}, "stopped result has completion-path capability and exit parity");
+			"model stop emits one result",
+		);
 		assert.ok(
-			["Model: configured/model", "Effort: high", "Mode: forked · interactive · worktree", "Tools: read,bash"]
-				.every((line) => sent[0]?.content?.includes(line) === true),
-			"stopped envelope carries the same capability metadata");
+			sent[0]?.content?.includes("Stopped because you cancelled it") === true,
+			"model stop notice attributes the model request",
+		);
+		assert.deepStrictEqual(
+			{
+				exitCode: sent[0]?.details?.exitCode,
+				model: sent[0]?.details?.model,
+				effort: sent[0]?.details?.effort,
+				tools: sent[0]?.details?.tools,
+				forked: sent[0]?.details?.forked,
+				interactive: sent[0]?.details?.interactive,
+				worktree: sent[0]?.details?.worktree,
+				worktreeStatus: sent[0]?.details?.worktreeStatus,
+			},
+			{
+				exitCode: 130,
+				model: "configured/model",
+				effort: "high",
+				tools: "read,bash",
+				forked: true,
+				interactive: true,
+				worktree: true,
+				worktreeStatus: "kept",
+			},
+			"stopped result has completion-path capability and exit parity",
+		);
+		assert.ok(
+			[
+				"Model: configured/model",
+				"Effort: high",
+				"Mode: forked · interactive · worktree",
+				"Tools: read,bash",
+			].every((line) => sent[0]?.content?.includes(line) === true),
+			"stopped envelope carries the same capability metadata",
+		);
 		assert.strictEqual(deliveryRecord(model.id)?.stopped, true, "model stop parks a stopped delivery record");
 
 		adoptRunningChildren(pi);
@@ -111,8 +126,10 @@ describe("trackChild and adoptRunningChildren", () => {
 		const user = stoppedChild("user0001", "user");
 		trackChild(pi, user);
 		assert.strictEqual(sent.length, 2, "user stop emits one additional result");
-		assert.ok(sent[1]?.content?.includes("Stopped by the user") === true,
-			"user stop notice attributes the human request");
+		assert.ok(
+			sent[1]?.content?.includes("Stopped by the user") === true,
+			"user stop notice attributes the human request",
+		);
 		assert.strictEqual(running.size, 0, "both stopped children leave the running registry");
 
 		resetForShutdown();
@@ -148,14 +165,16 @@ describe("trackChild and adoptRunningChildren", () => {
 			parentCwd: process.cwd(),
 		};
 		const forcedResult = trackChild(pi, forced);
-		assert.deepStrictEqual(forcedResult, { status: "cancelled", requester: "model" },
-			"forced track-time tombstone refuses registration");
-		assert.deepStrictEqual([
-			capacity.findPendingLaunch(forcedId),
-			running.has(forcedId),
-			ledger.has(forcedId),
-			sent.length,
-		], [undefined, false, false, 2], "forced tombstone releases the claim without a result or ledger entry");
+		assert.deepStrictEqual(
+			forcedResult,
+			{ status: "cancelled", requester: "model" },
+			"forced track-time tombstone refuses registration",
+		);
+		assert.deepStrictEqual(
+			[capacity.findPendingLaunch(forcedId), running.has(forcedId), ledger.has(forcedId), sent.length],
+			[undefined, false, false, 2],
+			"forced tombstone releases the claim without a result or ledger entry",
+		);
 		assert.ok(existsSync(worktreeDir), "a possibly dirty worktree is kept on the defensive path");
 		rmSync(worktreeDir, { recursive: true, force: true });
 	});

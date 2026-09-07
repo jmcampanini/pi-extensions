@@ -32,7 +32,9 @@ function cleanup(): void {
 	if (cleaned) return;
 	cleaned = true;
 	if (tmuxServerMayExist) {
-		try { isolatedTmux(["kill-server"]); } catch {}
+		try {
+			isolatedTmux(["kill-server"]);
+		} catch {}
 	}
 	restore("PATH");
 	restore("TMUX");
@@ -118,12 +120,7 @@ if (!tmuxAvailable) {
 		return { paneId: createPane(label, scriptPath), sessionFile };
 	}
 
-	async function poll(
-		paneId: string,
-		sessionFile: string,
-		controller: AbortController,
-		onTick?: () => void,
-	) {
+	async function poll(paneId: string, sessionFile: string, controller: AbortController, onTick?: () => void) {
 		const timeout = setTimeout(() => controller.abort(), 3000);
 		try {
 			return await pollForExit({ paneId, sessionFile, signal: controller.signal, onTick, tickMs: 25 });
@@ -144,8 +141,11 @@ if (!tmuxAvailable) {
 					"status-less crash is explained",
 				);
 			} else {
-				assert.deepStrictEqual(result, { reason: "exited", exitCode: 23 },
-					"crash exit code is preserved when tmux reports it");
+				assert.deepStrictEqual(
+					result,
+					{ reason: "exited", exitCode: 23 },
+					"crash exit code is preserved when tmux reports it",
+				);
 			}
 			closePane(child.paneId);
 		});
@@ -153,11 +153,16 @@ if (!tmuxAvailable) {
 		it("signal death is reported as killed with the missing status explained", async () => {
 			const child = launch("signal-death", "exec sleep 60");
 			await waitForFormat(child.paneId, "#{pane_current_command}", "sleep");
-			const panePid = Number.parseInt(attachedTmux(["display-message", "-p", "-t", child.paneId, "#{pane_pid}"]).trim(), 10);
+			const panePid = Number.parseInt(
+				attachedTmux(["display-message", "-p", "-t", child.paneId, "#{pane_pid}"]).trim(),
+				10,
+			);
 			process.kill(panePid, "SIGKILL");
 			const controller = new AbortController();
 			let ticks = 0;
-			const result = await poll(child.paneId, child.sessionFile, controller, () => { ticks += 1; });
+			const result = await poll(child.paneId, child.sessionFile, controller, () => {
+				ticks += 1;
+			});
 			assert.strictEqual(result.reason, "killed", "signal death has a distinct reason");
 			assert.ok(ticks >= 1, "empty dead status is confirmed on a later tick");
 			assert.strictEqual(result.exitCode, 1, "signal death uses failure exit code");
@@ -170,12 +175,18 @@ if (!tmuxAvailable) {
 
 		it("an exit sidecar beats a dead pane and is consumed", async () => {
 			const child = launch("dead-sidecar", "exit 0");
-			writeFileSync(`${child.sessionFile}.exit`, JSON.stringify({ type: "error", errorMessage: "precise child error" }));
+			writeFileSync(
+				`${child.sessionFile}.exit`,
+				JSON.stringify({ type: "error", errorMessage: "precise child error" }),
+			);
 			await waitForFormat(child.paneId, "#{pane_dead}", "1");
 			const controller = new AbortController();
 			const result = await poll(child.paneId, child.sessionFile, controller);
-			assert.deepStrictEqual(result, { reason: "error", exitCode: 1, errorMessage: "precise child error" },
-				"sidecar beats a dead pane");
+			assert.deepStrictEqual(
+				result,
+				{ reason: "error", exitCode: 1, errorMessage: "precise child error" },
+				"sidecar beats a dead pane",
+			);
 			assert.ok(!existsSync(`${child.sessionFile}.exit`), "consumed sidecar is deleted");
 			closePane(child.paneId);
 		});
@@ -199,7 +210,9 @@ if (!tmuxAvailable) {
 			closePane(child.paneId);
 			const controller = new AbortController();
 			let ticks = 0;
-			const result = await poll(child.paneId, child.sessionFile, controller, () => { ticks += 1; });
+			const result = await poll(child.paneId, child.sessionFile, controller, () => {
+				ticks += 1;
+			});
 			assert.strictEqual(result.reason, "pane-closed", "silent vanished pane fails after grace");
 			assert.strictEqual(ticks, 4, "pane-gone grace performs four sleeps before the fifth verdict");
 		});

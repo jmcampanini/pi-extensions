@@ -34,7 +34,13 @@ const IMPLANT_PATH = join(THIS_DIR, "implant.ts");
 
 /** Turn a display name into something safe for filenames. */
 export function slugify(value: string): string {
-	return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "subagent";
+	return (
+		value
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-|-$/g, "")
+			.slice(0, 40) || "subagent"
+	);
 }
 
 /** Artifacts for this extension live under the parent session's artifact dir. */
@@ -90,7 +96,10 @@ export function buildChildEnv(vars: ChildEnvVars): string {
  */
 function withControlTools(tools: string): string {
 	const names = new Set(
-		tools.split(",").map((t) => t.trim()).filter((t) => t !== ""),
+		tools
+			.split(",")
+			.map((t) => t.trim())
+			.filter((t) => t !== ""),
 	);
 	names.add("subagent_done");
 	names.add("caller_ping");

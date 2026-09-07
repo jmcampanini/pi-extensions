@@ -1,7 +1,5 @@
 export type SubmitPlan =
-	| { kind: "pass" }
-	| { kind: "hoist"; name: string; text: string }
-	| { kind: "conflict"; names: string[] };
+	{ kind: "pass" } | { kind: "hoist"; name: string; text: string } | { kind: "conflict"; names: string[] };
 
 // Pi validates skill names as lowercase [a-z0-9-], so $PATH-style environment
 // variables can never match. The leading boundary keeps "$name" (quoted) and

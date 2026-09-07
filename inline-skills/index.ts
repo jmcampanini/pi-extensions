@@ -29,9 +29,7 @@ export function registerInlineSkills(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => {
 		if (providerRegistered || !ctx.hasUI) return;
 		providerRegistered = true;
-		ctx.ui.addAutocompleteProvider((current) =>
-			createInlineSkillsProvider(current, () => listInstalledSkills(pi)),
-		);
+		ctx.ui.addAutocompleteProvider((current) => createInlineSkillsProvider(current, () => listInstalledSkills(pi)));
 	});
 }
 

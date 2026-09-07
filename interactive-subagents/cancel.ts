@@ -8,12 +8,7 @@ import {
 	specDisplay,
 	type LaunchSpec,
 } from "./capacity.ts";
-import {
-	deliveryRecord,
-	ledger,
-	running,
-	type CancellationRequester,
-} from "./state.ts";
+import { deliveryRecord, ledger, running, type CancellationRequester } from "./state.ts";
 
 export interface CancellationTarget {
 	id: string;
@@ -37,11 +32,7 @@ function specTarget(spec: LaunchSpec): CancellationTarget {
 	return { id: spec.id, name: display.name, agent: display.agent };
 }
 
-export function requestCancel(
-	pi: ExtensionAPI,
-	id: string,
-	requester: CancellationRequester,
-): CancelOutcome {
+export function requestCancel(pi: ExtensionAPI, id: string, requester: CancellationRequester): CancelOutcome {
 	const child = running.get(id);
 	if (child) {
 		const target = {

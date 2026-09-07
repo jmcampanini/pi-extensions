@@ -62,8 +62,10 @@ describe("formatStatusPickerLines", () => {
 	});
 
 	it("picker moves the selected exact harness into the action footer", () => {
-		assert.ok(formatted[13].includes("harness claude-code")
-			&& !formatted.slice(2, 12).some((line) => line.includes("harness claude-code")));
+		assert.ok(
+			formatted[13].includes("harness claude-code") &&
+				!formatted.slice(2, 12).some((line) => line.includes("harness claude-code")),
+		);
 	});
 
 	it("picker puts direct actions before navigation help", () => {
@@ -72,8 +74,10 @@ describe("formatStatusPickerLines", () => {
 
 	it("picker drops selected harness detail before direct actions at narrow widths", () => {
 		const narrowExternal = command.formatStatusPickerLines([formatterRows[0]], 0, 0, 60);
-		assert.ok(narrowExternal.at(-2)?.includes("enter: visit") === true
-			&& narrowExternal.at(-2)?.includes("harness claude-code") === false);
+		assert.ok(
+			narrowExternal.at(-2)?.includes("enter: visit") === true &&
+				narrowExternal.at(-2)?.includes("harness claude-code") === false,
+		);
 	});
 
 	it("picker never wraps agent identifiers in square brackets", () => {
@@ -81,7 +85,9 @@ describe("formatStatusPickerLines", () => {
 	});
 
 	it("first viewport includes row 10 but not row 11", () => {
-		assert.ok(formatted.some((line) => line.includes("task 10")) && !formatted.some((line) => line.includes("task 11")));
+		assert.ok(
+			formatted.some((line) => line.includes("task 10")) && !formatted.some((line) => line.includes("task 11")),
+		);
 	});
 
 	it("picker reports its first scroll window", () => {
@@ -89,8 +95,10 @@ describe("formatStatusPickerLines", () => {
 	});
 
 	it("later viewport reaches every hidden lifecycle row", () => {
-		assert.ok(scrolled.some((line) => line.includes("task 11") && line.includes("delivering"))
-			&& scrolled.some((line) => line.includes("task 12") && line.includes("queued")));
+		assert.ok(
+			scrolled.some((line) => line.includes("task 11") && line.includes("delivering")) &&
+				scrolled.some((line) => line.includes("task 12") && line.includes("queued")),
+		);
 	});
 
 	it("picker reports its last scroll window", () => {
@@ -102,29 +110,45 @@ describe("formatStatusPickerLines", () => {
 	});
 
 	it("pending launch uses only the user-facing starting term and offers cancellation", () => {
-		const startingLines = command.formatStatusPickerLines([{
-			id: "setup",
-			lifecycle: "pending",
-			startedAt: 0,
-			name: "setup task",
-			elapsedSeconds: 1,
-			status: "starting",
-		}], 0, 0, 80);
-		assert.ok(startingLines.join("\n").includes("starting")
-			&& startingLines.join("\n").includes("x: cancel launch")
-			&& !startingLines.join("\n").includes("pending")
-			&& !startingLines.join("\n").includes("launching"));
+		const startingLines = command.formatStatusPickerLines(
+			[
+				{
+					id: "setup",
+					lifecycle: "pending",
+					startedAt: 0,
+					name: "setup task",
+					elapsedSeconds: 1,
+					status: "starting",
+				},
+			],
+			0,
+			0,
+			80,
+		);
+		assert.ok(
+			startingLines.join("\n").includes("starting") &&
+				startingLines.join("\n").includes("x: cancel launch") &&
+				!startingLines.join("\n").includes("pending") &&
+				!startingLines.join("\n").includes("launching"),
+		);
 	});
 
 	it("stopped delivery explains that its stopped notice is on the way", () => {
-		const stoppedDeliveryLines = command.formatStatusPickerLines([{
-			id: "stopped-delivery",
-			lifecycle: "delivering",
-			startedAt: 0,
-			name: "stopped task",
-			elapsedSeconds: 1,
-			status: "stopped",
-		}], 0, 0, 100);
+		const stoppedDeliveryLines = command.formatStatusPickerLines(
+			[
+				{
+					id: "stopped-delivery",
+					lifecycle: "delivering",
+					startedAt: 0,
+					name: "stopped task",
+					elapsedSeconds: 1,
+					status: "stopped",
+				},
+			],
+			0,
+			0,
+			100,
+		);
 		assert.ok(stoppedDeliveryLines.join("\n").includes("stopped; its stopped notice is on its way"));
 	});
 
@@ -137,15 +161,28 @@ describe("formatStatusPickerLines", () => {
 	});
 
 	it("mixed elapsed widths keep agent and marker columns aligned while clocks stay right", () => {
-		const mixedElapsed = command.formatStatusPickerLines([
-			{ ...formatterRows[0], id: "under-hour", elapsedSeconds: 3_599 },
-			{ ...formatterRows[0], id: "over-hour", elapsedSeconds: 3_600 },
-		], 0, 0, 100);
+		const mixedElapsed = command.formatStatusPickerLines(
+			[
+				{ ...formatterRows[0], id: "under-hour", elapsedSeconds: 3_599 },
+				{ ...formatterRows[0], id: "over-hour", elapsedSeconds: 3_600 },
+			],
+			0,
+			0,
+			100,
+		);
 		assert.deepStrictEqual(
-			[mixedElapsed[1].indexOf("worker"), mixedElapsed[2].indexOf("worker"), mixedElapsed[1].indexOf("ei"), mixedElapsed[2].indexOf("ei")],
-			[2, 2, 9, 9]);
-		assert.ok(mixedElapsed[1].endsWith("  59:59 ") && mixedElapsed[2].endsWith("1:00:00 "),
-			"mixed elapsed clocks stay on the far-right edge");
+			[
+				mixedElapsed[1].indexOf("worker"),
+				mixedElapsed[2].indexOf("worker"),
+				mixedElapsed[1].indexOf("ei"),
+				mixedElapsed[2].indexOf("ei"),
+			],
+			[2, 2, 9, 9],
+		);
+		assert.ok(
+			mixedElapsed[1].endsWith("  59:59 ") && mixedElapsed[2].endsWith("1:00:00 "),
+			"mixed elapsed clocks stay on the far-right edge",
+		);
 	});
 });
 
@@ -187,15 +224,20 @@ describe("registerSubagentStatusCommand", () => {
 				setWidget(key: string, content: unknown): void {
 					widgetTransitions.push({ key, content });
 				},
-				async custom(factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (value: unknown) => void) => PickerComponent): Promise<unknown> {
+				async custom(
+					factory: (
+						tui: unknown,
+						theme: unknown,
+						keybindings: unknown,
+						done: (value: unknown) => void,
+					) => PickerComponent,
+				): Promise<unknown> {
 					let result: unknown;
 					let doneCalls = 0;
-					const component = factory(
-						{ requestRender(): void {} },
-						theme,
-						{},
-						(value) => { result = value; doneCalls++; },
-					);
+					const component = factory({ requestRender(): void {} }, theme, {}, (value) => {
+						result = value;
+						doneCalls++;
+					});
 					for (const step of steps) {
 						if (typeof step === "string") component.handleInput(step);
 						else step(component);
@@ -276,34 +318,53 @@ describe("registerSubagentStatusCommand", () => {
 		const stalledAt = Date.now() - 60_001;
 		styled.activity = { watchdogStartMs: stalledAt, problemSinceMs: stalledAt };
 		state.running.set(styled.id, styled);
-		await handler?.("", contextForSteps([
-			(component) => {
-				runningWidget.updateRunningWidget();
-				widgetTransitionCountDuringPicker = widgetTransitions.length;
-				renderedDuringStep = component.render(100);
-			},
-			"\x1b",
-		], {
-			fg: (token, text) => `<${token}>${text}</${token}>`,
-			bold: (text) => text,
-		}));
+		await handler?.(
+			"",
+			contextForSteps(
+				[
+					(component) => {
+						runningWidget.updateRunningWidget();
+						widgetTransitionCountDuringPicker = widgetTransitions.length;
+						renderedDuringStep = component.render(100);
+					},
+					"\x1b",
+				],
+				{
+					fg: (token, text) => `<${token}>${text}</${token}>`,
+					bold: (text) => text,
+				},
+			),
+		);
 		assert.deepStrictEqual(
 			[
 				widgetTransitionCountDuringPicker,
 				...widgetTransitions.map(({ key, content }) => [key, content === undefined ? "clear" : typeof content]),
 			],
 			[1, ["interactive-subagents", "clear"], ["interactive-subagents", "function"]],
-			"picker clears the compact widget, suppresses live repaints, then restores it");
-		assert.ok(renderedDuringStep.some((line) => line.includes("styled task") && !line.includes("<accent>styled task</accent>")),
-			"picker task text matches the compact widget instead of using accent styling");
-		assert.ok(renderedDuringStep.some((line) => line.includes("<muted>worker</muted>")),
-			"picker agent identifiers use the muted semantic token");
-		assert.ok(renderedDuringStep.some((line) => line.includes("<muted>e</muted>")),
-			"picker external marker uses e with the muted semantic token");
-		assert.ok(renderedDuringStep.some((line) => line.includes("<warning>stalled")),
-			"picker stalled state uses the warning semantic token");
-		assert.ok(renderedDuringStep.some((line) => line.includes("<muted> harness claude-code</muted>")),
-			"picker selected harness detail uses the muted semantic token");
+			"picker clears the compact widget, suppresses live repaints, then restores it",
+		);
+		assert.ok(
+			renderedDuringStep.some(
+				(line) => line.includes("styled task") && !line.includes("<accent>styled task</accent>"),
+			),
+			"picker task text matches the compact widget instead of using accent styling",
+		);
+		assert.ok(
+			renderedDuringStep.some((line) => line.includes("<muted>worker</muted>")),
+			"picker agent identifiers use the muted semantic token",
+		);
+		assert.ok(
+			renderedDuringStep.some((line) => line.includes("<muted>e</muted>")),
+			"picker external marker uses e with the muted semantic token",
+		);
+		assert.ok(
+			renderedDuringStep.some((line) => line.includes("<warning>stalled")),
+			"picker stalled state uses the warning semantic token",
+		);
+		assert.ok(
+			renderedDuringStep.some((line) => line.includes("<muted> harness claude-code</muted>")),
+			"picker selected harness detail uses the muted semantic token",
+		);
 	});
 
 	it("picker restores the compact widget when the custom UI throws", async () => {
@@ -315,8 +376,9 @@ describe("registerSubagentStatusCommand", () => {
 		};
 		await assert.rejects(async () => handler?.("", failingContext));
 		assert.deepStrictEqual(
-			widgetTransitions.map(({ content }) => content === undefined ? "clear" : typeof content),
-			["clear", "function"]);
+			widgetTransitions.map(({ content }) => (content === undefined ? "clear" : typeof content)),
+			["clear", "function"],
+		);
 	});
 
 	it("live picker refreshes open rows and keeps selection anchored by id", async () => {
@@ -324,31 +386,40 @@ describe("registerSubagentStatusCommand", () => {
 		const selected = runningChild("selected");
 		state.running.set(first.id, first);
 		state.running.set(selected.id, selected);
-		await handler?.("", contextForSteps([
-			"j",
-			(component) => {
-				state.delivering.set("delivery", {
-					id: "delivery",
-					name: "delivery task",
-					startedAt: Date.now() - 2_000,
-					elapsedSeconds: 2,
-					forked: false,
-					interactive: false,
-					worktree: false,
-					stopped: false,
-				});
-				selected.startTime = Date.now() - 61_000;
-				renderedDuringStep = component.render(100);
-			},
-			"x",
-		]));
-		assert.ok(renderedDuringStep.some((line) => line.includes("delivery task")),
-			"live picker adds higher-priority rows while open");
-		assert.ok(renderedDuringStep.some((line) => line.includes("01:01") || line.includes("01:00")),
-			"live picker refreshes elapsed clocks");
+		await handler?.(
+			"",
+			contextForSteps([
+				"j",
+				(component) => {
+					state.delivering.set("delivery", {
+						id: "delivery",
+						name: "delivery task",
+						startedAt: Date.now() - 2_000,
+						elapsedSeconds: 2,
+						forked: false,
+						interactive: false,
+						worktree: false,
+						stopped: false,
+					});
+					selected.startTime = Date.now() - 61_000;
+					renderedDuringStep = component.render(100);
+				},
+				"x",
+			]),
+		);
+		assert.ok(
+			renderedDuringStep.some((line) => line.includes("delivery task")),
+			"live picker adds higher-priority rows while open",
+		);
+		assert.ok(
+			renderedDuringStep.some((line) => line.includes("01:01") || line.includes("01:00")),
+			"live picker refreshes elapsed clocks",
+		);
 		assert.deepStrictEqual(
-			[selected.stopRequester, selected.abort.signal.aborted, first.abort.signal.aborted], ["user", true, false],
-			"selection stays anchored by id after live reprioritization");
+			[selected.stopRequester, selected.abort.signal.aborted, first.abort.signal.aborted],
+			["user", true, false],
+			"selection stays anchored by id after live reprioritization",
+		);
 	});
 
 	it("removed selection falls back to the nearest row", async () => {
@@ -358,13 +429,17 @@ describe("registerSubagentStatusCommand", () => {
 		state.running.set(beforeRemoved.id, beforeRemoved);
 		state.running.set(removed.id, removed);
 		state.running.set(afterRemoved.id, afterRemoved);
-		await handler?.("", contextForSteps([
-			"j",
-			() => { state.running.delete(removed.id); },
-			"x",
-		]));
-		assert.deepStrictEqual(
-			[beforeRemoved.abort.signal.aborted, afterRemoved.abort.signal.aborted], [false, true]);
+		await handler?.(
+			"",
+			contextForSteps([
+				"j",
+				() => {
+					state.running.delete(removed.id);
+				},
+				"x",
+			]),
+		);
+		assert.deepStrictEqual([beforeRemoved.abort.signal.aborted, afterRemoved.abort.signal.aborted], [false, true]);
 	});
 
 	it("enter preserves the visit action", async () => {
@@ -387,10 +462,15 @@ describe("registerSubagentStatusCommand", () => {
 		for (let index = 0; index < 9; index++) capacity.releaseClaim(`fill-${index}`);
 		await handler?.("", contextForSteps(["x"]));
 		assert.deepStrictEqual(
-			[capacity.queuedCount(), capacity.cancellationFor("queued")?.requester], [0, "user"],
-			"x routes queued cancellation through the shared primitive");
-		assert.deepStrictEqual(sent.map((message) => message.customType), ["subagent_queue_cancelled"],
-			"queued cancellation keeps its model notification");
+			[capacity.queuedCount(), capacity.cancellationFor("queued")?.requester],
+			[0, "user"],
+			"x routes queued cancellation through the shared primitive",
+		);
+		assert.deepStrictEqual(
+			sent.map((message) => message.customType),
+			["subagent_queue_cancelled"],
+			"queued cancellation keeps its model notification",
+		);
 	});
 
 	it("delivering rows ignore invalid x and remain visible until Escape", async () => {
@@ -416,7 +496,8 @@ describe("registerSubagentStatusCommand", () => {
 				(contextForSteps as unknown as { lastDoneCalls?: number }).lastDoneCalls,
 				capacity.cancellationFor("pending")?.requester,
 			],
-			[1, "user"]);
+			[1, "user"],
+		);
 		capacity.releaseClaim("pending");
 	});
 });

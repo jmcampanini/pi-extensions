@@ -2,11 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createTestEventHarness } from "../../shared/test-event-harness.ts";
-import {
-	FAST_OPENAI_STATUS_KEY,
-	FAST_OPENAI_STATUS_ON,
-	FAST_OPENAI_STATUS_OFF,
-} from "../../shared/status-keys.ts";
+import { FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_ON, FAST_OPENAI_STATUS_OFF } from "../../shared/status-keys.ts";
 import fastOpenAI from "../index.ts";
 
 interface FakeModel {
@@ -64,15 +60,26 @@ function createHarness(model: FakeModel = sol, usingOAuth = true) {
 	assert.ok(fast);
 
 	return {
-		context, events, statuses, notifications,
+		context,
+		events,
+		statuses,
+		notifications,
 		fast: (args: string) => fast(args, context),
 		request(payload: unknown = { model: context.model?.id }) {
-			return events.emitResults("before_provider_request", { type: "before_provider_request", payload }, context)[0];
+			return events.emitResults(
+				"before_provider_request",
+				{ type: "before_provider_request", payload },
+				context,
+			)[0];
 		},
 		selectModel(nextModel: FakeModel) {
 			const previousModel = context.model;
 			context.model = nextModel;
-			events.emit("model_select", { type: "model_select", model: nextModel, previousModel, source: "cycle" }, context);
+			events.emit(
+				"model_select",
+				{ type: "model_select", model: nextModel, previousModel, source: "cycle" },
+				context,
+			);
 		},
 	};
 }
@@ -131,11 +138,19 @@ describe("fast-openai", () => {
 				const harness = createHarness(model);
 				await harness.fast(action);
 				harness.events.emit("session_shutdown", { type: "session_shutdown", reason }, harness.context);
-				assert.deepStrictEqual(harness.statuses.at(-1), [FAST_OPENAI_STATUS_KEY, undefined], model.id + " shutdown");
+				assert.deepStrictEqual(
+					harness.statuses.at(-1),
+					[FAST_OPENAI_STATUS_KEY, undefined],
+					model.id + " shutdown",
+				);
 
 				harness.events.emit("session_start", { type: "session_start", reason }, harness.context);
 
-				assert.deepStrictEqual(harness.statuses.at(-1), [FAST_OPENAI_STATUS_KEY, expectedStatus], model.id + " " + reason);
+				assert.deepStrictEqual(
+					harness.statuses.at(-1),
+					[FAST_OPENAI_STATUS_KEY, expectedStatus],
+					model.id + " " + reason,
+				);
 				assert.deepStrictEqual(
 					harness.request(),
 					model === sol ? { model: sol.id, service_tier: "priority" } : undefined,
@@ -158,7 +173,9 @@ describe("fast-openai", () => {
 	it("headless requests use model defaults without publishing UI status", () => {
 		const harness = createHarness();
 		harness.context.hasUI = false;
-		Object.defineProperty(harness.context, "ui", { get: () => assert.fail("headless model changes must not read ui") });
+		Object.defineProperty(harness.context, "ui", {
+			get: () => assert.fail("headless model changes must not read ui"),
+		});
 		harness.events.emit("session_start", { type: "session_start", reason: "startup" }, harness.context);
 		harness.events.emit("agent_start", { type: "agent_start" }, harness.context);
 
