@@ -42,13 +42,17 @@ import {
 	readExternalSessionId,
 	requireHarnessProfile,
 } from "./harnesses.ts";
-import { artifactBase, buildChildEnv, buildLaunchCommand, clearExitSidecar, readLaunchMeta, slugify } from "./launch.ts";
+import {
+	artifactBase,
+	buildChildEnv,
+	buildLaunchCommand,
+	clearExitSidecar,
+	readLaunchMeta,
+	slugify,
+} from "./launch.ts";
 import { listUsableModels, resolveUsableModel } from "./models.ts";
 import { appendSessionName, countEntries, readSessionCwd, readSessionName } from "./session.ts";
-import {
-	formatCollapsedSubagentResumeCall,
-	formatExpandedSubagentResumeCall,
-} from "./subagent-call.ts";
+import { formatCollapsedSubagentResumeCall, formatExpandedSubagentResumeCall } from "./subagent-call.ts";
 import { renderSubagentLaunchResult } from "./subagent-result.ts";
 import { clampStyled, fitText } from "../shared/text-fit.ts";
 import { updateRunningWidget } from "./running-widget.ts";
@@ -58,14 +62,23 @@ import { trackChild } from "./watcher.ts";
 
 const ResumeParams = Type.Object({
 	id: Type.Optional(
-		Type.String({ description: "The sub-agent's short id from a result/ping message (preferred). Use sessionPath instead if pi was restarted since." }),
+		Type.String({
+			description:
+				"The sub-agent's short id from a result/ping message (preferred). Use sessionPath instead if pi was restarted since.",
+		}),
 	),
 	sessionPath: Type.Optional(
-		Type.String({ description: "Path to the child session .jsonl file - fallback when the id is no longer known (e.g. after a pi restart)" }),
+		Type.String({
+			description:
+				"Path to the child session .jsonl file - fallback when the id is no longer known (e.g. after a pi restart)",
+		}),
 	),
 	message: Type.Optional(Type.String({ description: "Follow-up prompt or answer to send to the resumed subagent" })),
 	name: Type.Optional(
-		Type.String({ description: "Display name override for the resumed subagent (defaults to the child's original name, then 'Resumed')" }),
+		Type.String({
+			description:
+				"Display name override for the resumed subagent (defaults to the child's original name, then 'Resumed')",
+		}),
 	),
 	autoExit: Type.Optional(
 		Type.Boolean({
@@ -74,8 +87,17 @@ const ResumeParams = Type.Object({
 				"An effective true requires a message; false stays open for a human and permits a message-free handoff.",
 		}),
 	),
-	tools: Type.Optional(Type.String({ description: "Override the tool allowlist (default: the child's original tools, restored from its launch metadata)" })),
-	model: Type.Optional(Type.String({ description: "Override the model (default: the child's original model, restored from its launch metadata)" })),
+	tools: Type.Optional(
+		Type.String({
+			description:
+				"Override the tool allowlist (default: the child's original tools, restored from its launch metadata)",
+		}),
+	),
+	model: Type.Optional(
+		Type.String({
+			description: "Override the model (default: the child's original model, restored from its launch metadata)",
+		}),
+	),
 });
 type ResumeParamsType = Static<typeof ResumeParams>;
 
@@ -138,8 +160,10 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			};
 		},
 		renderResult(result, _options, theme, context) {
-			return renderSubagentLaunchResult(result, context.isError, (text) =>
-				new Text(theme.fg("error", text), 0, 0),
+			return renderSubagentLaunchResult(
+				result,
+				context.isError,
+				(text) => new Text(theme.fg("error", text), 0, 0),
 			);
 		},
 		async execute(_toolCallId, params: ResumeParamsType, _signal, _onUpdate, ctx) {

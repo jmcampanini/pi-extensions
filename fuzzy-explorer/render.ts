@@ -59,9 +59,7 @@ export type CodeHighlighter = (code: string, language: string) => string[];
 export const plainCodeHighlighter: CodeHighlighter = (code) => code.split("\n");
 
 /** The presentation `m` toggles into; raw is the other side of the toggle. */
-export type RenderedForm =
-	| { mode: "markdown" }
-	| { mode: "code"; language: string };
+export type RenderedForm = { mode: "markdown" } | { mode: "code"; language: string };
 
 const MARKDOWN_FORM: RenderedForm = { mode: "markdown" };
 const PROSE_KINDS = new Set<Block["kind"]>(["assistant", "user", "summary", "custom"]);
@@ -258,10 +256,7 @@ function mergeSpans(spans: readonly TextSpan[]): TextSpan[] {
 	return merged;
 }
 
-function sanitizedSpans(
-	rawText: string,
-	spans: readonly TextSpan[],
-): { text: string; spans: TextSpan[] } {
+function sanitizedSpans(rawText: string, spans: readonly TextSpan[]): { text: string; spans: TextSpan[] } {
 	const text = sanitizeTerminalText(rawText);
 	const rawSpans = spans
 		.filter((span) => Number.isFinite(span.start) && Number.isFinite(span.end) && span.end > span.start)
@@ -275,8 +270,9 @@ function sanitizedSpans(
 	if (text === rawText) {
 		normalized = rawSpans;
 	} else {
-		const boundaries = [...new Set(rawSpans.flatMap((span) => [span.start, span.end]))]
-			.sort((left, right) => left - right);
+		const boundaries = [...new Set(rawSpans.flatMap((span) => [span.start, span.end]))].sort(
+			(left, right) => left - right,
+		);
 		const sanitizedOffsets = new Map<number, number>();
 		let rawOffset = 0;
 		let sanitizedOffset = 0;
@@ -345,12 +341,9 @@ function styledMatchExcerpt(
 	const excerptSpans = safe.spans
 		.filter((span) => span.end > start && span.start < end)
 		.map((span) => ({ start: Math.max(0, span.start - start), end: Math.min(end - start, span.end - start) }));
-	const excerpt = applySpanStyles(
-		safe.text.slice(start, end),
-		excerptSpans,
-		baseStyle,
-		highlightStyle,
-	).replace(/\s+/gu, " ").trim();
+	const excerpt = applySpanStyles(safe.text.slice(start, end), excerptSpans, baseStyle, highlightStyle)
+		.replace(/\s+/gu, " ")
+		.trim();
 	return `${start > 0 ? baseStyle("⋯ ") : ""}${excerpt}${end < safe.text.length ? baseStyle(" ⋯") : ""}`;
 }
 
@@ -403,9 +396,9 @@ export function formatDetailIdentity(block: Block): string {
 	const pieces = [kindPart, shortTime(block.timestamp)];
 	const title = singleLine(block.title);
 	if (
-		title !== ""
-		&& title.toLowerCase() !== block.kind.toLowerCase()
-		&& kindPart.toLowerCase() !== `tool/${title.toLowerCase()}`
+		title !== "" &&
+		title.toLowerCase() !== block.kind.toLowerCase() &&
+		kindPart.toLowerCase() !== `tool/${title.toLowerCase()}`
 	) {
 		pieces.push(title);
 	}
@@ -571,8 +564,12 @@ export function formatTruncationMarker(
 	const totalLines = truncation.metadata?.totalLines;
 	let kept: string;
 	if (
-		typeof outputLines === "number" && Number.isFinite(outputLines) && outputLines >= 0 &&
-		typeof totalLines === "number" && Number.isFinite(totalLines) && totalLines >= 0
+		typeof outputLines === "number" &&
+		Number.isFinite(outputLines) &&
+		outputLines >= 0 &&
+		typeof totalLines === "number" &&
+		Number.isFinite(totalLines) &&
+		totalLines >= 0
 	) {
 		kept = `${Math.floor(outputLines)}/${Math.floor(totalLines)} lines kept`;
 	} else if (typeof outputLines === "number" && Number.isFinite(outputLines) && outputLines >= 0) {
@@ -621,8 +618,9 @@ export function formatResultRow(
 	const column = Math.max(1, Math.min(tagWidth, maxWidth - 2));
 	const tagText = fitText(singleLine(formatBlockTag(block)), column);
 	const tagSpans = mergeSpans(keyTokens.flatMap((token) => keyTokenSpans(token, tagText)));
-	const tag = applySpanStyles(tagText, tagSpans, (text) => styles.title(text), styles.highlight)
-		+ " ".repeat(Math.max(0, column - visibleWidth(tagText)));
+	const tag =
+		applySpanStyles(tagText, tagSpans, (text) => styles.title(text), styles.highlight) +
+		" ".repeat(Math.max(0, column - visibleWidth(tagText)));
 
 	const detailWidth = maxWidth - 2 - column - 2;
 	if (detailWidth <= 0) return clampLine(`${marker}${tag}`, maxWidth);
@@ -669,9 +667,7 @@ export function formatPreviewLines(
 	if (contentLines.length === 0) contentLines.push(styles.dim("(empty block)"));
 
 	const rawTruncationMarker = formatTruncationMarker(block.truncation, pathExists);
-	const fixedTail = rawTruncationMarker === undefined
-		? []
-		: [clampLine(styles.dim(rawTruncationMarker), maxWidth)];
+	const fixedTail = rawTruncationMarker === undefined ? [] : [clampLine(styles.dim(rawTruncationMarker), maxWidth)];
 	if (fixedTail.length >= lineLimit) return fixedTail.slice(-lineLimit);
 
 	const room = lineLimit - fixedTail.length;
@@ -739,11 +735,13 @@ export function formatBorderLine(
 	const left = visibleWidth(leftInner) === 0 ? "" : ` ${leftInner} `;
 
 	const fill = inner - visibleWidth(left) - visibleWidth(right);
-	return borderStyle(corners[0])
-		+ left
-		+ borderStyle(BORDER_HORIZONTAL.repeat(Math.max(0, fill)))
-		+ right
-		+ borderStyle(corners[1]);
+	return (
+		borderStyle(corners[0]) +
+		left +
+		borderStyle(BORDER_HORIZONTAL.repeat(Math.max(0, fill))) +
+		right +
+		borderStyle(corners[1])
+	);
 }
 
 /** Bottom border filled with hints in priority order; later hints drop first. */
@@ -765,13 +763,7 @@ export function formatHintBorder(
 	if (chosen === "" && hints.length > 0) {
 		chosen = fitText(hints[0]!, Math.max(0, inner - 2));
 	}
-	return formatBorderLine(
-		maxWidth,
-		["└", "┘"],
-		chosen === "" ? "" : styles.muted(chosen),
-		"",
-		styles.border,
-	);
+	return formatBorderLine(maxWidth, ["└", "┘"], chosen === "" ? "" : styles.muted(chosen), "", styles.border);
 }
 
 /** Wrap one interior content line in side borders with one cell of padding. */

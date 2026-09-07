@@ -107,31 +107,46 @@ describe("requestCancel", () => {
 		const queuedOutcome = requestCancel(fakePi, queuedSpec.id, "model");
 		assert.strictEqual(queuedOutcome.kind, "cancelled-queued", "queued work resolves to cancelled-queued");
 		assert.deepStrictEqual(
-			queuedOutcome.kind === "cancelled-queued" ? queuedOutcome.spec : undefined, queuedSpec,
-			"queued cancellation returns the original pure-data spec");
+			queuedOutcome.kind === "cancelled-queued" ? queuedOutcome.spec : undefined,
+			queuedSpec,
+			"queued cancellation returns the original pure-data spec",
+		);
 		assert.deepStrictEqual(
-			[capacity.queuedCount(), state.running.get("blocker0")?.abort.signal.aborted], [0, false],
-			"queued entry is spliced and the running blocker is untouched");
+			[capacity.queuedCount(), state.running.get("blocker0")?.abort.signal.aborted],
+			[0, false],
+			"queued entry is spliced and the running blocker is untouched",
+		);
 		assert.deepStrictEqual(
-			[capacity.cancellationFor(queuedSpec.id)?.requester, sent.length], ["model", 0],
-			"model queued cancellation records a tombstone without steering");
+			[capacity.cancellationFor(queuedSpec.id)?.requester, sent.length],
+			["model", 0],
+			"model queued cancellation records a tombstone without steering",
+		);
 		const firstTombstone = capacity.cancellationFor(queuedSpec.id);
 		assert.deepStrictEqual(
-			requestCancel(fakePi, queuedSpec.id, "user"), { kind: "already-cancelled", id: queuedSpec.id },
-			"repeat queued cancellation is rejected as already-cancelled");
-		assert.deepStrictEqual(capacity.cancellationFor(queuedSpec.id), firstTombstone,
-			"repeat cancellation keeps the first tombstone requester and timestamp");
+			requestCancel(fakePi, queuedSpec.id, "user"),
+			{ kind: "already-cancelled", id: queuedSpec.id },
+			"repeat queued cancellation is rejected as already-cancelled",
+		);
+		assert.deepStrictEqual(
+			capacity.cancellationFor(queuedSpec.id),
+			firstTombstone,
+			"repeat cancellation keeps the first tombstone requester and timestamp",
+		);
 	});
 
 	it("user queued cancellation sends one steer carrying the cancelled id", () => {
 		const userQueuedSpec = spawnSpec("queue002");
 		queue(userQueuedSpec);
-		assert.strictEqual(requestCancel(fakePi, userQueuedSpec.id, "user").kind, "cancelled-queued",
-			"user queued cancellation succeeds");
+		assert.strictEqual(
+			requestCancel(fakePi, userQueuedSpec.id, "user").kind,
+			"cancelled-queued",
+			"user queued cancellation succeeds",
+		);
 		assert.deepStrictEqual(
 			sent.map(({ message, options }) => [message.customType, message.details?.id, options?.deliverAs]),
 			[["subagent_queue_cancelled", userQueuedSpec.id, "steer"]],
-			"user queued cancellation sends one steer carrying the cancelled id");
+			"user queued cancellation sends one steer carrying the cancelled id",
+		);
 	});
 
 	it("inline starting cancellation tombstones, guards the launch, and stays cancelled after release", () => {
@@ -141,23 +156,36 @@ describe("requestCancel", () => {
 		assert.deepStrictEqual(
 			inlineOutcome.kind === "cancelled-starting" ? [inlineOutcome.kind, inlineOutcome.origin] : inlineOutcome,
 			["cancelled-starting", "inline"],
-			"inline starting launch reports its origin");
+			"inline starting launch reports its origin",
+		);
 		assert.deepStrictEqual(
-			[capacity.cancellationFor(inlineSpec.id)?.requester, sent.length], ["user", 0],
-			"inline user cancellation tombstones without a duplicate steer");
+			[capacity.cancellationFor(inlineSpec.id)?.requester, sent.length],
+			["user", 0],
+			"inline user cancellation tombstones without a duplicate steer",
+		);
 		let inlineGuard: unknown;
-		try { capacity.assertLaunchStillWanted(state.moduleGeneration(), inlineSpec.id); }
-		catch (error) { inlineGuard = error; }
-		assert.ok(inlineGuard instanceof capacity.CancelLaunch && inlineGuard.requester === "user",
-			"starting tombstone makes the launch guard throw CancelLaunch");
+		try {
+			capacity.assertLaunchStillWanted(state.moduleGeneration(), inlineSpec.id);
+		} catch (error) {
+			inlineGuard = error;
+		}
+		assert.ok(
+			inlineGuard instanceof capacity.CancelLaunch && inlineGuard.requester === "user",
+			"starting tombstone makes the launch guard throw CancelLaunch",
+		);
 		capacity.releaseClaim(inlineSpec.id);
-		assert.strictEqual(requestCancel(fakePi, inlineSpec.id, "model").kind, "already-cancelled",
-			"released starting claim remains a tombstone");
+		assert.strictEqual(
+			requestCancel(fakePi, inlineSpec.id, "model").kind,
+			"already-cancelled",
+			"released starting claim remains a tombstone",
+		);
 	});
 
 	it("user drain cancellation steers once and the pipeline unwinds without requeue", async () => {
 		let releaseDrain!: () => void;
-		const drainGate = new Promise<void>((resolve) => { releaseDrain = resolve; });
+		const drainGate = new Promise<void>((resolve) => {
+			releaseDrain = resolve;
+		});
 		capacity.registerLauncher("spawn", async (_pi, spec) => {
 			await drainGate;
 			capacity.assertLaunchStillWanted(state.moduleGeneration(), spec.id);
@@ -168,26 +196,36 @@ describe("requestCancel", () => {
 		capacity.drainQueue(fakePi);
 		const drainedOutcome = requestCancel(fakePi, drainedSpec.id, "user");
 		assert.deepStrictEqual(
-			drainedOutcome.kind === "cancelled-starting" ? [drainedOutcome.kind, drainedOutcome.origin] : drainedOutcome,
+			drainedOutcome.kind === "cancelled-starting"
+				? [drainedOutcome.kind, drainedOutcome.origin]
+				: drainedOutcome,
 			["cancelled-starting", "drain"],
-			"drained starting launch reports drain origin");
+			"drained starting launch reports drain origin",
+		);
 		assert.deepStrictEqual(
 			sent.map(({ message, options }) => [message.customType, message.details?.id, options?.deliverAs]),
 			[["subagent_queue_cancelled", drainedSpec.id, "steer"]],
-			"user drain cancellation sends exactly one durable steer");
-		assert.ok(Boolean(sent[0]?.message.content?.includes("no result will arrive")),
-			"drain cancellation notice promises that no result will arrive");
+			"user drain cancellation sends exactly one durable steer",
+		);
+		assert.ok(
+			Boolean(sent[0]?.message.content?.includes("no result will arrive")),
+			"drain cancellation notice promises that no result will arrive",
+		);
 		releaseDrain();
 		await flush();
 		assert.deepStrictEqual(
-			[capacity.findPendingLaunch(drainedSpec.id), capacity.queuedCount()], [undefined, 0],
-			"cancelled drain pipeline releases its claim and does not requeue");
+			[capacity.findPendingLaunch(drainedSpec.id), capacity.queuedCount()],
+			[undefined, 0],
+			"cancelled drain pipeline releases its claim and does not requeue",
+		);
 		assert.strictEqual(sent.length, 1, "pipeline unwind does not add a second user notice");
 	});
 
 	it("model drain cancellation never steers", async () => {
 		let releaseModelDrain!: () => void;
-		const modelDrainGate = new Promise<void>((resolve) => { releaseModelDrain = resolve; });
+		const modelDrainGate = new Promise<void>((resolve) => {
+			releaseModelDrain = resolve;
+		});
 		capacity.registerLauncher("spawn", async (_pi, spec) => {
 			await modelDrainGate;
 			capacity.assertLaunchStillWanted(state.moduleGeneration(), spec.id);
@@ -196,8 +234,11 @@ describe("requestCancel", () => {
 		queue(modelDrainSpec);
 		state.running.delete("blocker0");
 		capacity.drainQueue(fakePi);
-		assert.strictEqual(requestCancel(fakePi, modelDrainSpec.id, "model").kind, "cancelled-starting",
-			"model can cancel a drained starting launch");
+		assert.strictEqual(
+			requestCancel(fakePi, modelDrainSpec.id, "model").kind,
+			"cancelled-starting",
+			"model can cancel a drained starting launch",
+		);
 		assert.strictEqual(sent.length, 0, "model starting cancellation never steers");
 		releaseModelDrain();
 		await flush();
@@ -205,7 +246,9 @@ describe("requestCancel", () => {
 
 	it("a cancelled user launch failure emits only its original cancellation steer", async () => {
 		let releaseUserFailure!: () => void;
-		const userFailureGate = new Promise<void>((resolve) => { releaseUserFailure = resolve; });
+		const userFailureGate = new Promise<void>((resolve) => {
+			releaseUserFailure = resolve;
+		});
 		capacity.registerLauncher("spawn", async () => {
 			await userFailureGate;
 			throw new Error("worktree create failed after cancellation");
@@ -217,12 +260,17 @@ describe("requestCancel", () => {
 		requestCancel(fakePi, userFailureSpec.id, "user");
 		releaseUserFailure();
 		await flush();
-		assert.deepStrictEqual(sent.map(({ message }) => message.customType), ["subagent_queue_cancelled"]);
+		assert.deepStrictEqual(
+			sent.map(({ message }) => message.customType),
+			["subagent_queue_cancelled"],
+		);
 	});
 
 	it("a cancelled model launch failure stays silent", async () => {
 		let releaseModelFailure!: () => void;
-		const modelFailureGate = new Promise<void>((resolve) => { releaseModelFailure = resolve; });
+		const modelFailureGate = new Promise<void>((resolve) => {
+			releaseModelFailure = resolve;
+		});
 		capacity.registerLauncher("spawn", async () => {
 			await modelFailureGate;
 			throw new Error("worktree create failed after cancellation");
@@ -239,7 +287,9 @@ describe("requestCancel", () => {
 
 	it("a reload requeue is dropped by its tombstone instead of relaunching", async () => {
 		let releaseReloadRace!: () => void;
-		const reloadRaceGate = new Promise<void>((resolve) => { releaseReloadRace = resolve; });
+		const reloadRaceGate = new Promise<void>((resolve) => {
+			releaseReloadRace = resolve;
+		});
 		let reloadRaceLaunches = 0;
 		capacity.registerLauncher("spawn", async () => {
 			reloadRaceLaunches++;
@@ -250,14 +300,18 @@ describe("requestCancel", () => {
 		queue(reloadRaceSpec);
 		state.running.delete("blocker0");
 		capacity.drainQueue(fakePi);
-		assert.strictEqual(requestCancel(fakePi, reloadRaceSpec.id, "model").kind, "cancelled-starting",
-			"reload-race starting cancellation succeeds");
+		assert.strictEqual(
+			requestCancel(fakePi, reloadRaceSpec.id, "model").kind,
+			"cancelled-starting",
+			"reload-race starting cancellation succeeds",
+		);
 		releaseReloadRace();
 		await flush();
 		assert.deepStrictEqual(
 			[reloadRaceLaunches, capacity.queuedCount(), capacity.findPendingLaunch(reloadRaceSpec.id)],
 			[1, 0, undefined],
-			"a reload requeue is dropped by its tombstone instead of relaunching");
+			"a reload requeue is dropped by its tombstone instead of relaunching",
+		);
 	});
 
 	it("running cancellation stops immediately and later requests are idempotent", () => {
@@ -270,11 +324,13 @@ describe("requestCancel", () => {
 		assert.deepStrictEqual(
 			[firstStop.kind, running.stopRequester, running.abort.signal.aborted, abortEvents],
 			["stopping", "user", true, 1],
-			"running cancellation stops immediately and attributes the first request");
+			"running cancellation stops immediately and attributes the first request",
+		);
 		assert.deepStrictEqual(
 			repeatStop.kind === "already-stopping" ? [repeatStop.kind, repeatStop.requester, abortEvents] : repeatStop,
 			["already-stopping", "user", 1],
-			"model racing after the picker gets idempotent stopping with the first requester");
+			"model racing after the picker gets idempotent stopping with the first requester",
+		);
 	});
 
 	it("picker racing after model keeps model attribution", () => {
@@ -282,8 +338,11 @@ describe("requestCancel", () => {
 		state.running.set(modelFirst.id, modelFirst);
 		assert.strictEqual(requestCancel(fakePi, modelFirst.id, "model").kind, "stopping", "model-first stop succeeds");
 		const userSecond = requestCancel(fakePi, modelFirst.id, "user");
-		assert.strictEqual(userSecond.kind === "already-stopping" ? userSecond.requester : undefined, "model",
-			"picker racing after model keeps model attribution");
+		assert.strictEqual(
+			userSecond.kind === "already-stopping" ? userSecond.requester : undefined,
+			"model",
+			"picker racing after model keeps model attribution",
+		);
 	});
 
 	it("an already-fired abort is idempotent and adopts the first explicit requester", () => {
@@ -295,35 +354,48 @@ describe("requestCancel", () => {
 			adoptedStop.kind === "already-stopping"
 				? [adoptedStop.requester, externallyAborted.stopRequester]
 				: adoptedStop,
-			["model", "model"]);
+			["model", "model"],
+		);
 	});
 
 	it("delivering ids are rejected without mutation, preserving stopped attribution", () => {
 		delivery("deliver1", false);
 		const delivering = requestCancel(fakePi, "deliver1", "model");
 		assert.deepStrictEqual(
-			delivering.kind === "delivering" ? [delivering.kind, delivering.stopped, delivering.target.name] : delivering,
+			delivering.kind === "delivering"
+				? [delivering.kind, delivering.stopped, delivering.target.name]
+				: delivering,
 			["delivering", false, "task-deliver1"],
-			"finished delivery is rejected without mutation");
+			"finished delivery is rejected without mutation",
+		);
 		state.delivering.clear();
 		delivery("deliver2", true);
 		const stoppedDelivery = requestCancel(fakePi, "deliver2", "user");
 		assert.deepStrictEqual(
 			stoppedDelivery.kind === "delivering" ? [stoppedDelivery.kind, stoppedDelivery.stopped] : stoppedDelivery,
 			["delivering", true],
-			"stopped delivery preserves stopped attribution in the rejection");
+			"stopped delivery preserves stopped attribution in the rejection",
+		);
 	});
 
 	it("ledger-only ids resolve to completed and unknown ids stay distinct", () => {
 		state.ledger.set("complete", { sessionFile: "/sessions/complete.jsonl", name: "completed task" });
-		assert.deepStrictEqual(requestCancel(fakePi, "complete", "model"), {
-			kind: "completed",
-			target: { id: "complete", name: "completed task" },
-		}, "ledger-only id resolves to completed");
-		assert.deepStrictEqual(requestCancel(fakePi, "unknown0", "model"), {
-			kind: "unknown",
-			id: "unknown0",
-		}, "unknown id remains distinct from completed");
+		assert.deepStrictEqual(
+			requestCancel(fakePi, "complete", "model"),
+			{
+				kind: "completed",
+				target: { id: "complete", name: "completed task" },
+			},
+			"ledger-only id resolves to completed",
+		);
+		assert.deepStrictEqual(
+			requestCancel(fakePi, "unknown0", "model"),
+			{
+				kind: "unknown",
+				id: "unknown0",
+			},
+			"unknown id remains distinct from completed",
+		);
 	});
 
 	it("running wins over a stale delivery record", () => {
@@ -338,10 +410,16 @@ describe("requestCancel", () => {
 		const overlapSpec = spawnSpec("overlap2");
 		queue(overlapSpec);
 		delivery(overlapSpec.id, false);
-		assert.strictEqual(requestCancel(fakePi, overlapSpec.id, "model").kind, "delivering",
-			"delivery wins over a stale queued entry");
-		assert.strictEqual(capacity.findQueued(overlapSpec.id)?.spec.id, overlapSpec.id,
-			"delivery rejection does not splice the queued neighbor");
+		assert.strictEqual(
+			requestCancel(fakePi, overlapSpec.id, "model").kind,
+			"delivering",
+			"delivery wins over a stale queued entry",
+		);
+		assert.strictEqual(
+			capacity.findQueued(overlapSpec.id)?.spec.id,
+			overlapSpec.id,
+			"delivery rejection does not splice the queued neighbor",
+		);
 	});
 
 	it("cancelling one queue entry cannot touch neighbors", () => {
@@ -353,17 +431,28 @@ describe("requestCancel", () => {
 		capacity.admitLaunch(firstNeighbor);
 		capacity.admitLaunch(secondNeighbor);
 		const secondEntry = capacity.findQueued(secondNeighbor.id);
-		assert.strictEqual(requestCancel(fakePi, firstNeighbor.id, "model").kind, "cancelled-queued",
-			"neighbor cancellation succeeds");
+		assert.strictEqual(
+			requestCancel(fakePi, firstNeighbor.id, "model").kind,
+			"cancelled-queued",
+			"neighbor cancellation succeeds",
+		);
 		assert.deepStrictEqual(
-			[capacity.queuedEntries().map((entry) => entry.spec.id), capacity.findQueued(secondNeighbor.id) === secondEntry],
+			[
+				capacity.queuedEntries().map((entry) => entry.spec.id),
+				capacity.findQueued(secondNeighbor.id) === secondEntry,
+			],
 			[[secondNeighbor.id], true],
-			"neighbor queue entry shifts position but retains its exact record");
+			"neighbor queue entry shifts position but retains its exact record",
+		);
 		assert.deepStrictEqual(
-			[state.running.has(blocker.id), blocker.abort.signal.aborted], [true, false],
-			"neighbor running child remains registered and unaborted");
+			[state.running.has(blocker.id), blocker.abort.signal.aborted],
+			[true, false],
+			"neighbor running child remains registered and unaborted",
+		);
 		assert.ok(
-			capacity.cancellationFor(firstNeighbor.id) !== undefined && capacity.cancellationFor(secondNeighbor.id) === undefined,
-			"only the cancelled neighbor receives a tombstone");
+			capacity.cancellationFor(firstNeighbor.id) !== undefined &&
+				capacity.cancellationFor(secondNeighbor.id) === undefined,
+			"only the cancelled neighbor receives a tombstone",
+		);
 	});
 });

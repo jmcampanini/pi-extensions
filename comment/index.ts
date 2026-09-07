@@ -69,8 +69,9 @@ export default function (pi: ExtensionAPI) {
 				projectTrusted: ctx.isProjectTrusted(),
 			});
 			const editorCommand = resolveExternalEditor({
-				externalEditor: settingsManager.getProjectSettings().externalEditor
-					?? settingsManager.getGlobalSettings().externalEditor,
+				externalEditor:
+					settingsManager.getProjectSettings().externalEditor ??
+					settingsManager.getGlobalSettings().externalEditor,
 			});
 
 			const outcome = await ctx.ui.custom<EditOutcome>((tui, theme, _keybindings, done) => {

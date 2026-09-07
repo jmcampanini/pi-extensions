@@ -1,14 +1,7 @@
 import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -27,13 +20,13 @@ mkdirSync(repo, { recursive: true });
 const q = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
 const createCommand = [
 	'case "$PI_SUBAGENT_WORKTREE_NAME" in',
-	'  failure-*)',
+	"  failure-*)",
 	`    touch ${q(failureMarker)}`,
 	`    while [ ! -f ${q(releaseFailureMarker)} ]; do sleep 0.01; done`,
 	'    echo "intentional create failure" >&2',
-	'    exit 9',
-	'    ;;',
-	'esac',
+	"    exit 9",
+	"    ;;",
+	"esac",
 	'DIR="$PWD/.cancel-wt-$PI_SUBAGENT_WORKTREE_NAME"',
 	'git worktree add -q -b "pi/$PI_SUBAGENT_WORKTREE_NAME" "$DIR"',
 	`touch ${q(createdMarker)}`,
@@ -43,15 +36,18 @@ const createCommand = [
 const cleanupCommand = [
 	'case "$PI_SUBAGENT_WORKTREE_BRANCH" in',
 	'  pi/cleanup-failure-*) echo "intentional cleanup failure" >&2; exit 7 ;;',
-	'esac',
+	"esac",
 	'git worktree remove --force "$PI_SUBAGENT_WORKTREE_DIR"',
 	'if [ -n "$PI_SUBAGENT_WORKTREE_BRANCH" ]; then git branch -D "$PI_SUBAGENT_WORKTREE_BRANCH" >/dev/null; fi',
 ].join("\n");
-writeFileSync(join(configRoot, "subagents.json"), JSON.stringify({
-	maxConcurrentSubagents: 1,
-	worktreeCreateCommand: createCommand,
-	worktreeCleanupCommand: cleanupCommand,
-}));
+writeFileSync(
+	join(configRoot, "subagents.json"),
+	JSON.stringify({
+		maxConcurrentSubagents: 1,
+		worktreeCreateCommand: createCommand,
+		worktreeCleanupCommand: cleanupCommand,
+	}),
+);
 process.env.PI_CODING_AGENT_DIR = configRoot;
 
 execFileSync("git", ["init", "-q"], { cwd: repo });
@@ -113,15 +109,17 @@ describe("cancelling a starting launch", () => {
 			slug: "worktree-cancellation",
 		};
 
-		assert.strictEqual(capacity.admitLaunch(spawnSpec).status, "run",
-			"worktree spawn claims the only slot");
+		assert.strictEqual(capacity.admitLaunch(spawnSpec).status, "run", "worktree spawn claims the only slot");
 		const spawnPromise = trackLaunch(runSpawnLaunch(pi, spawnSpec));
 		for (let tries = 0; tries < 500 && !existsSync(createdMarker); tries++) {
 			await new Promise((resolve) => setTimeout(resolve, 10));
 		}
 		assert.ok(existsSync(createdMarker), "worktree creation reaches its controllable await");
-		assert.strictEqual(requestCancel(pi, spawnId, "model").kind, "cancelled-starting",
-			"cancelling the parked launch resolves as starting");
+		assert.strictEqual(
+			requestCancel(pi, spawnId, "model").kind,
+			"cancelled-starting",
+			"cancelling the parked launch resolves as starting",
+		);
 		writeFileSync(releaseMarker, "release\n");
 		try {
 			await assert.rejects(
@@ -134,12 +132,11 @@ describe("cancelling a starting launch", () => {
 		}
 		const worktreeDir = join(repo, `.cancel-wt-${spawnSpec.slug}-${spawnId}`);
 		assert.ok(!existsSync(worktreeDir), "cancelled starting spawn rolls back the fresh worktree");
-		assert.deepStrictEqual([
-			state.running.has(spawnId),
-			state.ledger.has(spawnId),
-			capacity.findPendingLaunch(spawnId),
-		], [false, false, undefined],
-			"cancelled starting spawn registers no child, ledger entry, or claim");
+		assert.deepStrictEqual(
+			[state.running.has(spawnId), state.ledger.has(spawnId), capacity.findPendingLaunch(spawnId)],
+			[false, false, undefined],
+			"cancelled starting spawn registers no child, ledger entry, or claim",
+		);
 		const branch = execFileSync("git", ["branch", "--list", `pi/${spawnSpec.slug}-${spawnId}`], {
 			cwd: repo,
 			encoding: "utf8",
@@ -244,9 +241,15 @@ describe("cancelling a starting launch", () => {
 		} finally {
 			capacity.releaseClaim(resumeId);
 		}
-		assert.strictEqual(readFileSync(sessionPath, "utf8"), originalSession,
-			"cancelled resume preserves the earlier session file byte-for-byte");
-		assert.deepStrictEqual([state.running.has(resumeId), state.ledger.has(resumeId)], [false, false],
-			"cancelled resume registers no new run");
+		assert.strictEqual(
+			readFileSync(sessionPath, "utf8"),
+			originalSession,
+			"cancelled resume preserves the earlier session file byte-for-byte",
+		);
+		assert.deepStrictEqual(
+			[state.running.has(resumeId), state.ledger.has(resumeId)],
+			[false, false],
+			"cancelled resume registers no new run",
+		);
 	});
 });

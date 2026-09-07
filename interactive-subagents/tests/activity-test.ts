@@ -86,10 +86,10 @@ describe("parseActivitySnapshot", () => {
 	});
 
 	it("version 2 is invalid", () => {
-		assert.deepStrictEqual(
-			parseActivitySnapshot(JSON.stringify(snap({ version: 2 as unknown as 1 })), "run1"),
-			{ kind: "invalid", reason: "version is not 1" },
-		);
+		assert.deepStrictEqual(parseActivitySnapshot(JSON.stringify(snap({ version: 2 as unknown as 1 })), "run1"), {
+			kind: "invalid",
+			reason: "version is not 1",
+		});
 	});
 
 	it("corrupt JSON is invalid", () => {
@@ -97,7 +97,10 @@ describe("parseActivitySnapshot", () => {
 	});
 
 	it("a JSON array is invalid", () => {
-		assert.deepStrictEqual(parseActivitySnapshot("[1,2]", "run1"), { kind: "invalid", reason: "not a JSON object" });
+		assert.deepStrictEqual(parseActivitySnapshot("[1,2]", "run1"), {
+			kind: "invalid",
+			reason: "not a JSON object",
+		});
 	});
 
 	it("JSON null is invalid", () => {
@@ -110,43 +113,50 @@ describe("parseActivitySnapshot", () => {
 
 	it("non-string runId invalid", () => {
 		assert.deepStrictEqual(parseActivitySnapshot(corrupt("runId", "42"), "run1"), {
-			kind: "invalid", reason: "runId is not a string",
+			kind: "invalid",
+			reason: "runId is not a string",
 		});
 	});
 
 	it("string sequence invalid", () => {
 		assert.deepStrictEqual(parseActivitySnapshot(corrupt("sequence", '"5"'), "run1"), {
-			kind: "invalid", reason: "sequence is not a finite number",
+			kind: "invalid",
+			reason: "sequence is not a finite number",
 		});
 	});
 
 	it("infinite sequence invalid", () => {
 		assert.deepStrictEqual(parseActivitySnapshot(corrupt("sequence", "1e999"), "run1"), {
-			kind: "invalid", reason: "sequence is not a finite number",
+			kind: "invalid",
+			reason: "sequence is not a finite number",
 		});
 	});
 
 	it("null updatedAt invalid", () => {
 		assert.deepStrictEqual(parseActivitySnapshot(corrupt("updatedAt", "null"), "run1"), {
-			kind: "invalid", reason: "updatedAt is not a finite number",
+			kind: "invalid",
+			reason: "updatedAt is not a finite number",
 		});
 	});
 
 	it("infinite updatedAt invalid", () => {
 		assert.deepStrictEqual(parseActivitySnapshot(corrupt("updatedAt", "1e999"), "run1"), {
-			kind: "invalid", reason: "updatedAt is not a finite number",
+			kind: "invalid",
+			reason: "updatedAt is not a finite number",
 		});
 	});
 
 	it("string inRun invalid", () => {
 		assert.deepStrictEqual(parseActivitySnapshot(corrupt("inRun", '"yes"'), "run1"), {
-			kind: "invalid", reason: "inRun is not a boolean",
+			kind: "invalid",
+			reason: "inRun is not a boolean",
 		});
 	});
 
 	it("string runsCompleted invalid", () => {
 		assert.deepStrictEqual(parseActivitySnapshot(corrupt("runsCompleted", '"0"'), "run1"), {
-			kind: "invalid", reason: "runsCompleted is not a finite number",
+			kind: "invalid",
+			reason: "runsCompleted is not a finite number",
 		});
 	});
 
@@ -154,14 +164,16 @@ describe("parseActivitySnapshot", () => {
 		const goodTool = { toolCallId: "t1", name: "bash", startedAt: 4_000 };
 		const messyTools = [
 			goodTool,
-			{ toolCallId: 5, name: "x", startedAt: 1 },        // toolCallId not a string
-			{ toolCallId: "t2", startedAt: 1 },                // name missing
+			{ toolCallId: 5, name: "x", startedAt: 1 }, // toolCallId not a string
+			{ toolCallId: "t2", startedAt: 1 }, // name missing
 			{ toolCallId: "t3", name: "y", startedAt: "now" }, // startedAt not a number
 			"junk",
 			null,
 		];
 		assert.deepStrictEqual(
-			parsedSnapshot(JSON.stringify(snap({ activeTools: messyTools as unknown as ActivitySnapshot["activeTools"] }))).activeTools,
+			parsedSnapshot(
+				JSON.stringify(snap({ activeTools: messyTools as unknown as ActivitySnapshot["activeTools"] })),
+			).activeTools,
 			[goodTool],
 		);
 	});
@@ -171,12 +183,17 @@ describe("parseActivitySnapshot", () => {
 	});
 
 	it("context with non-positive window becomes null", () => {
-		assert.strictEqual(parsedSnapshot(JSON.stringify(snap({ context: { tokens: 5, window: 0, percent: 1 } }))).context, null);
+		assert.strictEqual(
+			parsedSnapshot(JSON.stringify(snap({ context: { tokens: 5, window: 0, percent: 1 } }))).context,
+			null,
+		);
 	});
 
 	it("context with non-numeric tokens becomes null", () => {
 		assert.strictEqual(
-			parsedSnapshot(JSON.stringify(snap({ context: { tokens: "5" as unknown as number, window: 200_000, percent: 1 } }))).context,
+			parsedSnapshot(
+				JSON.stringify(snap({ context: { tokens: "5" as unknown as number, window: 200_000, percent: 1 } })),
+			).context,
 			null,
 		);
 	});
@@ -379,8 +396,10 @@ describe("noteTick", () => {
 		noteTick(obs, 150_001); // … then the parent clock steps back 10s
 		assert.strictEqual(obs.problemSinceMs, 90_000, "negative gap shifts problemSinceMs by the gap");
 		assert.strictEqual(
-			(obs.lastTickMs ?? 0) - (obs.problemSinceMs ?? 0), 60_001,
-			"negative gap preserves the problem delta exactly");
+			(obs.lastTickMs ?? 0) - (obs.problemSinceMs ?? 0),
+			60_001,
+			"negative gap preserves the problem delta exactly",
+		);
 		noteTick(obs, 151_001); // small FORWARD gaps stay real elapsed time
 		assert.strictEqual(obs.problemSinceMs, 90_000, "1s tick after the step leaves the anchors alone");
 	});
@@ -434,35 +453,57 @@ describe("the atomic writer", () => {
 		const activityFile = activityFilePath(sessionFile);
 
 		assert.strictEqual(activityFile, `${sessionFile}.activity`, "activityFilePath convention");
-		assert.deepStrictEqual(readActivityFile(activityFile, "run1"), { kind: "missing" },
-			"reading a never-written file is missing");
+		assert.deepStrictEqual(
+			readActivityFile(activityFile, "run1"),
+			{ kind: "missing" },
+			"reading a never-written file is missing",
+		);
 
 		const firstWrite = snap({ sequence: 1, updatedAt: 1_000 });
 		writeActivitySnapshot(activityFile, firstWrite);
-		assert.deepStrictEqual(readActivityFile(activityFile, "run1"), { kind: "valid", snapshot: firstWrite },
-			"read-back equals written");
+		assert.deepStrictEqual(
+			readActivityFile(activityFile, "run1"),
+			{ kind: "valid", snapshot: firstWrite },
+			"read-back equals written",
+		);
 		assert.ok(!existsSync(`${activityFile}.tmp-${process.pid}`), "pid-suffixed tmp file gone after write");
 
 		const secondWrite = snap({ sequence: 2, updatedAt: 2_000, inRun: true, costUsd: 0.05 });
 		writeActivitySnapshot(activityFile, secondWrite);
-		assert.deepStrictEqual(readActivityFile(activityFile, "run1"), { kind: "valid", snapshot: secondWrite },
-			"second write overwrites");
+		assert.deepStrictEqual(
+			readActivityFile(activityFile, "run1"),
+			{ kind: "valid", snapshot: secondWrite },
+			"second write overwrites",
+		);
 
 		// A dying previous run (or a human) left garbage at the target: the rename
 		// replaces it wholesale, no append, no merge.
 		writeFileSync(activityFile, "{torn garbage", "utf8");
-		assert.deepStrictEqual(readActivityFile(activityFile, "run1"), { kind: "invalid", reason: "not JSON" },
-			"garbage target reads invalid first");
+		assert.deepStrictEqual(
+			readActivityFile(activityFile, "run1"),
+			{ kind: "invalid", reason: "not JSON" },
+			"garbage target reads invalid first",
+		);
 		writeActivitySnapshot(activityFile, secondWrite);
-		assert.deepStrictEqual(readActivityFile(activityFile, "run1"), { kind: "valid", snapshot: secondWrite },
-			"pre-existing garbage replaced atomically");
+		assert.deepStrictEqual(
+			readActivityFile(activityFile, "run1"),
+			{ kind: "valid", snapshot: secondWrite },
+			"pre-existing garbage replaced atomically",
+		);
 
-		assert.deepStrictEqual(readActivityFile(activityFile, "other-run"), { kind: "foreign" },
-			"foreign runId on disk reads foreign");
+		assert.deepStrictEqual(
+			readActivityFile(activityFile, "other-run"),
+			{ kind: "foreign" },
+			"foreign runId on disk reads foreign",
+		);
 
 		clearActivityFile(sessionFile);
 		assert.ok(!existsSync(activityFile), "clearActivityFile removes the file");
-		assert.deepStrictEqual(readActivityFile(activityFile, "run1"), { kind: "missing" }, "cleared file reads missing");
+		assert.deepStrictEqual(
+			readActivityFile(activityFile, "run1"),
+			{ kind: "missing" },
+			"cleared file reads missing",
+		);
 		// force: true - clearing a missing file is a no-op, not an error
 		assert.doesNotThrow(() => clearActivityFile(sessionFile), "clearing an already-missing file does not throw");
 	});

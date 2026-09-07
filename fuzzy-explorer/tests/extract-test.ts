@@ -206,7 +206,7 @@ const entries: SessionEntry[] = [
 ];
 
 describe("extractBlocks", () => {
-	const blocks = extractBlocks(entries, (id) => id === "user0001" ? "getter bookmark" : undefined);
+	const blocks = extractBlocks(entries, (id) => (id === "user0001" ? "getter bookmark" : undefined));
 	const byEntry = (id: string) => blocks.filter((block) => block.entryId === id);
 	const readBlock = blocks.find((block) => block.toolCallId === "call-read");
 	const writeBlock = blocks.find((block) => block.toolCallId === "call-write");
@@ -218,28 +218,34 @@ describe("extractBlocks", () => {
 	});
 
 	it("block kinds", () => {
-		assert.deepStrictEqual(blocks.map((block) => block.kind), [
-			"user",
-			"assistant",
-			"tool",
-			"tool",
-			"tool",
-			"bash",
-			"custom",
-			"custom",
-			"summary",
-			"summary",
-			"summary",
-			"summary",
-		]);
+		assert.deepStrictEqual(
+			blocks.map((block) => block.kind),
+			[
+				"user",
+				"assistant",
+				"tool",
+				"tool",
+				"tool",
+				"bash",
+				"custom",
+				"custom",
+				"summary",
+				"summary",
+				"summary",
+				"summary",
+			],
+		);
 	});
 
 	it("assistant combines text and keeps part order", () => {
-		assert.deepStrictEqual(byEntry("asst0001").map((block) => [block.kind, block.body]), [
-			["assistant", "First answer.\nSecond answer."],
-			["tool", `${fullBody}\n[image]`],
-			["tool", ""],
-		]);
+		assert.deepStrictEqual(
+			byEntry("asst0001").map((block) => [block.kind, block.body]),
+			[
+				["assistant", "First answer.\nSecond answer."],
+				["tool", `${fullBody}\n[image]`],
+				["tool", ""],
+			],
+		);
 	});
 
 	it("assistant thinking is excluded", () => {
@@ -255,24 +261,28 @@ describe("extractBlocks", () => {
 	});
 
 	it("orphan result gets a tool row", () => {
-		assert.deepStrictEqual([orphanBlock?.kind, orphanBlock?.body, orphanBlock?.isError],
-			["tool", "orphan output", true]);
+		assert.deepStrictEqual(
+			[orphanBlock?.kind, orphanBlock?.body, orphanBlock?.isError],
+			["tool", "orphan output", true],
+		);
 	});
 
 	it("tool fields include role, type, name, id, args, paths, line, time, entries, and label", () => {
-		assert.ok([
-			"role:assistant",
-			"type:tool",
-			"tool:read",
-			"toolCallId:call-read",
-			"args:path=@src/config.ts",
-			"path:src/config.ts",
-			"line:42",
-			"timestamp:2025-01-02 03:04:01Z",
-			"entry:asst0001",
-			"entry:rslt0001",
-			"label:result checkpoint",
-		].every((field) => readBlock?.fields.includes(field)));
+		assert.ok(
+			[
+				"role:assistant",
+				"type:tool",
+				"tool:read",
+				"toolCallId:call-read",
+				"args:path=@src/config.ts",
+				"path:src/config.ts",
+				"line:42",
+				"timestamp:2025-01-02 03:04:01Z",
+				"entry:asst0001",
+				"entry:rslt0001",
+				"label:result checkpoint",
+			].every((field) => readBlock?.fields.includes(field)),
+		);
 	});
 
 	it("file reference strips @ and uses read offset", () => {
@@ -288,15 +298,14 @@ describe("extractBlocks", () => {
 	});
 
 	it("tool search key is kind, tool, and argument subtitle", () => {
-		assert.strictEqual(readBlock?.searchKey,
-			"tool read path=@src/config.ts offset=42 options.image=[image]");
+		assert.strictEqual(readBlock?.searchKey, "tool read path=@src/config.ts offset=42 options.image=[image]");
 	});
 
 	it("prose search keys fold duplicate titles", () => {
-		assert.deepStrictEqual([
-			byEntry("user0001")[0]?.searchKey,
-			byEntry("asst0001")[0]?.searchKey,
-		], ["user", "assistant"]);
+		assert.deepStrictEqual(
+			[byEntry("user0001")[0]?.searchKey, byEntry("asst0001")[0]?.searchKey],
+			["user", "assistant"],
+		);
 	});
 
 	it("bash search key carries the command subtitle", () => {
@@ -351,12 +360,14 @@ describe("extractBlocks", () => {
 	});
 
 	it("same entries produce stable ids", () => {
-		assert.deepStrictEqual(extractBlocks(entries).map((block) => block.id), blocks.map((block) => block.id));
+		assert.deepStrictEqual(
+			extractBlocks(entries).map((block) => block.id),
+			blocks.map((block) => block.id),
+		);
 	});
 
 	it("user images become placeholders", () => {
-		assert.strictEqual(byEntry("user0001")[0]?.body,
-			"Please inspect this image.\n[image]\nThe prompt continues.");
+		assert.strictEqual(byEntry("user0001")[0]?.body, "Please inspect this image.\n[image]\nThe prompt continues.");
 	});
 
 	it("user canonical text is the complete body", () => {
@@ -368,13 +379,17 @@ describe("extractBlocks", () => {
 	});
 
 	it("merged tool canonical text has invocation and complete result", () => {
-		assert.ok(readBlock?.canonicalText.startsWith("read {\n") === true
-			&& readBlock.canonicalText.endsWith(`${fullBody}\n[image]`));
+		assert.ok(
+			readBlock?.canonicalText.startsWith("read {\n") === true &&
+				readBlock.canonicalText.endsWith(`${fullBody}\n[image]`),
+		);
 	});
 
 	it("merged tool records its exact canonical body offset", () => {
-		assert.strictEqual(readBlock?.canonicalBodyOffset,
-			(readBlock?.canonicalText.length ?? 0) - (readBlock?.body.length ?? 0));
+		assert.strictEqual(
+			readBlock?.canonicalBodyOffset,
+			(readBlock?.canonicalText.length ?? 0) - (readBlock?.body.length ?? 0),
+		);
 	});
 
 	it("unmatched call canonical text retains complete arguments", () => {
@@ -394,8 +409,7 @@ describe("extractBlocks", () => {
 	});
 
 	it("bash fields include command and exit", () => {
-		assert.ok(bashBlock?.fields.includes("command:printf 'hello'") === true
-			&& bashBlock.fields.includes("exit:7"));
+		assert.ok(bashBlock?.fields.includes("command:printf 'hello'") === true && bashBlock.fields.includes("exit:7"));
 	});
 
 	it("forbidden payloads are never indexed", () => {
@@ -455,12 +469,15 @@ describe("extractBlocks", () => {
 	});
 
 	it("summary sources", () => {
-		assert.deepStrictEqual(blocks.filter((block) => block.kind === "summary").map((block) => block.body), [
-			"top-level compaction summary",
-			"top-level branch summary",
-			"message-role branch summary",
-			"message-role compaction summary",
-		]);
+		assert.deepStrictEqual(
+			blocks.filter((block) => block.kind === "summary").map((block) => block.body),
+			[
+				"top-level compaction summary",
+				"top-level branch summary",
+				"message-role branch summary",
+				"message-role compaction summary",
+			],
+		);
 	});
 
 	it("excluded entries have no rows", () => {
@@ -472,17 +489,19 @@ describe("extractBlocks", () => {
 
 describe("extraction helpers", () => {
 	it("registry exposes every current entry type", () => {
-		assert.ok([
-			"message",
-			"custom_message",
-			"compaction",
-			"branch_summary",
-			"custom",
-			"label",
-			"model_change",
-			"thinking_level_change",
-			"session_info",
-		].every((type) => typeof extractorRegistry[type] === "function"));
+		assert.ok(
+			[
+				"message",
+				"custom_message",
+				"compaction",
+				"branch_summary",
+				"custom",
+				"label",
+				"model_change",
+				"thinking_level_change",
+				"session_info",
+			].every((type) => typeof extractorRegistry[type] === "function"),
+		);
 	});
 
 	it("content helper never returns image data", () => {
@@ -494,7 +513,10 @@ describe("extraction helpers", () => {
 	});
 
 	it("argument helper is flattened and compact", () => {
-		assert.strictEqual(flattenArguments({ path: "src/a.ts", nested: { limit: 2 } }), "path=src/a.ts nested.limit=2");
+		assert.strictEqual(
+			flattenArguments({ path: "src/a.ts", nested: { limit: 2 } }),
+			"path=src/a.ts nested.limit=2",
+		);
 	});
 
 	it("long base64-shaped plain arguments remain canonical", () => {
@@ -510,7 +532,10 @@ describe("extraction helpers", () => {
 	});
 
 	it("formatted arguments redact image data", () => {
-		assert.ok(formatToolArguments({ image: { type: "image", data: "raw", mimeType: "image/png" } }).includes("raw") === false);
+		assert.ok(
+			formatToolArguments({ image: { type: "image", data: "raw", mimeType: "image/png" } }).includes("raw") ===
+				false,
+		);
 	});
 
 	it("file helper extracts plural paths and explicit lines", () => {

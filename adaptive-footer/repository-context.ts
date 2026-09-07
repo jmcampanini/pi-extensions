@@ -11,11 +11,7 @@ export interface ExecResult {
 	killed: boolean;
 }
 
-export type CommandRunner = (
-	command: string,
-	args: string[],
-	options?: ExecOptions,
-) => Promise<ExecResult>;
+export type CommandRunner = (command: string, args: string[], options?: ExecOptions) => Promise<ExecResult>;
 
 export type PullRequestState = "o" | "d" | "c" | "m";
 export type IssueState = "o" | "c";
@@ -155,14 +151,10 @@ export async function discoverRepositoryContext(
 	const prPromise = isAttachedBranch(input.branch)
 		? runGhJson(run, ["pr", "view", "--json", "number,url,state,isDraft"], input.cwd, signal)
 		: Promise.resolve(undefined);
-	const issuePromise = issueNumber === undefined
-		? Promise.resolve(undefined)
-		: runGhJson(
-			run,
-			["issue", "view", String(issueNumber), "--json", "number,url,state"],
-			input.cwd,
-			signal,
-		);
+	const issuePromise =
+		issueNumber === undefined
+			? Promise.resolve(undefined)
+			: runGhJson(run, ["issue", "view", String(issueNumber), "--json", "number,url,state"], input.cwd, signal);
 	const [rawPr, rawIssue] = await Promise.all([prPromise, issuePromise]);
 	const context: RepositoryContext = {};
 

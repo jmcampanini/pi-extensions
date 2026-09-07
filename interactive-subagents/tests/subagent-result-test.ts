@@ -24,16 +24,16 @@ describe("renderSubagentLaunchResult", () => {
 		const errorText = "Launch failed clearly.\nFix tmux and retry.";
 		for (const tool of ["subagent_spawn", "subagent_resume"]) {
 			let styledError = "";
-			const error = renderSubagentLaunchResult(
-				{ content: [{ type: "text", text: errorText }] },
-				true,
-				(text) => {
-					styledError = text;
-					return { invalidate() {}, render: () => [`ERROR: ${text}`] };
-				},
-			);
+			const error = renderSubagentLaunchResult({ content: [{ type: "text", text: errorText }] }, true, (text) => {
+				styledError = text;
+				return { invalidate() {}, render: () => [`ERROR: ${text}`] };
+			});
 			assert.strictEqual(styledError, errorText, `${tool} error text is passed through unchanged`);
-			assert.deepStrictEqual(error.render(100), [`ERROR: ${errorText}`], `${tool} error remains visibly renderable`);
+			assert.deepStrictEqual(
+				error.render(100),
+				[`ERROR: ${errorText}`],
+				`${tool} error remains visibly renderable`,
+			);
 		}
 	});
 
@@ -65,15 +65,14 @@ describe("tool-spawn and tool-resume sources", () => {
 	});
 
 	it("subagent_spawn limits parallel encouragement to independent bounded tasks", () => {
-		assert.strictEqual(
-			spawnSource.includes("are independent, bounded, and able to proceed concurrently."),
-			true,
-		);
+		assert.strictEqual(spawnSource.includes("are independent, bounded, and able to proceed concurrently."), true);
 	});
 
 	it("subagent_spawn guidance keeps unsuitable tasks in the parent", () => {
 		assert.strictEqual(
-			spawnSource.includes("Keep trivial tasks, tightly coupled or sequential work, and critical-path blockers in the parent."),
+			spawnSource.includes(
+				"Keep trivial tasks, tightly coupled or sequential work, and critical-path blockers in the parent.",
+			),
 			true,
 		);
 	});
@@ -87,16 +86,20 @@ describe("tool-spawn and tool-resume sources", () => {
 
 	it("subagent_spawn model-facing launch instruction remains in execute", () => {
 		assert.strictEqual(
-			spawnSource.includes('"Its result arrives on its own in a new turn. Continue work that needs "')
-				&& spawnSource.includes('"nothing from it, or tell the user what you are waiting on and end your turn."'),
+			spawnSource.includes('"Its result arrives on its own in a new turn. Continue work that needs "') &&
+				spawnSource.includes('"nothing from it, or tell the user what you are waiting on and end your turn."'),
 			true,
 		);
 	});
 
 	it("subagent_resume model-facing launch instruction remains in execute", () => {
 		assert.strictEqual(
-			resumeSource.includes('`Resumed sub-agent "${name}" (id ${id}). Its result arrives on its own in a new turn. `')
-				&& resumeSource.includes('"Continue work that needs nothing from it, or tell the user what you are waiting on and end your turn."'),
+			resumeSource.includes(
+				'`Resumed sub-agent "${name}" (id ${id}). Its result arrives on its own in a new turn. `',
+			) &&
+				resumeSource.includes(
+					'"Continue work that needs nothing from it, or tell the user what you are waiting on and end your turn."',
+				),
 			true,
 		);
 	});

@@ -11,9 +11,7 @@ function isToolResult(entry: SessionEntry): entry is ToolResultEntry {
 
 function toolCallIds(entry: SessionEntry): string[] {
 	if (entry.type !== "message" || entry.message.role !== "assistant") return [];
-	return entry.message.content
-		.filter((part) => part.type === "toolCall")
-		.map((part) => part.id);
+	return entry.message.content.filter((part) => part.type === "toolCall").map((part) => part.id);
 }
 
 /**
@@ -26,19 +24,26 @@ export class BranchBlockIndex {
 	private entryIds: string[] = [];
 	private blocks: Block[] = [];
 
-	update(sessionManager: { getBranch(): SessionEntry[]; getLabel(entryId: string): string | undefined }): readonly Block[] {
+	update(sessionManager: {
+		getBranch(): SessionEntry[];
+		getLabel(entryId: string): string | undefined;
+	}): readonly Block[] {
 		return this.updateEntries(sessionManager.getBranch(), (id) => sessionManager.getLabel(id));
 	}
 
-	updateEntries(entries: readonly SessionEntry[], getLabel?: (entryId: string) => string | undefined): readonly Block[] {
+	updateEntries(
+		entries: readonly SessionEntry[],
+		getLabel?: (entryId: string) => string | undefined,
+	): readonly Block[] {
 		const ids = entries.map((entry) => entry.id);
 		if (ids.length === this.entryIds.length && ids.every((id, index) => id === this.entryIds[index])) {
 			return this.blocks;
 		}
 
-		const isAppend = this.entryIds.length > 0
-			&& this.entryIds.length < ids.length
-			&& this.entryIds.every((id, index) => ids[index] === id);
+		const isAppend =
+			this.entryIds.length > 0 &&
+			this.entryIds.length < ids.length &&
+			this.entryIds.every((id, index) => ids[index] === id);
 		if (!isAppend) return this.rebuild(entries, getLabel);
 
 		const appended = entries.slice(this.entries.length);
@@ -49,9 +54,14 @@ export class BranchBlockIndex {
 			for (const callId of toolCallIds(entry)) oldCallEntries.set(callId, entry);
 		}
 
-		const delayedResults = appended.filter((entry) => isToolResult(entry) && oldCallEntries.has(entry.message.toolCallId));
+		const delayedResults = appended.filter(
+			(entry) => isToolResult(entry) && oldCallEntries.has(entry.message.toolCallId),
+		);
 		const delayedIds = new Set(delayedResults.map((entry) => entry.id));
-		const additions = extractBlocks(appended.filter((entry) => !delayedIds.has(entry.id)), getLabel);
+		const additions = extractBlocks(
+			appended.filter((entry) => !delayedIds.has(entry.id)),
+			getLabel,
+		);
 		const replacements: Block[] = [];
 
 		for (const result of delayedResults) {
@@ -80,7 +90,10 @@ export class BranchBlockIndex {
 		return this.blocks;
 	}
 
-	private rebuild(entries: readonly SessionEntry[], getLabel?: (entryId: string) => string | undefined): readonly Block[] {
+	private rebuild(
+		entries: readonly SessionEntry[],
+		getLabel?: (entryId: string) => string | undefined,
+	): readonly Block[] {
 		this.entries = entries.slice();
 		this.entryIds = entries.map((entry) => entry.id);
 		this.blocks = extractBlocks(entries, getLabel);

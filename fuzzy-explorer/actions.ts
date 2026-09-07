@@ -96,10 +96,7 @@ function truncatedFullOutputPath(block: Block): string | undefined {
 	return block.truncation?.truncated ? block.truncation.fullOutputPath : undefined;
 }
 
-export function describeSmartOpenSync(
-	block: Block,
-	pathExists: (path: string) => boolean,
-): SmartOpenDescription {
+export function describeSmartOpenSync(block: Block, pathExists: (path: string) => boolean): SmartOpenDescription {
 	const fileReference = fileReferenceDescription(block);
 	if (fileReference) return fileReference;
 	const fullOutputPath = truncatedFullOutputPath(block);
@@ -115,7 +112,7 @@ export async function describeSmartOpen(
 	const fileReference = fileReferenceDescription(block);
 	if (fileReference) return fileReference;
 	const fullOutputPath = truncatedFullOutputPath(block);
-	return fullOutputPath && await fileSystem.pathExists(fullOutputPath)
+	return fullOutputPath && (await fileSystem.pathExists(fullOutputPath))
 		? { kind: "full-output", path: fullOutputPath }
 		: { kind: "canonical-text" };
 }
@@ -150,11 +147,7 @@ export function formatSmartOpenHint(target: SmartOpenDescription): string {
 export function buildEditorInvocation(editorCommand: string, target: SmartOpenTarget): EditorInvocation {
 	const [command, ...configuredArgs] = parseEditorCommand(editorCommand);
 	const args = [...configuredArgs];
-	if (
-		target.kind === "file-reference"
-		&& target.line !== undefined
-		&& editorSupportsPlusLine(command!)
-	) {
+	if (target.kind === "file-reference" && target.line !== undefined && editorSupportsPlusLine(command!)) {
 		args.push(`+${target.line}`);
 	}
 	if (editorNeedsOptionsTerminator(command!)) args.push("--");

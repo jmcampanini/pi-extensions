@@ -48,6 +48,4 @@ export interface ChildEnvVars {
 // in the session .jsonl. The sidecar only carries the exit INTENT.
 
 export type ExitSidecar =
-	| { type: "done" }
-	| { type: "ping"; name?: string; message: string }
-	| { type: "error"; errorMessage: string };
+	{ type: "done" } | { type: "ping"; name?: string; message: string } | { type: "error"; errorMessage: string };

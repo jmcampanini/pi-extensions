@@ -52,8 +52,6 @@ describe("registerFuzzyExplorer", () => {
 			ui: { notify: (message: string, level: string) => notices.push([message, level]) },
 		} as unknown as ExtensionContext;
 		await commandHandler?.("", nonTui);
-		assert.deepStrictEqual(notices, [
-			["fuzzy-explorer requires Pi's interactive TUI.", "warning"],
-		]);
+		assert.deepStrictEqual(notices, [["fuzzy-explorer requires Pi's interactive TUI.", "warning"]]);
 	});
 });

@@ -3,8 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export type ThresholdSpec =
-	| { thresholdTokens: number; thresholdPercent?: never }
-	| { thresholdTokens?: never; thresholdPercent: number };
+	{ thresholdTokens: number; thresholdPercent?: never } | { thresholdTokens?: never; thresholdPercent: number };
 
 export type WindowClass = ThresholdSpec & { windowMax: number };
 
@@ -72,7 +71,9 @@ function requireThresholdSpec(value: unknown, source: string): ThresholdSpec {
 
 	const percent = raw.thresholdPercent;
 	if (typeof percent !== "number" || !Number.isInteger(percent) || percent < 1 || percent > 100) {
-		throw new Error(`${source}: invalid thresholdPercent ${JSON.stringify(percent)} - use an integer from 1 through 100`);
+		throw new Error(
+			`${source}: invalid thresholdPercent ${JSON.stringify(percent)} - use an integer from 1 through 100`,
+		);
 	}
 	return { thresholdPercent: percent };
 }
@@ -122,7 +123,11 @@ export function loadConfig(env: Env = process.env): AutoCompactConfig {
 			throw new Error(`${filePath} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
 		}
 
-		const file = requireObject(raw, filePath, '{"classes": [{"windowMax": 300000, "thresholdPercent": 90}], "default": {"thresholdTokens": 400000}, "enabled": true}');
+		const file = requireObject(
+			raw,
+			filePath,
+			'{"classes": [{"windowMax": 300000, "thresholdPercent": 90}], "default": {"thresholdTokens": 400000}, "enabled": true}',
+		);
 		rejectUnknownKeys(file, filePath, Object.keys(DEFAULTS));
 
 		if (file.enabled !== undefined) {
@@ -137,10 +142,7 @@ export function loadConfig(env: Env = process.env): AutoCompactConfig {
 	}
 
 	if (env.PI_AUTO_COMPACT_ENABLED) {
-		result.enabled = requireEnabled(
-			coerceBooleanEnvValue(env.PI_AUTO_COMPACT_ENABLED),
-			"PI_AUTO_COMPACT_ENABLED",
-		);
+		result.enabled = requireEnabled(coerceBooleanEnvValue(env.PI_AUTO_COMPACT_ENABLED), "PI_AUTO_COMPACT_ENABLED");
 	}
 
 	return result;

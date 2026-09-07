@@ -251,24 +251,27 @@ describe("runtimeIdentityVariants", () => {
 
 describe("partitionFooterStatuses", () => {
 	it("owned statuses are removed from the generic line", () => {
-		assert.deepStrictEqual(partitionFooterStatuses(new Map([
-			["z-status", "  zeta\nvalue  "],
-			["elapsed-time", "  ◷ 00:42  "],
-			["fast-openai", "on"],
-			["auto-compact", "auto-compact paused"],
-			["a-status", "alpha\tvalue"],
-		])), {
-			elapsedTime: "◷ 00:42",
-			fastMode: true,
-			autoCompactPaused: true,
-			statusLine: "alpha value zeta value",
-		});
+		assert.deepStrictEqual(
+			partitionFooterStatuses(
+				new Map([
+					["z-status", "  zeta\nvalue  "],
+					["elapsed-time", "  ◷ 00:42  "],
+					["fast-openai", "on"],
+					["auto-compact", "auto-compact paused"],
+					["a-status", "alpha\tvalue"],
+				]),
+			),
+			{
+				elapsedTime: "◷ 00:42",
+				fastMode: true,
+				autoCompactPaused: true,
+				statusLine: "alpha value zeta value",
+			},
+		);
 	});
 
 	it("elapsed alone does not create a third line or fast mode", () => {
-		assert.deepStrictEqual(partitionFooterStatuses(new Map([
-			["elapsed-time", "✓ 00:42"],
-		])), {
+		assert.deepStrictEqual(partitionFooterStatuses(new Map([["elapsed-time", "✓ 00:42"]])), {
 			elapsedTime: "✓ 00:42",
 			fastMode: false,
 			autoCompactPaused: false,
@@ -277,9 +280,7 @@ describe("partitionFooterStatuses", () => {
 	});
 
 	it("published fast-openai off stays owned without lighting fast mode", () => {
-		assert.deepStrictEqual(partitionFooterStatuses(new Map([
-			["fast-openai", "off"],
-		])), {
+		assert.deepStrictEqual(partitionFooterStatuses(new Map([["fast-openai", "off"]])), {
 			elapsedTime: undefined,
 			fastMode: false,
 			autoCompactPaused: false,
@@ -356,9 +357,7 @@ describe("fitFooterLayout", () => {
 	});
 
 	it("wide layout keeps every component full", () => {
-		assert.deepStrictEqual(Object.values(wide.states), [
-			"full", "full", "full", "full", "full", "full", "full",
-		]);
+		assert.deepStrictEqual(Object.values(wide.states), ["full", "full", "full", "full", "full", "full", "full"]);
 	});
 
 	it("runtime identity is right aligned", () => {
@@ -432,9 +431,7 @@ describe("styleFooterSpans", () => {
 	const styledWide = styleFooterSpans(
 		wide.spans,
 		(text) => `\x1b[90m${text}\x1b[39m`,
-		(id, text) => id === "context"
-			? `\x1b[31m${text}\x1b[39m`
-			: `\x1b[90m${text}\x1b[39m`,
+		(id, text) => (id === "context" ? `\x1b[31m${text}\x1b[39m` : `\x1b[90m${text}\x1b[39m`),
 	);
 
 	it("separator after colored context reapplies dim styling", () => {
@@ -508,8 +505,9 @@ describe("fitRepositoryLayout", () => {
 	});
 
 	it("repository layout never overflows from width 0 through 200", () => {
-		const repositoryOverflowWidth = Array.from({ length: 201 }, (_, width) => width)
-			.find((width) => visibleWidth(fitRepositoryLayout(repositoryInput, width).line) > width);
+		const repositoryOverflowWidth = Array.from({ length: 201 }, (_, width) => width).find(
+			(width) => visibleWidth(fitRepositoryLayout(repositoryInput, width).line) > width,
+		);
 		assert.strictEqual(repositoryOverflowWidth, undefined);
 	});
 
@@ -535,11 +533,15 @@ describe("styleRepositorySpans", () => {
 	});
 
 	it("issue token carries its canonical OSC 8 URL", () => {
-		assert.ok(styledRepository.includes("\x1b]8;;https://git.acme.test/acme/payments/issues/456\x1b\\\x1b[4;36mis#456 c"));
+		assert.ok(
+			styledRepository.includes("\x1b]8;;https://git.acme.test/acme/payments/issues/456\x1b\\\x1b[4;36mis#456 c"),
+		);
 	});
 
 	it("PR token carries its canonical OSC 8 URL", () => {
-		assert.ok(styledRepository.includes("\x1b]8;;https://git.acme.test/acme/payments/pull/123\x1b\\\x1b[4;36mpr#123 m"));
+		assert.ok(
+			styledRepository.includes("\x1b]8;;https://git.acme.test/acme/payments/pull/123\x1b\\\x1b[4;36mpr#123 m"),
+		);
 	});
 });
 

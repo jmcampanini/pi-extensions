@@ -3,7 +3,6 @@ import { config, type AutoCompactConfig } from "../shared/auto-compact-config.ts
 import { formatTokens, resolveThresholdTokens } from "../shared/auto-compact-threshold.ts";
 import { AUTO_COMPACT_STATUS_KEY } from "../shared/status-keys.ts";
 
-
 export function registerAutoCompact(pi: ExtensionAPI, resolvedConfig: AutoCompactConfig): void {
 	let inFlight = false;
 	let failed = false;

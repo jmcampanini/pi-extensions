@@ -82,11 +82,13 @@ describe("buildSubagentResultMessage", () => {
 
 	it("response range extracts only the sanitized child result", () => {
 		assert.strictEqual(
-			completed.details.expanded.response && completed.content.slice(
-				completed.details.expanded.response.start,
-				completed.details.expanded.response.end,
-			),
-			"The command completed successfully.\n\nNo further action was needed.");
+			completed.details.expanded.response &&
+				completed.content.slice(
+					completed.details.expanded.response.start,
+					completed.details.expanded.response.end,
+				),
+			"The command completed successfully.\n\nNo further action was needed.",
+		);
 	});
 
 	it("model content strips terminal controls", () => {
@@ -94,44 +96,52 @@ describe("buildSubagentResultMessage", () => {
 	});
 
 	it("builder derives completed action", () => {
-		assert.strictEqual(completed.content.includes(
-			'Resume: subagent_resume({ id: "15c3f450", message: "..." })'), true);
+		assert.strictEqual(
+			completed.content.includes('Resume: subagent_resume({ id: "15c3f450", message: "..." })'),
+			true,
+		);
 	});
 
 	it("builder keeps content and details identity/capabilities consistent", () => {
-		assert.deepStrictEqual({
-			model: completed.details.model,
-			effort: completed.details.effort,
-			tools: completed.details.tools,
-			forked: completed.details.forked,
-			interactive: completed.details.interactive,
-			worktree: completed.details.worktree,
-		}, {
-			model: base.model,
-			effort: base.effort,
-			tools: base.tools,
-			forked: true,
-			interactive: true,
-			worktree: true,
-		});
+		assert.deepStrictEqual(
+			{
+				model: completed.details.model,
+				effort: completed.details.effort,
+				tools: completed.details.tools,
+				forked: completed.details.forked,
+				interactive: completed.details.interactive,
+				worktree: completed.details.worktree,
+			},
+			{
+				model: base.model,
+				effort: base.effort,
+				tools: base.tools,
+				forked: true,
+				interactive: true,
+				worktree: true,
+			},
+		);
 	});
 
 	it("builder retains details-only completion telemetry", () => {
-		assert.deepStrictEqual({
-			exitCode: completed.details.exitCode,
-			reason: completed.details.reason,
-			contextWindow: completed.details.contextWindow,
-			worktreeDir: completed.details.worktreeDir,
-			worktreeBranch: completed.details.worktreeBranch,
-			worktreeStatus: completed.details.worktreeStatus,
-		}, {
-			exitCode: 0,
-			reason: "done",
-			contextWindow: 200_000,
-			worktreeDir: "/repo/worktree",
-			worktreeBranch: "pi/check",
-			worktreeStatus: "kept",
-		});
+		assert.deepStrictEqual(
+			{
+				exitCode: completed.details.exitCode,
+				reason: completed.details.reason,
+				contextWindow: completed.details.contextWindow,
+				worktreeDir: completed.details.worktreeDir,
+				worktreeBranch: completed.details.worktreeBranch,
+				worktreeStatus: completed.details.worktreeStatus,
+			},
+			{
+				exitCode: 0,
+				reason: "done",
+				contextWindow: 200_000,
+				worktreeDir: "/repo/worktree",
+				worktreeBranch: "pi/check",
+				worktreeStatus: "kept",
+			},
+		);
 	});
 
 	const failed = buildSubagentResultMessage({
@@ -153,8 +163,10 @@ describe("buildSubagentResultMessage", () => {
 	});
 
 	it("failed builder derives retry guidance", () => {
-		assert.strictEqual(failed.content.includes(
-			'Retry: subagent_resume({ id: "15c3f450", message: "<guidance>" })'), true);
+		assert.strictEqual(
+			failed.content.includes('Retry: subagent_resume({ id: "15c3f450", message: "<guidance>" })'),
+			true,
+		);
 	});
 
 	it("failed presentation prefers partial output", () => {
@@ -162,13 +174,15 @@ describe("buildSubagentResultMessage", () => {
 	});
 
 	it("failed expanded details retain failure and exact response offsets", () => {
-		assert.deepStrictEqual({
-			failureReason: failed.details.expanded.failureReason,
-			response: failed.details.expanded.response && failed.content.slice(
-				failed.details.expanded.response.start,
-				failed.details.expanded.response.end,
-			),
-		}, { failureReason: "exit code 23", response: "Partial output." });
+		assert.deepStrictEqual(
+			{
+				failureReason: failed.details.expanded.failureReason,
+				response:
+					failed.details.expanded.response &&
+					failed.content.slice(failed.details.expanded.response.start, failed.details.expanded.response.end),
+			},
+			{ failureReason: "exit code 23", response: "Partial output." },
+		);
 	});
 
 	const stopped = buildSubagentResultMessage({
@@ -191,8 +205,17 @@ describe("buildSubagentResultMessage", () => {
 	});
 
 	it("stopped envelope has full model, effort, mode, tools, and metric parity", () => {
-		assert.ok(["Model: provider/model", "Effort: high", "Mode: forked · interactive · worktree", "Tools: read,edit,bash",
-			"Elapsed: 3m 3s", "Context: 78k tokens", "Cost: $0.92"].every((line) => stopped.content.includes(line)));
+		assert.ok(
+			[
+				"Model: provider/model",
+				"Effort: high",
+				"Mode: forked · interactive · worktree",
+				"Tools: read,edit,bash",
+				"Elapsed: 3m 3s",
+				"Context: 78k tokens",
+				"Cost: $0.92",
+			].every((line) => stopped.content.includes(line)),
+		);
 	});
 
 	it("stopped envelope naturally omits response and result tokens", () => {
@@ -200,28 +223,33 @@ describe("buildSubagentResultMessage", () => {
 	});
 
 	it("stopped details carry the same root field set", () => {
-		assert.deepStrictEqual({
-			model: stopped.details.model,
-			effort: stopped.details.effort,
-			tools: stopped.details.tools,
-			exitCode: stopped.details.exitCode,
-			reason: stopped.details.reason,
-			contextWindow: stopped.details.contextWindow,
-			worktree: stopped.details.worktree,
-		}, {
-			model: base.model,
-			effort: base.effort,
-			tools: base.tools,
-			exitCode: 130,
-			reason: "stopped",
-			contextWindow: 200_000,
-			worktree: true,
-		});
+		assert.deepStrictEqual(
+			{
+				model: stopped.details.model,
+				effort: stopped.details.effort,
+				tools: stopped.details.tools,
+				exitCode: stopped.details.exitCode,
+				reason: stopped.details.reason,
+				contextWindow: stopped.details.contextWindow,
+				worktree: stopped.details.worktree,
+			},
+			{
+				model: base.model,
+				effort: base.effort,
+				tools: base.tools,
+				exitCode: 130,
+				reason: "stopped",
+				contextWindow: 200_000,
+				worktree: true,
+			},
+		);
 	});
 
 	it("stopped presentation retains requester-specific fixed prose", () => {
-		assert.strictEqual(stopped.details.presentation.preview,
-			"Stopped by the user - no final result. Partial work may remain; expand for resume and worktree details.");
+		assert.strictEqual(
+			stopped.details.presentation.preview,
+			"Stopped by the user - no final result. Partial work may remain; expand for resume and worktree details.",
+		);
 	});
 
 	it("builder preserves compacted context telemetry only in details", () => {
@@ -231,10 +259,13 @@ describe("buildSubagentResultMessage", () => {
 			response: "Context was compacted.",
 			contextTokens: null,
 		});
-		assert.deepStrictEqual({
-			details: compacted.details.contextTokens,
-			envelopeHasContext: compacted.content.includes("Context:"),
-		}, { details: null, envelopeHasContext: false });
+		assert.deepStrictEqual(
+			{
+				details: compacted.details.contextTokens,
+				envelopeHasContext: compacted.content.includes("Context:"),
+			},
+			{ details: null, envelopeHasContext: false },
+		);
 	});
 
 	const external = buildSubagentResultMessage({
@@ -259,28 +290,38 @@ describe("buildSubagentResultMessage", () => {
 	});
 
 	it("external session line is a resume reference", () => {
-		assert.strictEqual(external.content.includes(
-			"Session ref: /sessions/child.jsonl (pass as sessionPath to subagent_resume if the id is no longer known; not a readable file)"), true);
+		assert.strictEqual(
+			external.content.includes(
+				"Session ref: /sessions/child.jsonl (pass as sessionPath to subagent_resume if the id is no longer known; not a readable file)",
+			),
+			true,
+		);
 	});
 
 	it("default capabilities are omitted", () => {
-		assert.strictEqual(["Model:", "Effort:", "Mode:", "Tools:"].some((line) =>
-			external.content.includes(line)), false);
+		assert.strictEqual(
+			["Model:", "Effort:", "Mode:", "Tools:"].some((line) => external.content.includes(line)),
+			false,
+		);
 	});
 });
 
 describe("buildSubagentResultEnvelope", () => {
 	it("result envelopes reject whitespace in agent identifiers", () => {
-		assert.throws(() => buildSubagentResultEnvelope({
-			status: "stopped",
-			name: "invalid agent",
-			agent: "code reviewer",
-			id: "badagent",
-			elapsed: "1s",
-			action: "Resume",
-			actionMessage: "...",
-			sessionFile: "/sessions/invalid.jsonl",
-		}), /whitespace/);
+		assert.throws(
+			() =>
+				buildSubagentResultEnvelope({
+					status: "stopped",
+					name: "invalid agent",
+					agent: "code reviewer",
+					id: "badagent",
+					elapsed: "1s",
+					action: "Resume",
+					actionMessage: "...",
+					sessionFile: "/sessions/invalid.jsonl",
+				}),
+			/whitespace/,
+		);
 	});
 });
 
@@ -291,15 +332,22 @@ describe("parseSubagentResultEnvelope", () => {
 				const message = matrixResult(status, present);
 				const parsed = parseSubagentResultEnvelope(message.content);
 				assert.strictEqual(
-					parsed?.fields.find((field) => field.key === "status")?.value, status,
-					`${status} flags ${present ? "on" : "off"} round trip status`);
+					parsed?.fields.find((field) => field.key === "status")?.value,
+					status,
+					`${status} flags ${present ? "on" : "off"} round trip status`,
+				);
 				assert.strictEqual(
-					parsed?.fields.some((field) => field.key === "mode"), present,
-					`${status} flags ${present ? "on" : "off"} mode optionality`);
+					parsed?.fields.some((field) => field.key === "mode"),
+					present,
+					`${status} flags ${present ? "on" : "off"} mode optionality`,
+				);
 				assert.strictEqual(
-					["model", "effort", "tools", "context", "cost"].every((key) =>
-						parsed?.fields.some((field) => field.key === key) === present), true,
-					`${status} optional fields ${present ? "present" : "absent"}`);
+					["model", "effort", "tools", "context", "cost"].every(
+						(key) => parsed?.fields.some((field) => field.key === key) === present,
+					),
+					true,
+					`${status} optional fields ${present ? "present" : "absent"}`,
+				);
 			}
 		}
 	});
@@ -309,15 +357,30 @@ describe("parseSubagentResultEnvelope", () => {
 	);
 
 	it("round trip recovers the response without markers", () => {
-		assert.strictEqual(roundTrip?.response,
-			"The command completed successfully.\n\nNo further action was needed.");
+		assert.strictEqual(roundTrip?.response, "The command completed successfully.\n\nNo further action was needed.");
 	});
 
 	it("round trip preserves canonical head and tail order", () => {
-		assert.deepStrictEqual(roundTrip?.fields.map((field) => field.key), [
-			"status", "name", "agent", "id", "model", "effort", "mode", "tools", "elapsed", "context", "result", "cost",
-			"resume", "session", "worktree",
-		]);
+		assert.deepStrictEqual(
+			roundTrip?.fields.map((field) => field.key),
+			[
+				"status",
+				"name",
+				"agent",
+				"id",
+				"model",
+				"effort",
+				"mode",
+				"tools",
+				"elapsed",
+				"context",
+				"result",
+				"cost",
+				"resume",
+				"session",
+				"worktree",
+			],
+		);
 	});
 
 	it("non-envelope content is rejected", () => {

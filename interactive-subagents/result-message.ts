@@ -126,7 +126,8 @@ function parseExpandedPresentation(value: unknown): SubagentExpandedResultPresen
 			!Number.isInteger(end) ||
 			start < 0 ||
 			end < start
-		) return undefined;
+		)
+			return undefined;
 		response = { start, end };
 	}
 	if (value.notice !== undefined && typeof value.notice !== "string") return undefined;
@@ -155,7 +156,8 @@ export function parseSubagentResultDetails(value: unknown): SubagentResultDetail
 		!Number.isFinite(presentation.elapsedSeconds) ||
 		presentation.elapsedSeconds < 0 ||
 		typeof presentation.preview !== "string"
-	) return undefined;
+	)
+		return undefined;
 	const expanded = parseExpandedPresentation(value.expanded);
 	if (expanded === undefined) return undefined;
 	return {
@@ -178,9 +180,10 @@ export function parseSubagentResultDetails(value: unknown): SubagentResultDetail
 		contextTokens: optionalNullableTokenCount(value.contextTokens),
 		contextWindow: optionalPositiveTokenCount(value.contextWindow),
 		resultTokens: optionalTokenCount(value.resultTokens),
-		costUsd: typeof value.costUsd === "number" && Number.isFinite(value.costUsd) && value.costUsd >= 0
-			? value.costUsd
-			: undefined,
+		costUsd:
+			typeof value.costUsd === "number" && Number.isFinite(value.costUsd) && value.costUsd >= 0
+				? value.costUsd
+				: undefined,
 		expanded,
 		presentation: {
 			version: 2,
@@ -216,13 +219,25 @@ function formatHeader(
 		const suffixWidth = metrics.visibleWidth(statusSuffix);
 		const nameWidth = width - titleWidth - separatorsWidth - metrics.visibleWidth(agent) - suffixWidth;
 		if (nameWidth >= minimumNameWidth) {
-			return titleText + style.metadata(" · ") + style.metadata(agent) + style.metadata(" · ")
-				+ style.name(metrics.fitText(name, nameWidth)) + suffixText;
+			return (
+				titleText +
+				style.metadata(" · ") +
+				style.metadata(agent) +
+				style.metadata(" · ") +
+				style.name(metrics.fitText(name, nameWidth)) +
+				suffixText
+			);
 		}
 		const agentWidth = width - titleWidth - separatorsWidth - minimumNameWidth - suffixWidth;
 		if (agentWidth > 0) {
-			return titleText + style.metadata(" · ") + style.metadata(metrics.fitText(agent, agentWidth))
-				+ style.metadata(" · ") + style.name(metrics.fitText(name, minimumNameWidth)) + suffixText;
+			return (
+				titleText +
+				style.metadata(" · ") +
+				style.metadata(metrics.fitText(agent, agentWidth)) +
+				style.metadata(" · ") +
+				style.name(metrics.fitText(name, minimumNameWidth)) +
+				suffixText
+			);
 		}
 		return undefined;
 	}
@@ -303,8 +318,10 @@ function messageText(content: unknown): string {
 	if (typeof content === "string") return safeMarkdown(content);
 	if (!Array.isArray(content)) return "";
 	return content
-		.filter((part): part is { type: string; text: string } =>
-			isRecord(part) && part.type === "text" && typeof part.text === "string")
+		.filter(
+			(part): part is { type: string; text: string } =>
+				isRecord(part) && part.type === "text" && typeof part.text === "string",
+		)
 		.map((part) => safeMarkdown(part.text))
 		.join("\n");
 }
@@ -322,11 +339,7 @@ function widthSafe(component: Component): Component {
 	};
 }
 
-function nativeMessageShell(
-	component: Component,
-	background: (text: string) => string,
-	outputPad: number,
-): Component {
+function nativeMessageShell(component: Component, background: (text: string) => string, outputPad: number): Component {
 	const box = new Box(outputPad, 1, background);
 	box.addChild(component);
 	return widthSafe(box);
@@ -357,11 +370,12 @@ function metadataRows(details: SubagentResultDetails): MetadataRow[] {
 		typeof details.contextTokens !== "number"
 			? undefined
 			: {
-				key: "context",
-				value: details.contextWindow === undefined
-					? `${formatTokens(details.contextTokens)} tokens`
-					: `${formatTokens(details.contextTokens)} / ${formatTokens(details.contextWindow)} tokens`,
-			},
+					key: "context",
+					value:
+						details.contextWindow === undefined
+							? `${formatTokens(details.contextTokens)} tokens`
+							: `${formatTokens(details.contextTokens)} / ${formatTokens(details.contextWindow)} tokens`,
+				},
 		details.resultTokens === undefined
 			? undefined
 			: { key: "result", value: `~${formatTokens(details.resultTokens)} tokens` },
@@ -415,9 +429,7 @@ function structuredExpandedResult(
 		if (expanded.response.end > content.length) return undefined;
 		response = safeMarkdown(content.slice(expanded.response.start, expanded.response.end));
 	}
-	const markdown = response
-		? new Markdown(response, 0, 0, getMarkdownTheme(), { color: output })
-		: undefined;
+	const markdown = response ? new Markdown(response, 0, 0, getMarkdownTheme(), { color: output }) : undefined;
 
 	return {
 		invalidate(): void {
@@ -439,9 +451,10 @@ function structuredExpandedResult(
 				appendText(style.metadata("failure · ") + output(safeMarkdown(expanded.failureReason)));
 			}
 			if (markdown) {
-				const responseLines = details.presentation.status === "failed"
-					? [style.metadata("last output"), ...markdown.render(maxWidth)]
-					: markdown.render(maxWidth);
+				const responseLines =
+					details.presentation.status === "failed"
+						? [style.metadata("last output"), ...markdown.render(maxWidth)]
+						: markdown.render(maxWidth);
 				appendLines(responseLines);
 				appendLines([formatResultDetailsDivider(maxWidth, style)]);
 			}
@@ -457,7 +470,7 @@ function structuredExpandedResult(
 			const message = details.presentation.status === "failed" ? "<guidance>" : "...";
 			detailsFooter.push(
 				style.metadata(`${action} `) +
-				accent(`subagent_resume({ id: "${sanitizeDisplayText(details.id)}", message: "${message}" })`),
+					accent(`subagent_resume({ id: "${sanitizeDisplayText(details.id)}", message: "${message}" })`),
 			);
 			appendText(detailsFooter.join("\n"));
 			return lines.map((line) => clampStyled(line, maxWidth));
@@ -492,27 +505,18 @@ export function registerSubagentResultRenderer(pi: ExtensionAPI): void {
 				);
 				if (structured !== undefined) return shell(structured);
 			}
-			return shell(new Markdown(
-				messageText(message.content),
-				0,
-				0,
-				getMarkdownTheme(),
-				{ color: (text) => theme.fg("toolOutput", text) },
-			));
+			return shell(
+				new Markdown(messageText(message.content), 0, 0, getMarkdownTheme(), {
+					color: (text) => theme.fg("toolOutput", text),
+				}),
+			);
 		}
 
 		const hint = keyText("app.tools.expand");
 		return shell({
 			invalidate(): void {},
 			render(width: number): string[] {
-				return formatCollapsedSubagentResult(
-					details,
-					width,
-					config.resultPreviewLines,
-					hint,
-					METRICS,
-					style,
-				);
+				return formatCollapsedSubagentResult(details, width, config.resultPreviewLines, hint, METRICS, style);
 			},
 		});
 	});

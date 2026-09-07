@@ -23,8 +23,11 @@ try {
 
 describe("claude-code harness end to end", () => {
 	if (!tmuxAvailable) {
-		it("real profile launch and resume commands drive the full sidecar lifecycle",
-			{ skip: "tmux is not installed" }, () => {});
+		it(
+			"real profile launch and resume commands drive the full sidecar lifecycle",
+			{ skip: "tmux is not installed" },
+			() => {},
+		);
 		return;
 	}
 
@@ -62,7 +65,9 @@ describe("claude-code harness end to end", () => {
 	}
 
 	after(() => {
-		try { isolatedTmux(["kill-server"]); } catch {}
+		try {
+			isolatedTmux(["kill-server"]);
+		} catch {}
 		restore("PATH");
 		restore("TMUX");
 		restore("TMUX_PANE");
@@ -200,8 +205,14 @@ exit 0
 		const launchArgs = recordedArgs();
 		assert.ok(launchArgs.includes("--model") && launchArgs.includes("test-model"), "model passed verbatim");
 		assert.ok(launchArgs.includes("--effort") && launchArgs.includes("low"), "thinking mapped to --effort low");
-		assert.ok(launchArgs.includes("--allowedTools") && launchArgs.includes("Read,Bash"), "allowed tools passed through");
-		assert.ok(launchArgs.includes("--fake-flag") && launchArgs.includes("quoted value"), "pass-through flags arrive as real argv");
+		assert.ok(
+			launchArgs.includes("--allowedTools") && launchArgs.includes("Read,Bash"),
+			"allowed tools passed through",
+		);
+		assert.ok(
+			launchArgs.includes("--fake-flag") && launchArgs.includes("quoted value"),
+			"pass-through flags arrive as real argv",
+		);
 		assert.strictEqual(launchArgs[launchArgs.length - 1], TASK, "the task text arrives as the final argument");
 
 		const launchActivity = readActivityFile(`${anchor}.activity`, RUN_ID);
@@ -211,8 +222,11 @@ exit 0
 		assert.deepStrictEqual(launchActivity.snapshot.activeTools, [], "no active tools left behind");
 		assert.strictEqual(readExternalResult(anchor), FINAL, "result sidecar holds the final message");
 		assert.strictEqual(readExternalSessionId(anchor), SESSION_ID, "session-id sidecar holds the tool's session");
-		assert.deepStrictEqual(JSON.parse(readFileSync(`${anchor}.exit`, "utf8")), { type: "done" },
-			"completion marker written for the autonomous child");
+		assert.deepStrictEqual(
+			JSON.parse(readFileSync(`${anchor}.exit`, "utf8")),
+			{ type: "done" },
+			"completion marker written for the autonomous child",
+		);
 
 		// ── resume ───────────────────────────────────────────────────────────
 		// Simulate what tool-resume.ts does between runs: consume the marker, clear
@@ -241,8 +255,11 @@ exit 0
 
 		const resumeArgs = recordedArgs();
 		assert.deepStrictEqual(resumeArgs.slice(0, 2), ["--resume", SESSION_ID], "resume reopens the recorded session");
-		assert.strictEqual(resumeArgs[resumeArgs.length - 1], "Please confirm once more.",
-			"the follow-up message arrives as the final argument");
+		assert.strictEqual(
+			resumeArgs[resumeArgs.length - 1],
+			"Please confirm once more.",
+			"the follow-up message arrives as the final argument",
+		);
 		const resumeActivity = readActivityFile(`${anchor}.activity`, RESUME_RUN_ID);
 		assert.strictEqual(resumeActivity.kind, "valid", "resumed run owns a fresh snapshot");
 		assert.strictEqual(readExternalResult(anchor), RESUMED, "resumed result overwrites the old one");

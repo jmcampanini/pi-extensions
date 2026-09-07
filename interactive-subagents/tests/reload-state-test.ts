@@ -52,20 +52,37 @@ describe("state reload", () => {
 
 		assert.strictEqual(firstSignal.aborted, true, "reload aborts the old generation");
 		assert.strictEqual(initial.running.get(child.id), child, "reload preserves the running child");
-		assert.strictEqual(initial.ledger.get(child.id)?.sessionFile, child.sessionFile,
-			"reload preserves the short-id ledger");
+		assert.strictEqual(
+			initial.ledger.get(child.id)?.sessionFile,
+			child.sessionFile,
+			"reload preserves the short-id ledger",
+		);
 
-		const replacement = await import(new URL(`../state.ts?reload-test=${Date.now()}`, import.meta.url).href) as typeof initial;
-		assert.strictEqual(replacement.moduleGeneration() > firstGeneration, true,
-			"replacement import advances the generation");
+		const replacement = (await import(
+			new URL(`../state.ts?reload-test=${Date.now()}`, import.meta.url).href
+		)) as typeof initial;
+		assert.strictEqual(
+			replacement.moduleGeneration() > firstGeneration,
+			true,
+			"replacement import advances the generation",
+		);
 		assert.strictEqual(replacement.running, initial.running, "replacement import shares the running map");
 		assert.strictEqual(replacement.ledger, initial.ledger, "replacement import shares the ledger");
-		assert.strictEqual(replacement.running.get(child.id)?.stopRequester, "user",
-			"replacement upgrades a legacy user stop requester");
-		assert.strictEqual("stoppedByUser" in (replacement.running.get(child.id) as RunningSubagent), false,
-			"replacement removes the legacy user stop field");
-		assert.strictEqual(replacement.currentRunIndex(), acceptedRunIndex,
-			"replacement import preserves the run counter");
+		assert.strictEqual(
+			replacement.running.get(child.id)?.stopRequester,
+			"user",
+			"replacement upgrades a legacy user stop requester",
+		);
+		assert.strictEqual(
+			"stoppedByUser" in (replacement.running.get(child.id) as RunningSubagent),
+			false,
+			"replacement removes the legacy user stop field",
+		);
+		assert.strictEqual(
+			replacement.currentRunIndex(),
+			acceptedRunIndex,
+			"replacement import preserves the run counter",
+		);
 		replacement.completeReloadHandoff();
 
 		const context = createWidgetContext();
@@ -73,12 +90,18 @@ describe("state reload", () => {
 		assert.strictEqual(initial.getLatestCtx(), context, "replacement context is published through stable state");
 		runningWidget.activateRunningWidgetGeneration(replacement.moduleGeneration());
 		runningWidget.updateRunningWidget();
-		assert.strictEqual(typeof widgetWrites.at(-1)?.content, "function",
-			"replacement generation discards the stale picker suspension");
+		assert.strictEqual(
+			typeof widgetWrites.at(-1)?.content,
+			"function",
+			"replacement generation discards the stale picker suspension",
+		);
 		const replacementWidgetWrites = widgetWrites.length;
 		releaseOldWidgetSuspension();
-		assert.strictEqual(widgetWrites.length, replacementWidgetWrites,
-			"late old-generation picker release cannot repaint the replacement");
+		assert.strictEqual(
+			widgetWrites.length,
+			replacementWidgetWrites,
+			"late old-generation picker release cannot repaint the replacement",
+		);
 
 		const replacementSignal = replacement.moduleSignal();
 		const replacementGeneration = replacement.moduleGeneration();
@@ -86,28 +109,45 @@ describe("state reload", () => {
 		assert.strictEqual(stopped[0], child, "destructive shutdown returns the child for pane cleanup");
 		assert.strictEqual(replacementSignal.aborted, true, "destructive shutdown aborts the replacement generation");
 		assert.strictEqual(replacement.running.size, 0, "destructive shutdown clears running children");
-		assert.strictEqual(replacement.ledger.get(child.id)?.sessionFile, child.sessionFile,
-			"destructive shutdown preserves same-process short-id resume");
+		assert.strictEqual(
+			replacement.ledger.get(child.id)?.sessionFile,
+			child.sessionFile,
+			"destructive shutdown preserves same-process short-id resume",
+		);
 		assert.strictEqual(replacement.getLatestCtx(), null, "destructive shutdown clears the UI context");
-		assert.strictEqual(replacement.moduleGeneration() > replacementGeneration, true,
-			"cached factory rebind gets a fresh generation");
+		assert.strictEqual(
+			replacement.moduleGeneration() > replacementGeneration,
+			true,
+			"cached factory rebind gets a fresh generation",
+		);
 		assert.strictEqual(replacement.moduleSignal().aborted, false, "cached factory rebind gets a live signal");
 
 		replacement.running.set(child.id, child);
 		replacement.ledger.set(child.id, { sessionFile: child.sessionFile, name: child.name });
 		let expiredChildren: RunningSubagent[] = [];
-		replacement.prepareForReload((children) => { expiredChildren = children; }, 0);
+		replacement.prepareForReload((children) => {
+			expiredChildren = children;
+		}, 0);
 		await new Promise((resolve) => setTimeout(resolve, 5));
 		assert.strictEqual(expiredChildren[0], child, "failed reload reaper returns the preserved child");
 		assert.strictEqual(replacement.running.size, 0, "failed reload reaper clears running children");
-		assert.strictEqual(replacement.ledger.get(child.id)?.sessionFile, child.sessionFile,
-			"failed reload reaper preserves same-process short-id resume");
-		assert.strictEqual(replacement.moduleSignal().aborted, true,
-			"failed reload reaper leaves the unadopted runtime stopped");
+		assert.strictEqual(
+			replacement.ledger.get(child.id)?.sessionFile,
+			child.sessionFile,
+			"failed reload reaper preserves same-process short-id resume",
+		);
+		assert.strictEqual(
+			replacement.moduleSignal().aborted,
+			true,
+			"failed reload reaper leaves the unadopted runtime stopped",
+		);
 		const expiredGeneration = replacement.moduleGeneration();
 		replacement.completeReloadHandoff();
-		assert.strictEqual(replacement.moduleGeneration() > expiredGeneration, true,
-			"late successful adoption advances the stopped generation");
+		assert.strictEqual(
+			replacement.moduleGeneration() > expiredGeneration,
+			true,
+			"late successful adoption advances the stopped generation",
+		);
 		assert.strictEqual(replacement.moduleSignal().aborted, false, "late successful adoption rearms a live signal");
 
 		// Deterministic lifecycle E2E: an exited child and its accepted queued send
@@ -131,26 +171,54 @@ describe("state reload", () => {
 		} as unknown as DeliveryRecord;
 		replacement.setDeliveryRecord(delivery);
 		replacement.prepareForReload(() => {});
-		const second = await import(new URL(`../state.ts?reload-test-2=${Date.now()}`, import.meta.url).href) as typeof initial;
-		assert.strictEqual(second.deliveryRecord(child.id), delivery,
-			"first delivery reload keeps the sole enriched record");
-		assert.strictEqual(second.deliveryRecord(child.id)?.startedAt, child.startTime,
-			"delivery reload backfills launch time");
-		assert.strictEqual(second.deliveryRecord(child.id)?.interactive, true,
-			"delivery reload backfills the interactive marker");
-		assert.strictEqual(second.deliveryRecord(child.id)?.stopped, true,
-			"delivery reload backfills the stopped projection");
-		assert.strictEqual(second.deliveryRecord(child.id)?.sendAcceptedRunIndex, acceptedRunIndex,
-			"delivery reload backfills a legacy accepted-send run stamp");
+		const second = (await import(
+			new URL(`../state.ts?reload-test-2=${Date.now()}`, import.meta.url).href
+		)) as typeof initial;
+		assert.strictEqual(
+			second.deliveryRecord(child.id),
+			delivery,
+			"first delivery reload keeps the sole enriched record",
+		);
+		assert.strictEqual(
+			second.deliveryRecord(child.id)?.startedAt,
+			child.startTime,
+			"delivery reload backfills launch time",
+		);
+		assert.strictEqual(
+			second.deliveryRecord(child.id)?.interactive,
+			true,
+			"delivery reload backfills the interactive marker",
+		);
+		assert.strictEqual(
+			second.deliveryRecord(child.id)?.stopped,
+			true,
+			"delivery reload backfills the stopped projection",
+		);
+		assert.strictEqual(
+			second.deliveryRecord(child.id)?.sendAcceptedRunIndex,
+			acceptedRunIndex,
+			"delivery reload backfills a legacy accepted-send run stamp",
+		);
 		second.completeReloadHandoff();
 		second.prepareForReload(() => {});
-		const third = await import(new URL(`../state.ts?reload-test-3=${Date.now()}`, import.meta.url).href) as typeof initial;
-		assert.strictEqual(third.deliveryRecord(child.id), delivery,
-			"second delivery reload keeps the same accepted-send record");
-		assert.strictEqual(third.deliveryRecord(child.id)?.sendAcceptedRunIndex, acceptedRunIndex,
-			"delivery reload preserves the accepted-send run stamp");
-		assert.strictEqual(third.deliveryRecord(child.id)?.worktreeCleanup, sharedCleanup,
-			"two reloads retain one cleanup promise");
+		const third = (await import(
+			new URL(`../state.ts?reload-test-3=${Date.now()}`, import.meta.url).href
+		)) as typeof initial;
+		assert.strictEqual(
+			third.deliveryRecord(child.id),
+			delivery,
+			"second delivery reload keeps the same accepted-send record",
+		);
+		assert.strictEqual(
+			third.deliveryRecord(child.id)?.sendAcceptedRunIndex,
+			acceptedRunIndex,
+			"delivery reload preserves the accepted-send run stamp",
+		);
+		assert.strictEqual(
+			third.deliveryRecord(child.id)?.worktreeCleanup,
+			sharedCleanup,
+			"two reloads retain one cleanup promise",
+		);
 		await third.deliveryRecord(child.id)?.worktreeCleanup;
 		assert.strictEqual(cleanupRuns, 1, "the retained cleanup executes once");
 		third.completeReloadHandoff();
@@ -166,7 +234,10 @@ describe("state reload", () => {
 		} as unknown as ExtensionAPI);
 		assert.strictEqual(landedHandlers, 1, "one active message_end delivery listener is registered");
 		handler?.({ message: { role: "custom", customType: "subagent_result", details: { id: child.id } } });
-		assert.strictEqual(third.deliveryRecord(child.id), undefined,
-			"one landed result clears the delivery row after two reloads");
+		assert.strictEqual(
+			third.deliveryRecord(child.id),
+			undefined,
+			"one landed result clears the delivery row after two reloads",
+		);
 	});
 });

@@ -55,9 +55,15 @@ class FakeFileSystem implements SmartOpenFileSystem {
 
 function fakeTui(events: string[]): EditorTui {
 	return {
-		stop(): void { events.push("stop"); },
-		start(): void { events.push("start"); },
-		requestRender(force?: boolean): void { events.push(`render:${String(force)}`); },
+		stop(): void {
+			events.push("stop");
+		},
+		start(): void {
+			events.push("start");
+		},
+		requestRender(force?: boolean): void {
+			events.push(`render:${String(force)}`);
+		},
 	};
 }
 
@@ -68,8 +74,7 @@ describe("copyBlockCanonicalText", () => {
 		const copiedResult = await copyBlockCanonicalText(block({ canonicalText: canonical }), async (text) => {
 			copied = text;
 		});
-		assert.strictEqual(copied, "tool read\nresult line\nlink",
-			"copy writes all canonical text with ANSI removed");
+		assert.strictEqual(copied, "tool read\nresult line\nlink", "copy writes all canonical text with ANSI removed");
 		assert.strictEqual(copiedResult, copied, "copy returns the same plain canonical text");
 	});
 });
@@ -101,8 +106,11 @@ describe("smart-open target resolution", () => {
 			"/repo",
 			new FakeFileSystem(),
 		);
-		assert.deepStrictEqual(optionLikeTarget,
-			{ kind: "file-reference", path: "/repo/+!touch injected", temporary: false });
+		assert.deepStrictEqual(optionLikeTarget, {
+			kind: "file-reference",
+			path: "/repo/+!touch injected",
+			temporary: false,
+		});
 	});
 
 	it("surviving truncated full output is second precedence", async () => {
@@ -132,12 +140,22 @@ describe("smart-open target resolution", () => {
 			truncation: { truncated: true, fullOutputPath: "/gone/full.log" },
 		});
 		const missingTarget = await resolveSmartOpenTarget(missingBlock, "/work tree", missingFs);
-		assert.deepStrictEqual(missingTarget,
+		assert.deepStrictEqual(
+			missingTarget,
 			{ kind: "canonical-text", path: "/work tree/.sandbox/fuzzy-explorer/generated block.md", temporary: true },
-			"missing full output falls back to canonical temp");
-		assert.deepStrictEqual(missingFs.created,
-			[{ repositoryRoot: "/work tree", text: "command\nstored output", path: "/work tree/.sandbox/fuzzy-explorer/generated block.md" }],
-			"fallback temp receives plain whole canonical text");
+			"missing full output falls back to canonical temp",
+		);
+		assert.deepStrictEqual(
+			missingFs.created,
+			[
+				{
+					repositoryRoot: "/work tree",
+					text: "command\nstored output",
+					path: "/work tree/.sandbox/fuzzy-explorer/generated block.md",
+				},
+			],
+			"fallback temp receives plain whole canonical text",
+		);
 		assert.strictEqual(
 			formatSmartOpenHint(describeSmartOpenSync(missingBlock, (path) => missingFs.existing.has(path))),
 			"open block text",
@@ -156,19 +174,28 @@ describe("buildEditorInvocation", () => {
 	};
 
 	it("known editor receives +line and an option terminator before the safe path", () => {
-		assert.deepStrictEqual(buildEditorInvocation("vim -f", fileTarget),
-			{ command: "vim", args: ["-f", "+42", "--", "/repo/path with spaces/file.ts"] });
+		assert.deepStrictEqual(buildEditorInvocation("vim -f", fileTarget), {
+			command: "vim",
+			args: ["-f", "+42", "--", "/repo/path with spaces/file.ts"],
+		});
 	});
 
 	it("Vim cannot interpret an option-like target as an Ex command", () => {
-		assert.deepStrictEqual(buildEditorInvocation("vim", {
-			kind: "file-reference", path: "+!touch injected", temporary: false,
-		}), { command: "vim", args: ["--", "+!touch injected"] });
+		assert.deepStrictEqual(
+			buildEditorInvocation("vim", {
+				kind: "file-reference",
+				path: "+!touch injected",
+				temporary: false,
+			}),
+			{ command: "vim", args: ["--", "+!touch injected"] },
+		);
 	});
 
 	it("unknown editor does not receive unsupported +line", () => {
-		assert.deepStrictEqual(buildEditorInvocation("code --wait", fileTarget),
-			{ command: "code", args: ["--wait", "/repo/path with spaces/file.ts"] });
+		assert.deepStrictEqual(buildEditorInvocation("code --wait", fileTarget), {
+			command: "code",
+			args: ["--wait", "/repo/path with spaces/file.ts"],
+		});
 	});
 
 	it("line argument is limited to file-reference targets", () => {
@@ -178,8 +205,10 @@ describe("buildEditorInvocation", () => {
 			line: 42,
 			temporary: false,
 		} as unknown as SmartOpenTarget;
-		assert.deepStrictEqual(buildEditorInvocation("nvim", nonReferenceWithLine),
-			{ command: "nvim", args: ["--", "/saved/full output.log"] });
+		assert.deepStrictEqual(buildEditorInvocation("nvim", nonReferenceWithLine), {
+			command: "nvim",
+			args: ["--", "/saved/full output.log"],
+		});
 	});
 });
 
@@ -192,7 +221,9 @@ describe("smartOpenBlock", () => {
 		const waitingRunner: EditorProcessRunner = {
 			run(command, args): Promise<number | null> {
 				lifecycleEvents.push(`run:${command}:${JSON.stringify(args)}`);
-				return new Promise((resolve) => { finishEditor = resolve; });
+				return new Promise((resolve) => {
+					finishEditor = resolve;
+				});
 			},
 		};
 		const opening = smartOpenBlock(block({ canonicalText: "temporary text" }), {
@@ -203,19 +234,29 @@ describe("smartOpenBlock", () => {
 			processRunner: waitingRunner,
 		});
 		await new Promise<void>((resolve) => setImmediate(resolve));
-		assert.deepStrictEqual(lifecycleEvents,
-			["create", "stop", "run:/Applications/My Editor/editor:[\"--wait\",\"/repo with spaces/.sandbox/fuzzy-explorer/generated block.md\"]"],
-			"TUI stops while editor owns the terminal");
+		assert.deepStrictEqual(
+			lifecycleEvents,
+			[
+				"create",
+				"stop",
+				'run:/Applications/My Editor/editor:["--wait","/repo with spaces/.sandbox/fuzzy-explorer/generated block.md"]',
+			],
+			"TUI stops while editor owns the terminal",
+		);
 		assert.deepStrictEqual(lifecycleFs.removed, [], "temp remains while editor is running");
 		finishEditor?.(0);
 		const opened = await opening;
 		assert.strictEqual(opened.exitCode, 0, "successful editor result is reported");
-		assert.deepStrictEqual(lifecycleFs.removed,
+		assert.deepStrictEqual(
+			lifecycleFs.removed,
 			["/repo with spaces/.sandbox/fuzzy-explorer/generated block.md"],
-			"temp is removed after editor exit");
-		assert.deepStrictEqual(lifecycleEvents.slice(-3),
+			"temp is removed after editor exit",
+		);
+		assert.deepStrictEqual(
+			lifecycleEvents.slice(-3),
 			["remove", "start", "render:true"],
-			"success restarts TUI and forces a full render");
+			"success restarts TUI and forces a full render",
+		);
 	});
 
 	it("spawn error propagates and still restores the TUI", async () => {
@@ -223,36 +264,44 @@ describe("smartOpenBlock", () => {
 		const errorFs = new FakeFileSystem();
 		errorFs.events = errorEvents;
 		await assert.rejects(
-			() => smartOpenBlock(block({ fileReference: { path: "/repo/file.ts", line: 9 } }), {
-				tui: fakeTui(errorEvents),
-				settings: { externalEditor: "vim" },
-				fileSystem: errorFs,
-				processRunner: {
-					async run(): Promise<number | null> {
-						errorEvents.push("run-error");
-						throw new Error("spawn failed");
+			() =>
+				smartOpenBlock(block({ fileReference: { path: "/repo/file.ts", line: 9 } }), {
+					tui: fakeTui(errorEvents),
+					settings: { externalEditor: "vim" },
+					fileSystem: errorFs,
+					processRunner: {
+						async run(): Promise<number | null> {
+							errorEvents.push("run-error");
+							throw new Error("spawn failed");
+						},
 					},
-				},
-			}),
+				}),
 			{ message: "spawn failed" },
 			"spawn error propagates to controller",
 		);
-		assert.deepStrictEqual(errorEvents,
+		assert.deepStrictEqual(
+			errorEvents,
 			["stop", "run-error", "start", "render:true"],
-			"spawn error still restarts TUI with full render");
+			"spawn error still restarts TUI with full render",
+		);
 	});
 
 	it("spawn error also cleans generated canonical temp", async () => {
 		const temporaryErrorEvents: string[] = [];
 		const temporaryErrorFs = new FakeFileSystem();
 		temporaryErrorFs.events = temporaryErrorEvents;
-		await assert.rejects(() => smartOpenBlock(block(), {
-			tui: fakeTui(temporaryErrorEvents),
-			settings: { externalEditor: "vim" },
-			fileSystem: temporaryErrorFs,
-			processRunner: { async run(): Promise<number | null> { throw new Error("editor crashed"); } },
-		}));
-		assert.deepStrictEqual(temporaryErrorEvents,
-			["create", "stop", "remove", "start", "render:true"]);
+		await assert.rejects(() =>
+			smartOpenBlock(block(), {
+				tui: fakeTui(temporaryErrorEvents),
+				settings: { externalEditor: "vim" },
+				fileSystem: temporaryErrorFs,
+				processRunner: {
+					async run(): Promise<number | null> {
+						throw new Error("editor crashed");
+					},
+				},
+			}),
+		);
+		assert.deepStrictEqual(temporaryErrorEvents, ["create", "stop", "remove", "start", "render:true"]);
 	});
 });

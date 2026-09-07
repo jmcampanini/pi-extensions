@@ -31,8 +31,15 @@ const stateRows = [
 ];
 
 const mixedTierRows: WidgetRow[] = [
-	{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
-	  toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 },
+	{
+		name: "Auth",
+		agent: "scout",
+		elapsedSeconds: 192,
+		status: "active",
+		toolName: "bash",
+		toolElapsedSeconds: 420,
+		contextTokens: 84_000,
+	},
 	{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "stalled" },
 ];
 
@@ -110,16 +117,22 @@ describe("formatRunningWidgetLines", () => {
 	});
 
 	it("rows exactly width wide", () => {
-		assert.strictEqual(lines.every((l) => l.length === 60), true);
+		assert.strictEqual(
+			lines.every((l) => l.length === 60),
+			true,
+		);
 	});
 
 	// Valid identifiers occupy at most 20 display columns and render in full.
 	// The renderer still clamps hostile persisted input defensively.
-	const tagRows = formatRunningWidgetLines([
-		{ name: "short child", agent: "scout", elapsedSeconds: 1 },
-		{ name: "boundary child", agent: "abcdefghijklmnopqrst", elapsedSeconds: 2 },
-		{ name: "long child", agent: "abcdefghijklmnopqrstu", elapsedSeconds: 3 },
-	], 72);
+	const tagRows = formatRunningWidgetLines(
+		[
+			{ name: "short child", agent: "scout", elapsedSeconds: 1 },
+			{ name: "boundary child", agent: "abcdefghijklmnopqrst", elapsedSeconds: 2 },
+			{ name: "long child", agent: "abcdefghijklmnopqrstu", elapsedSeconds: 3 },
+		],
+		72,
+	);
 
 	it("short agent identifier remains unchanged and unbracketed", () => {
 		assert.strictEqual(tagRows[1].includes("scout"), true);
@@ -134,7 +147,10 @@ describe("formatRunningWidgetLines", () => {
 	});
 
 	it("agent identifiers never render brackets", () => {
-		assert.strictEqual(tagRows.slice(1).some((line) => line.includes("[")), false);
+		assert.strictEqual(
+			tagRows.slice(1).some((line) => line.includes("[")),
+			false,
+		);
 	});
 
 	it("mixed identifier widths keep task names aligned", () => {
@@ -144,12 +160,15 @@ describe("formatRunningWidgetLines", () => {
 		);
 	});
 
-	const wideTagRows = formatRunningWidgetLines([
-		{ name: "CJK boundary", agent: "検索".repeat(5), elapsedSeconds: 1 },
-		{ name: "CJK long", agent: "検索".repeat(5) + "検", elapsedSeconds: 2 },
-		{ name: "emoji long", agent: "💥".repeat(11), elapsedSeconds: 3 },
-		{ name: "emoji cluster long", agent: familyEmoji.repeat(11), elapsedSeconds: 4 },
-	], 72);
+	const wideTagRows = formatRunningWidgetLines(
+		[
+			{ name: "CJK boundary", agent: "検索".repeat(5), elapsedSeconds: 1 },
+			{ name: "CJK long", agent: "検索".repeat(5) + "検", elapsedSeconds: 2 },
+			{ name: "emoji long", agent: "💥".repeat(11), elapsedSeconds: 3 },
+			{ name: "emoji cluster long", agent: familyEmoji.repeat(11), elapsedSeconds: 4 },
+		],
+		72,
+	);
 
 	it("20-column wide identifier remains unchanged", () => {
 		assert.strictEqual(wideTagRows[1].includes("検索".repeat(5)), true);
@@ -169,7 +188,9 @@ describe("formatRunningWidgetLines", () => {
 
 	const fullAgent = "abcdefghijklmnopqrstuvwx";
 	const fullPrefixRow = formatRunningWidgetLines(
-		[{ name: `${fullAgent}: Auth`, agent: fullAgent, elapsedSeconds: 4 }], 50);
+		[{ name: `${fullAgent}: Auth`, agent: fullAgent, elapsedSeconds: 4 }],
+		50,
+	);
 
 	it("prefix de-duplication compares against the full agent identifier", () => {
 		assert.strictEqual(fullPrefixRow[1].includes("abcdefghijklmnopqrs… Auth"), true);
@@ -180,7 +201,9 @@ describe("formatRunningWidgetLines", () => {
 	});
 
 	const narrowLongTag = formatRunningWidgetLines(
-		[{ name: "Task details that should reclaim width", agent: "a-very-long-agent-x", elapsedSeconds: 4 }], 30);
+		[{ name: "Task details that should reclaim width", agent: "a-very-long-agent-x", elapsedSeconds: 4 }],
+		30,
+	);
 
 	it("maximum-width identity leaves the narrow task a final ellipsis", () => {
 		assert.strictEqual(narrowLongTag[1].includes("a-very-long-agent-x …"), true);
@@ -208,7 +231,9 @@ describe("formatRunningWidgetLines", () => {
 
 	// narrow width: name truncates, tag + clock survive
 	const narrow = formatRunningWidgetLines(
-		[{ name: "a very long task name that cannot possibly fit", agent: "scout", elapsedSeconds: 61 }], 30);
+		[{ name: "a very long task name that cannot possibly fit", agent: "scout", elapsedSeconds: 61 }],
+		30,
+	);
 
 	it("narrow keeps clock one off the edge", () => {
 		assert.strictEqual(narrow[1].endsWith("01:01 "), true);
@@ -229,8 +254,12 @@ describe("formatRunningWidgetLines", () => {
 	// bare (pre-worker resume) row: blank tag column, still aligned
 	it("missing identifier keeps the shared column aligned", () => {
 		const mixed = formatRunningWidgetLines(
-			[{ name: "old resume", agent: undefined, elapsedSeconds: 10 },
-			 { name: "Auth", agent: "scout", elapsedSeconds: 20 }], 50);
+			[
+				{ name: "old resume", agent: undefined, elapsedSeconds: 10 },
+				{ name: "Auth", agent: "scout", elapsedSeconds: 20 },
+			],
+			50,
+		);
 		assert.strictEqual(mixed[1].startsWith(" ".repeat(7) + "old resume"), true);
 	});
 
@@ -239,8 +268,7 @@ describe("formatRunningWidgetLines", () => {
 	const stateLines = formatRunningWidgetLines(stateRows, 60);
 
 	it("forked worktree row shows both marks", () => {
-		assert.strictEqual(stateLines[1],
-			` scout  ${FORK_MARK}${WORKTREE_MARK} Auth` + " ".repeat(39) + "00:23 ");
+		assert.strictEqual(stateLines[1], ` scout  ${FORK_MARK}${WORKTREE_MARK} Auth` + " ".repeat(39) + "00:23 ");
 	});
 
 	it("stateless row gets a blank slot, name still aligned", () => {
@@ -248,29 +276,46 @@ describe("formatRunningWidgetLines", () => {
 	});
 
 	it("worktree-only row leaves the fork column blank", () => {
-		assert.strictEqual(stateLines[3],
-			` judge   ${WORKTREE_MARK} API review` + " ".repeat(33) + "01:12 ");
+		assert.strictEqual(stateLines[3], ` judge   ${WORKTREE_MARK} API review` + " ".repeat(33) + "01:12 ");
 	});
 
 	it("state rows exactly width wide", () => {
-		assert.strictEqual(stateLines.every((l) => l.length === 60), true);
+		assert.strictEqual(
+			stateLines.every((l) => l.length === 60),
+			true,
+		);
 	});
 
-	const allMarkerRows = formatRunningWidgetLines([
-		{ name: "all", agent: "worker", elapsedSeconds: 1, forked: true, interactive: true, worktree: true, external: true },
-		{ name: "interactive external", agent: "worker", elapsedSeconds: 2, interactive: true, external: true },
-		{ name: "worktree", agent: "worker", elapsedSeconds: 3, worktree: true },
-		{ name: "none", agent: "worker", elapsedSeconds: 4 },
-	], 60);
+	const allMarkerRows = formatRunningWidgetLines(
+		[
+			{
+				name: "all",
+				agent: "worker",
+				elapsedSeconds: 1,
+				forked: true,
+				interactive: true,
+				worktree: true,
+				external: true,
+			},
+			{ name: "interactive external", agent: "worker", elapsedSeconds: 2, interactive: true, external: true },
+			{ name: "worktree", agent: "worker", elapsedSeconds: 3, worktree: true },
+			{ name: "none", agent: "worker", elapsedSeconds: 4 },
+		],
+		60,
+	);
 
 	it("markers use canonical e,f,i,w order", () => {
-		assert.strictEqual(allMarkerRows[1],
-			` worker ${EXTERNAL_MARK}${FORK_MARK}${INTERACTIVE_MARK}${WORKTREE_MARK} all` + " ".repeat(38) + "00:01 ");
+		assert.strictEqual(
+			allMarkerRows[1],
+			` worker ${EXTERNAL_MARK}${FORK_MARK}${INTERACTIVE_MARK}${WORKTREE_MARK} all` + " ".repeat(38) + "00:01 ",
+		);
 	});
 
 	it("used marker columns stay aligned with blank cells", () => {
-		assert.strictEqual(allMarkerRows[2],
-			` worker ${EXTERNAL_MARK} ${INTERACTIVE_MARK}  interactive external` + " ".repeat(21) + "00:02 ");
+		assert.strictEqual(
+			allMarkerRows[2],
+			` worker ${EXTERNAL_MARK} ${INTERACTIVE_MARK}  interactive external` + " ".repeat(21) + "00:02 ",
+		);
 	});
 
 	it("rows without flags retain blanks for every used marker", () => {
@@ -278,10 +323,13 @@ describe("formatRunningWidgetLines", () => {
 	});
 
 	it("unused f and i columns disappear while e,w remain aligned", () => {
-		const subsetMarkers = formatRunningWidgetLines([
-			{ name: "external", agent: "worker", elapsedSeconds: 1, external: true },
-			{ name: "worktree", agent: "worker", elapsedSeconds: 2, worktree: true },
-		], 50);
+		const subsetMarkers = formatRunningWidgetLines(
+			[
+				{ name: "external", agent: "worker", elapsedSeconds: 1, external: true },
+				{ name: "worktree", agent: "worker", elapsedSeconds: 2, worktree: true },
+			],
+			50,
+		);
 		assert.deepStrictEqual(subsetMarkers.slice(1), [
 			` worker ${EXTERNAL_MARK}  external` + " ".repeat(25) + "00:01 ",
 			` worker  ${WORKTREE_MARK} worktree` + " ".repeat(25) + "00:02 ",
@@ -315,9 +363,14 @@ describe("formatRunningWidgetLines", () => {
 
 	it("summary and detailed rows remain width-safe together", () => {
 		for (let width = -2; width <= 60; width++) {
-			for (const line of formatRunningWidgetLines(rows, width, {}, {
-				summary: { hiddenRows: 99, stalledRows: 2, waitingRows: 3, queuedRows: 42 },
-			})) {
+			for (const line of formatRunningWidgetLines(
+				rows,
+				width,
+				{},
+				{
+					summary: { hiddenRows: 99, stalledRows: 2, waitingRows: 3, queuedRows: 42 },
+				},
+			)) {
 				assert.ok(visibleWidth(line) <= Math.max(0, width), `summary row fits width ${width}`);
 			}
 		}
@@ -359,7 +412,9 @@ describe("formatRunningWidgetLines", () => {
 
 	// narrow width with a marker group: markers survive, the name gives way
 	const narrowState = formatRunningWidgetLines(
-		[{ name: "a very long task name that cannot possibly fit", agent: "scout", elapsedSeconds: 61, forked: true }], 30);
+		[{ name: "a very long task name that cannot possibly fit", agent: "scout", elapsedSeconds: 61, forked: true }],
+		30,
+	);
 
 	it("narrow keeps the marker group", () => {
 		assert.strictEqual(narrowState[1].includes(` scout ${FORK_MARK} `), true);
@@ -377,7 +432,13 @@ describe("formatRunningWidgetLines", () => {
 	// terminal. Worst case: long tag, both marks, H:MM:SS clock, long name.
 	it("no line ever exceeds the render width", () => {
 		const overflowRows = [
-			{ name: "a very long task name that cannot possibly fit", agent: "code-reviewer", elapsedSeconds: 3723, forked: true, worktree: true },
+			{
+				name: "a very long task name that cannot possibly fit",
+				agent: "code-reviewer",
+				elapsedSeconds: 3723,
+				forked: true,
+				worktree: true,
+			},
 			{ name: "x", elapsedSeconds: 0 },
 		];
 		// Negative widths must not throw and must emit empty lines (max(0, w)).
@@ -407,7 +468,14 @@ describe("formatRunningWidgetLines", () => {
 	// other segment fields are present - the whole v1 block above is the oracle.
 	it("rows without status retain the identity-name-clock layout", () => {
 		const v2NoStatusRows: WidgetRow[] = [
-			{ name: "Scout: Auth", agent: "scout", elapsedSeconds: 23, toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 },
+			{
+				name: "Scout: Auth",
+				agent: "scout",
+				elapsedSeconds: 23,
+				toolName: "bash",
+				toolElapsedSeconds: 420,
+				contextTokens: 84_000,
+			},
 			{ name: "quick fix", agent: "worker", elapsedSeconds: 4 },
 		];
 		assert.deepStrictEqual(formatRunningWidgetLines(v2NoStatusRows, 60), lines);
@@ -416,50 +484,77 @@ describe("formatRunningWidgetLines", () => {
 	// The example block, pinned exactly at width 78: full segment on the active
 	// row, fixed context cells on every row, and blanks when context is unknown.
 	const exampleRows: WidgetRow[] = [
-		{ name: "Auth", agent: "scout", elapsedSeconds: 192, forked: true, worktree: true,
-		  status: "active", toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 },
+		{
+			name: "Auth",
+			agent: "scout",
+			elapsedSeconds: 192,
+			forked: true,
+			worktree: true,
+			status: "active",
+			toolName: "bash",
+			toolElapsedSeconds: 420,
+			contextTokens: 84_000,
+		},
 		{ name: "quick fix", agent: "worker", elapsedSeconds: 41, status: "waiting", contextTokens: 5_700 },
 		{ name: "API review", agent: "judge", elapsedSeconds: 72, worktree: true, status: "stalled" },
 	];
 	const exampleLines = formatRunningWidgetLines(exampleRows, 78);
 
 	it("example block: active row", () => {
-		assert.strictEqual(exampleLines[1],
-			" scout  fw Auth" + " ".repeat(31) + "bash 7m · active ·  84k · 03:12 ");
+		assert.strictEqual(exampleLines[1], " scout  fw Auth" + " ".repeat(31) + "bash 7m · active ·  84k · 03:12 ");
 	});
 
 	it("example block: waiting row rounds and pads the tokens", () => {
-		assert.strictEqual(exampleLines[2],
-			" worker    quick fix" + " ".repeat(35) + "waiting ·   6k · 00:41 ");
+		assert.strictEqual(exampleLines[2], " worker    quick fix" + " ".repeat(35) + "waiting ·   6k · 00:41 ");
 	});
 
 	it("example block: stalled row reserves unknown context columns", () => {
-		assert.strictEqual(exampleLines[3],
-			" judge   w API review" + " ".repeat(34) + "stalled" + " ".repeat(8) + "· 01:12 ");
+		assert.strictEqual(
+			exampleLines[3],
+			" judge   w API review" + " ".repeat(34) + "stalled" + " ".repeat(8) + "· 01:12 ",
+		);
 	});
 
 	it("example block rows exactly width wide", () => {
-		assert.strictEqual(exampleLines.every((l) => l.length === 78), true);
+		assert.strictEqual(
+			exampleLines.every((l) => l.length === 78),
+			true,
+		);
 	});
 
 	it("starting row reserves unknown context columns", () => {
 		const startingLines = formatRunningWidgetLines(
-			[{ name: "boot up", agent: "worker", elapsedSeconds: 5, status: "starting" }] as WidgetRow[], 50);
-		assert.strictEqual(startingLines[1],
-			" worker boot up" + " ".repeat(11) + "starting" + " ".repeat(8) + "· 00:05 ");
+			[{ name: "boot up", agent: "worker", elapsedSeconds: 5, status: "starting" }] as WidgetRow[],
+			50,
+		);
+		assert.strictEqual(
+			startingLines[1],
+			" worker boot up" + " ".repeat(11) + "starting" + " ".repeat(8) + "· 00:05 ",
+		);
 	});
 
 	it("stalled-only row", () => {
 		const stalledLines = formatRunningWidgetLines(
-			[{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "stalled" }] as WidgetRow[], 40);
+			[{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "stalled" }] as WidgetRow[],
+			40,
+		);
 		assert.strictEqual(stalledLines[1], " judge API rev…  stalled" + " ".repeat(8) + "· 01:12 ");
 	});
 
 	// The degradation ladder on one row at descending widths: the tool drops,
 	// then the name truncates around the fixed state/context/clock core. Once the
 	// core cannot coexist with identity and clock, the safe v1 ladder takes over.
-	const ladderRow: WidgetRow[] = [{ name: "Auth refactor", agent: "scout", elapsedSeconds: 192,
-		status: "active", toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 }];
+	const ladderRow: WidgetRow[] = [
+		{
+			name: "Auth refactor",
+			agent: "scout",
+			elapsedSeconds: 192,
+			status: "active",
+			toolName: "bash",
+			toolElapsedSeconds: 420,
+			contextTokens: 84_000,
+		},
+	];
 	const ladderAt = (w: number) => formatRunningWidgetLines(ladderRow, w)[1];
 
 	it("ladder 54: full tool segment returns beside the full name", () => {
@@ -468,7 +563,9 @@ describe("formatRunningWidgetLines", () => {
 
 	it("tool remains absent through the full-name boundary", () => {
 		assert.strictEqual(
-			[44, 45, 46, 47, 48, 49, 50, 51, 52, 53].every((width) => !ladderAt(width).includes("bash") && ladderAt(width).includes("Auth refactor")),
+			[44, 45, 46, 47, 48, 49, 50, 51, 52, 53].every(
+				(width) => !ladderAt(width).includes("bash") && ladderAt(width).includes("Auth refactor"),
+			),
 			true,
 		);
 	});
@@ -511,17 +608,30 @@ describe("formatRunningWidgetLines", () => {
 		assert.strictEqual(ladderAt(39).includes(" Auth re… "), true);
 	});
 
-	const shortNameRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 192,
-		status: "active", toolName: "bash", toolElapsedSeconds: 420, contextTokens: 84_000 }];
+	const shortNameRow: WidgetRow[] = [
+		{
+			name: "Auth",
+			agent: "scout",
+			elapsedSeconds: 192,
+			status: "active",
+			toolName: "bash",
+			toolElapsedSeconds: 420,
+			contextTokens: 84_000,
+		},
+	];
 
 	it("short name 44: tool drops before truncating the whole name", () => {
-		assert.strictEqual(formatRunningWidgetLines(shortNameRow, 44)[1],
-			" scout Auth" + " ".repeat(11) + "active ·  84k · 03:12 ");
+		assert.strictEqual(
+			formatRunningWidgetLines(shortNameRow, 44)[1],
+			" scout Auth" + " ".repeat(11) + "active ·  84k · 03:12 ",
+		);
 	});
 
 	it("short name 45: tool returns with the whole name", () => {
-		assert.strictEqual(formatRunningWidgetLines(shortNameRow, 45)[1],
-			" scout Auth  bash 7m · active ·  84k · 03:12 ");
+		assert.strictEqual(
+			formatRunningWidgetLines(shortNameRow, 45)[1],
+			" scout Auth  bash 7m · active ·  84k · 03:12 ",
+		);
 	});
 
 	it("short name never gains an ellipsis for a segment", () => {
@@ -537,12 +647,14 @@ describe("formatRunningWidgetLines", () => {
 	});
 
 	it("mixed tiers: stalled row", () => {
-		assert.strictEqual(mixedTier[2],
-			" judge API review" + " ".repeat(20) + "stalled" + " ".repeat(8) + "· 01:12 ");
+		assert.strictEqual(mixedTier[2], " judge API review" + " ".repeat(20) + "stalled" + " ".repeat(8) + "· 01:12 ");
 	});
 
 	it("mixed tiers: rows exactly width wide", () => {
-		assert.strictEqual(mixedTier.every((l) => l.length === 60), true);
+		assert.strictEqual(
+			mixedTier.every((l) => l.length === 60),
+			true,
+		);
 	});
 
 	it("mixed tiers: both clocks end at the right edge", () => {
@@ -551,8 +663,10 @@ describe("formatRunningWidgetLines", () => {
 
 	// Style hooks: the segment renders dim normally and warn iff stalled; the
 	// clock stays dim; stripping the tags recovers the exact plain width.
-	const segStyled = formatRunningWidgetLines(mixedTierRows, 60,
-		{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
+	const segStyled = formatRunningWidgetLines(mixedTierRows, 60, {
+		dim: (t) => `<D>${t}</D>`,
+		warn: (t) => `<W>${t}</W>`,
+	});
 
 	it("segment dim on active", () => {
 		assert.strictEqual(segStyled[1].includes("<D>bash 7m · active ·  84k</D><D> · </D><D>03:12</D> "), true);
@@ -571,8 +685,11 @@ describe("formatRunningWidgetLines", () => {
 	});
 
 	it("stripped stalled row length still exact", () => {
-		assert.strictEqual(segStyled[2]
-			.replaceAll("<D>", "").replaceAll("</D>", "").replaceAll("<W>", "").replaceAll("</W>", "").length, 60);
+		assert.strictEqual(
+			segStyled[2].replaceAll("<D>", "").replaceAll("</D>", "").replaceAll("<W>", "").replaceAll("</W>", "")
+				.length,
+			60,
+		);
 	});
 
 	it("warn falls back to dim", () => {
@@ -582,8 +699,19 @@ describe("formatRunningWidgetLines", () => {
 
 	// Tool part renders only while active - waiting rows keep the tokens alone.
 	const waitingTool = formatRunningWidgetLines(
-		[{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting",
-		   toolName: "bash", toolElapsedSeconds: 9, contextTokens: 6_000 }] as WidgetRow[], 60);
+		[
+			{
+				name: "Auth",
+				agent: "scout",
+				elapsedSeconds: 41,
+				status: "waiting",
+				toolName: "bash",
+				toolElapsedSeconds: 9,
+				contextTokens: 6_000,
+			},
+		] as WidgetRow[],
+		60,
+	);
 
 	it("tool part only renders while active", () => {
 		assert.strictEqual(waitingTool[1].includes("bash"), false);
@@ -596,8 +724,18 @@ describe("formatRunningWidgetLines", () => {
 	// Unknown context renders as absence, not "?"; tokens render as whole
 	// thousands and clamp at 0 below.
 	const noTokens = formatRunningWidgetLines(
-		[{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
-		   toolName: "bash", toolElapsedSeconds: 420 }] as WidgetRow[], 60);
+		[
+			{
+				name: "Auth",
+				agent: "scout",
+				elapsedSeconds: 192,
+				status: "active",
+				toolName: "bash",
+				toolElapsedSeconds: 420,
+			},
+		] as WidgetRow[],
+		60,
+	);
 
 	it("unknown context renders as a reserved blank cell", () => {
 		assert.strictEqual(noTokens[1].includes(`bash 7m · active${" ".repeat(8)}· 03:12 `), true);
@@ -609,25 +747,41 @@ describe("formatRunningWidgetLines", () => {
 
 	it("counts above the fixed field saturate at 999k", () => {
 		const bigTokens = formatRunningWidgetLines(
-			[{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting", contextTokens: 1_234_900 }] as WidgetRow[], 60);
+			[
+				{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting", contextTokens: 1_234_900 },
+			] as WidgetRow[],
+			60,
+		);
 		assert.strictEqual(bigTokens[1].includes("waiting · 999k"), true);
 	});
 
 	it("negative counts clamp and pad to 0k", () => {
 		const negativeTokens = formatRunningWidgetLines(
-			[{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting", contextTokens: -5 }] as WidgetRow[], 60);
+			[{ name: "Auth", agent: "scout", elapsedSeconds: 41, status: "waiting", contextTokens: -5 }] as WidgetRow[],
+			60,
+		);
 		assert.strictEqual(negativeTokens[1].includes("waiting ·   0k"), true);
 	});
 
 	// Tool content has no reserved width or padding. The state ends at the same
 	// context delimiter on every known-context row, and token right edges align.
-	const alignedTelemetry = formatRunningWidgetLines([
-		{ name: "Auth", agent: "scout", elapsedSeconds: 47, status: "active",
-		  toolName: "bash", toolElapsedSeconds: 29, contextTokens: 6_000 },
-		{ name: "boot", agent: "worker", elapsedSeconds: 48, status: "starting", contextTokens: 106_000 },
-		{ name: "wait", agent: "worker", elapsedSeconds: 49, status: "waiting", contextTokens: 25_000 },
-		{ name: "stall", agent: "worker", elapsedSeconds: 50, status: "stalled", contextTokens: 18_000 },
-	] as WidgetRow[], 78);
+	const alignedTelemetry = formatRunningWidgetLines(
+		[
+			{
+				name: "Auth",
+				agent: "scout",
+				elapsedSeconds: 47,
+				status: "active",
+				toolName: "bash",
+				toolElapsedSeconds: 29,
+				contextTokens: 6_000,
+			},
+			{ name: "boot", agent: "worker", elapsedSeconds: 48, status: "starting", contextTokens: 106_000 },
+			{ name: "wait", agent: "worker", elapsedSeconds: 49, status: "waiting", contextTokens: 25_000 },
+			{ name: "stall", agent: "worker", elapsedSeconds: 50, status: "stalled", contextTokens: 18_000 },
+		] as WidgetRow[],
+		78,
+	);
 
 	it("bash telemetry has ordered dot-separated fields and a fixed context cell", () => {
 		assert.strictEqual(alignedTelemetry[1].includes("bash 29s · active ·   6k · 00:47 "), true);
@@ -638,30 +792,45 @@ describe("formatRunningWidgetLines", () => {
 	});
 
 	it("context suffixes align at their right edge", () => {
-		assert.deepStrictEqual(alignedTelemetry.slice(1).map((line) => line.lastIndexOf("k")), [68, 68, 68, 68]);
+		assert.deepStrictEqual(
+			alignedTelemetry.slice(1).map((line) => line.lastIndexOf("k")),
+			[68, 68, 68, 68],
+		);
 	});
 
 	it("context-to-clock separators align", () => {
-		assert.deepStrictEqual(alignedTelemetry.slice(1).map((line) => line.lastIndexOf("·")), [70, 70, 70, 70]);
+		assert.deepStrictEqual(
+			alignedTelemetry.slice(1).map((line) => line.lastIndexOf("·")),
+			[70, 70, 70, 70],
+		);
 	});
 
 	// Clock cells reserve the widest current clock so crossing one hour does not
 	// move the state or context columns on shorter-running rows.
-	const mixedClockWidths = formatRunningWidgetLines([
-		{ name: "short", agent: "scout", elapsedSeconds: 47, status: "active", contextTokens: 6_000 },
-		{ name: "long", agent: "scout", elapsedSeconds: 3_723, status: "active", contextTokens: 106_000 },
-	] as WidgetRow[], 78);
+	const mixedClockWidths = formatRunningWidgetLines(
+		[
+			{ name: "short", agent: "scout", elapsedSeconds: 47, status: "active", contextTokens: 6_000 },
+			{ name: "long", agent: "scout", elapsedSeconds: 3_723, status: "active", contextTokens: 106_000 },
+		] as WidgetRow[],
+		78,
+	);
 
 	it("mixed clock widths keep context delimiters aligned", () => {
 		assert.deepStrictEqual(mixedClockWidths.slice(1).map(contextDelimiterIndex), [61, 61]);
 	});
 
 	it("mixed clock widths keep context right edges aligned", () => {
-		assert.deepStrictEqual(mixedClockWidths.slice(1).map((line) => line.lastIndexOf("k")), [66, 66]);
+		assert.deepStrictEqual(
+			mixedClockWidths.slice(1).map((line) => line.lastIndexOf("k")),
+			[66, 66],
+		);
 	});
 
 	it("mixed clock widths keep context-to-clock separators aligned", () => {
-		assert.deepStrictEqual(mixedClockWidths.slice(1).map((line) => line.lastIndexOf("·")), [68, 68]);
+		assert.deepStrictEqual(
+			mixedClockWidths.slice(1).map((line) => line.lastIndexOf("·")),
+			[68, 68],
+		);
 	});
 
 	it("mixed clock widths keep clocks on the right edge", () => {
@@ -671,8 +840,19 @@ describe("formatRunningWidgetLines", () => {
 	// Hostile toolName: child-written, so the renderer re-sanitizes it and no
 	// escape byte may survive into the joined output.
 	const hostileTool = formatRunningWidgetLines(
-		[{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
-		   toolName: "ba\x1b]52;c;Zm9v\x07sh\x1b[2J\0", toolElapsedSeconds: 420, contextTokens: 84_000 }] as WidgetRow[], 60);
+		[
+			{
+				name: "Auth",
+				agent: "scout",
+				elapsedSeconds: 192,
+				status: "active",
+				toolName: "ba\x1b]52;c;Zm9v\x07sh\x1b[2J\0",
+				toolElapsedSeconds: 420,
+				contextTokens: 84_000,
+			},
+		] as WidgetRow[],
+		60,
+	);
 
 	it("hostile tool name yields no escape bytes", () => {
 		assert.strictEqual(hostileTool.join("").includes("\x1b"), false);
@@ -688,8 +868,19 @@ describe("formatRunningWidgetLines", () => {
 
 	// A 40-char tool name clamps to 12 chars plus a trailing ellipsis.
 	const longTool = formatRunningWidgetLines(
-		[{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "active",
-		   toolName: "0123456789012345678901234567890123456789", toolElapsedSeconds: 420, contextTokens: 84_000 }] as WidgetRow[], 70);
+		[
+			{
+				name: "Auth",
+				agent: "scout",
+				elapsedSeconds: 192,
+				status: "active",
+				toolName: "0123456789012345678901234567890123456789",
+				toolElapsedSeconds: 420,
+				contextTokens: 84_000,
+			},
+		] as WidgetRow[],
+		70,
+	);
 
 	it("long tool name clamps at 12 chars + ellipsis", () => {
 		assert.strictEqual(longTool[1].includes("012345678901… 7m · active ·  84k"), true);
@@ -708,8 +899,19 @@ describe("formatRunningWidgetLines", () => {
 	// one terminal row per child - a surviving tab is 3 columns in pi-tui (fatal
 	// overflow) and a raw \n or \r corrupts the TUI's row accounting.
 	const whitespaceRows = formatRunningWidgetLines(
-		[{ name: "Au\tth", agent: "sc\nout", elapsedSeconds: 192, status: "active",
-		   toolName: "a\tb\nc\rd", toolElapsedSeconds: 420, contextTokens: 84_000 }] as WidgetRow[], 70);
+		[
+			{
+				name: "Au\tth",
+				agent: "sc\nout",
+				elapsedSeconds: 192,
+				status: "active",
+				toolName: "a\tb\nc\rd",
+				toolElapsedSeconds: 420,
+				contextTokens: 84_000,
+			},
+		] as WidgetRow[],
+		70,
+	);
 
 	it("no tab/newline/CR ever survives into a widget line", () => {
 		assert.strictEqual(/[\t\n\r]/.test(whitespaceRows.join("")), false);
@@ -730,9 +932,22 @@ describe("formatRunningWidgetLines", () => {
 	// Wide names and tools must truncate without exceeding pi-tui's metric.
 	it("wide-glyph rows never overflow or emit a lone surrogate at any width", () => {
 		const hostileWideRows: WidgetRow[] = [
-			{ name: "検索統合テストの実行", agent: "scout", elapsedSeconds: 192, status: "active",
-			  toolName: "検索工具調用器検索工具調用器", toolElapsedSeconds: 420, contextTokens: 84_000 },
-			{ name: "e" + "💥".repeat(10), agent: "worker", elapsedSeconds: 41, status: "waiting", contextTokens: 6_000 },
+			{
+				name: "検索統合テストの実行",
+				agent: "scout",
+				elapsedSeconds: 192,
+				status: "active",
+				toolName: "検索工具調用器検索工具調用器",
+				toolElapsedSeconds: 420,
+				contextTokens: 84_000,
+			},
+			{
+				name: "e" + "💥".repeat(10),
+				agent: "worker",
+				elapsedSeconds: 41,
+				status: "waiting",
+				contextTokens: 6_000,
+			},
 			{ name: "🇺🇸".repeat(10), agent: "judge", elapsedSeconds: 72, status: "active", contextTokens: 25_000 },
 			{ name: "♥️".repeat(10), agent: "worker", elapsedSeconds: 73, status: "waiting", contextTokens: 106_000 },
 			{ name: "Auth", agent: "judge", elapsedSeconds: 74, status: "stalled" },
@@ -746,7 +961,9 @@ describe("formatRunningWidgetLines", () => {
 	});
 
 	const flagRegression = formatRunningWidgetLines(
-		[{ name: "🇺🇸".repeat(6), agent: "scout", elapsedSeconds: 47 }] as WidgetRow[], 22)[1];
+		[{ name: "🇺🇸".repeat(6), agent: "scout", elapsedSeconds: 47 }] as WidgetRow[],
+		22,
+	)[1];
 
 	it("regional-indicator truncation fits pi-tui at the reported width", () => {
 		assert.strictEqual(visibleWidth(flagRegression) <= 22, true);
@@ -758,8 +975,17 @@ describe("formatRunningWidgetLines", () => {
 
 	it("wide names truncate before the fixed telemetry core", () => {
 		const wideNameCore = formatRunningWidgetLines(
-			[{ name: "検索検索検索検索検索検索", agent: "scout", elapsedSeconds: 47,
-			   status: "active", contextTokens: 6_000 }] as WidgetRow[], 50);
+			[
+				{
+					name: "検索検索検索検索検索検索",
+					agent: "scout",
+					elapsedSeconds: 47,
+					status: "active",
+					contextTokens: 6_000,
+				},
+			] as WidgetRow[],
+			50,
+		);
 		assert.strictEqual(wideNameCore[1].endsWith("active ·   6k · 00:47 "), true);
 	});
 
@@ -773,9 +999,17 @@ describe("formatRunningWidgetLines", () => {
 	// long-tag long-name row, plus a stalled row. No width - including negative
 	// widths - may ever overflow (pi's TUI crashes on an overflowing line).
 	const v2OverflowRows: WidgetRow[] = [
-		{ name: "a very long task name that cannot possibly fit", agent: "code-reviewer", elapsedSeconds: 3723,
-		  forked: true, worktree: true, status: "active", toolName: "twelvechartool",
-		  toolElapsedSeconds: 86340, contextTokens: 100_000 },
+		{
+			name: "a very long task name that cannot possibly fit",
+			agent: "code-reviewer",
+			elapsedSeconds: 3723,
+			forked: true,
+			worktree: true,
+			status: "active",
+			toolName: "twelvechartool",
+			toolElapsedSeconds: 86340,
+			contextTokens: 100_000,
+		},
 		{ name: "x", elapsedSeconds: 0, status: "stalled" },
 	];
 
@@ -801,12 +1035,16 @@ describe("formatRunningWidgetLines", () => {
 	const queuedRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 42, status: "queued" }];
 
 	it("queued row exact string", () => {
-		assert.strictEqual(formatRunningWidgetLines(queuedRow, 50)[1],
-			" scout Auth                 queued        · 00:42 ");
+		assert.strictEqual(
+			formatRunningWidgetLines(queuedRow, 50)[1],
+			" scout Auth                 queued        · 00:42 ",
+		);
 	});
 
-	const queuedStyled = formatRunningWidgetLines(queuedRow, 50,
-		{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
+	const queuedStyled = formatRunningWidgetLines(queuedRow, 50, {
+		dim: (t) => `<D>${t}</D>`,
+		warn: (t) => `<W>${t}</W>`,
+	});
 
 	it("queued core and clock separator render dim", () => {
 		assert.strictEqual(queuedStyled[1].includes(`<D>queued${" ".repeat(7)}</D><D> · </D><D>00:42</D> `), true);
@@ -824,22 +1062,32 @@ describe("formatRunningWidgetLines", () => {
 	const deliveringRow: WidgetRow[] = [{ name: "Auth", agent: "scout", elapsedSeconds: 192, status: "delivering" }];
 
 	it("delivering row exact string", () => {
-		assert.strictEqual(formatRunningWidgetLines(deliveringRow, 50)[1],
-			" scout Auth             delivering        · 03:12 ");
+		assert.strictEqual(
+			formatRunningWidgetLines(deliveringRow, 50)[1],
+			" scout Auth             delivering        · 03:12 ",
+		);
 	});
 
 	it("delivering truncates the name around the fixed telemetry core", () => {
 		assert.strictEqual(
 			formatRunningWidgetLines(
-				[{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "delivering" }] as WidgetRow[], 43)[1],
-			" judge API rev…  delivering        · 01:12 ");
+				[{ name: "API review", agent: "judge", elapsedSeconds: 72, status: "delivering" }] as WidgetRow[],
+				43,
+			)[1],
+			" judge API rev…  delivering        · 01:12 ",
+		);
 	});
 
-	const deliveringStyled = formatRunningWidgetLines(deliveringRow, 50,
-		{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
+	const deliveringStyled = formatRunningWidgetLines(deliveringRow, 50, {
+		dim: (t) => `<D>${t}</D>`,
+		warn: (t) => `<W>${t}</W>`,
+	});
 
 	it("delivering core and clock separator render dim", () => {
-		assert.strictEqual(deliveringStyled[1].includes(`<D>delivering${" ".repeat(7)}</D><D> · </D><D>03:12</D> `), true);
+		assert.strictEqual(
+			deliveringStyled[1].includes(`<D>delivering${" ".repeat(7)}</D><D> · </D><D>03:12</D> `),
+			true,
+		);
 	});
 
 	it("delivering never uses the warn hook", () => {
@@ -858,18 +1106,24 @@ describe("formatRunningWidgetLines", () => {
 	});
 
 	it("stopped delivery uses dim rather than warning styling", () => {
-		const stoppedStyled = formatRunningWidgetLines(stoppedRow, 50,
-			{ dim: (t) => `<D>${t}</D>`, warn: (t) => `<W>${t}</W>` });
+		const stoppedStyled = formatRunningWidgetLines(stoppedRow, 50, {
+			dim: (t) => `<D>${t}</D>`,
+			warn: (t) => `<W>${t}</W>`,
+		});
 		assert.strictEqual(stoppedStyled[1].includes("<D>stopped") && !stoppedStyled[1].includes("<W>"), true);
 	});
 
 	// The fixed core remains while it fits with identity and clock, sacrificing
 	// the name first. Once the core no longer fits, the row uses v1 geometry.
-	const deliveringLadder: WidgetRow[] = [{ name: "Auth refactor", agent: "scout", elapsedSeconds: 192, status: "delivering" }];
+	const deliveringLadder: WidgetRow[] = [
+		{ name: "Auth refactor", agent: "scout", elapsedSeconds: 192, status: "delivering" },
+	];
 
 	it("delivering ladder 42: fixed core truncates the name", () => {
-		assert.strictEqual(formatRunningWidgetLines(deliveringLadder, 42)[1],
-			" scout Auth r…  delivering        · 03:12 ");
+		assert.strictEqual(
+			formatRunningWidgetLines(deliveringLadder, 42)[1],
+			" scout Auth r…  delivering        · 03:12 ",
+		);
 	});
 
 	it("delivering ladder 32: fixed core drops to name-and-clock geometry", () => {
@@ -880,8 +1134,14 @@ describe("formatRunningWidgetLines", () => {
 	// clock. No width - including negative - may ever overflow.
 	it("no delivering line ever exceeds the render width", () => {
 		const deliveringOverflowRows: WidgetRow[] = [
-			{ name: "a very long task name that cannot possibly fit", agent: "code-reviewer", elapsedSeconds: 3723,
-			  forked: true, worktree: true, status: "delivering" },
+			{
+				name: "a very long task name that cannot possibly fit",
+				agent: "code-reviewer",
+				elapsedSeconds: 3723,
+				forked: true,
+				worktree: true,
+				status: "delivering",
+			},
 			{ name: "x", elapsedSeconds: 0, status: "delivering" },
 		];
 		for (let w = -2; w <= 70; w++) {

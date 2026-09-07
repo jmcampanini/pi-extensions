@@ -81,7 +81,9 @@ function resumeActionArgs(args: SubagentResumeCallArgs): SubagentActionArgs {
 }
 
 function normalizedInline(value: string | undefined): string {
-	return sanitizeDisplayText(value ?? "").replace(/\s+/g, " ").trim();
+	return sanitizeDisplayText(value ?? "")
+		.replace(/\s+/g, " ")
+		.trim();
 }
 
 function agentName(value: string | undefined): string {
@@ -116,20 +118,29 @@ function formatCollapsedHeading(
 
 	const nameWidth = width - titleWidth - separatorsWidth - metrics.visibleWidth(agent);
 	if (nameWidth >= minimumNameWidth) {
-		return titleText + agentStyle(" · ") + agentStyle(agent) + agentStyle(" · ")
-			+ nameStyle(metrics.fitText(name, nameWidth));
+		return (
+			titleText +
+			agentStyle(" · ") +
+			agentStyle(agent) +
+			agentStyle(" · ") +
+			nameStyle(metrics.fitText(name, nameWidth))
+		);
 	}
 
 	const agentWidth = width - titleWidth - separatorsWidth - minimumNameWidth;
 	if (agentWidth > 0) {
-		return titleText + agentStyle(" · ") + agentStyle(metrics.fitText(agent, agentWidth))
-			+ agentStyle(" · ") + nameStyle(metrics.fitText(name, minimumNameWidth));
+		return (
+			titleText +
+			agentStyle(" · ") +
+			agentStyle(metrics.fitText(agent, agentWidth)) +
+			agentStyle(" · ") +
+			nameStyle(metrics.fitText(name, minimumNameWidth))
+		);
 	}
 
 	const fallbackNameWidth = width - titleWidth - metrics.visibleWidth(" · ");
-	const nameFallback = name && fallbackNameWidth > 0
-		? agentStyle(" · ") + nameStyle(metrics.fitText(name, fallbackNameWidth))
-		: "";
+	const nameFallback =
+		name && fallbackNameWidth > 0 ? agentStyle(" · ") + nameStyle(metrics.fitText(name, fallbackNameWidth)) : "";
 	return metrics.clampStyled(`${titleText}${nameFallback}`, width);
 }
 
@@ -185,8 +196,9 @@ function formatCollapsedSubagentAction(
 		maxWidth,
 	);
 	const metadataLines = args.metadata
-		? metrics.renderText((style.metadata ?? plainText)(args.metadata), maxWidth)
-			.map((line) => metrics.clampStyled(line, maxWidth))
+		? metrics
+				.renderText((style.metadata ?? plainText)(args.metadata), maxWidth)
+				.map((line) => metrics.clampStyled(line, maxWidth))
 		: [];
 	const lines = [heading, ...metadataLines];
 	if (previewLineLimit > 0) {

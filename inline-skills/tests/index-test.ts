@@ -53,9 +53,7 @@ describe("registerInlineSkills", () => {
 		const harness = setup();
 		const { ctx } = tuiContext();
 		const results = harness.emitResults("input", { text: "please $write-pr-body now" }, ctx);
-		assert.deepEqual(results, [
-			{ action: "transform", text: "/skill:write-pr-body please $write-pr-body now" },
-		]);
+		assert.deepEqual(results, [{ action: "transform", text: "/skill:write-pr-body please $write-pr-body now" }]);
 	});
 
 	it("only skill commands count - prompts and extension commands do not", () => {
@@ -80,11 +78,7 @@ describe("registerInlineSkills", () => {
 	it("passes a multi-mention message through untouched without a UI", () => {
 		const harness = setup();
 		const { ctx } = tuiContext(false);
-		const results = harness.emitResults(
-			"input",
-			{ text: "$write-pr-body and $codex-web-search" },
-			ctx,
-		);
+		const results = harness.emitResults("input", { text: "$write-pr-body and $codex-web-search" }, ctx);
 		assert.deepEqual(results, [{ action: "continue" }]);
 	});
 
@@ -119,9 +113,9 @@ describe("registerInlineSkills", () => {
 		const result = await provider.getSuggestions(["$"], 0, 1, {
 			signal: new AbortController().signal,
 		});
-		assert.deepEqual(result?.items.map((item) => item.value), [
-			"$write-pr-body",
-			"$codex-web-search",
-		]);
+		assert.deepEqual(
+			result?.items.map((item) => item.value),
+			["$write-pr-body", "$codex-web-search"],
+		);
 	});
 });

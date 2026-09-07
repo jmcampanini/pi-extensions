@@ -65,39 +65,41 @@ export function formatAvailableModelText(inventory: readonly AgentInfo[], models
  * and only here, so the cached system prompt never carries the current model. */
 function formatModelLines(models: UsableModels): string {
 	const current = models.current ? safeInline(models.current) : "none selected";
-	const usable = models.ids.length > 0
-		? models.ids.map(safeInline).join(", ")
-		: "none (no provider has credentials on this machine)";
+	const usable =
+		models.ids.length > 0
+			? models.ids.map(safeInline).join(", ")
+			: "none (no provider has credentials on this machine)";
 	return `Current model: ${current}\nUsable Pi models (exact \`model\` values for Pi-harness subagents): ${usable}\nModel precedence: explicit override, agent definition, then the child harness's normal model selection. External harnesses use their own model names.`;
 }
 
 function formatAgentLines(inventory: readonly AgentInfo[]): string {
-	return inventory.map((agent) => {
-		const markers = availableMarkers(agent);
-		const mode = contextMode(agent);
-		const suffix = markers.length > 0 ? ` (${markers.join(", ")})` : "";
-		const problems = agent.problems.length > 0
-			? ` [not spawnable: ${safeInline(agent.problems.join("; "))}]`
-			: "";
-		const description = safeInline(agent.details ?? agent.description ?? "(no description)");
-		const model = agent.resolvedModel
-			? `model ${agent.resolvedModel}`
-			: agent.requestedModels.length > 0
-				? `requested models ${agent.requestedModels.join(", ")} (none usable)`
-				: "inherits model";
-		const config = [
-			`source ${agent.source}`,
-			model,
-			`context ${mode}`,
-			agent.autoExit ? "autonomous" : "interactive",
-			agent.worktree ? "worktree" : "shared checkout",
-			mode === "new-only" ? `external: ${agent.harness}` : `harness ${agent.harness}`,
-			...(agent.thinking ? [`thinking ${agent.thinking}`] : []),
-			...(agent.tools ? [`tools ${agent.tools}`] : []),
-			...(agent.harnessPassThrough ? [`pass-through ${agent.harnessPassThrough}`] : []),
-		];
-		return `• ${safeInline(agent.name)}${suffix}${problems} - ${description}\n  config: ${safeInline(config.join(" · "))}`;
-	}).join("\n");
+	return inventory
+		.map((agent) => {
+			const markers = availableMarkers(agent);
+			const mode = contextMode(agent);
+			const suffix = markers.length > 0 ? ` (${markers.join(", ")})` : "";
+			const problems =
+				agent.problems.length > 0 ? ` [not spawnable: ${safeInline(agent.problems.join("; "))}]` : "";
+			const description = safeInline(agent.details ?? agent.description ?? "(no description)");
+			const model = agent.resolvedModel
+				? `model ${agent.resolvedModel}`
+				: agent.requestedModels.length > 0
+					? `requested models ${agent.requestedModels.join(", ")} (none usable)`
+					: "inherits model";
+			const config = [
+				`source ${agent.source}`,
+				model,
+				`context ${mode}`,
+				agent.autoExit ? "autonomous" : "interactive",
+				agent.worktree ? "worktree" : "shared checkout",
+				mode === "new-only" ? `external: ${agent.harness}` : `harness ${agent.harness}`,
+				...(agent.thinking ? [`thinking ${agent.thinking}`] : []),
+				...(agent.tools ? [`tools ${agent.tools}`] : []),
+				...(agent.harnessPassThrough ? [`pass-through ${agent.harnessPassThrough}`] : []),
+			];
+			return `• ${safeInline(agent.name)}${suffix}${problems} - ${description}\n  config: ${safeInline(config.join(" · "))}`;
+		})
+		.join("\n");
 }
 
 export function formatCollapsedAvailableLines(
@@ -122,7 +124,11 @@ export function formatCollapsedAvailableLines(
 			? preview(` - ${descriptionHeadline(sanitizeDisplayText(agent.description))}`)
 			: preview(" - (no description)");
 		const problem = agent.problems.length > 0 ? warning(" · not spawnable") : "";
-		lines.push(...new Text(name(sanitizeDisplayText(agent.name)) + markerText + problem + description, 0, 0).render(safeWidth));
+		lines.push(
+			...new Text(name(sanitizeDisplayText(agent.name)) + markerText + problem + description, 0, 0).render(
+				safeWidth,
+			),
+		);
 	}
 	if (expandHint) {
 		const hidden = inventory.length - Math.min(inventory.length, AVAILABLE_CARD_MAX_ROWS);
@@ -135,31 +141,35 @@ export function formatCollapsedAvailableLines(
 function isAgentInfo(value: unknown): value is AgentInfo {
 	if (!value || typeof value !== "object") return false;
 	const agent = value as Partial<AgentInfo>;
-	return typeof agent.name === "string"
-		&& (agent.source === "global" || agent.source === "project")
-		&& typeof agent.filePath === "string"
-		&& (agent.description === undefined || typeof agent.description === "string")
-		&& (agent.details === undefined || typeof agent.details === "string")
-		&& (agent.resolvedModel === undefined || typeof agent.resolvedModel === "string")
-		&& (agent.thinking === undefined || typeof agent.thinking === "string")
-		&& (agent.tools === undefined || typeof agent.tools === "string")
-		&& (agent.harnessPassThrough === undefined || typeof agent.harnessPassThrough === "string")
-		&& Array.isArray(agent.requestedModels)
-		&& agent.requestedModels.every((model) => typeof model === "string")
-		&& (agent.context === "new" || agent.context === "forked")
-		&& typeof agent.autoExit === "boolean"
-		&& typeof agent.worktree === "boolean"
-		&& typeof agent.harness === "string"
-		&& Array.isArray(agent.problems)
-		&& agent.problems.every((problem) => typeof problem === "string");
+	return (
+		typeof agent.name === "string" &&
+		(agent.source === "global" || agent.source === "project") &&
+		typeof agent.filePath === "string" &&
+		(agent.description === undefined || typeof agent.description === "string") &&
+		(agent.details === undefined || typeof agent.details === "string") &&
+		(agent.resolvedModel === undefined || typeof agent.resolvedModel === "string") &&
+		(agent.thinking === undefined || typeof agent.thinking === "string") &&
+		(agent.tools === undefined || typeof agent.tools === "string") &&
+		(agent.harnessPassThrough === undefined || typeof agent.harnessPassThrough === "string") &&
+		Array.isArray(agent.requestedModels) &&
+		agent.requestedModels.every((model) => typeof model === "string") &&
+		(agent.context === "new" || agent.context === "forked") &&
+		typeof agent.autoExit === "boolean" &&
+		typeof agent.worktree === "boolean" &&
+		typeof agent.harness === "string" &&
+		Array.isArray(agent.problems) &&
+		agent.problems.every((problem) => typeof problem === "string")
+	);
 }
 
 function isUsableModels(value: unknown): value is UsableModels {
 	if (!value || typeof value !== "object") return false;
 	const models = value as Partial<UsableModels>;
-	return Array.isArray(models.ids)
-		&& models.ids.every((id) => typeof id === "string")
-		&& (models.current === undefined || typeof models.current === "string");
+	return (
+		Array.isArray(models.ids) &&
+		models.ids.every((id) => typeof id === "string") &&
+		(models.current === undefined || typeof models.current === "string")
+	);
 }
 
 function parseDetails(details: unknown): AvailablePresentation | undefined {
@@ -167,8 +177,10 @@ function parseDetails(details: unknown): AvailablePresentation | undefined {
 	const presentation = (details as { presentation?: unknown }).presentation;
 	if (!presentation || typeof presentation !== "object") return undefined;
 	const candidate = presentation as Partial<AvailablePresentation>;
-	if (candidate.version !== 1 || !Array.isArray(candidate.inventory) || !candidate.inventory.every(isAgentInfo)) return undefined;
-	if (!candidate.dirs || typeof candidate.dirs.global !== "string" || typeof candidate.dirs.project !== "string") return undefined;
+	if (candidate.version !== 1 || !Array.isArray(candidate.inventory) || !candidate.inventory.every(isAgentInfo))
+		return undefined;
+	if (!candidate.dirs || typeof candidate.dirs.global !== "string" || typeof candidate.dirs.project !== "string")
+		return undefined;
 	if (candidate.models !== undefined && !isUsableModels(candidate.models)) return undefined;
 	return candidate as AvailablePresentation;
 }
@@ -204,29 +216,40 @@ export function registerSubagentAvailableTool(pi: ExtensionAPI): void {
 				return {
 					invalidate(): void {},
 					render(width: number): string[] {
-						return formatCollapsedAvailableLines(presentation.inventory, width, {
-							name: (text) => theme.fg("accent", text),
-							metadata: (text) => theme.fg("muted", text),
-							preview: (text) => theme.fg("dim", text),
-							warning: (text) => theme.fg("error", text),
-						}, hint);
+						return formatCollapsedAvailableLines(
+							presentation.inventory,
+							width,
+							{
+								name: (text) => theme.fg("accent", text),
+								metadata: (text) => theme.fg("muted", text),
+								preview: (text) => theme.fg("dim", text),
+								warning: (text) => theme.fg("error", text),
+							},
+							hint,
+						);
 					},
 				};
 			}
 			return {
 				invalidate(): void {},
 				render(width: number): string[] {
-					return formatAgentOverviewLines(presentation.inventory, width, presentation.dirs, {
-						dim: (text) => theme.fg("dim", text),
-						muted: (text) => theme.fg("muted", text),
-						accent: (text) => theme.fg("accent", text),
-						output: (text) => theme.fg("toolOutput", text),
-						error: (text) => theme.fg("error", text),
-						warning: (text) => theme.fg("warning", text),
-						border: (text) => theme.fg("borderMuted", text),
-						bold: (text) => theme.bold(text),
-						italic: (text) => theme.italic(text),
-					}, { header: false, footer: false, fullDescriptionFallback: true, models: presentation.models });
+					return formatAgentOverviewLines(
+						presentation.inventory,
+						width,
+						presentation.dirs,
+						{
+							dim: (text) => theme.fg("dim", text),
+							muted: (text) => theme.fg("muted", text),
+							accent: (text) => theme.fg("accent", text),
+							output: (text) => theme.fg("toolOutput", text),
+							error: (text) => theme.fg("error", text),
+							warning: (text) => theme.fg("warning", text),
+							border: (text) => theme.fg("borderMuted", text),
+							bold: (text) => theme.bold(text),
+							italic: (text) => theme.italic(text),
+						},
+						{ header: false, footer: false, fullDescriptionFallback: true, models: presentation.models },
+					);
 				},
 			};
 		},

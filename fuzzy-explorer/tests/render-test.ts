@@ -79,18 +79,21 @@ describe("block identity", () => {
 	});
 
 	it("prose rows use full role tags", () => {
-		assert.deepStrictEqual([
-			formatBlockTag(makeBlock({ kind: "assistant" })),
-			formatBlockTag(makeBlock({ kind: "user" })),
-		], ["Assistant", "User"]);
+		assert.deepStrictEqual(
+			[formatBlockTag(makeBlock({ kind: "assistant" })), formatBlockTag(makeBlock({ kind: "user" }))],
+			["Assistant", "User"],
+		);
 	});
 
 	it("custom and summary rows are tagged with their titles", () => {
-		assert.deepStrictEqual([
-			formatBlockTag(makeBlock({ kind: "custom", title: "fixture-card" })),
-			formatBlockTag(makeBlock({ kind: "summary", title: "Branch summary" })),
-			formatBlockTag(makeBlock({ kind: "bash", title: "Bash", subtitle: "printf hi" })),
-		], ["fixture-card", "Branch summary", "Bash"]);
+		assert.deepStrictEqual(
+			[
+				formatBlockTag(makeBlock({ kind: "custom", title: "fixture-card" })),
+				formatBlockTag(makeBlock({ kind: "summary", title: "Branch summary" })),
+				formatBlockTag(makeBlock({ kind: "bash", title: "Bash", subtitle: "printf hi" })),
+			],
+			["fixture-card", "Branch summary", "Bash"],
+		);
 	});
 
 	it("preview identity is tag plus local short time", () => {
@@ -103,7 +106,9 @@ describe("block identity", () => {
 
 	it("detail identity keeps a distinct title", () => {
 		assert.strictEqual(
-			formatDetailIdentity(makeBlock({ kind: "custom", title: "fixture-card", timestamp: "2026-03-01T21:14:00.000Z" })),
+			formatDetailIdentity(
+				makeBlock({ kind: "custom", title: "fixture-card", timestamp: "2026-03-01T21:14:00.000Z" }),
+			),
 			`custom · ${localShortTime("2026-03-01T21:14:00.000Z")} · fixture-card`,
 		);
 	});
@@ -116,16 +121,20 @@ describe("block identity", () => {
 	});
 
 	it("tag column width follows the widest visible tag", () => {
-		assert.strictEqual(computeTagWidth([
-			makeBlock({ kind: "tool", toolName: "read", title: "read" }),
-			makeBlock({ kind: "tool", toolName: "subagent_spawn", title: "subagent_spawn" }),
-		]), "subagent_spawn".length);
+		assert.strictEqual(
+			computeTagWidth([
+				makeBlock({ kind: "tool", toolName: "read", title: "read" }),
+				makeBlock({ kind: "tool", toolName: "subagent_spawn", title: "subagent_spawn" }),
+			]),
+			"subagent_spawn".length,
+		);
 	});
 
 	it("tag column width is capped", () => {
-		assert.strictEqual(computeTagWidth([
-			makeBlock({ kind: "summary", title: "An extremely long summary title" }),
-		]), 16);
+		assert.strictEqual(
+			computeTagWidth([makeBlock({ kind: "summary", title: "An extremely long summary title" })]),
+			16,
+		);
 	});
 });
 
@@ -146,74 +155,103 @@ function readBlock(path: string, overrides: Partial<Block> = {}): Block {
 
 describe("rendersByDefault", () => {
 	it("prose kinds and subagent tool traffic open rendered", () => {
-		assert.deepStrictEqual([
-			rendersByDefault(makeBlock({ kind: "assistant" })),
-			rendersByDefault(makeBlock({ kind: "user" })),
-			rendersByDefault(makeBlock({ kind: "summary", title: "Branch summary" })),
-			rendersByDefault(makeBlock({ kind: "custom", title: "subagent_result" })),
-			rendersByDefault(makeBlock({ kind: "tool", toolName: "subagent_spawn", title: "subagent_spawn" })),
-		], [true, true, true, true, true]);
+		assert.deepStrictEqual(
+			[
+				rendersByDefault(makeBlock({ kind: "assistant" })),
+				rendersByDefault(makeBlock({ kind: "user" })),
+				rendersByDefault(makeBlock({ kind: "summary", title: "Branch summary" })),
+				rendersByDefault(makeBlock({ kind: "custom", title: "subagent_result" })),
+				rendersByDefault(makeBlock({ kind: "tool", toolName: "subagent_spawn", title: "subagent_spawn" })),
+			],
+			[true, true, true, true, true],
+		);
 	});
 
 	it("reads of markdown and recognized code files open rendered", () => {
-		assert.deepStrictEqual([
-			rendersByDefault(readBlock("docs/GUIDE.MD")),
-			rendersByDefault(readBlock("src/config.ts")),
-		], [true, true]);
+		assert.deepStrictEqual(
+			[rendersByDefault(readBlock("docs/GUIDE.MD")), rendersByDefault(readBlock("src/config.ts"))],
+			[true, true],
+		);
 	});
 
 	it("reads that failed, lack a path, or have an unknown extension open raw", () => {
-		assert.deepStrictEqual([
-			rendersByDefault(readBlock("docs/guide.md", { isError: true })),
-			rendersByDefault(readBlock("docs/guide.md", { fileReference: undefined })),
-			rendersByDefault(readBlock("build.log")),
-		], [false, false, false]);
+		assert.deepStrictEqual(
+			[
+				rendersByDefault(readBlock("docs/guide.md", { isError: true })),
+				rendersByDefault(readBlock("docs/guide.md", { fileReference: undefined })),
+				rendersByDefault(readBlock("build.log")),
+			],
+			[false, false, false],
+		);
 	});
 
 	it("other tool and bash output stays raw", () => {
-		assert.deepStrictEqual([
-			rendersByDefault(makeBlock({ kind: "tool", toolName: "grep", title: "grep", fileReference: { path: "src/config.ts" } })),
-			rendersByDefault(makeBlock({ kind: "bash", title: "Bash" })),
-		], [false, false]);
+		assert.deepStrictEqual(
+			[
+				rendersByDefault(
+					makeBlock({
+						kind: "tool",
+						toolName: "grep",
+						title: "grep",
+						fileReference: { path: "src/config.ts" },
+					}),
+				),
+				rendersByDefault(makeBlock({ kind: "bash", title: "Bash" })),
+			],
+			[false, false],
+		);
 	});
 });
 
 describe("renderedForm", () => {
 	it("markdown reads render as markdown and code reads highlight in Pi's language", () => {
-		assert.deepStrictEqual([
-			renderedForm(readBlock("docs/guide.md")),
-			renderedForm(readBlock("src/config.ts")),
-			renderedForm(readBlock("scripts/run.py")),
-		], [{ mode: "markdown" }, { mode: "code", language: "typescript" }, { mode: "code", language: "python" }]);
+		assert.deepStrictEqual(
+			[
+				renderedForm(readBlock("docs/guide.md")),
+				renderedForm(readBlock("src/config.ts")),
+				renderedForm(readBlock("scripts/run.py")),
+			],
+			[{ mode: "markdown" }, { mode: "code", language: "typescript" }, { mode: "code", language: "python" }],
+		);
 	});
 
 	it("everything else toggles into markdown", () => {
-		assert.deepStrictEqual([
-			renderedForm(readBlock("build.log")),
-			renderedForm(makeBlock({ kind: "assistant" })),
-			renderedForm(makeBlock({ kind: "bash", title: "Bash" })),
-		], [{ mode: "markdown" }, { mode: "markdown" }, { mode: "markdown" }]);
+		assert.deepStrictEqual(
+			[
+				renderedForm(readBlock("build.log")),
+				renderedForm(makeBlock({ kind: "assistant" })),
+				renderedForm(makeBlock({ kind: "bash", title: "Bash" })),
+			],
+			[{ mode: "markdown" }, { mode: "markdown" }, { mode: "markdown" }],
+		);
 	});
 });
 
 describe("detailSections", () => {
 	it("a rendered tool call leads with its primitive arguments, then the result", () => {
 		assert.deepStrictEqual(
-			detailSections(readBlock("docs/guide.md", {
-				toolArguments: { path: "docs/guide.md", offset: 3, nested: { skip: true } },
-			})),
+			detailSections(
+				readBlock("docs/guide.md", {
+					toolArguments: { path: "docs/guide.md", offset: 3, nested: { skip: true } },
+				}),
+			),
 			[
-				{ type: "fields", fields: [{ key: "path", value: "docs/guide.md" }, { key: "offset", value: "3" }] },
+				{
+					type: "fields",
+					fields: [
+						{ key: "path", value: "docs/guide.md" },
+						{ key: "offset", value: "3" },
+					],
+				},
 				{ type: "content", text: "file content" },
 			],
 		);
 	});
 
 	it("prose blocks are content only", () => {
-		assert.deepStrictEqual(
-			detailSections(makeBlock({ kind: "assistant", body: "answer" })),
-			[{ type: "content", text: "answer" }],
-		);
+		assert.deepStrictEqual(detailSections(makeBlock({ kind: "assistant", body: "answer" })), [
+			{ type: "content", text: "answer" },
+		]);
 	});
 });
 
@@ -237,12 +275,9 @@ describe("formatResultRow", () => {
 	});
 
 	it("prose rows show their first body line", () => {
-		const proseRow = stripVTControlCharacters(formatResultRow(
-			makeBlock({ kind: "assistant", body: "  First answer line.\nsecond line" }),
-			false,
-			80,
-			9,
-		));
+		const proseRow = stripVTControlCharacters(
+			formatResultRow(makeBlock({ kind: "assistant", body: "  First answer line.\nsecond line" }), false, 80, 9),
+		);
 		assert.strictEqual(proseRow, "  Assistant  First answer line.");
 	});
 
@@ -265,7 +300,12 @@ describe("formatResultRow", () => {
 	it("stripped-token matches highlight the original separator-bearing text", () => {
 		const strippedHighlightRow = formatResultRow(
 			{
-				block: makeBlock({ kind: "tool", toolName: "subagent_spawn", title: "subagent_spawn", subtitle: "agent=scout" }),
+				block: makeBlock({
+					kind: "tool",
+					toolName: "subagent_spawn",
+					title: "subagent_spawn",
+					subtitle: "agent=scout",
+				}),
 				match: { matches: true, score: 5, keyTokens: ["subagent"], bodyTokens: [] },
 			},
 			false,
@@ -289,15 +329,17 @@ describe("formatResultRow", () => {
 
 	it("deep body excerpts are marked at both clipped ends", () => {
 		const longBody = `${"filler ".repeat(40)}set -euo pipefail${" trailer".repeat(40)}`;
-		const excerptRow = stripVTControlCharacters(formatResultRow(
-			{
-				block: makeBlock({ kind: "bash", title: "Bash", subtitle: "run.sh", body: longBody }),
-				match: { matches: true, score: 0, keyTokens: [], bodyTokens: ["pipefail"] },
-			},
-			false,
-			60,
-			6,
-		));
+		const excerptRow = stripVTControlCharacters(
+			formatResultRow(
+				{
+					block: makeBlock({ kind: "bash", title: "Bash", subtitle: "run.sh", body: longBody }),
+					match: { matches: true, score: 0, keyTokens: [], bodyTokens: ["pipefail"] },
+				},
+				false,
+				60,
+				6,
+			),
+		);
 		assert.ok(excerptRow.includes("⋯ ") && excerptRow.trimEnd().endsWith("⋯") && excerptRow.includes("pipefail"));
 	});
 
@@ -339,13 +381,21 @@ describe("formatPreviewLines", () => {
 			match: { matches: true, score: 0, keyTokens: [], bodyTokens: ["needle"] },
 		};
 		assert.strictEqual(
-			formatPreviewLines(lazyBodyResult, 200, 8, markedStyles).join("\n").match(/⟦Needle⟧|⟦needle⟧/g)?.length,
+			formatPreviewLines(lazyBodyResult, 200, 8, markedStyles)
+				.join("\n")
+				.match(/⟦Needle⟧|⟦needle⟧/g)?.length,
 			3,
 		);
 	});
 
 	it("empty-body blocks fall back to canonical text in the preview", () => {
-		const emptyToolCall = makeBlock({ kind: "tool", toolName: "read", title: "read", body: "", canonicalText: "read {}" });
+		const emptyToolCall = makeBlock({
+			kind: "tool",
+			toolName: "read",
+			title: "read",
+			body: "",
+			canonicalText: "read {}",
+		});
 		assert.ok(formatPreviewLines(emptyToolCall, 200, 8).join("\n").includes("read {}"));
 	});
 
@@ -357,7 +407,8 @@ describe("formatPreviewLines", () => {
 	it("clipped previews advertise the complete detail", () => {
 		assert.ok(
 			formatPreviewLines(makeBlock({ body: Array.from({ length: 30 }, (_, i) => `line-${i}`).join("\n") }), 40, 4)
-				.join("\n").includes("preview clipped"),
+				.join("\n")
+				.includes("preview clipped"),
 		);
 	});
 
@@ -391,9 +442,13 @@ Session: /sessions/child.jsonl`,
 	const boundedResultPreview = formatPreviewLines(subagentResult, 100, 6, markedStyles).join("\n");
 
 	it("bounded result preview keeps the response and labeled divider while clipping the trailing table", () => {
-		assert.ok(boundedResultPreview.includes("response one") && boundedResultPreview.includes("response three")
-			&& boundedResultPreview.includes("─ result details ─")
-			&& boundedResultPreview.includes("preview clipped") && !boundedResultPreview.includes("session"));
+		assert.ok(
+			boundedResultPreview.includes("response one") &&
+				boundedResultPreview.includes("response three") &&
+				boundedResultPreview.includes("─ result details ─") &&
+				boundedResultPreview.includes("preview clipped") &&
+				!boundedResultPreview.includes("session"),
+		);
 	});
 
 	it("response-first transformation sanitizes and preserves body-match highlights", () => {
@@ -406,24 +461,29 @@ Session: /sessions/child.jsonl`,
 describe("subagentSections", () => {
 	it("result sections order content, divider, table", () => {
 		assert.deepStrictEqual(
-			subagentSections({ fields: [{ key: "status", value: "completed" }], content: "response", result: true })
-				.map((section) => section.type),
+			subagentSections({
+				fields: [{ key: "status", value: "completed" }],
+				content: "response",
+				result: true,
+			}).map((section) => section.type),
 			["content", "divider", "table"],
 		);
 	});
 
 	it("a result without a response drops the divider", () => {
 		assert.deepStrictEqual(
-			subagentSections({ fields: [{ key: "status", value: "stopped" }], content: "", result: true })
-				.map((section) => section.type),
+			subagentSections({ fields: [{ key: "status", value: "stopped" }], content: "", result: true }).map(
+				(section) => section.type,
+			),
 			["table"],
 		);
 	});
 
 	it("tool sections order fields then content", () => {
 		assert.deepStrictEqual(
-			subagentSections({ fields: [{ key: "agent", value: "scout" }], content: "task prompt" })
-				.map((section) => section.type),
+			subagentSections({ fields: [{ key: "agent", value: "scout" }], content: "task prompt" }).map(
+				(section) => section.type,
+			),
 			["fields", "content"],
 		);
 	});
@@ -455,8 +515,9 @@ describe("truncation reporting", () => {
 	});
 
 	it("existing full output is reported with kept and total lines", () => {
-		assert.ok(availableMarker?.includes("12/90 lines kept") === true
-			&& availableMarker.includes("full output available"));
+		assert.ok(
+			availableMarker?.includes("12/90 lines kept") === true && availableMarker.includes("full output available"),
+		);
 	});
 
 	it("missing full-output path is reported honestly", () => {
@@ -465,7 +526,10 @@ describe("truncation reporting", () => {
 	});
 
 	it("truncation without a path says omitted data is unavailable", () => {
-		const goneMarker = formatTruncationMarker({ truncated: true, metadata: { outputLines: 3, totalLines: 50 } }, () => true);
+		const goneMarker = formatTruncationMarker(
+			{ truncated: true, metadata: { outputLines: 3, totalLines: 50 } },
+			() => true,
+		);
 		assert.ok(goneMarker?.includes("omitted output unavailable") === true);
 	});
 
@@ -474,11 +538,16 @@ describe("truncation reporting", () => {
 	});
 
 	it("preview distinguishes surviving and missing output files", () => {
-		assert.ok(availablePreview.includes("full output available") && missingPreview.includes("full-output file missing"));
+		assert.ok(
+			availablePreview.includes("full output available") && missingPreview.includes("full-output file missing"),
+		);
 	});
 
 	it("one-line truncated preview prioritizes its honesty marker", () => {
-		assert.ok(formatPreviewLines(truncatedBlock, 100, 1, {}, () => false)[0]?.includes("full-output file missing") === true);
+		assert.ok(
+			formatPreviewLines(truncatedBlock, 100, 1, {}, () => false)[0]?.includes("full-output file missing") ===
+				true,
+		);
 	});
 });
 
@@ -546,7 +615,10 @@ describe("hostile content", () => {
 		block: hostileBlock,
 		match: { matches: true, score: 1, keyTokens: ["safe"], bodyTokens: ["safe"] },
 	};
-	const ansi = (code: number) => (text: string): string => `\x1b[${code}m${text}\x1b[0m`;
+	const ansi =
+		(code: number) =>
+		(text: string): string =>
+			`\x1b[${code}m${text}\x1b[0m`;
 	const ansiStyles: RenderStyles = {
 		title: ansi(1),
 		accent: ansi(36),
@@ -567,7 +639,10 @@ describe("hostile content", () => {
 				formatHintBorder(width, ["enter detail", "/ filter", "esc"], ansiStyles),
 				formatFrameLine(width, ansi(37)("content"), ansi(34)),
 			];
-			assert.ok(lines.every((line) => visibleWidth(line) <= width), `ANSI and wide text fit width ${width}`);
+			assert.ok(
+				lines.every((line) => visibleWidth(line) <= width),
+				`ANSI and wide text fit width ${width}`,
+			);
 		}
 	});
 
@@ -593,10 +668,7 @@ describe("hostile content", () => {
 
 describe("border chrome", () => {
 	it("top border embeds the title and counts inside square corners", () => {
-		assert.strictEqual(
-			formatBorderLine(31, ["┌", "┐"], "fuzzy", "6/447"),
-			"┌ fuzzy ─────────────── 6/447 ┐",
-		);
+		assert.strictEqual(formatBorderLine(31, ["┌", "┐"], "fuzzy", "6/447"), "┌ fuzzy ─────────────── 6/447 ┐");
 	});
 
 	it("plain rules fill the width", () => {
@@ -604,10 +676,7 @@ describe("border chrome", () => {
 	});
 
 	it("titled rules embed the preview identity", () => {
-		assert.strictEqual(
-			formatBorderLine(26, ["├", "┤"], "read · 12:34"),
-			"├ read · 12:34 ──────────┤",
-		);
+		assert.strictEqual(formatBorderLine(26, ["├", "┤"], "read · 12:34"), "├ read · 12:34 ──────────┤");
 	});
 
 	it("narrow borders keep the right text and truncate the title", () => {

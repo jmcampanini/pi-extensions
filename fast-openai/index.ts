@@ -6,18 +6,13 @@ import {
 	type ExtensionCommandContext,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import {
-	FAST_OPENAI_STATUS_KEY,
-	FAST_OPENAI_STATUS_OFF,
-	FAST_OPENAI_STATUS_ON,
-} from "../shared/status-keys.ts";
+import { FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_OFF, FAST_OPENAI_STATUS_ON } from "../shared/status-keys.ts";
 
 type FastOpenAIConfig = {
 	enabled: boolean;
 };
 
 type FastAction = "on" | "off";
-
 
 type ConfigDiagnostic = {
 	path: string;
@@ -53,21 +48,12 @@ type FastEligibility = {
 const CONFIG_FILE = path.join(getAgentDir(), "extensions", "fast-openai.json");
 const SUPPORTED_PROVIDER = "openai-codex" as const;
 const SUPPORTED_API = "openai-codex-responses" as const;
-const SUPPORTED_MODELS = new Set([
-	"gpt-5.4",
-	"gpt-5.5",
-	"gpt-5.6-luna",
-	"gpt-5.6-sol",
-	"gpt-5.6-terra",
-]);
+const SUPPORTED_MODELS = new Set(["gpt-5.4", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]);
 const PRIORITY_SERVICE_TIER = "priority" as const;
 const COST_ACCOUNTING_WARNING =
 	"warning: raw service_tier injection may not apply Pi's native priority cost multiplier; actual billed cost can be higher than Pi displays";
 
-function publishFastStatus(
-	ctx: Pick<ExtensionContext, "hasUI" | "ui">,
-	enabled: boolean,
-): void {
+function publishFastStatus(ctx: Pick<ExtensionContext, "hasUI" | "ui">, enabled: boolean): void {
 	if (!ctx.hasUI) return;
 	ctx.ui.setStatus(FAST_OPENAI_STATUS_KEY, enabled ? FAST_OPENAI_STATUS_ON : FAST_OPENAI_STATUS_OFF);
 }
@@ -180,8 +166,7 @@ function getFastEligibility(
 	// change over time; revisit these gates when they do.
 	const usingOAuth = ctx.modelRegistry.isUsingOAuth(model);
 
-	const eligible =
-		config.enabled && providerSupported && apiSupported && modelSupported && usingOAuth;
+	const eligible = config.enabled && providerSupported && apiSupported && modelSupported && usingOAuth;
 
 	return {
 		eligible,

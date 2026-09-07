@@ -39,13 +39,19 @@ describe("fixture session", () => {
 	});
 
 	it("every v1 block kind is represented", () => {
-		assert.ok(["user", "assistant", "tool", "bash", "custom", "summary"]
-			.every((kind) => blocks.some((block) => block.kind === kind)));
+		assert.ok(
+			["user", "assistant", "tool", "bash", "custom", "summary"].every((kind) =>
+				blocks.some((block) => block.kind === kind),
+			),
+		);
 	});
 
 	it("fixture includes merged and orphan tool rows", () => {
-		assert.ok(blocks.some((block) => block.toolCallId === "call-read" && block.body.includes("STORED_RESULT_ONLY_NEEDLE"))
-			&& blocks.some((block) => block.toolCallId === "orphan-call"));
+		assert.ok(
+			blocks.some(
+				(block) => block.toolCallId === "call-read" && block.body.includes("STORED_RESULT_ONLY_NEEDLE"),
+			) && blocks.some((block) => block.toolCallId === "orphan-call"),
+		);
 	});
 
 	it("one fixture query combines fuzzy invocation fields with result-only body text", () => {
@@ -60,8 +66,14 @@ describe("fixture session", () => {
 	});
 
 	it("hidden content and image bytes are absent", () => {
-		assert.ok(!["ABANDONED_SECRET_NEVER_INDEX", "HIDDEN_THINKING_NEVER_INDEX", "HIDDEN_CUSTOM_NEVER_INDEX", "BASE64_IMAGE_NEVER_INDEX"]
-			.some((needle) => indexed.includes(needle)));
+		assert.ok(
+			![
+				"ABANDONED_SECRET_NEVER_INDEX",
+				"HIDDEN_THINKING_NEVER_INDEX",
+				"HIDDEN_CUSTOM_NEVER_INDEX",
+				"BASE64_IMAGE_NEVER_INDEX",
+			].some((needle) => indexed.includes(needle)),
+		);
 	});
 
 	it("search data never reads the surviving full-output file", () => {

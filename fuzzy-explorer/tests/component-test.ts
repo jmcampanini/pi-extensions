@@ -25,12 +25,17 @@ describe("ExplorerComponent", () => {
 		let renders = 0;
 		const tui = {
 			terminal: { rows: 24 },
-			requestRender(): void { renders++; },
+			requestRender(): void {
+				renders++;
+			},
 		} as unknown as TUI;
 		let backgroundFills = 0;
 		const theme = {
 			fg: (_token: string, text: string) => text,
-			bg: (_token: string, text: string) => { backgroundFills++; return text; },
+			bg: (_token: string, text: string) => {
+				backgroundFills++;
+				return text;
+			},
 			bold: (text: string) => text,
 		} as unknown as Theme;
 		const state = new ExplorerState("list");
@@ -44,11 +49,18 @@ describe("ExplorerComponent", () => {
 			state,
 			getBlocks: () => blocks,
 			actions: {
-				async copy(value): Promise<void> { copied.push(value.id); },
-				async open(value): Promise<number | null> { opened.push(value.id); return 0; },
+				async copy(value): Promise<void> {
+					copied.push(value.id);
+				},
+				async open(value): Promise<number | null> {
+					opened.push(value.id);
+					return 0;
+				},
 			},
 			notify: (message) => notifications.push(message),
-			done: () => { doneCalls++; },
+			done: () => {
+				doneCalls++;
+			},
 			refreshIntervalMs: 60_000,
 		});
 		t.after(() => component.dispose());
@@ -62,25 +74,40 @@ describe("ExplorerComponent", () => {
 		assert.ok(initialLines[0]?.startsWith("┌ fuzzy ") === true, "top border embeds the fuzzy title");
 		assert.ok(initialLines[0]?.includes("12/12 ┐") === true, "top border embeds the match counts");
 		assert.ok(initialLines[1]?.startsWith("│ › ") === true, "input line shows the filter affordance");
-		assert.ok(initialLines[2]?.startsWith("├─") === true && initialLines[2]?.endsWith("┤") === true,
-			"a plain rule separates input from rows");
+		assert.ok(
+			initialLines[2]?.startsWith("├─") === true && initialLines[2]?.endsWith("┤") === true,
+			"a plain rule separates input from rows",
+		);
 		assert.ok(initialFrame.includes("▸ Assistant"), "selected row carries the marker");
-		assert.ok(initialLines.some((line) => line.startsWith("├ Assistant · ")),
-			"a titled rule introduces the preview");
-		assert.ok(initialLines[initialLines.findIndex((line) => line.startsWith("├ Assistant · ")) - 1] === `│ ${" ".repeat(66)} │`,
-			"a blank interior line precedes the preview rule");
-		assert.ok(initialLines.at(-1)?.startsWith("└ l/enter detail · / filter · q/esc quit") === true,
-			"hints live in the bottom border");
-		assert.ok(initialLines.filter((line) => line.includes("enter detail")).length === 1,
-			"no interior help footer lines remain");
+		assert.ok(
+			initialLines.some((line) => line.startsWith("├ Assistant · ")),
+			"a titled rule introduces the preview",
+		);
+		assert.ok(
+			initialLines[initialLines.findIndex((line) => line.startsWith("├ Assistant · ")) - 1] ===
+				`│ ${" ".repeat(66)} │`,
+			"a blank interior line precedes the preview rule",
+		);
+		assert.ok(
+			initialLines.at(-1)?.startsWith("└ l/enter detail · / filter · q/esc quit") === true,
+			"hints live in the bottom border",
+		);
+		assert.ok(
+			initialLines.filter((line) => line.includes("enter detail")).length === 1,
+			"no interior help footer lines remain",
+		);
 		assert.ok(!initialFrame.includes("1970-01-01"), "rows carry no timestamps");
 		assert.strictEqual(backgroundFills, 0, "frame uses the default background with no fill");
-		assert.ok(initialLines.every((line) => visibleWidth(line) === 70), "every line is exactly frame-width");
+		assert.ok(
+			initialLines.every((line) => visibleWidth(line) === 70),
+			"every line is exactly frame-width",
+		);
 		assert.strictEqual(initialLines.length, Math.floor(24 * 0.9), "frame consumes exactly the height budget");
 		assert.deepStrictEqual(
 			[initialLines[8], initialLines[9]?.startsWith("├ Assistant · ")],
 			[`│ ${" ".repeat(66)} │`, true],
-			"list and preview keep the 35/65 split");
+			"list and preview keep the 35/65 split",
+		);
 
 		// List navigation
 
@@ -113,23 +140,38 @@ describe("ExplorerComponent", () => {
 		assert.strictEqual(state.query, "", "ctrl+u clears the filter query");
 		component.handleInput("body");
 		assert.strictEqual(state.query, "body", "printable filter text is applied live");
-		assert.deepStrictEqual([state.selectedIndex, state.selected?.block.id], [0, "block-11"],
-			"typing re-selects the top-ranked result");
+		assert.deepStrictEqual(
+			[state.selectedIndex, state.selected?.block.id],
+			[0, "block-11"],
+			"typing re-selects the top-ranked result",
+		);
 		const filterLines = component.render(70);
 		assert.ok(filterLines.at(-1)?.includes("ctrl+u clear") === true, "filter hints replace list hints");
-		assert.ok(filterLines[0]?.includes(`${state.results.length}/12`) === true,
-			"filter counts reflect the narrowed results");
+		assert.ok(
+			filterLines[0]?.includes(`${state.results.length}/12`) === true,
+			"filter counts reflect the narrowed results",
+		);
 		component.handleInput("\x1b[B");
-		assert.ok(state.query === "body" && state.selected?.block.id === "block-10",
-			"arrow keys navigate while the query remains active");
+		assert.ok(
+			state.query === "body" && state.selected?.block.id === "block-10",
+			"arrow keys navigate while the query remains active",
+		);
 		component.handleInput("\x1b[D");
-		assert.deepStrictEqual([state.query, state.selected?.block.id], ["body", "block-10"],
-			"cursor movement keys are not typing and keep the selection");
-		assert.ok(component.render(70)[1]?.startsWith("│ › ") === true && !component.render(70)[1]?.includes("› > "),
-			"the input line carries one prompt, not Input's doubled one");
+		assert.deepStrictEqual(
+			[state.query, state.selected?.block.id],
+			["body", "block-10"],
+			"cursor movement keys are not typing and keep the selection",
+		);
+		assert.ok(
+			component.render(70)[1]?.startsWith("│ › ") === true && !component.render(70)[1]?.includes("› > "),
+			"the input line carries one prompt, not Input's doubled one",
+		);
 		component.handleInput("\x1b");
-		assert.deepStrictEqual([state.mode, state.query], ["list", "body"],
-			"Escape leaves filter mode without clearing query");
+		assert.deepStrictEqual(
+			[state.mode, state.query],
+			["list", "body"],
+			"Escape leaves filter mode without clearing query",
+		);
 		const staticQueryLines = component.render(70);
 		assert.ok(staticQueryLines[1]?.startsWith("│ › body") === true, "list mode shows the static query text");
 
@@ -139,16 +181,22 @@ describe("ExplorerComponent", () => {
 		assert.strictEqual(state.mode, "detail", "Enter opens full detail from list mode");
 		const detailLines = component.render(50);
 		assert.ok(detailLines[0]?.startsWith("┌ user · ") === true, "detail top border shows the block identity");
-		assert.ok(detailLines[0]?.includes(`2/${state.results.length} ┐`) === true,
-			"detail top border shows the position");
+		assert.ok(
+			detailLines[0]?.includes(`2/${state.results.length} ┐`) === true,
+			"detail top border shows the position",
+		);
 		assert.ok(detailLines[1]?.startsWith("│ body 10") === true, "detail content starts on the first interior line");
 		assert.ok(detailLines.at(-1)?.startsWith("└ j/k scroll") === true, "detail hints live in the bottom border");
-		assert.ok(component.render(110).at(-1)?.includes("m raw") === true,
-			"rendered detail offers the raw toggle when hints fit");
+		assert.ok(
+			component.render(110).at(-1)?.includes("m raw") === true,
+			"rendered detail offers the raw toggle when hints fit",
+		);
 		component.handleInput("m");
 		const rawDetail = component.render(110);
-		assert.ok(rawDetail[1]?.startsWith("│ body 10 ") === true,
-			"m switches the current block to the raw stored text");
+		assert.ok(
+			rawDetail[1]?.startsWith("│ body 10 ") === true,
+			"m switches the current block to the raw stored text",
+		);
 		assert.ok(rawDetail.at(-1)?.includes("m md") === true, "raw detail offers the markdown toggle");
 		component.render(50);
 		const beforeDetailPage = state.detailOffset;
@@ -156,11 +204,16 @@ describe("ExplorerComponent", () => {
 		assert.ok(state.detailOffset > beforeDetailPage, "d pages detail content");
 		const detailSelected = state.selected?.block.id;
 		component.handleInput("K");
-		assert.ok(state.mode === "detail" && state.selected?.block.id !== detailSelected,
-			"K changes to the previous filtered block in detail");
+		assert.ok(
+			state.mode === "detail" && state.selected?.block.id !== detailSelected,
+			"K changes to the previous filtered block in detail",
+		);
 		component.handleInput("\x1b[106;2u");
-		assert.deepStrictEqual([state.mode, state.selected?.block.id], ["detail", detailSelected],
-			"Kitty-encoded J returns to the next block without leaving detail");
+		assert.deepStrictEqual(
+			[state.mode, state.selected?.block.id],
+			["detail", detailSelected],
+			"Kitty-encoded J returns to the next block without leaving detail",
+		);
 		component.handleInput("y");
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		assert.deepStrictEqual(copied, [detailSelected], "y copies the selected complete block");
@@ -168,17 +221,25 @@ describe("ExplorerComponent", () => {
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		assert.deepStrictEqual(opened, [detailSelected], "o smart-opens the selected block");
 		component.handleInput("\x1b");
-		assert.deepStrictEqual([state.mode, state.selected?.block.id], ["list", detailSelected],
-			"Escape returns from detail with selection synced");
+		assert.deepStrictEqual(
+			[state.mode, state.selected?.block.id],
+			["list", detailSelected],
+			"Escape returns from detail with selection synced",
+		);
 		component.handleInput("\r");
 		component.handleInput("q");
-		assert.deepStrictEqual([state.mode, doneCalls], ["list", 0],
-			"q also returns from detail to the list without closing");
+		assert.deepStrictEqual(
+			[state.mode, doneCalls],
+			["list", 0],
+			"q also returns from detail to the list without closing",
+		);
 		component.handleInput("l");
 		assert.strictEqual(state.mode, "detail", "l moves forward from a list item into its detail");
 		const wideDetail = component.render(110);
-		assert.ok(wideDetail.at(-1)?.includes("o open block text") === true,
-			"detail hints include the smart-open action");
+		assert.ok(
+			wideDetail.at(-1)?.includes("o open block text") === true,
+			"detail hints include the smart-open action",
+		);
 		component.handleInput("h");
 		assert.deepStrictEqual([state.mode, doneCalls], ["list", 0], "h moves backward out of detail to the list");
 
@@ -187,29 +248,39 @@ describe("ExplorerComponent", () => {
 		const pinned = state.selected?.block.id;
 		blocks = [...blocks, block(12)];
 		const resized = component.render(31);
-		assert.strictEqual(state.selected?.block.id, pinned,
-			"live appends and resize keep selection pinned by id");
-		assert.ok(resized.every((line) => visibleWidth(line) <= 31), "narrow rerender remains width safe");
+		assert.strictEqual(state.selected?.block.id, pinned, "live appends and resize keep selection pinned by id");
+		assert.ok(
+			resized.every((line) => visibleWidth(line) <= 31),
+			"narrow rerender remains width safe",
+		);
 		assert.ok(resized.at(-1)?.includes("enter detail") === true, "narrow hints degrade to top-priority keys");
 		(tui.terminal as { rows: number }).rows = 10;
 		const shortTerminal = component.render(31);
-		assert.ok(shortTerminal.length <= Math.floor(10 * 0.9),
-			"short-terminal render stays inside Pi's 90% height cap");
-		assert.ok(shortTerminal[0]?.startsWith("┌") === true && shortTerminal.at(-1)?.startsWith("└") === true,
-			"short-terminal frame keeps its borders");
+		assert.ok(
+			shortTerminal.length <= Math.floor(10 * 0.9),
+			"short-terminal render stays inside Pi's 90% height cap",
+		);
+		assert.ok(
+			shortTerminal[0]?.startsWith("┌") === true && shortTerminal.at(-1)?.startsWith("└") === true,
+			"short-terminal frame keeps its borders",
+		);
 		(tui.terminal as { rows: number }).rows = 4;
 		const tinyTerminal = component.render(31);
 		assert.deepStrictEqual(
 			[tinyTerminal.length, tinyTerminal[0]?.startsWith("┌"), tinyTerminal.at(-1)?.startsWith("└")],
 			[3, true, true],
-			"tiny terminals still close the frame");
+			"tiny terminals still close the frame",
+		);
 		(tui.terminal as { rows: number }).rows = 10;
 		component.handleInput("\x1b");
 		assert.strictEqual(doneCalls, 1, "Escape in list closes the explorer");
 		component.handleInput("q");
 		assert.strictEqual(doneCalls, 2, "q in list also closes the explorer");
 		assert.ok(renders > 0, "state changes request TUI renders");
-		assert.ok(notifications.some((message) => message.includes("Copied")), "copy completion is notified");
+		assert.ok(
+			notifications.some((message) => message.includes("Copied")),
+			"copy completion is notified",
+		);
 	});
 
 	it("markdown detail renders by default for prose kinds with raw behind the toggle", (t) => {
@@ -228,7 +299,9 @@ describe("ExplorerComponent", () => {
 			getBlocks: () => markdownBlocks,
 			actions: {
 				async copy(): Promise<void> {},
-				async open(): Promise<number | null> { return 0; },
+				async open(): Promise<number | null> {
+					return 0;
+				},
 			},
 			notify: () => {},
 			done: () => {},
@@ -239,13 +312,17 @@ describe("ExplorerComponent", () => {
 		markdownComponent.render(80);
 		markdownComponent.handleInput("\r");
 		const renderedDetail = markdownComponent.render(80);
-		assert.ok(renderedDetail[1]?.includes("Intro bold text") === true,
-			"markdown-default detail renders markup instead of showing it");
+		assert.ok(
+			renderedDetail[1]?.includes("Intro bold text") === true,
+			"markdown-default detail renders markup instead of showing it",
+		);
 		markdownComponent.handleInput("m");
 		const rawMarkdownDetail = markdownComponent.render(80);
 		assert.ok(rawMarkdownDetail[1]?.includes("Intro **bold** text") === true, "m reveals the raw markup");
-		assert.ok(renderedDetail.at(-1)?.includes("m raw") === true && rawMarkdownDetail.at(-1)?.includes("m md") === true,
-			"hints flip between raw and md");
+		assert.ok(
+			renderedDetail.at(-1)?.includes("m raw") === true && rawMarkdownDetail.at(-1)?.includes("m md") === true,
+			"hints flip between raw and md",
+		);
 	});
 
 	it("read results render by file type with raw behind the toggle", (t) => {
@@ -258,12 +335,22 @@ describe("ExplorerComponent", () => {
 		const readState = new ExplorerState("list");
 		const readBlocks = [
 			makeBlock({
-				id: "read-md", kind: "tool", toolName: "read", title: "read", body: "# Guide\n\nUse **bold** text.",
-				toolArguments: { path: "docs/guide.md" }, fileReference: { path: "docs/guide.md" },
+				id: "read-md",
+				kind: "tool",
+				toolName: "read",
+				title: "read",
+				body: "# Guide\n\nUse **bold** text.",
+				toolArguments: { path: "docs/guide.md" },
+				fileReference: { path: "docs/guide.md" },
 			}),
 			makeBlock({
-				id: "read-ts", kind: "tool", toolName: "read", title: "read", body: "const answer = 42;\n\treturn answer;",
-				toolArguments: { path: "src/answer.ts", offset: 7 }, fileReference: { path: "src/answer.ts", line: 7 },
+				id: "read-ts",
+				kind: "tool",
+				toolName: "read",
+				title: "read",
+				body: "const answer = 42;\n\treturn answer;",
+				toolArguments: { path: "src/answer.ts", offset: 7 },
+				fileReference: { path: "src/answer.ts", line: 7 },
 			}),
 		];
 		const readComponent = new ExplorerComponent({
@@ -273,7 +360,9 @@ describe("ExplorerComponent", () => {
 			getBlocks: () => readBlocks,
 			actions: {
 				async copy(): Promise<void> {},
-				async open(): Promise<number | null> { return 0; },
+				async open(): Promise<number | null> {
+					return 0;
+				},
 			},
 			notify: () => {},
 			done: () => {},
@@ -287,26 +376,40 @@ describe("ExplorerComponent", () => {
 		readComponent.handleInput("\r");
 		const codeDetail = readComponent.render(80);
 		assert.deepStrictEqual(
-			[codeDetail[1]?.startsWith("│ path=src/answer.ts"), codeDetail[2]?.startsWith("│ offset=7"),
+			[
+				codeDetail[1]?.startsWith("│ path=src/answer.ts"),
+				codeDetail[2]?.startsWith("│ offset=7"),
 				codeDetail[4]?.startsWith("│ «typescript» const answer = 42;"),
-				codeDetail[5]?.startsWith("│ «typescript»    return answer;"), codeDetail.at(-1)?.includes("m raw")],
+				codeDetail[5]?.startsWith("│ «typescript»    return answer;"),
+				codeDetail.at(-1)?.includes("m raw"),
+			],
 			[true, true, true, true, true],
-			"a code read leads with its arguments, then highlighted lines with tabs as three spaces, and offers the raw toggle");
+			"a code read leads with its arguments, then highlighted lines with tabs as three spaces, and offers the raw toggle",
+		);
 		readComponent.handleInput("m");
 		const rawCode = readComponent.render(80);
-		assert.ok(rawCode[1]?.startsWith("│ const answer = 42;") === true && rawCode.at(-1)?.includes("m code") === true,
-			"m shows the stored text unhighlighted and offers the code toggle");
+		assert.ok(
+			rawCode[1]?.startsWith("│ const answer = 42;") === true && rawCode.at(-1)?.includes("m code") === true,
+			"m shows the stored text unhighlighted and offers the code toggle",
+		);
 
 		readComponent.handleInput("K");
 		const markdownDetail = readComponent.render(80);
 		assert.deepStrictEqual(
-			[markdownDetail[1]?.startsWith("│ path=docs/guide.md"), markdownDetail[3]?.startsWith("│ Guide"),
-				markdownDetail[5]?.startsWith("│ Use bold text."), markdownDetail.at(-1)?.includes("m raw")],
+			[
+				markdownDetail[1]?.startsWith("│ path=docs/guide.md"),
+				markdownDetail[3]?.startsWith("│ Guide"),
+				markdownDetail[5]?.startsWith("│ Use bold text."),
+				markdownDetail.at(-1)?.includes("m raw"),
+			],
 			[true, true, true, true],
-			"a markdown read renders its markup after the path line");
+			"a markdown read renders its markup after the path line",
+		);
 		readComponent.handleInput("m");
 		const rawMarkdown = readComponent.render(80);
-		assert.ok(rawMarkdown[1]?.startsWith("│ # Guide") === true && rawMarkdown.at(-1)?.includes("m md") === true,
-			"m reveals the raw markdown and offers the md toggle");
+		assert.ok(
+			rawMarkdown[1]?.startsWith("│ # Guide") === true && rawMarkdown.at(-1)?.includes("m md") === true,
+			"m reveals the raw markdown and offers the md toggle",
+		);
 	});
 });

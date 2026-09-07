@@ -9,7 +9,14 @@
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { oldestActiveTool, toolElapsedSeconds } from "./activity.ts";
-import { pendingLaunchCount, pendingLaunches, queuedCount, queuedEntries, specDisplay, type LaunchSpec } from "./capacity.ts";
+import {
+	pendingLaunchCount,
+	pendingLaunches,
+	queuedCount,
+	queuedEntries,
+	specDisplay,
+	type LaunchSpec,
+} from "./capacity.ts";
 import { config } from "./config.ts";
 import { computeStatus } from "./status.ts";
 import { formatRunningWidgetLines, type WidgetRow } from "./widget.ts";
@@ -163,20 +170,24 @@ export function collectLifecycleWidgetRows(now = Date.now()): LifecycleWidgetRow
 function rowPriority(row: LifecycleWidgetRow): number {
 	switch (row.status) {
 		case "delivering":
-		case "stopped": return 0;
-		case "stalled": return 1;
-		case "waiting": return 2;
-		case "starting": return 3;
-		case "active": return 4;
-		case "queued": return 5;
-		default: return 6;
+		case "stopped":
+			return 0;
+		case "stalled":
+			return 1;
+		case "waiting":
+			return 2;
+		case "starting":
+			return 3;
+		case "active":
+			return 4;
+		case "queued":
+			return 5;
+		default:
+			return 6;
 	}
 }
 
-export function compactWidgetSnapshot(
-	now = Date.now(),
-	maxRows = config.widgetMaxRows,
-): CompactWidgetSnapshot {
+export function compactWidgetSnapshot(now = Date.now(), maxRows = config.widgetMaxRows): CompactWidgetSnapshot {
 	const allRows = collectLifecycleWidgetRows(now);
 	const rowLimit = Number.isFinite(maxRows) ? Math.max(1, Math.floor(maxRows)) : config.widgetMaxRows;
 	const rows = allRows.slice(0, rowLimit);
@@ -210,22 +221,28 @@ export function updateRunningWidget(): void {
 		(_tui, theme) => ({
 			invalidate(): void {},
 			render(width: number): string[] {
-				return formatRunningWidgetLines(snapshot.rows, width, {
-					dim: (text) => theme.fg("dim", text),
-					border: (text) => theme.fg("borderMuted", text),
-					agent: (text) => theme.fg("muted", text),
-					slot: (text) => theme.fg("muted", text),
-					warn: (text) => theme.fg("warning", text),
-				}, {
-					summary: snapshot.hiddenRows > 0
-						? {
-							hiddenRows: snapshot.hiddenRows,
-							stalledRows: snapshot.hiddenStalledRows,
-							waitingRows: snapshot.hiddenWaitingRows,
-							queuedRows: snapshot.hiddenQueuedRows,
-						}
-						: undefined,
-				});
+				return formatRunningWidgetLines(
+					snapshot.rows,
+					width,
+					{
+						dim: (text) => theme.fg("dim", text),
+						border: (text) => theme.fg("borderMuted", text),
+						agent: (text) => theme.fg("muted", text),
+						slot: (text) => theme.fg("muted", text),
+						warn: (text) => theme.fg("warning", text),
+					},
+					{
+						summary:
+							snapshot.hiddenRows > 0
+								? {
+										hiddenRows: snapshot.hiddenRows,
+										stalledRows: snapshot.hiddenStalledRows,
+										waitingRows: snapshot.hiddenWaitingRows,
+										queuedRows: snapshot.hiddenQueuedRows,
+									}
+								: undefined,
+					},
+				);
 			},
 		}),
 		{ placement: "aboveEditor" },

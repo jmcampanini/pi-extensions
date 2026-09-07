@@ -1,6 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createWorktree, describeExecError, finishWorktree, isWorktreeDirty, lastNonEmptyLine, removeWorktree } from "../worktree.ts";
+import {
+	createWorktree,
+	describeExecError,
+	finishWorktree,
+	isWorktreeDirty,
+	lastNonEmptyLine,
+	removeWorktree,
+} from "../worktree.ts";
 import { DEFAULT_WORKTREE_CLEANUP_COMMAND, DEFAULT_WORKTREE_CREATE_COMMAND } from "../config.ts";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, realpathSync, statSync, writeFileSync } from "node:fs";
@@ -78,8 +85,11 @@ describe("createWorktree", () => {
 		const repo = makeRepo();
 		const base = git(repo, ["rev-parse", "HEAD"]);
 		const info = await create(repo, "worker-abc123");
-		assert.strictEqual(info.dir, join(repo, ".pi", "worktrees", "worker-abc123"),
-			"create: dir is <repo>/.pi/worktrees/<name>");
+		assert.strictEqual(
+			info.dir,
+			join(repo, ".pi", "worktrees", "worker-abc123"),
+			"create: dir is <repo>/.pi/worktrees/<name>",
+		);
 		assert.strictEqual(info.branch, "pi/worker-abc123", "create: branch is pi/<name>");
 		assert.strictEqual(info.baseCommit, base, "create: baseCommit is parent HEAD");
 		assert.strictEqual(info.parentCwd, repo, "create: parentCwd recorded");
@@ -102,12 +112,14 @@ describe("createWorktree", () => {
 		await rejectsWith(
 			() => createWorktree({ name: "x", parentCwd: repo, command: `echo boom >&2; exit 3` }),
 			["exit code 3", "boom"],
-			"fail: non-zero exit surfaces code + stderr");
+			"fail: non-zero exit surfaces code + stderr",
+		);
 		// exit 0 but the printed path doesn't exist
 		await rejectsWith(
 			() => createWorktree({ name: "x", parentCwd: repo, command: `echo /definitely/not/a/real/dir` }),
 			["does not exist"],
-			"fail: nonexistent path");
+			"fail: nonexistent path",
+		);
 		// exit 0, directory exists, but it's not a git work tree - it must live
 		// OUTSIDE the fixture repo, or git would just walk up and find the repo.
 		// git's own stderr must survive into the message, not just our framing.
@@ -115,24 +127,28 @@ describe("createWorktree", () => {
 		await rejectsWith(
 			() => createWorktree({ name: "x", parentCwd: repo, command: `echo "${plain}"` }),
 			["not a git work tree", "not a git repository"],
-			"fail: non-git directory returned");
+			"fail: non-git directory returned",
+		);
 		// exit 0 but nothing on stdout at all
 		await rejectsWith(
 			() => createWorktree({ name: "x", parentCwd: repo, command: `true` }),
 			["printed no directory"],
-			"fail: no stdout");
+			"fail: no stdout",
+		);
 		// exit 0 but the printed path is the PARENT checkout - accepting it would
 		// silently defeat isolation, so the contract rejects it loudly
 		await rejectsWith(
 			() => createWorktree({ name: "x", parentCwd: repo, command: `echo .` }),
 			["parent checkout itself"],
-			"fail: parent checkout returned");
+			"fail: parent checkout returned",
+		);
 		// killed by a signal (crash, OOM-kill, pkill): reported as the signal it
 		// was, never as a timeout - and stderr from before the kill survives
 		await rejectsWith(
 			() => createWorktree({ name: "x", parentCwd: repo, command: `echo crashed >&2; kill -KILL $$` }),
 			["was killed by signal SIGKILL", "crashed"],
-			"fail: signal-killed is not a timeout");
+			"fail: signal-killed is not a timeout",
+		);
 	});
 
 	// Parent cwd isn't a git repo: the DEFAULT command's own `git rev-parse`
@@ -141,7 +157,8 @@ describe("createWorktree", () => {
 		await rejectsWith(
 			() => create(tempDir("subagents-nongit-"), "x"),
 			["not a git repository"],
-			"fail: non-git parent cwd");
+			"fail: non-git parent cwd",
+		);
 	});
 });
 
@@ -188,8 +205,7 @@ describe("isWorktreeDirty", () => {
 		writeFileSync(join(committed.dir, "work.txt"), "done\n");
 		git(committed.dir, ["add", "."]);
 		git(committed.dir, ["commit", "-q", "-m", "work"]);
-		assert.strictEqual(await isWorktreeDirty(committed), true,
-			"dirty: committed work (clean status, moved HEAD)");
+		assert.strictEqual(await isWorktreeDirty(committed), true, "dirty: committed work (clean status, moved HEAD)");
 
 		// git can't answer (directory gone) -> THROWS; finishWorktree owns turning
 		// that into an honest "kept" outcome (tested below), never a false "dirty"
@@ -209,10 +225,10 @@ describe("finishWorktree", () => {
 		assert.deepStrictEqual(
 			await finishWorktree({ info: removed, mode: "auto", command: cleanup, childSucceeded: true }),
 			{ status: "removed" },
-			"finish: auto+clean+succeeded removes");
+			"finish: auto+clean+succeeded removes",
+		);
 		assert.ok(!existsSync(removed.dir), "finish: removed directory is gone");
-		assert.strictEqual(git(repo, ["branch", "--list", "pi/will-remove"]), "",
-			"finish: removed branch is gone");
+		assert.strictEqual(git(repo, ["branch", "--list", "pi/will-remove"]), "", "finish: removed branch is gone");
 
 		// dirty -> kept, worktree untouched
 		const dirty = await create(repo, "dirty");
@@ -220,7 +236,8 @@ describe("finishWorktree", () => {
 		assert.deepStrictEqual(
 			await finishWorktree({ info: dirty, mode: "auto", command: cleanup, childSucceeded: true }),
 			{ status: "kept", code: "dirty", reason: "it has changes" },
-			"finish: dirty is kept");
+			"finish: dirty is kept",
+		);
 		assert.ok(existsSync(dirty.dir), "finish: dirty worktree still exists");
 
 		// mode "never" -> kept even though clean + succeeded
@@ -228,7 +245,8 @@ describe("finishWorktree", () => {
 		assert.deepStrictEqual(
 			await finishWorktree({ info: never, mode: "never", command: cleanup, childSucceeded: true }),
 			{ status: "kept", code: "mode-never", reason: 'worktreeCleanupMode is "never"' },
-			"finish: mode never is kept");
+			"finish: mode never is kept",
+		);
 		assert.ok(existsSync(never.dir), "finish: never-mode worktree still exists");
 
 		// failed child -> kept (even clean), so subagent_resume still works
@@ -236,19 +254,26 @@ describe("finishWorktree", () => {
 		assert.deepStrictEqual(
 			await finishWorktree({ info: failed, mode: "auto", command: cleanup, childSucceeded: false }),
 			{ status: "kept", code: "child-failed", reason: "the sub-agent did not finish successfully" },
-			"finish: failed child is kept");
+			"finish: failed child is kept",
+		);
 		assert.ok(existsSync(failed.dir), "finish: failed-child worktree still exists");
 
 		// cleanup command itself fails -> cleanup-failed with the error, and the
 		// worktree is left intact for manual removal
 		const stuck = await create(repo, "stuck");
 		const outcome = await finishWorktree({
-			info: stuck, mode: "auto", command: `echo nope >&2; exit 1`, childSucceeded: true,
+			info: stuck,
+			mode: "auto",
+			command: `echo nope >&2; exit 1`,
+			childSucceeded: true,
 		});
 		assert.strictEqual(outcome.status, "cleanup-failed", "finish: failing cleanup reports cleanup-failed");
 		assert.ok(
-			outcome.status === "cleanup-failed" && outcome.error.includes("exit code 1") && outcome.error.includes("nope"),
-			"finish: cleanup-failed error carries stderr");
+			outcome.status === "cleanup-failed" &&
+				outcome.error.includes("exit code 1") &&
+				outcome.error.includes("nope"),
+			"finish: cleanup-failed error carries stderr",
+		);
 		assert.ok(existsSync(stuck.dir), "finish: cleanup-failed worktree still exists");
 
 		// directory already vanished -> kept, and the cleanup command never runs
@@ -257,17 +282,25 @@ describe("finishWorktree", () => {
 		assert.deepStrictEqual(
 			await finishWorktree({ info: vanished, mode: "auto", command: `exit 1`, childSucceeded: true }),
 			{ status: "kept", code: "vanished", reason: "its directory no longer exists" },
-			"finish: vanished directory is kept without running cleanup");
+			"finish: vanished directory is kept without running cleanup",
+		);
 
 		// directory exists but is NOT a git work tree -> state can't be verified ->
 		// kept with an honest reason that carries git's actual complaint
 		const swapped = { dir: tempDir("subagents-opaque-"), branch: "b", baseCommit: "x", parentCwd: repo };
-		const unverified = await finishWorktree({ info: swapped, mode: "auto", command: `exit 1`, childSucceeded: true });
+		const unverified = await finishWorktree({
+			info: swapped,
+			mode: "auto",
+			command: `exit 1`,
+			childSucceeded: true,
+		});
 		assert.ok(
-			unverified.status === "kept" && unverified.code === "unverified" &&
+			unverified.status === "kept" &&
+				unverified.code === "unverified" &&
 				unverified.reason.includes("could not be verified") &&
 				unverified.reason.includes("not a git repository"),
-			"finish: unverifiable state is kept with git's reason");
+			"finish: unverifiable state is kept with git's reason",
+		);
 	});
 });
 
@@ -275,23 +308,27 @@ describe("detached HEAD worktrees", () => {
 	it("detached worktrees create with a literal HEAD branch and clean up without branch deletion", async () => {
 		const repo = makeRepo();
 		// A create command that checks out a DETACHED worktree (no branch).
-		const cmd = `mkdir -p .pi/worktrees && printf '*\\n' >.pi/worktrees/.gitignore && ` +
+		const cmd =
+			`mkdir -p .pi/worktrees && printf '*\\n' >.pi/worktrees/.gitignore && ` +
 			`git worktree add --detach ".pi/worktrees/$PI_SUBAGENT_WORKTREE_NAME" >&2 && ` +
 			`echo ".pi/worktrees/$PI_SUBAGENT_WORKTREE_NAME"`;
 		const info = await createWorktree({ name: "detached", parentCwd: repo, command: cmd });
 		assert.strictEqual(info.branch, "HEAD", "detached: branch snapshots as literal HEAD");
-		assert.strictEqual(info.baseCommit, git(repo, ["rev-parse", "HEAD"]),
-			"detached: baseCommit is parent HEAD");
+		assert.strictEqual(info.baseCommit, git(repo, ["rev-parse", "HEAD"]), "detached: baseCommit is parent HEAD");
 		assert.strictEqual(await isWorktreeDirty(info), false, "detached: fresh worktree is clean");
 
 		// The default cleanup gets PI_SUBAGENT_WORKTREE_BRANCH="" here, and its
 		// `[ -n ]` guard must skip branch deletion instead of erroring.
 		assert.deepStrictEqual(
 			await finishWorktree({
-				info, mode: "auto", command: DEFAULT_WORKTREE_CLEANUP_COMMAND, childSucceeded: true,
+				info,
+				mode: "auto",
+				command: DEFAULT_WORKTREE_CLEANUP_COMMAND,
+				childSucceeded: true,
 			}),
 			{ status: "removed" },
-			"detached: default cleanup removes it");
+			"detached: default cleanup removes it",
+		);
 		assert.ok(!existsSync(info.dir), "detached: directory is gone");
 	});
 });
@@ -306,18 +343,21 @@ describe("linked worktree parents", () => {
 		git(repo, ["worktree", "add", "-q", "-b", "side", linked]);
 
 		const info = await create(linked, "from-linked");
-		assert.strictEqual(info.dir, join(linked, ".pi", "worktrees", "from-linked"),
-			"linked: dir nests under the linked root");
+		assert.strictEqual(
+			info.dir,
+			join(linked, ".pi", "worktrees", "from-linked"),
+			"linked: dir nests under the linked root",
+		);
 		assert.strictEqual(info.branch, "pi/from-linked", "linked: branch is pi/<name>");
-		assert.strictEqual(git(linked, ["status", "--porcelain"]), "",
-			"linked: linked parent status stays clean");
+		assert.strictEqual(git(linked, ["status", "--porcelain"]), "", "linked: linked parent status stays clean");
 
 		// removeWorktree is the unconditional path (spawn rollback uses it) -
 		// exercise it directly from the linked parent.
 		assert.deepStrictEqual(
 			await removeWorktree(info, DEFAULT_WORKTREE_CLEANUP_COMMAND),
 			{ status: "removed" },
-			"linked: removeWorktree removes it");
+			"linked: removeWorktree removes it",
+		);
 		assert.ok(!existsSync(info.dir), "linked: directory is gone");
 		assert.strictEqual(git(repo, ["branch", "--list", "pi/from-linked"]), "", "linked: branch is gone");
 	});

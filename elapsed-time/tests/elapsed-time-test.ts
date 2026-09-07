@@ -3,11 +3,7 @@ import assert from "node:assert/strict";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { ELAPSED_TIME_STATUS_KEY } from "../../shared/status-keys.ts";
 import { createTestEventHarness } from "../../shared/test-event-harness.ts";
-import {
-	formatElapsed,
-	registerElapsedTime,
-	type ElapsedTimeClock,
-} from "../index.ts";
+import { formatElapsed, registerElapsedTime, type ElapsedTimeClock } from "../index.ts";
 
 class FakeClock implements ElapsedTimeClock {
 	nowMs = 0;
@@ -81,27 +77,31 @@ describe("registerElapsedTime", () => {
 		const run = harness();
 		run.clock.nowMs = 1_000;
 		run.emit("agent_start", { type: "agent_start" }, run.ctx);
-		assert.deepStrictEqual(run.statuses, [
-			[ELAPSED_TIME_STATUS_KEY, "◷ 00:00"],
-		], "run starts with an immediate zero status");
+		assert.deepStrictEqual(
+			run.statuses,
+			[[ELAPSED_TIME_STATUS_KEY, "◷ 00:00"]],
+			"run starts with an immediate zero status",
+		);
 		assert.strictEqual(run.clock.activeTimerCount(), 1, "run starts one refresh timer");
 		assert.strictEqual(run.clock.lastIntervalMs, 1000, "refresh interval is one second");
 
 		run.clock.nowMs = 62_500;
 		run.clock.fireTimers();
-		assert.deepStrictEqual(run.statuses.at(-1), [
-			ELAPSED_TIME_STATUS_KEY,
-			"◷ 01:01",
-		], "tick derives elapsed time from the start timestamp");
+		assert.deepStrictEqual(
+			run.statuses.at(-1),
+			[ELAPSED_TIME_STATUS_KEY, "◷ 01:01"],
+			"tick derives elapsed time from the start timestamp",
+		);
 
 		run.emit("agent_start", { type: "agent_start" }, run.ctx);
 		assert.strictEqual(run.clock.activeTimerCount(), 1, "continuation does not add another timer");
 		run.clock.nowMs = 66_000;
 		run.emit("agent_settled", { type: "agent_settled" }, run.ctx);
-		assert.deepStrictEqual(run.statuses.at(-1), [
-			ELAPSED_TIME_STATUS_KEY,
-			"✓ 01:05",
-		], "settlement freezes the complete busy period");
+		assert.deepStrictEqual(
+			run.statuses.at(-1),
+			[ELAPSED_TIME_STATUS_KEY, "✓ 01:05"],
+			"settlement freezes the complete busy period",
+		);
 		assert.strictEqual(run.clock.activeTimerCount(), 0, "settlement stops refreshing");
 		assert.deepStrictEqual(run.themeTokens, [], "elapsed status applies no dedicated color");
 
@@ -114,10 +114,11 @@ describe("registerElapsedTime", () => {
 		run.emit("agent_start", { type: "agent_start" }, run.ctx);
 		run.clock.nowMs = 102_100;
 		run.emit("agent_settled", { type: "agent_settled" }, run.ctx);
-		assert.deepStrictEqual(run.statuses.at(-1), [
-			ELAPSED_TIME_STATUS_KEY,
-			"✓ 00:02",
-		], "a later interaction starts a fresh measurement");
+		assert.deepStrictEqual(
+			run.statuses.at(-1),
+			[ELAPSED_TIME_STATUS_KEY, "✓ 00:02"],
+			"a later interaction starts a fresh measurement",
+		);
 
 		run.emit("session_shutdown", { type: "session_shutdown", reason: "reload" }, run.ctx);
 		assert.deepStrictEqual(

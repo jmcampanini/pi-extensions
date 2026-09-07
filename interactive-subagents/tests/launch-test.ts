@@ -69,13 +69,17 @@ describe("buildChildEnv", () => {
 	});
 
 	it("child env rejects an invalid agent identifier", () => {
-		assert.throws(() => buildChildEnv({
-			PI_SUBAGENT_SESSION: "/s",
-			PI_SUBAGENT_NAME: "n",
-			PI_SUBAGENT_ID: "a55ba067",
-			PI_SUBAGENT_ACTIVITY_FILE: "/s.activity",
-			PI_SUBAGENT_AGENT: "code reviewer",
-		}), /whitespace/);
+		assert.throws(
+			() =>
+				buildChildEnv({
+					PI_SUBAGENT_SESSION: "/s",
+					PI_SUBAGENT_NAME: "n",
+					PI_SUBAGENT_ID: "a55ba067",
+					PI_SUBAGENT_ACTIVITY_FILE: "/s.activity",
+					PI_SUBAGENT_AGENT: "code reviewer",
+				}),
+			/whitespace/,
+		);
 	});
 });
 
@@ -146,10 +150,7 @@ describe("buildLaunchCommand", () => {
 			sessionFile: "/s.jsonl",
 			promptArg: "",
 		});
-		assert.strictEqual(
-			minimal,
-			"E='1' pi --session '/s.jsonl' -e '" + full.split("-e '")[1].split("'")[0] + "'",
-		);
+		assert.strictEqual(minimal, "E='1' pi --session '/s.jsonl' -e '" + full.split("-e '")[1].split("'")[0] + "'");
 	});
 });
 
@@ -201,7 +202,16 @@ describe("launch meta round trip", () => {
 	const sessionFile = join(dir, "child.jsonl");
 
 	it("meta round-trips", () => {
-		const meta: LaunchMeta = { name: "Worker", agent: "worker", tools: "read", model: "p/m", thinking: "low", systemPromptFile: "/sp.md", autoExit: true, context: "forked" };
+		const meta: LaunchMeta = {
+			name: "Worker",
+			agent: "worker",
+			tools: "read",
+			model: "p/m",
+			thinking: "low",
+			systemPromptFile: "/sp.md",
+			autoExit: true,
+			context: "forked",
+		};
 		writeLaunchMeta(sessionFile, meta);
 		assert.deepStrictEqual(readLaunchMeta(sessionFile), meta);
 	});
@@ -217,10 +227,14 @@ describe("launch meta round trip", () => {
 
 	it("invalid metadata is rejected before writing", () => {
 		const invalidSession = join(dir, "invalid.jsonl");
-		assert.throws(() => writeLaunchMeta(invalidSession, {
-			name: "Invalid",
-			agent: "code reviewer",
-		}), /whitespace/);
+		assert.throws(
+			() =>
+				writeLaunchMeta(invalidSession, {
+					name: "Invalid",
+					agent: "code reviewer",
+				}),
+			/whitespace/,
+		);
 		assert.strictEqual(existsSync(`${invalidSession}.meta`), false, "invalid metadata write creates no sidecar");
 	});
 

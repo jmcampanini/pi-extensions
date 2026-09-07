@@ -35,12 +35,7 @@ import {
 	type ActivityObservation,
 } from "./activity.ts";
 import { assertValidAgentIdentifier } from "./agent-identifier.ts";
-import {
-	cancellationFor,
-	drainQueue,
-	releaseClaim,
-	requestDrain,
-} from "./capacity.ts";
+import { cancellationFor, drainQueue, releaseClaim, requestDrain } from "./capacity.ts";
 import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import { readExternalResult } from "./harnesses.ts";
@@ -90,7 +85,8 @@ function worktreeNote(info: WorktreeInfo, outcome: WorktreeOutcome): string {
 		if (outcome.code === "vanished") {
 			return `Worktree: its directory ${info.dir} no longer exists - nothing was cleaned up.`;
 		}
-		const where = `Worktree: kept at ${info.dir}` + (branch ? ` on branch ${branch}` : "") + ` - ${outcome.reason}.`;
+		const where =
+			`Worktree: kept at ${info.dir}` + (branch ? ` on branch ${branch}` : "") + ` - ${outcome.reason}.`;
 		if (outcome.code === "dirty") {
 			return (
 				`${where} Inspect the changes there` +
@@ -204,9 +200,7 @@ function startWatcher(pi: ExtensionAPI, child: RunningSubagent): void {
 	void watchSubagent(pi, child, generation);
 }
 
-export type TrackChildResult =
-	| { status: "tracked" }
-	| { status: "cancelled"; requester: "user" | "model" };
+export type TrackChildResult = { status: "tracked" } | { status: "cancelled"; requester: "user" | "model" };
 
 /** Register a child and start its supervision machinery. */
 export function trackChild(pi: ExtensionAPI, child: RunningSubagent): TrackChildResult {
@@ -255,17 +249,21 @@ export function adoptRunningChildren(pi: ExtensionAPI): void {
 }
 
 function ownsActiveWatcher(child: RunningSubagent, generation: number): boolean {
-	return !moduleSignal().aborted
-		&& generation === moduleGeneration()
-		&& child.watcherGeneration === generation
-		&& running.get(child.id) === child;
+	return (
+		!moduleSignal().aborted &&
+		generation === moduleGeneration() &&
+		child.watcherGeneration === generation &&
+		running.get(child.id) === child
+	);
 }
 
 function ownsFinalizer(record: DeliveryRecord, generation: number): boolean {
-	return !moduleSignal().aborted
-		&& generation === moduleGeneration()
-		&& record.finalizerGeneration === generation
-		&& deliveryRecord(record.id) === record;
+	return (
+		!moduleSignal().aborted &&
+		generation === moduleGeneration() &&
+		record.finalizerGeneration === generation &&
+		deliveryRecord(record.id) === record
+	);
 }
 
 const DELIVERY_OPTIONS = { triggerTurn: true, deliverAs: "steer" } as const;
@@ -313,52 +311,54 @@ async function watchSubagent(pi: ExtensionAPI, child: RunningSubagent, generatio
 
 	let result: ExitResult;
 	try {
-		result = child.pendingExit ?? await pollForExit({
-			paneId: child.paneId,
-			sessionFile: child.sessionFile,
-			signal,
-			// The liveness tick: one synchronous ~400-byte read per poll second,
-			// the same cost class as the sidecar check the tick already does.
-			onTick: () => {
-				const now = Date.now();
-				noteTick(obs, now); // clock-jump guard first - suspend/wake must not fake a stall
-				observeActivity(obs, readActivityFile(activityFile, child.id), now);
-				const status = computeStatus({
-					nowMs: now,
-					watchdogStartMs: obs.watchdogStartMs,
-					expectsRun: child.expectsRun,
-					everSawRun: obs.everSawRun ?? false,
-					snapshot: obs.snapshot,
-					problemSinceMs: obs.problemSinceMs,
-				});
+		result =
+			child.pendingExit ??
+			(await pollForExit({
+				paneId: child.paneId,
+				sessionFile: child.sessionFile,
+				signal,
+				// The liveness tick: one synchronous ~400-byte read per poll second,
+				// the same cost class as the sidecar check the tick already does.
+				onTick: () => {
+					const now = Date.now();
+					noteTick(obs, now); // clock-jump guard first - suspend/wake must not fake a stall
+					observeActivity(obs, readActivityFile(activityFile, child.id), now);
+					const status = computeStatus({
+						nowMs: now,
+						watchdogStartMs: obs.watchdogStartMs,
+						expectsRun: child.expectsRun,
+						everSawRun: obs.everSawRun ?? false,
+						snapshot: obs.snapshot,
+						problemSinceMs: obs.problemSinceMs,
+					});
 
-				// Edge detection. lastStatus is watcher-PRIVATE memory - the
-				// widget and subagent_status recompute status from the same
-				// observation fields, so they can never disagree with us.
-				const previous = child.lastStatus ?? "starting";
-				child.lastStatus = status;
-				if (status === previous) return;
+					// Edge detection. lastStatus is watcher-PRIVATE memory - the
+					// widget and subagent_status recompute status from the same
+					// observation fields, so they can never disagree with us.
+					const previous = child.lastStatus ?? "starting";
+					child.lastStatus = status;
+					if (status === previous) return;
 
-				if (status === "stalled") {
-					// Entering stalled: one steer per episode, capped so a child
-					// flapping at the 60s boundary cannot spam the parent. The
-					// counter advances even when the steer is suppressed
-					// (interactive children), so flipping a child to autonomous
-					// later cannot replay stale episodes.
-					child.stallEpisodes = (child.stallEpisodes ?? 0) + 1;
-					if (canSteer(child, signal) && child.stallEpisodes <= 3) {
-						sendStalledSteer(pi, child, obs, now);
-						child.stallSteerSent = true;
+					if (status === "stalled") {
+						// Entering stalled: one steer per episode, capped so a child
+						// flapping at the 60s boundary cannot spam the parent. The
+						// counter advances even when the steer is suppressed
+						// (interactive children), so flipping a child to autonomous
+						// later cannot replay stale episodes.
+						child.stallEpisodes = (child.stallEpisodes ?? 0) + 1;
+						if (canSteer(child, signal) && child.stallEpisodes <= 3) {
+							sendStalledSteer(pi, child, obs, now);
+							child.stallSteerSent = true;
+						}
+					} else if (previous === "stalled") {
+						// Leaving stalled: the all-clear goes out only when the
+						// warning did, and the latch clears even when the send is
+						// suppressed - no phantom notification queues up.
+						if (child.stallSteerSent && canSteer(child, signal)) sendRecoveredSteer(pi, child, status);
+						child.stallSteerSent = false;
 					}
-				} else if (previous === "stalled") {
-					// Leaving stalled: the all-clear goes out only when the
-					// warning did, and the latch clears even when the send is
-					// suppressed - no phantom notification queues up.
-					if (child.stallSteerSent && canSteer(child, signal)) sendRecoveredSteer(pi, child, status);
-					child.stallSteerSent = false;
-				}
-			},
-		});
+				},
+			}));
 	} catch (error) {
 		result = {
 			reason: "error",
@@ -460,9 +460,10 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		// tell. An explicit user/model stop must instead replace the result
 		// the caller was promised with one requester-attributed notice.
 		if (child.stopRequester) {
-			const notice = child.stopRequester === "user"
-				? "Stopped by the user. Do not treat this as a subagent failure."
-				: "Stopped because you cancelled it. Do not treat this as a subagent failure.";
+			const notice =
+				child.stopRequester === "user"
+					? "Stopped by the user. Do not treat this as a subagent failure."
+					: "Stopped because you cancelled it. Do not treat this as a subagent failure.";
 			const stoppedWorktreeNote = child.worktree
 				? `Worktree: kept at ${child.worktree.dir} because the work may be incomplete.`
 				: undefined;
@@ -532,9 +533,7 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 		if (!ownsFinalizer(record, generation)) return;
 	}
 
-	const note = child.worktree && worktreeOutcome
-		? worktreeNote(child.worktree, worktreeOutcome)
-		: undefined;
+	const note = child.worktree && worktreeOutcome ? worktreeNote(child.worktree, worktreeOutcome) : undefined;
 	const common = {
 		...resultMessageBase(record, obs, costUsd),
 		resultTokens,
@@ -543,20 +542,21 @@ async function finalizeDelivery(pi: ExtensionAPI, record: DeliveryRecord, genera
 	};
 	const message = failed
 		? buildSubagentResultMessage({
-			...common,
-			status: "failed",
-			response: generatedSummary ?? undefined,
-			failureReason: result.reason === "error"
-				? `provider/agent error: ${result.errorMessage}`
-				: failureHasMessage
-				? result.errorMessage
-				: `exit code ${result.exitCode}`,
-		})
+				...common,
+				status: "failed",
+				response: generatedSummary ?? undefined,
+				failureReason:
+					result.reason === "error"
+						? `provider/agent error: ${result.errorMessage}`
+						: failureHasMessage
+							? result.errorMessage
+							: `exit code ${result.exitCode}`,
+			})
 		: buildSubagentResultMessage({
-			...common,
-			status: "completed",
-			response: generatedSummary ?? "(the subagent produced no final message)",
-		});
+				...common,
+				status: "completed",
+				response: generatedSummary ?? "(the subagent produced no final message)",
+			});
 
 	sendDelivery(pi, record, generation, {
 		customType: SUBAGENT_RESULT_CUSTOM_TYPE,

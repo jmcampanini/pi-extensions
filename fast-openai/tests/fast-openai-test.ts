@@ -10,11 +10,8 @@ mkdirSync(sandbox, { recursive: true });
 const testRoot = mkdtempSync(join(sandbox, "fast-openai-"));
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = testRoot;
-const {
-	FAST_OPENAI_STATUS_KEY,
-	FAST_OPENAI_STATUS_ON,
-	FAST_OPENAI_STATUS_OFF,
-} = await import("../../shared/status-keys.ts");
+const { FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_ON, FAST_OPENAI_STATUS_OFF } =
+	await import("../../shared/status-keys.ts");
 const { default: fastOpenAI } = await import("../index.ts");
 
 after(() => {
@@ -142,9 +139,11 @@ describe("fast status lifecycle", () => {
 
 		const disabledReloadStart = statuses.length;
 		await events.emitAsync("session_start", { type: "session_start", reason: "reload" }, context);
-		assert.deepStrictEqual(statuses.slice(disabledReloadStart), [
-			[FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_OFF],
-		], "session start republishes the persisted off status");
+		assert.deepStrictEqual(
+			statuses.slice(disabledReloadStart),
+			[[FAST_OPENAI_STATUS_KEY, FAST_OPENAI_STATUS_OFF]],
+			"session start republishes the persisted off status",
+		);
 
 		writeFileSync(configPath, '{"enabled":true}', "utf8");
 		await events.emitAsync("agent_start", { type: "agent_start" }, context);
@@ -169,10 +168,14 @@ describe("fast status lifecycle", () => {
 			{ ...context, hasUI: false },
 		);
 		assert.strictEqual(statuses.length, statusCount, "headless session does not publish status");
-		assert.deepStrictEqual(notifications, [
-			['fast-openai on: {"enabled":true}', "info"],
-			['fast-openai off: {"enabled":false}', "info"],
-		], "successful toggles notify with the saved config");
+		assert.deepStrictEqual(
+			notifications,
+			[
+				['fast-openai on: {"enabled":true}', "info"],
+				['fast-openai off: {"enabled":false}', "info"],
+			],
+			"successful toggles notify with the saved config",
+		);
 	});
 });
 
@@ -183,17 +186,18 @@ describe("before_provider_request", () => {
 	});
 
 	it("eligible request gains the priority tier", () => {
-		assert.deepStrictEqual(
-			inject({ model: "gpt-5.5", input: "hi" }, requestContext(eligibleModel)),
-			{ model: "gpt-5.5", input: "hi", service_tier: "priority" },
-		);
+		assert.deepStrictEqual(inject({ model: "gpt-5.5", input: "hi" }, requestContext(eligibleModel)), {
+			model: "gpt-5.5",
+			input: "hi",
+			service_tier: "priority",
+		});
 	});
 
 	it("payload without a model field still gains the tier", () => {
-		assert.deepStrictEqual(
-			inject({ input: "hi" }, requestContext(eligibleModel)),
-			{ input: "hi", service_tier: "priority" },
-		);
+		assert.deepStrictEqual(inject({ input: "hi" }, requestContext(eligibleModel)), {
+			input: "hi",
+			service_tier: "priority",
+		});
 	});
 
 	it("payload for a different model is left alone", () => {

@@ -69,11 +69,7 @@ writeFileSync(
 	"---\ndescription: External guard fixture.\nharness: claude-code\n---\nExternal agent.\n",
 	"utf8",
 );
-writeFileSync(
-	join(defsDir, "pi-agent.md"),
-	"---\ndescription: Pi positive control.\n---\nPi agent.\n",
-	"utf8",
-);
+writeFileSync(join(defsDir, "pi-agent.md"), "---\ndescription: Pi positive control.\n---\nPi agent.\n", "utf8");
 writeFileSync(
 	join(binDir, "tmux"),
 	`#!/bin/sh
@@ -166,19 +162,20 @@ const ctx = {
 	},
 } as never;
 const signal = new AbortController().signal;
-const execute = (agent: string) => registeredSpawnTool.execute(
-	`guard-${agent}`,
-	{
-		name: "Guard test",
-		task: "This must not launch.",
-		agent,
-		context: "forked",
-		worktree: true,
-	},
-	signal,
-	() => {},
-	ctx,
-);
+const execute = (agent: string) =>
+	registeredSpawnTool.execute(
+		`guard-${agent}`,
+		{
+			name: "Guard test",
+			task: "This must not launch.",
+			agent,
+			context: "forked",
+			worktree: true,
+		},
+		signal,
+		() => {},
+		ctx,
+	);
 const tmuxCalls = (): string[] => readFileSync(tmuxLog, "utf8").trim().split("\n").filter(Boolean);
 const assertNoLaunchSideEffects = (stage: string): void => {
 	assert.strictEqual(capacity.queuedCount(), 0, `${stage} leaves the launch queue empty`);
@@ -200,12 +197,12 @@ describe("subagent_spawn guards", () => {
 			properties?: { context?: { description?: string } };
 		};
 		const contextDescription = schema.properties?.context?.description ?? "";
-		const promptGuidelines = (registeredSpawnTool as ToolDefinition & { promptGuidelines?: string[] }).promptGuidelines?.join("\n") ?? "";
+		const promptGuidelines =
+			(registeredSpawnTool as ToolDefinition & { promptGuidelines?: string[] }).promptGuidelines?.join("\n") ??
+			"";
 		for (const phrase of ["external sub-agents are new-only", "requires the Pi harness"]) {
-			assert.ok(contextDescription.includes(phrase),
-				`context parameter advertises ${JSON.stringify(phrase)}`);
-			assert.ok(promptGuidelines.includes(phrase),
-				`prompt guidelines advertise ${JSON.stringify(phrase)}`);
+			assert.ok(contextDescription.includes(phrase), `context parameter advertises ${JSON.stringify(phrase)}`);
+			assert.ok(promptGuidelines.includes(phrase), `prompt guidelines advertise ${JSON.stringify(phrase)}`);
 		}
 	});
 
@@ -213,25 +210,26 @@ describe("subagent_spawn guards", () => {
 		assert.strictEqual(
 			await thrownMessage(() => execute("claude-code")),
 			'Agent "claude-code" runs on the external harness "claude-code" - external sub-agents are new-only: a pi conversation cannot be transplanted into a different tool. Use context "new".',
-			"explicit forked context on an external agent reports the planned runtime guard");
+			"explicit forked context on an external agent reports the planned runtime guard",
+		);
 		assertNoLaunchSideEffects("external guard");
 		assert.deepStrictEqual(
 			tmuxCalls(),
 			["display-message\t-p\t#{version}"],
-			"external guard checks tmux availability but creates no pane");
+			"external guard checks tmux availability but creates no pane",
+		);
 
 		selectedParentSessionFile = missingParentSessionFile;
 		assert.strictEqual(
 			await thrownMessage(() => execute("pi-agent")),
 			"Cannot fork yet: the parent session file has not been written to disk. Try again after this reply, or use context 'new'.",
-			"pi forked positive control reaches the missing parent-session-file-on-disk guard");
+			"pi forked positive control reaches the missing parent-session-file-on-disk guard",
+		);
 		assertNoLaunchSideEffects("pi positive control");
 		assert.deepStrictEqual(
 			tmuxCalls(),
-			[
-				"display-message\t-p\t#{version}",
-				"display-message\t-p\t#{version}",
-			],
-			"pi positive control also creates no pane");
+			["display-message\t-p\t#{version}", "display-message\t-p\t#{version}"],
+			"pi positive control also creates no pane",
+		);
 	});
 });

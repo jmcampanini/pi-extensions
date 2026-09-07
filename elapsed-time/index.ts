@@ -14,9 +14,7 @@ const systemClock: ElapsedTimeClock = {
 };
 
 export function formatElapsed(milliseconds: number): string {
-	const totalSeconds = Number.isFinite(milliseconds)
-		? Math.max(0, Math.floor(milliseconds / 1000))
-		: 0;
+	const totalSeconds = Number.isFinite(milliseconds) ? Math.max(0, Math.floor(milliseconds / 1000)) : 0;
 	const pad = (value: number) => String(value).padStart(2, "0");
 	const hours = Math.floor(totalSeconds / 3600);
 	const minutes = Math.floor((totalSeconds % 3600) / 60);

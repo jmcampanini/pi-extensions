@@ -7,8 +7,7 @@ let blockNumber = 0;
 export function makeBlock(overrides: Partial<Block> = {}): Block {
 	blockNumber++;
 	const kind = overrides.kind ?? "assistant";
-	const title = overrides.title
-		?? (kind === "user" ? "User" : kind === "assistant" ? "Assistant" : kind);
+	const title = overrides.title ?? (kind === "user" ? "User" : kind === "assistant" ? "Assistant" : kind);
 	const body = overrides.body ?? "";
 	const canonicalText = overrides.canonicalText ?? body;
 	const fields = overrides.fields ?? `role:${kind} type:${kind}`;

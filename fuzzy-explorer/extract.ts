@@ -1,16 +1,7 @@
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
-import type {
-	SessionEntry,
-	SessionMessageEntry,
-	TruncationResult,
-} from "@earendil-works/pi-coding-agent";
+import type { SessionEntry, SessionMessageEntry, TruncationResult } from "@earendil-works/pi-coding-agent";
 import { stripSeparators } from "./search.ts";
-import type {
-	Block,
-	BlockKind,
-	BlockTruncation,
-	FileReference,
-} from "./types.ts";
+import type { Block, BlockKind, BlockTruncation, FileReference } from "./types.ts";
 
 const IMAGE_PLACEHOLDER = "[image]";
 const MAX_FLAT_ARGUMENTS = 24;
@@ -58,9 +49,7 @@ export type LabelGetter = (entryId: string) => string | undefined;
 // Text and argument helpers
 
 function asRecord(value: unknown): RecordValue | undefined {
-	return typeof value === "object" && value !== null && !Array.isArray(value)
-		? value as RecordValue
-		: undefined;
+	return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as RecordValue) : undefined;
 }
 
 function compactWhitespace(value: string): string {
@@ -97,14 +86,17 @@ function looksLikeBase64Payload(value: string): boolean {
 
 function isImageContainer(value: RecordValue): boolean {
 	const type = typeof value.type === "string" ? value.type.toLowerCase() : "";
-	const mime = typeof value.mimeType === "string"
-		? value.mimeType
-		: typeof value.mediaType === "string"
-			? value.mediaType
-			: "";
-	return type === "image"
-		|| (type === "base64" && mime.toLowerCase().startsWith("image/"))
-		|| (mime.toLowerCase().startsWith("image/") && "data" in value);
+	const mime =
+		typeof value.mimeType === "string"
+			? value.mimeType
+			: typeof value.mediaType === "string"
+				? value.mediaType
+				: "";
+	return (
+		type === "image" ||
+		(type === "base64" && mime.toLowerCase().startsWith("image/")) ||
+		(mime.toLowerCase().startsWith("image/") && "data" in value)
+	);
 }
 
 function redactImageData(value: unknown, key = "", seen = new WeakSet<object>()): unknown {
@@ -193,11 +185,12 @@ const PATH_LIST_KEYS = new Set(["paths", "files", "filepaths", "file_paths"]);
 const LINE_KEYS = ["line", "linenumber", "line_number", "startline", "start_line"];
 
 function positiveLine(value: unknown): number | undefined {
-	const number = typeof value === "number"
-		? value
-		: typeof value === "string" && /^\+?\d+$/.test(value)
-			? Number(value.replace(/^\+/, ""))
-			: Number.NaN;
+	const number =
+		typeof value === "number"
+			? value
+			: typeof value === "string" && /^\+?\d+$/.test(value)
+				? Number(value.replace(/^\+/, ""))
+				: Number.NaN;
 	return Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
@@ -272,30 +265,24 @@ function truncationFromDetails(details: unknown): BlockTruncation | undefined {
 	if (raw.truncatedBy === "lines" || raw.truncatedBy === "bytes" || raw.truncatedBy === null) {
 		metadata.truncatedBy = raw.truncatedBy;
 	}
-	for (const key of [
-		"totalLines",
-		"totalBytes",
-		"outputLines",
-		"outputBytes",
-		"maxLines",
-		"maxBytes",
-	] as const) {
+	for (const key of ["totalLines", "totalBytes", "outputLines", "outputBytes", "maxLines", "maxBytes"] as const) {
 		if (typeof raw[key] === "number" && Number.isFinite(raw[key])) metadata[key] = raw[key];
 	}
 	for (const key of ["lastLinePartial", "firstLineExceedsLimit"] as const) {
 		if (typeof raw[key] === "boolean") metadata[key] = raw[key];
 	}
 
-	const fullOutputPath = typeof detailRecord?.fullOutputPath === "string"
-		? detailRecord.fullOutputPath
-		: undefined;
+	const fullOutputPath = typeof detailRecord?.fullOutputPath === "string" ? detailRecord.fullOutputPath : undefined;
 	return { truncated: true, metadata, fullOutputPath };
 }
 
 export function formatTimestamp(timestamp: string): string {
 	const date = new Date(timestamp);
 	if (!Number.isFinite(date.getTime())) return timestamp;
-	return date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
+	return date
+		.toISOString()
+		.replace("T", " ")
+		.replace(/\.\d{3}Z$/, "Z");
 }
 
 // Block construction
@@ -334,9 +321,10 @@ function createBlock(entry: SessionEntry, options: MakeBlockOptions): Block {
 	const body = redactEmbeddedImageData(options.body);
 	const canonicalText = redactEmbeddedImageData(options.canonicalText);
 	const inferredBodyOffset = canonicalText === body ? 0 : undefined;
-	const canonicalBodyOffset = options.canonicalBodyOffset === undefined
-		? inferredBodyOffset
-		: redactEmbeddedImageData(options.canonicalText.slice(0, options.canonicalBodyOffset)).length;
+	const canonicalBodyOffset =
+		options.canonicalBodyOffset === undefined
+			? inferredBodyOffset
+			: redactEmbeddedImageData(options.canonicalText.slice(0, options.canonicalBodyOffset)).length;
 	const fields = [
 		`role:${options.role}`,
 		`type:${options.kind}`,
@@ -398,9 +386,7 @@ function extractAssistant(entry: SessionMessageEntry, context: ExtractionContext
 		.map((part, index) => ({ part, index }))
 		.filter(({ part }) => part.type === "text");
 	const firstTextIndex = textParts[0]?.index;
-	const combinedText = textParts
-		.map(({ part }) => part.type === "text" ? part.text : "")
-		.join("\n");
+	const combinedText = textParts.map(({ part }) => (part.type === "text" ? part.text : "")).join("\n");
 	const blocks: Block[] = [];
 
 	for (let index = 0; index < entry.message.content.length; index++) {
@@ -424,24 +410,26 @@ function extractAssistant(entry: SessionMessageEntry, context: ExtractionContext
 				...(reference.line === undefined ? [] : [`line:${reference.line}`]),
 			]),
 		];
-		blocks.push(context.makeBlock(entry, {
-			idPart: `${index}:tool`,
-			kind: "tool",
-			role: "assistant",
-			body: resultText,
-			title: part.name,
-			subtitle: flatArguments,
-			canonicalText,
-			canonicalBodyOffset: resultText.length === 0 ? undefined : canonicalText.length - resultText.length,
-			entryIds: result ? [result.entry.id] : undefined,
-			fieldParts,
-			toolName: part.name,
-			toolCallId: part.id,
-			toolArguments: redactImageData(part.arguments),
-			fileReference: references[0],
-			truncation: result ? truncationFromDetails(result.message.details) : undefined,
-			isError: result?.message.isError,
-		}));
+		blocks.push(
+			context.makeBlock(entry, {
+				idPart: `${index}:tool`,
+				kind: "tool",
+				role: "assistant",
+				body: resultText,
+				title: part.name,
+				subtitle: flatArguments,
+				canonicalText,
+				canonicalBodyOffset: resultText.length === 0 ? undefined : canonicalText.length - resultText.length,
+				entryIds: result ? [result.entry.id] : undefined,
+				fieldParts,
+				toolName: part.name,
+				toolCallId: part.id,
+				toolArguments: redactImageData(part.arguments),
+				fileReference: references[0],
+				truncation: result ? truncationFromDetails(result.message.details) : undefined,
+				isError: result?.message.isError,
+			}),
+		);
 	}
 	return blocks;
 }
@@ -451,25 +439,23 @@ function extractOrphanToolResult(entry: SessionMessageEntry, context: Extraction
 	const body = contentToText(entry.message.content);
 	const heading = `${entry.message.toolName} (${entry.message.toolCallId})`;
 	const canonicalText = body.length === 0 ? heading : `${heading}\n\n${body}`;
-	return [context.makeBlock(entry, {
-		idPart: "0:result",
-		kind: "tool",
-		role: "toolResult",
-		body,
-		title: entry.message.toolName,
-		subtitle: `orphan result · ${entry.message.toolCallId}`,
-		canonicalText,
-		canonicalBodyOffset: body.length === 0 ? undefined : canonicalText.length - body.length,
-		fieldParts: [
-			`tool:${entry.message.toolName}`,
-			`toolCallId:${entry.message.toolCallId}`,
-			"orphan:result",
-		],
-		toolName: entry.message.toolName,
-		toolCallId: entry.message.toolCallId,
-		truncation: truncationFromDetails(entry.message.details),
-		isError: entry.message.isError,
-	})];
+	return [
+		context.makeBlock(entry, {
+			idPart: "0:result",
+			kind: "tool",
+			role: "toolResult",
+			body,
+			title: entry.message.toolName,
+			subtitle: `orphan result · ${entry.message.toolCallId}`,
+			canonicalText,
+			canonicalBodyOffset: body.length === 0 ? undefined : canonicalText.length - body.length,
+			fieldParts: [`tool:${entry.message.toolName}`, `toolCallId:${entry.message.toolCallId}`, "orphan:result"],
+			toolName: entry.message.toolName,
+			toolCallId: entry.message.toolCallId,
+			truncation: truncationFromDetails(entry.message.details),
+			isError: entry.message.isError,
+		}),
+	];
 }
 
 function extractBash(entry: SessionMessageEntry, context: ExtractionContext): Block[] {
@@ -484,52 +470,58 @@ function extractBash(entry: SessionMessageEntry, context: ExtractionContext): Bl
 		? { truncated: true, fullOutputPath: message.fullOutputPath }
 		: undefined;
 	const canonicalText = makeCanonicalBashText(message.command, message.output, status);
-	return [context.makeBlock(entry, {
-		idPart: "0:bash",
-		kind: "bash",
-		role: "bashExecution",
-		body: message.output,
-		title: "Bash",
-		subtitle: compactValue(message.command, 240),
-		canonicalText,
-		canonicalBodyOffset: message.output.length === 0 ? undefined : message.command.length + 2,
-		fieldParts: [
-			`command:${compactValue(message.command, 240)}`,
-			...(message.exitCode === undefined ? [] : [`exit:${message.exitCode}`]),
-			...(message.cancelled ? ["cancelled:true"] : []),
-		],
-		truncation,
-		isError: message.cancelled || (message.exitCode !== undefined && message.exitCode !== 0),
-	})];
+	return [
+		context.makeBlock(entry, {
+			idPart: "0:bash",
+			kind: "bash",
+			role: "bashExecution",
+			body: message.output,
+			title: "Bash",
+			subtitle: compactValue(message.command, 240),
+			canonicalText,
+			canonicalBodyOffset: message.output.length === 0 ? undefined : message.command.length + 2,
+			fieldParts: [
+				`command:${compactValue(message.command, 240)}`,
+				...(message.exitCode === undefined ? [] : [`exit:${message.exitCode}`]),
+				...(message.cancelled ? ["cancelled:true"] : []),
+			],
+			truncation,
+			isError: message.cancelled || (message.exitCode !== undefined && message.exitCode !== 0),
+		}),
+	];
 }
 
 function extractCustomMessageRole(entry: SessionMessageEntry, context: ExtractionContext): Block[] {
 	if (entry.message.role !== "custom" || !entry.message.display) return [];
 	const body = contentToText(entry.message.content);
-	return [context.makeBlock(entry, {
-		idPart: "0:custom",
-		kind: "custom",
-		role: "custom",
-		body,
-		title: entry.message.customType,
-		canonicalText: body,
-		fieldParts: [`customType:${entry.message.customType}`],
-	})];
+	return [
+		context.makeBlock(entry, {
+			idPart: "0:custom",
+			kind: "custom",
+			role: "custom",
+			body,
+			title: entry.message.customType,
+			canonicalText: body,
+			fieldParts: [`customType:${entry.message.customType}`],
+		}),
+	];
 }
 
 function extractSummaryMessageRole(entry: SessionMessageEntry, context: ExtractionContext): Block[] {
 	if (entry.message.role !== "branchSummary" && entry.message.role !== "compactionSummary") return [];
 	const branch = entry.message.role === "branchSummary";
 	const body = entry.message.summary;
-	return [context.makeBlock(entry, {
-		idPart: branch ? "0:branch-summary" : "0:compaction-summary",
-		kind: "summary",
-		role: entry.message.role,
-		body,
-		title: branch ? "Branch summary" : "Compaction summary",
-		canonicalText: body,
-		fieldParts: [`summary:${branch ? "branch" : "compaction"}`],
-	})];
+	return [
+		context.makeBlock(entry, {
+			idPart: branch ? "0:branch-summary" : "0:compaction-summary",
+			kind: "summary",
+			role: entry.message.role,
+			body,
+			title: branch ? "Branch summary" : "Compaction summary",
+			canonicalText: body,
+			fieldParts: [`summary:${branch ? "branch" : "compaction"}`],
+		}),
+	];
 }
 
 function extractMessageEntry(entry: SessionEntry, context: ExtractionContext): Block[] {
@@ -558,41 +550,47 @@ function extractMessageEntry(entry: SessionEntry, context: ExtractionContext): B
 function extractCustomMessageEntry(entry: SessionEntry, context: ExtractionContext): Block[] {
 	if (entry.type !== "custom_message" || !entry.display) return [];
 	const body = contentToText(entry.content);
-	return [context.makeBlock(entry, {
-		idPart: "0:custom-message",
-		kind: "custom",
-		role: "custom",
-		body,
-		title: entry.customType,
-		canonicalText: body,
-		fieldParts: [`customType:${entry.customType}`, "source:custom_message"],
-	})];
+	return [
+		context.makeBlock(entry, {
+			idPart: "0:custom-message",
+			kind: "custom",
+			role: "custom",
+			body,
+			title: entry.customType,
+			canonicalText: body,
+			fieldParts: [`customType:${entry.customType}`, "source:custom_message"],
+		}),
+	];
 }
 
 function extractCompactionEntry(entry: SessionEntry, context: ExtractionContext): Block[] {
 	if (entry.type !== "compaction") return [];
-	return [context.makeBlock(entry, {
-		idPart: "0:compaction",
-		kind: "summary",
-		role: "compactionSummary",
-		body: entry.summary,
-		title: "Compaction summary",
-		canonicalText: entry.summary,
-		fieldParts: ["summary:compaction", "source:compaction"],
-	})];
+	return [
+		context.makeBlock(entry, {
+			idPart: "0:compaction",
+			kind: "summary",
+			role: "compactionSummary",
+			body: entry.summary,
+			title: "Compaction summary",
+			canonicalText: entry.summary,
+			fieldParts: ["summary:compaction", "source:compaction"],
+		}),
+	];
 }
 
 function extractBranchSummaryEntry(entry: SessionEntry, context: ExtractionContext): Block[] {
 	if (entry.type !== "branch_summary") return [];
-	return [context.makeBlock(entry, {
-		idPart: "0:branch-summary",
-		kind: "summary",
-		role: "branchSummary",
-		body: entry.summary,
-		title: "Branch summary",
-		canonicalText: entry.summary,
-		fieldParts: ["summary:branch", "source:branch_summary"],
-	})];
+	return [
+		context.makeBlock(entry, {
+			idPart: "0:branch-summary",
+			kind: "summary",
+			role: "branchSummary",
+			body: entry.summary,
+			title: "Branch summary",
+			canonicalText: entry.summary,
+			fieldParts: ["summary:branch", "source:branch_summary"],
+		}),
+	];
 }
 
 const excludeEntry: EntryExtractor = () => [];

@@ -64,11 +64,41 @@ const BASE_KEYS = new Set([
 ]);
 const MODIFIERS = new Set(["ctrl", "shift", "alt", "super"]);
 const RESERVED_SHORTCUTS = new Set([
-	"escape", "esc", "enter", "return",
-	"ctrl+a", "ctrl+b", "ctrl+c", "ctrl+d", "ctrl+e", "ctrl+f", "ctrl+g", "ctrl+h", "ctrl+i",
-	"ctrl+j", "ctrl+k", "ctrl+l", "ctrl+m", "ctrl+o", "ctrl+p", "ctrl+t", "ctrl+u", "ctrl+w", "ctrl+y", "ctrl+z",
-	"ctrl+[", "ctrl+]", "ctrl+alt+]", "shift+ctrl+p", "ctrl+shift+p", "shift+tab", "shift+enter", "alt+enter",
-	"alt+b", "alt+f", "alt+d",
+	"escape",
+	"esc",
+	"enter",
+	"return",
+	"ctrl+a",
+	"ctrl+b",
+	"ctrl+c",
+	"ctrl+d",
+	"ctrl+e",
+	"ctrl+f",
+	"ctrl+g",
+	"ctrl+h",
+	"ctrl+i",
+	"ctrl+j",
+	"ctrl+k",
+	"ctrl+l",
+	"ctrl+m",
+	"ctrl+o",
+	"ctrl+p",
+	"ctrl+t",
+	"ctrl+u",
+	"ctrl+w",
+	"ctrl+y",
+	"ctrl+z",
+	"ctrl+[",
+	"ctrl+]",
+	"ctrl+alt+]",
+	"shift+ctrl+p",
+	"ctrl+shift+p",
+	"shift+tab",
+	"shift+enter",
+	"alt+enter",
+	"alt+b",
+	"alt+f",
+	"alt+d",
 ]);
 
 function isKeyId(value: string): value is KeyId {
@@ -92,16 +122,13 @@ function isKeyId(value: string): value is KeyId {
 
 function requireOpenShortcut(value: unknown, source: string): KeyId {
 	if (typeof value !== "string" || !isKeyId(value)) {
-		throw new Error(
-			`${source}: invalid openShortcut ${JSON.stringify(value)} - use a Pi KeyId such as "ctrl+r"`,
-		);
+		throw new Error(`${source}: invalid openShortcut ${JSON.stringify(value)} - use a Pi KeyId such as "ctrl+r"`);
 	}
 	const normalized = value.toLowerCase();
 	const isBareFunctionKey = /^f(?:[1-9]|1[0-2])$/.test(normalized);
 	const hasModifier = /^(?:(?:ctrl|shift|alt|super)\+)+/.test(normalized);
 	const shiftedBase = normalized.startsWith("shift+") ? normalized.slice("shift+".length) : "";
-	const isShiftedTextKey = BASE_KEYS.has(shiftedBase)
-		&& (shiftedBase === "space" || shiftedBase.length === 1);
+	const isShiftedTextKey = BASE_KEYS.has(shiftedBase) && (shiftedBase === "space" || shiftedBase.length === 1);
 	if ((!hasModifier && !isBareFunctionKey) || isShiftedTextKey || RESERVED_SHORTCUTS.has(normalized)) {
 		throw new Error(`${source}: openShortcut ${JSON.stringify(value)} is reserved by Pi's main editor`);
 	}

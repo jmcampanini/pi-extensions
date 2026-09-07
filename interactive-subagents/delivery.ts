@@ -46,9 +46,11 @@ export function deliveredChildId(message: unknown): string | undefined {
 /** Whether a record can be safely re-armed after a normal settlement. */
 export function needsRedelivery(record: DeliveryRecord, settledRunStartIndex: number): boolean {
 	if (record.sendAccepted === false) return true;
-	return record.sendAccepted === true
-		&& typeof record.sendAcceptedRunIndex === "number"
-		&& record.sendAcceptedRunIndex < settledRunStartIndex;
+	return (
+		record.sendAccepted === true &&
+		typeof record.sendAcceptedRunIndex === "number" &&
+		record.sendAcceptedRunIndex < settledRunStartIndex
+	);
 }
 
 /** Conservative classifier for the most recent agent_end. */
@@ -61,9 +63,11 @@ export function agentEndWasNormal(event: unknown): boolean {
 		if (typeof message !== "object" || message === null) continue;
 		const assistant = message as { role?: unknown; stopReason?: unknown };
 		if (assistant.role !== "assistant") continue;
-		return typeof assistant.stopReason === "string"
-			&& assistant.stopReason !== "aborted"
-			&& assistant.stopReason !== "error";
+		return (
+			typeof assistant.stopReason === "string" &&
+			assistant.stopReason !== "aborted" &&
+			assistant.stopReason !== "error"
+		);
 	}
 	return false;
 }

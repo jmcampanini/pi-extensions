@@ -62,7 +62,10 @@ describe("resolveUsableModel", () => {
 
 	it("ambiguous falls through", () => {
 		// bare ambiguous (two authed providers) -> that entry fails, next wins
-		assert.strictEqual(resolveUsableModel(["dual-model", "anthropic/claude-y"], registry, []), "anthropic/claude-y");
+		assert.strictEqual(
+			resolveUsableModel(["dual-model", "anthropic/claude-y"], registry, []),
+			"anthropic/claude-y",
+		);
 	});
 
 	it("ambiguous alone", () => {
@@ -110,7 +113,10 @@ describe("resolution failures name the usable ids", () => {
 	});
 
 	it("an empty usable list adds no trailer", () => {
-		assert.throws(() => resolveUsableModel(["terra"], registry, []), (error: unknown) => !String(error).includes("Usable models"));
+		assert.throws(
+			() => resolveUsableModel(["terra"], registry, []),
+			(error: unknown) => !String(error).includes("Usable models"),
+		);
 	});
 });
 
@@ -120,28 +126,47 @@ describe("listUsableModels", () => {
 		{ provider: "lm-studio", id: "local/small" },
 		{ provider: "anthropic", id: "claude-y" },
 	];
-	const scoped = [{ model: { provider: "openai-codex", id: "gpt-x" } }, { model: { provider: "anthropic", id: "claude-y" } }];
+	const scoped = [
+		{ model: { provider: "openai-codex", id: "gpt-x" } },
+		{ model: { provider: "anthropic", id: "claude-y" } },
+	];
 
 	it("scoped models win over the available catalogue", () => {
-		const models = listUsableModels({ scopedModels: scoped, modelRegistry: { getAvailable: () => available }, model: undefined });
+		const models = listUsableModels({
+			scopedModels: scoped,
+			modelRegistry: { getAvailable: () => available },
+			model: undefined,
+		});
 
 		assert.deepStrictEqual(models.ids, ["openai-codex/gpt-x", "anthropic/claude-y"]);
 	});
 
 	it("an unscoped session lists every available model", () => {
-		const models = listUsableModels({ scopedModels: [], modelRegistry: { getAvailable: () => available }, model: undefined });
+		const models = listUsableModels({
+			scopedModels: [],
+			modelRegistry: { getAvailable: () => available },
+			model: undefined,
+		});
 
 		assert.deepStrictEqual(models.ids, ["openai-codex/gpt-x", "lm-studio/local/small", "anthropic/claude-y"]);
 	});
 
 	it("the current model is reported in canonical form", () => {
-		const models = listUsableModels({ scopedModels: scoped, modelRegistry: { getAvailable: () => available }, model: { provider: "anthropic", id: "claude-y" } });
+		const models = listUsableModels({
+			scopedModels: scoped,
+			modelRegistry: { getAvailable: () => available },
+			model: { provider: "anthropic", id: "claude-y" },
+		});
 
 		assert.strictEqual(models.current, "anthropic/claude-y");
 	});
 
 	it("no selected model means no current entry", () => {
-		const models = listUsableModels({ scopedModels: scoped, modelRegistry: { getAvailable: () => available }, model: undefined });
+		const models = listUsableModels({
+			scopedModels: scoped,
+			modelRegistry: { getAvailable: () => available },
+			model: undefined,
+		});
 
 		assert.strictEqual("current" in models, false);
 	});

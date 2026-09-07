@@ -46,9 +46,7 @@ function actionHint(row: LifecycleWidgetRow): string {
 	if (row.lifecycle === "running") return "enter: visit · z: visit + zoom · x: stop";
 	if (row.lifecycle === "queued") return "x: cancel queued launch";
 	if (row.lifecycle === "pending") return "x: cancel launch";
-	return row.status === "stopped"
-		? "stopped; its stopped notice is on its way"
-		: "finished; result is on its way";
+	return row.status === "stopped" ? "stopped; its stopped notice is on its way" : "finished; result is on its way";
 }
 
 export function formatStatusPickerLines(
@@ -73,14 +71,21 @@ export function formatStatusPickerLines(
 	const end = Math.min(rows.length, start + limit);
 	const visibleRows = rows.slice(start, end);
 	const lines = [border("─".repeat(safeWidth))];
-	lines.push(...formatLifecycleRowLines(visibleRows, width, {
-		dim,
-		name: nameStyle,
-		selected,
-		agent: agentStyle,
-		slot: markerStyle,
-		warn,
-	}, { selectedIndex: cursor - start }));
+	lines.push(
+		...formatLifecycleRowLines(
+			visibleRows,
+			width,
+			{
+				dim,
+				name: nameStyle,
+				selected,
+				agent: agentStyle,
+				slot: markerStyle,
+				warn,
+			},
+			{ selectedIndex: cursor - start },
+		),
+	);
 
 	if (rows.length === 0) lines.push(dim(fitText(" No unresolved sub-agents", safeWidth)));
 	if (rows.length > limit) {
@@ -91,8 +96,8 @@ export function formatStatusPickerLines(
 		lines.push("");
 		const controls = `${actionHint(selectedRow)} · ↑/↓ or j/k: select · esc: close`;
 		const harnessName = selectedRow.harness ? sanitizeDisplayText(selectedRow.harness) : undefined;
-		const showHarness = harnessName !== undefined
-			&& visibleWidth(` harness ${harnessName} · ${controls}`) <= safeWidth;
+		const showHarness =
+			harnessName !== undefined && visibleWidth(` harness ${harnessName} · ${controls}`) <= safeWidth;
 		const harness = showHarness ? meta(` harness ${harnessName}`) + dim(" · ") : "";
 		lines.push(clampStyled(harness + dim(`${showHarness ? "" : " "}${controls}`), safeWidth));
 	}
@@ -108,10 +113,7 @@ function nextViewport(cursor: number, viewportStart: number, rowCount: number, m
 	return Math.min(viewportStart, maxStart);
 }
 
-export function registerSubagentStatusCommand(
-	pi: ExtensionAPI,
-	focus: typeof focusPane = focusPane,
-): void {
+export function registerSubagentStatusCommand(pi: ExtensionAPI, focus: typeof focusPane = focusPane): void {
 	pi.registerCommand("subagent-status", {
 		description: "Show every sub-agent lifecycle state and visit, zoom, stop, or cancel where available",
 		handler: async (_args, ctx) => {
@@ -125,8 +127,7 @@ export function registerSubagentStatusCommand(
 			let choice: PickerChoice | undefined;
 			const restoreRunningWidget = suspendRunningWidget(ctx);
 			try {
-				choice = await ctx.ui.custom<PickerChoice | undefined>(
-					(tui, theme, _keybindings, done) => {
+				choice = await ctx.ui.custom<PickerChoice | undefined>((tui, theme, _keybindings, done) => {
 					refreshTimer = setInterval(() => tui.requestRender(), 1000);
 					const close = (value: PickerChoice | undefined): void => {
 						if (refreshTimer) clearInterval(refreshTimer);
@@ -170,7 +171,10 @@ export function registerSubagentStatusCommand(
 							const current = currentSelection();
 							if (current.rows.length === 0) return;
 							if (matchesKey(data, "up") || data === "k") {
-								selectRow(current.rows, (current.cursor - 1 + current.rows.length) % current.rows.length);
+								selectRow(
+									current.rows,
+									(current.cursor - 1 + current.rows.length) % current.rows.length,
+								);
 								return;
 							}
 							if (matchesKey(data, "down") || data === "j") {
@@ -178,13 +182,19 @@ export function registerSubagentStatusCommand(
 								return;
 							}
 							const row = current.rows[current.cursor];
-							if ((matchesKey(data, "enter") || matchesKey(data, "return")) && row.lifecycle === "running") {
+							if (
+								(matchesKey(data, "enter") || matchesKey(data, "return")) &&
+								row.lifecycle === "running"
+							) {
 								close({ row, action: "goto" });
 							} else if (data === "z" && row.lifecycle === "running") {
 								close({ row, action: "zoom" });
-							} else if (data === "x" && (
-								row.lifecycle === "running" || row.lifecycle === "queued" || row.lifecycle === "pending"
-							)) {
+							} else if (
+								data === "x" &&
+								(row.lifecycle === "running" ||
+									row.lifecycle === "queued" ||
+									row.lifecycle === "pending")
+							) {
 								close({ row, action: "cancel" });
 							}
 						},
@@ -202,8 +212,7 @@ export function registerSubagentStatusCommand(
 							});
 						},
 					};
-				},
-				);
+				});
 			} finally {
 				if (refreshTimer) clearInterval(refreshTimer);
 				restoreRunningWidget();

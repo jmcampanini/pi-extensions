@@ -16,7 +16,10 @@ describe("formatBannerLine", () => {
 
 	it("interactive line fills the width with the rule", () => {
 		const interactiveBody = "─ SUBAGENT · recon [scout] · interactive ";
-		assert.strictEqual(formatBannerLine(interactive, 72), interactiveBody + "─".repeat(72 - interactiveBody.length));
+		assert.strictEqual(
+			formatBannerLine(interactive, 72),
+			interactiveBody + "─".repeat(72 - interactiveBody.length),
+		);
 	});
 
 	it("human-driving line fills the width with the rule", () => {
@@ -48,7 +51,14 @@ describe("formatBannerLine", () => {
 
 	it("narrow width clips the name with an ellipsis while tag and mode survive", () => {
 		const narrow = formatBannerLine(
-			{ name: "a very long task name that cannot possibly fit", agent: "scout", autoExit: true, humanDriving: false }, 40);
+			{
+				name: "a very long task name that cannot possibly fit",
+				agent: "scout",
+				autoExit: true,
+				humanDriving: false,
+			},
+			40,
+		);
 		assert.strictEqual(narrow, "─ SUBAGENT · a very… [scout] · auto-exit", "narrow clips the name with ellipsis");
 		assert.strictEqual(narrow.length <= 40, true, "narrow line fits width");
 	});
@@ -61,7 +71,11 @@ describe("formatBannerLine", () => {
 	});
 
 	// style hooks wrap the rule and the mode; layout math stays plain
-	const markers = { dim: (t: string) => `<D>${t}</D>`, border: (t: string) => `<B>${t}</B>`, warn: (t: string) => `<W>${t}</W>` };
+	const markers = {
+		dim: (t: string) => `<D>${t}</D>`,
+		border: (t: string) => `<B>${t}</B>`,
+		warn: (t: string) => `<W>${t}</W>`,
+	};
 	const strip = (line: string) => line.replace(/<\/?[DBW]>/g, "");
 	const styled = formatBannerLine(auto, 72, markers);
 	const styledHuman = formatBannerLine(human, 100, markers);
@@ -109,6 +123,10 @@ describe("formatBannerLine", () => {
 			70,
 		);
 		assert.strictEqual(hostileIdentity.includes("\x1b"), false, "banner removes generated terminal controls");
-		assert.strictEqual(hostileIdentity.includes("safe name [worker]"), true, "banner preserves safe generated identity");
+		assert.strictEqual(
+			hostileIdentity.includes("safe name [worker]"),
+			true,
+			"banner preserves safe generated identity",
+		);
 	});
 });

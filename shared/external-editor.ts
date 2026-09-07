@@ -49,7 +49,7 @@ export function resolveExternalEditor(
 export function parseEditorCommand(editorCommand: string): string[] {
 	const parts: string[] = [];
 	let current = "";
-	let quote: "'" | "\"" | undefined;
+	let quote: "'" | '"' | undefined;
 	let started = false;
 
 	for (let index = 0; index < editorCommand.length; index++) {
@@ -61,8 +61,8 @@ export function parseEditorCommand(editorCommand: string): string[] {
 			continue;
 		}
 
-		if (quote === "\"") {
-			if (character === "\"") {
+		if (quote === '"') {
+			if (character === '"') {
 				quote = undefined;
 			} else if (character === "\\" && /["\\]/.test(editorCommand[index + 1] ?? "")) {
 				current += editorCommand[++index]!;
@@ -73,7 +73,7 @@ export function parseEditorCommand(editorCommand: string): string[] {
 			continue;
 		}
 
-		if (character === "'" || character === "\"") {
+		if (character === "'" || character === '"') {
 			quote = character;
 			started = true;
 		} else if (/\s/.test(character)) {
@@ -113,12 +113,12 @@ const PLUS_LINE_EDITORS = new Set([
 	"vimdiff",
 ]);
 
-const END_OF_OPTIONS_EDITORS = new Set([
-	"ex", "gvim", "mvim", "nvim", "nvimdiff", "vi", "view", "vim", "vimdiff",
-]);
+const END_OF_OPTIONS_EDITORS = new Set(["ex", "gvim", "mvim", "nvim", "nvimdiff", "vi", "view", "vim", "vimdiff"]);
 
 function editorExecutableName(command: string): string {
-	return basename(command).toLowerCase().replace(/\.(?:bat|cmd|exe)$/i, "");
+	return basename(command)
+		.toLowerCase()
+		.replace(/\.(?:bat|cmd|exe)$/i, "");
 }
 
 export function editorSupportsPlusLine(command: string): boolean {

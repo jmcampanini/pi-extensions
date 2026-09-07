@@ -210,10 +210,7 @@ export interface AdaptiveFooterDependencies {
 
 const SETTLE_REFRESH_MIN_INTERVAL_MS = 30_000;
 
-export function registerAdaptiveFooter(
-	pi: ExtensionAPI,
-	dependencies: AdaptiveFooterDependencies = {},
-): void {
+export function registerAdaptiveFooter(pi: ExtensionAPI, dependencies: AdaptiveFooterDependencies = {}): void {
 	let activeSession: { refresh(): Promise<void>; refreshOnSettle(): Promise<void>; dispose(): void } | undefined;
 
 	pi.on("agent_settled", () => {
@@ -231,11 +228,14 @@ export function registerAdaptiveFooter(
 		if (!ctx.hasUI) return;
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
-			const discover = dependencies.discover ?? ((input, signal) => discoverRepositoryContext(
-				(command, args, options) => pi.exec(command, args, options),
-				input,
-				signal,
-			));
+			const discover =
+				dependencies.discover ??
+				((input, signal) =>
+					discoverRepositoryContext(
+						(command, args, options) => pi.exec(command, args, options),
+						input,
+						signal,
+					));
 			const refresher = createRepositoryContextRefresher(
 				() => ({
 					cwd: ctx.sessionManager.getCwd(),
@@ -332,12 +332,15 @@ export function registerAdaptiveFooter(
 					});
 
 					const home = process.env.HOME || process.env.USERPROFILE;
-					const repositoryLayout = fitRepositoryLayout({
-						cwd: cwdVariants(ctx.sessionManager.getCwd(), home),
-						session: ctx.sessionManager.getSessionName(),
-						branch: footerData.getGitBranch(),
-						context: refresher.get(),
-					}, width);
+					const repositoryLayout = fitRepositoryLayout(
+						{
+							cwd: cwdVariants(ctx.sessionManager.getCwd(), home),
+							session: ctx.sessionManager.getSessionName(),
+							branch: footerData.getGitBranch(),
+							context: refresher.get(),
+						},
+						width,
+					);
 					const repositoryLine = styleRepositorySpans(
 						repositoryLayout.spans,
 						(text) => theme.fg("dim", text),

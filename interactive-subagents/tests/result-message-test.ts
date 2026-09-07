@@ -1,20 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import type {
-	ExtensionAPI,
-	MessageRenderer,
-	Theme,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, MessageRenderer, Theme } from "@earendil-works/pi-coding-agent";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { stripVTControlCharacters } from "node:util";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Text, visibleWidth } from "@earendil-works/pi-tui";
 import { parseSubagentResultEnvelope } from "../../shared/subagent-envelope.ts";
-import {
-	buildSubagentResultEnvelope,
-	buildSubagentResultMessage,
-} from "../result-content.ts";
+import { buildSubagentResultEnvelope, buildSubagentResultMessage } from "../result-content.ts";
 import { clampStyled, fitText } from "../../shared/text-fit.ts";
 import {
 	estimateResultTokens,
@@ -41,7 +34,10 @@ const details = (
 	presentation: resultPresentation(status, 134, preview),
 });
 const stoppedDetails = {
-	...details("stopped", "Stopped by the user - no final result. Partial work may remain; expand for resume and worktree details."),
+	...details(
+		"stopped",
+		"Stopped by the user - no final result. Partial work may remain; expand for resume and worktree details.",
+	),
 	resultTokens: undefined,
 };
 const longPreview = Array.from({ length: 40 }, (_, index) => `finding-${index}`).join(" ");
@@ -95,12 +91,16 @@ describe("resultPresentation", () => {
 
 describe("formatCollapsedSubagentResult", () => {
 	const completed = formatCollapsedSubagentResult(details("completed"), 120, 5, "ctrl+o").map(plain);
-	const failed = formatCollapsedSubagentResult(details("failed", "Provider authentication expired."), 120, 5, "Ctrl+O").map(plain);
+	const failed = formatCollapsedSubagentResult(
+		details("failed", "Provider authentication expired."),
+		120,
+		5,
+		"Ctrl+O",
+	).map(plain);
 	const stopped = formatCollapsedSubagentResult(stoppedDetails, 120, 5, "Ctrl+O").map(plain);
 
 	it("completed header keeps identity, outcome, and elapsed time", () => {
-		assert.strictEqual(completed[0],
-			"subagent result · code-reviewer · API review · done 2m14s");
+		assert.strictEqual(completed[0], "subagent result · code-reviewer · API review · done 2m14s");
 	});
 
 	it("completed separates its preview from the header", () => {
@@ -116,39 +116,49 @@ describe("formatCollapsedSubagentResult", () => {
 	});
 
 	it("completed footer carries sizes and the expansion hint", () => {
-		assert.strictEqual(completed[4],
-			"84k ctx · ~1.8k result (ctrl+o to expand)");
+		assert.strictEqual(completed[4], "84k ctx · ~1.8k result (ctrl+o to expand)");
 	});
 
 	it("failed is explicit without header metrics", () => {
-		assert.strictEqual(failed[0],
-			"subagent result · code-reviewer · API review · failed 2m14s");
+		assert.strictEqual(failed[0], "subagent result · code-reviewer · API review · failed 2m14s");
 	});
 
 	it("stopped omits unavailable result size from its footer", () => {
-		assert.strictEqual(stopped.at(-1),
-			"84k ctx (Ctrl+O to expand)");
+		assert.strictEqual(stopped.at(-1), "84k ctx (Ctrl+O to expand)");
 	});
 
 	it("collapsed footer can show only a result size", () => {
-		const resultOnly = formatCollapsedSubagentResult({
-			...details("completed"),
-			contextTokens: undefined,
-		}, 120, 5, "Ctrl+O").map(plain);
+		const resultOnly = formatCollapsedSubagentResult(
+			{
+				...details("completed"),
+				contextTokens: undefined,
+			},
+			120,
+			5,
+			"Ctrl+O",
+		).map(plain);
 		assert.strictEqual(resultOnly.at(-1), "~1.8k result (Ctrl+O to expand)");
 	});
 
 	it("collapsed footer remains useful when sizes are unavailable", () => {
-		const sizesUnavailable = formatCollapsedSubagentResult({
-			...details("completed"),
-			contextTokens: undefined,
-			resultTokens: undefined,
-		}, 120, 0, "Ctrl+O").map(plain);
+		const sizesUnavailable = formatCollapsedSubagentResult(
+			{
+				...details("completed"),
+				contextTokens: undefined,
+				resultTokens: undefined,
+			},
+			120,
+			0,
+			"Ctrl+O",
+		).map(plain);
 		assert.strictEqual(sizesUnavailable.at(-1), "(Ctrl+O to expand)");
 	});
 
 	it("status headers have no leading symbols", () => {
-		assert.strictEqual([completed[0], failed[0], stopped[0]].every((line) => line.startsWith("subagent result ")), true);
+		assert.strictEqual(
+			[completed[0], failed[0], stopped[0]].every((line) => line.startsWith("subagent result ")),
+			true,
+		);
 	});
 
 	it("collapsed expansion hint supports dim styling", () => {
@@ -204,8 +214,7 @@ describe("formatCollapsedSubagentResult", () => {
 	});
 
 	it("zero result preview retains sizes and expansion guidance", () => {
-		assert.strictEqual(headerOnly[2],
-			"84k ctx · ~1.8k result (Ctrl+O to expand)");
+		assert.strictEqual(headerOnly[2], "84k ctx · ~1.8k result (Ctrl+O to expand)");
 	});
 
 	const twentyLineResult = formatCollapsedSubagentResult(details("completed", longPreview.repeat(4)), 16, 20, "");
@@ -229,7 +238,9 @@ describe("formatCollapsedSubagentResult", () => {
 	});
 
 	it("narrow headers drop optional identity before elapsed time", () => {
-		const timedStatusOnlyHeader = plain(formatCollapsedSubagentResult(details("completed"), 30, 5, "Ctrl+O")[0] ?? "");
+		const timedStatusOnlyHeader = plain(
+			formatCollapsedSubagentResult(details("completed"), 30, 5, "Ctrl+O")[0] ?? "",
+		);
 		assert.strictEqual(timedStatusOnlyHeader, "subagent result · done 2m14s");
 	});
 
@@ -248,12 +259,21 @@ describe("formatCollapsedSubagentResult", () => {
 				presentation: resultPresentation("failed", 9, `漢字 e\u0301 🙂 ${longPreview}`),
 			};
 			const lines = formatCollapsedSubagentResult(hostile, width, 5, "Ctrl+O");
-			assert.strictEqual(lines.every((line) => visibleWidth(line) <= width), true,
-				`width ${width} never exceeds terminal columns`);
-			assert.strictEqual(lines.join("").includes("\x1b]52"), false,
-				`width ${width} never exposes child terminal controls`);
-			assert.strictEqual(lines.join("").includes("\x1b"), false,
-				`width ${width} truncation introduces no escape codes`);
+			assert.strictEqual(
+				lines.every((line) => visibleWidth(line) <= width),
+				true,
+				`width ${width} never exceeds terminal columns`,
+			);
+			assert.strictEqual(
+				lines.join("").includes("\x1b]52"),
+				false,
+				`width ${width} never exposes child terminal controls`,
+			);
+			assert.strictEqual(
+				lines.join("").includes("\x1b"),
+				false,
+				`width ${width} truncation introduces no escape codes`,
+			);
 		}
 	});
 });
@@ -321,47 +341,53 @@ describe("parseSubagentResultDetails", () => {
 			contextWindow: 200_000,
 		};
 		const parsedWidened = parseSubagentResultDetails(widened);
-		assert.deepStrictEqual({
-			harness: parsedWidened?.harness,
-			model: parsedWidened?.model,
-			effort: parsedWidened?.effort,
-			tools: parsedWidened?.tools,
-			forked: parsedWidened?.forked,
-			interactive: parsedWidened?.interactive,
-			worktree: parsedWidened?.worktree,
-			exitCode: parsedWidened?.exitCode,
-			reason: parsedWidened?.reason,
-			worktreeDir: parsedWidened?.worktreeDir,
-			worktreeBranch: parsedWidened?.worktreeBranch,
-			worktreeStatus: parsedWidened?.worktreeStatus,
-			contextWindow: parsedWidened?.contextWindow,
-		}, {
-			harness: "claude-code",
-			model: "provider/model",
-			effort: "high",
-			tools: "read,edit,bash",
-			forked: true,
-			interactive: false,
-			worktree: true,
-			exitCode: 23,
-			reason: "exited",
-			worktreeDir: "/repo/worktree",
-			worktreeBranch: "pi/check",
-			worktreeStatus: "kept",
-			contextWindow: 200_000,
-		});
+		assert.deepStrictEqual(
+			{
+				harness: parsedWidened?.harness,
+				model: parsedWidened?.model,
+				effort: parsedWidened?.effort,
+				tools: parsedWidened?.tools,
+				forked: parsedWidened?.forked,
+				interactive: parsedWidened?.interactive,
+				worktree: parsedWidened?.worktree,
+				exitCode: parsedWidened?.exitCode,
+				reason: parsedWidened?.reason,
+				worktreeDir: parsedWidened?.worktreeDir,
+				worktreeBranch: parsedWidened?.worktreeBranch,
+				worktreeStatus: parsedWidened?.worktreeStatus,
+				contextWindow: parsedWidened?.contextWindow,
+			},
+			{
+				harness: "claude-code",
+				model: "provider/model",
+				effort: "high",
+				tools: "read,edit,bash",
+				forked: true,
+				interactive: false,
+				worktree: true,
+				exitCode: 23,
+				reason: "exited",
+				worktreeDir: "/repo/worktree",
+				worktreeBranch: "pi/check",
+				worktreeStatus: "kept",
+				contextWindow: 200_000,
+			},
+		);
 	});
 
 	it("malformed optional root fields are omitted individually", () => {
-		assert.deepStrictEqual(parseSubagentResultDetails({
-			...current,
-			model: 42,
-			effort: false,
-			tools: [],
-			forked: "yes",
-			contextWindow: 0,
-			exitCode: 1.5,
-		}), normalizedCurrent());
+		assert.deepStrictEqual(
+			parseSubagentResultDetails({
+				...current,
+				model: 42,
+				effort: false,
+				tools: [],
+				forked: "yes",
+				contextWindow: 0,
+				exitCode: 1.5,
+			}),
+			normalizedCurrent(),
+		);
 	});
 
 	const compactedDetails = parseSubagentResultDetails({
@@ -377,36 +403,49 @@ describe("parseSubagentResultDetails", () => {
 	it("compacted context null sentinel is omitted from the collapsed display", () => {
 		assert.strictEqual(
 			compactedDetails && formatCollapsedSubagentResult(compactedDetails, 120, 0, "Ctrl+O").map(plain).at(-1),
-			"~1.8k result (Ctrl+O to expand)");
+			"~1.8k result (Ctrl+O to expand)",
+		);
 	});
 
 	it("persisted result rejects an invalid agent identifier", () => {
-		assert.strictEqual(parseSubagentResultDetails({
-			...current,
-			agent: "code reviewer",
-		}), undefined);
+		assert.strictEqual(
+			parseSubagentResultDetails({
+				...current,
+				agent: "code reviewer",
+			}),
+			undefined,
+		);
 	});
 
 	it("invalid optional sizes are omitted", () => {
-		assert.deepStrictEqual(parseSubagentResultDetails({
-			...current,
-			contextTokens: -1,
-			resultTokens: Number.NaN,
-		}), normalizedCurrent({ contextTokens: undefined, resultTokens: undefined }));
+		assert.deepStrictEqual(
+			parseSubagentResultDetails({
+				...current,
+				contextTokens: -1,
+				resultTokens: Number.NaN,
+			}),
+			normalizedCurrent({ contextTokens: undefined, resultTokens: undefined }),
+		);
 	});
 
 	it("unknown presentation version uses normal renderer fallback", () => {
-		assert.strictEqual(parseSubagentResultDetails({
-			...current,
-			presentation: { ...current.presentation, version: 3 },
-		}), undefined);
+		assert.strictEqual(
+			parseSubagentResultDetails({
+				...current,
+				presentation: { ...current.presentation, version: 3 },
+			}),
+			undefined,
+		);
 	});
 
 	it("missing expanded details use normal renderer fallback", () => {
-		assert.strictEqual(parseSubagentResultDetails({
-			...current,
-			expanded: undefined,
-		}), undefined);
+		assert.strictEqual(
+			parseSubagentResultDetails({
+				...current,
+				expanded: undefined,
+			}),
+			undefined,
+		);
 	});
 
 	it("malformed details use normal renderer fallback", () => {
@@ -444,12 +483,8 @@ describe("registerSubagentResultRenderer", () => {
 		},
 		bold: (text: string) => text,
 	} as unknown as Theme;
-	const renderMessage = (
-		message: Parameters<MessageRenderer>[0],
-		expanded: boolean,
-		theme: Theme,
-		outputPad = 1,
-	) => renderer?.(message, { expanded, outputPad }, theme);
+	const renderMessage = (message: Parameters<MessageRenderer>[0], expanded: boolean, theme: Theme, outputPad = 1) =>
+		renderer?.(message, { expanded, outputPad }, theme);
 	const responseMarkdown = [
 		"# Complete report",
 		"",
@@ -575,8 +610,11 @@ describe("registerSubagentResultRenderer", () => {
 			renderMessage(statusMessage, false, statusTheme)?.render(120);
 			const expectedBackground =
 				status === "completed" ? "toolSuccessBg" : status === "stopped" ? "customMessageBg" : "toolErrorBg";
-			assert.strictEqual(usedBackgrounds.includes(expectedBackground), true,
-				`${status} uses ${expectedBackground}`);
+			assert.strictEqual(
+				usedBackgrounds.includes(expectedBackground),
+				true,
+				`${status} uses ${expectedBackground}`,
+			);
 		}
 	});
 
@@ -589,20 +627,37 @@ describe("registerSubagentResultRenderer", () => {
 		for (const status of ["completed", "failed", "stopped"] as const) {
 			const styledMessage = { ...message, details: details(status) };
 			const styledOutput = renderMessage(styledMessage, false, markedTheme)?.render(500).join("") ?? "";
-			assert.strictEqual(styledOutput.includes("<toolTitle>subagent result</toolTitle>"), true,
-				`${status} uses tool-title styling`);
-			assert.strictEqual(styledOutput.includes("<accent>API review</accent>"), true,
-				`${status} uses accent styling for the task name`);
-			assert.strictEqual(styledOutput.includes("<muted> · </muted><muted>code-reviewer</muted><muted> · </muted>"), true,
-				`${status} uses muted separator and agent metadata`);
-			assert.strictEqual(styledOutput.includes(`<muted> · ${status === "completed" ? "done" : status} 2m14s</muted>`), true,
-				`${status} uses muted status metadata`);
-			assert.strictEqual(styledOutput.includes("2m14s</muted><muted> · 84k"), false,
-				`${status} omits size metadata from the header`);
-			assert.strictEqual(styledOutput.includes("<muted>84k ctx · ~1.8k result</muted>"), true,
-				`${status} uses muted size metadata in the footer`);
-			assert.strictEqual(/[✓✗■]/u.test(styledOutput), false,
-				`${status} has no legacy status icon`);
+			assert.strictEqual(
+				styledOutput.includes("<toolTitle>subagent result</toolTitle>"),
+				true,
+				`${status} uses tool-title styling`,
+			);
+			assert.strictEqual(
+				styledOutput.includes("<accent>API review</accent>"),
+				true,
+				`${status} uses accent styling for the task name`,
+			);
+			assert.strictEqual(
+				styledOutput.includes("<muted> · </muted><muted>code-reviewer</muted><muted> · </muted>"),
+				true,
+				`${status} uses muted separator and agent metadata`,
+			);
+			assert.strictEqual(
+				styledOutput.includes(`<muted> · ${status === "completed" ? "done" : status} 2m14s</muted>`),
+				true,
+				`${status} uses muted status metadata`,
+			);
+			assert.strictEqual(
+				styledOutput.includes("2m14s</muted><muted> · 84k"),
+				false,
+				`${status} omits size metadata from the header`,
+			);
+			assert.strictEqual(
+				styledOutput.includes("<muted>84k ctx · ~1.8k result</muted>"),
+				true,
+				`${status} uses muted size metadata in the footer`,
+			);
+			assert.strictEqual(/[✓✗■]/u.test(styledOutput), false, `${status} has no legacy status icon`);
 		}
 	});
 
@@ -620,9 +675,13 @@ describe("registerSubagentResultRenderer", () => {
 	const dividerLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("─ result details ─"));
 	const statusLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("status   completed"));
 	const nameLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("name     API review"));
-	const modelLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("model    provider/model"));
+	const modelLineIndex = expandedWideLines.findIndex((line) =>
+		line.trimStart().startsWith("model    provider/model"),
+	);
 	const effortLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("effort   high"));
-	const contextLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("context  84k / 200k tokens"));
+	const contextLineIndex = expandedWideLines.findIndex((line) =>
+		line.trimStart().startsWith("context  84k / 200k tokens"),
+	);
 	const costLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("cost     $0.31"));
 	const worktreeLineIndex = expandedWideLines.findIndex((line) => line.includes("Worktree: kept"));
 	const sessionLineIndex = expandedWideLines.findIndex((line) => line.trimStart().startsWith("session "));
@@ -633,12 +692,17 @@ describe("registerSubagentResultRenderer", () => {
 	});
 
 	it("expanded content receives native horizontal padding", () => {
-		assert.strictEqual(expandedPlainLines.filter(Boolean).every((line) => line.startsWith(" ")), true);
+		assert.strictEqual(
+			expandedPlainLines.filter(Boolean).every((line) => line.startsWith(" ")),
+			true,
+		);
 	});
 
 	it("expanded result uses the outcome-only native header", () => {
 		assert.strictEqual(
-			expandedWideText.includes("subagent result · code-reviewer · API review · done 2m14s"), true);
+			expandedWideText.includes("subagent result · code-reviewer · API review · done 2m14s"),
+			true,
+		);
 	});
 
 	it("expanded result omits size metrics from its header", () => {
@@ -659,16 +723,25 @@ describe("registerSubagentResultRenderer", () => {
 
 	it("expanded layout separates the response and canonical metadata table with a labeled rule", () => {
 		assert.strictEqual(
-			responseLineIndex > 0 && responseLineIndex < dividerLineIndex && dividerLineIndex < statusLineIndex &&
-			statusLineIndex < nameLineIndex &&
-			nameLineIndex < modelLineIndex && modelLineIndex < effortLineIndex && effortLineIndex < contextLineIndex &&
-			contextLineIndex < costLineIndex, true);
+			responseLineIndex > 0 &&
+				responseLineIndex < dividerLineIndex &&
+				dividerLineIndex < statusLineIndex &&
+				statusLineIndex < nameLineIndex &&
+				nameLineIndex < modelLineIndex &&
+				modelLineIndex < effortLineIndex &&
+				effortLineIndex < contextLineIndex &&
+				contextLineIndex < costLineIndex,
+			true,
+		);
 	});
 
 	it("expanded layout puts the action tail after the metadata table", () => {
 		assert.strictEqual(
-			costLineIndex < worktreeLineIndex && sessionLineIndex === worktreeLineIndex + 1 &&
-			resumeLineIndex === sessionLineIndex + 1, true);
+			costLineIndex < worktreeLineIndex &&
+				sessionLineIndex === worktreeLineIndex + 1 &&
+				resumeLineIndex === sessionLineIndex + 1,
+			true,
+		);
 	});
 
 	it("expanded context row includes the known context window", () => {
@@ -676,13 +749,14 @@ describe("registerSubagentResultRenderer", () => {
 	});
 
 	it("expanded result shows the session path", () => {
-		assert.strictEqual(expandedWideLines[sessionLineIndex]?.trimStart(),
-			"session /sessions/child.jsonl");
+		assert.strictEqual(expandedWideLines[sessionLineIndex]?.trimStart(), "session /sessions/child.jsonl");
 	});
 
 	it("expanded result shows resume guidance", () => {
-		assert.strictEqual(expandedWideLines[resumeLineIndex]?.trimStart(),
-			'resume subagent_resume({ id: "abc12345", message: "..." })');
+		assert.strictEqual(
+			expandedWideLines[resumeLineIndex]?.trimStart(),
+			'resume subagent_resume({ id: "abc12345", message: "..." })',
+		);
 	});
 
 	it("expanded result has no expansion hint", () => {
@@ -710,9 +784,11 @@ describe("registerSubagentResultRenderer", () => {
 	it("expanded result styles its details divider and table keys as metadata", () => {
 		assert.strictEqual(
 			structuredMarked.includes("<muted>─ result details ─") &&
-			structuredMarked.includes("<muted>context  </muted><toolOutput>84k / 200k tokens</toolOutput>") &&
-			structuredMarked.includes("<muted>model    </muted><toolOutput>provider/model</toolOutput>") &&
-			structuredMarked.includes("<muted>effort   </muted><toolOutput>high</toolOutput>"), true);
+				structuredMarked.includes("<muted>context  </muted><toolOutput>84k / 200k tokens</toolOutput>") &&
+				structuredMarked.includes("<muted>model    </muted><toolOutput>provider/model</toolOutput>") &&
+				structuredMarked.includes("<muted>effort   </muted><toolOutput>high</toolOutput>"),
+			true,
+		);
 	});
 
 	const failedResponse = "The provider returned partial output.";
@@ -746,7 +822,8 @@ describe("registerSubagentResultRenderer", () => {
 			},
 		},
 	};
-	const failedStructuredText = renderMessage(failedStructuredMessage, true, theme)?.render(100).map(plain).join("\n") ?? "";
+	const failedStructuredText =
+		renderMessage(failedStructuredMessage, true, theme)?.render(100).map(plain).join("\n") ?? "";
 
 	it("expanded failed result shows its failure reason", () => {
 		assert.strictEqual(failedStructuredText.includes("failure · exit code 1"), true);
@@ -788,7 +865,8 @@ describe("registerSubagentResultRenderer", () => {
 			expanded: { version: 1 as const, notice: stoppedNotice },
 		},
 	};
-	const stoppedStructuredText = renderMessage(stoppedStructuredMessage, true, theme)?.render(100).map(plain).join("\n") ?? "";
+	const stoppedStructuredText =
+		renderMessage(stoppedStructuredMessage, true, theme)?.render(100).map(plain).join("\n") ?? "";
 
 	it("expanded stopped result shows its notice", () => {
 		assert.strictEqual(stoppedStructuredText.includes(stoppedNotice), true);
@@ -796,8 +874,11 @@ describe("registerSubagentResultRenderer", () => {
 
 	it("expanded stopped table includes only available run metrics", () => {
 		assert.strictEqual(
-			stoppedStructuredText.includes("context  84k tokens") && stoppedStructuredText.includes("cost     $0.02") &&
-			!stoppedStructuredText.includes("result   ~"), true);
+			stoppedStructuredText.includes("context  84k tokens") &&
+				stoppedStructuredText.includes("cost     $0.02") &&
+				!stoppedStructuredText.includes("result   ~"),
+			true,
+		);
 	});
 
 	it("expanded stopped result shows resume guidance", () => {
@@ -807,8 +888,11 @@ describe("registerSubagentResultRenderer", () => {
 	it("expanded rendering stays within terminal columns at every width", () => {
 		for (const width of [1, 2, 8, 20, 60]) {
 			const lines = expandedComponent?.render(width) ?? [];
-			assert.strictEqual(lines.every((line) => visibleWidth(line) <= width), true,
-				`expanded width ${width} stays within terminal columns`);
+			assert.strictEqual(
+				lines.every((line) => visibleWidth(line) <= width),
+				true,
+				`expanded width ${width} stays within terminal columns`,
+			);
 		}
 	});
 
@@ -851,9 +935,17 @@ describe("registerSubagentResultRenderer", () => {
 
 	it("unified pipeline envelope exposes model and effort in canonical order", () => {
 		const pipelineEnvelope = parseSubagentResultEnvelope(pipeline.content);
-		assert.deepStrictEqual(
-			pipelineEnvelope?.fields.map((field) => field.key).slice(0, 9),
-			["status", "name", "agent", "id", "model", "effort", "mode", "tools", "elapsed"]);
+		assert.deepStrictEqual(pipelineEnvelope?.fields.map((field) => field.key).slice(0, 9), [
+			"status",
+			"name",
+			"agent",
+			"id",
+			"model",
+			"effort",
+			"mode",
+			"tools",
+			"elapsed",
+		]);
 	});
 
 	it("unified pipeline renders response before its complete TUI table", () => {
@@ -867,11 +959,16 @@ describe("registerSubagentResultRenderer", () => {
 		};
 		const pipelineLines = renderMessage(pipelineMessage, true, theme)?.render(120).map(plain) ?? [];
 		const pipelineResponseIndex = pipelineLines.findIndex((line) => line.includes("PIPELINE RESPONSE"));
-		const pipelineStatusIndex = pipelineLines.findIndex((line) => line.trimStart().startsWith("status   completed"));
+		const pipelineStatusIndex = pipelineLines.findIndex((line) =>
+			line.trimStart().startsWith("status   completed"),
+		);
 		assert.strictEqual(
-			pipelineResponseIndex > 0 && pipelineResponseIndex < pipelineStatusIndex &&
-			pipelineLines.some((line) => line.trimStart().startsWith("model    provider/pipeline-model")) &&
-			pipelineLines.some((line) => line.trimStart().startsWith("effort   high")), true);
+			pipelineResponseIndex > 0 &&
+				pipelineResponseIndex < pipelineStatusIndex &&
+				pipelineLines.some((line) => line.trimStart().startsWith("model    provider/pipeline-model")) &&
+				pipelineLines.some((line) => line.trimStart().startsWith("effort   high")),
+			true,
+		);
 	});
 
 	const directory = fileURLToPath(new URL("..", import.meta.url));
