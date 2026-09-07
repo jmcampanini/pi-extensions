@@ -188,8 +188,7 @@ describe("fast-openai", () => {
 		assert.match(report, /model default: off/);
 		assert.match(report, /current selection override: on/);
 		assert.match(report, /would inject: yes/);
-		assert.match(report, /actual billed cost can be higher/);
-		assert.strictEqual(level, "warning");
+		assert.strictEqual(level, "info");
 		assert.deepStrictEqual(harness.request(), { model: astra.id, service_tier: "priority" });
 	});
 

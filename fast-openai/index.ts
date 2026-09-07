@@ -9,11 +9,6 @@ import {
 	FAST_OPENAI_STATUS_ON,
 } from "../shared/status-keys.ts";
 
-type FastStatusReport = {
-	text: string;
-	hasWarning: boolean;
-};
-
 type PayloadRecord = Record<string, unknown>;
 type PiModel = NonNullable<ExtensionContext["model"]>;
 
@@ -36,8 +31,6 @@ const DEFAULT_FAST_MODELS = new Set([
 ]);
 const SUPPORTED_MODELS = new Set([...DEFAULT_FAST_MODELS, "gpt-6-astra"]);
 const PRIORITY_SERVICE_TIER = "priority" as const;
-const COST_ACCOUNTING_WARNING =
-	"warning: raw service_tier injection may not apply Pi's native priority cost multiplier; actual billed cost can be higher than Pi displays";
 
 export default function (pi: ExtensionAPI): void {
 	let manualOverride: boolean | undefined;
@@ -85,11 +78,9 @@ export default function (pi: ExtensionAPI): void {
 				case "off":
 					setFastMode(action, ctx);
 					return;
-				case "status": {
-					const report = formatCurrentModelStatus(ctx, manualOverride);
-					ctx.ui.notify(report.text, report.hasWarning ? "warning" : "info");
+				case "status":
+					ctx.ui.notify(formatCurrentModelStatus(ctx, manualOverride), "info");
 					return;
-				}
 				default:
 					ctx.ui.notify("Usage: /fast on | /fast off | /fast status", "info");
 			}
@@ -137,17 +128,16 @@ function injectFastServiceTier(
 	if ("service_tier" in payload) return undefined;
 	if (!payloadMatchesModel(payload as PayloadRecord, model)) return undefined;
 
-	// The request hook avoids Pi's lazy-provider capture race. Native serviceTier
-	// pricing may not see the injected tier, so status reports warn about cost.
+	// The request hook avoids Pi's lazy-provider capture race.
 	return { ...payload, service_tier: PRIORITY_SERVICE_TIER };
 }
 
 function formatCurrentModelStatus(
 	ctx: Pick<ExtensionContext, "model" | "modelRegistry">,
 	manualOverride?: boolean,
-): FastStatusReport {
+): string {
 	const model = ctx.model;
-	if (!model) return { text: "current model: none\nwould inject: no", hasWarning: false };
+	if (!model) return "current model: none\nwould inject: no";
 
 	const eligibility = getFastEligibility(ctx, manualOverride);
 	const defaultEnabled = DEFAULT_FAST_MODELS.has(model.id);
@@ -165,6 +155,5 @@ function formatCurrentModelStatus(
 		"request payload check: must be an object, match the current model when payload.model is present, and omit service_tier",
 		`would inject: ${eligibility.eligible ? "yes (service_tier: priority)" : "no"}`,
 	];
-	if (eligibility.eligible) lines.push(COST_ACCOUNTING_WARNING);
-	return { text: lines.join("\n"), hasWarning: eligibility.eligible };
+	return lines.join("\n");
 }

@@ -13,5 +13,5 @@ applies only within that Pi instance, so enabling Fast on Astra does not enable 
 in another session. The footer shows Fast only when the current model is eligible.
 
 Eligible requests without an explicit `service_tier` receive `priority`. Existing
-request tiers are preserved. Pi's displayed costs may undercount Fast usage because
-the extension injects the tier after native pricing options are resolved.
+request tiers are preserved. Pi's displayed cost is an estimate and may differ
+from actual billing.
