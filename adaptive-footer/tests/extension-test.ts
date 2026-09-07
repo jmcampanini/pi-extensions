@@ -70,7 +70,9 @@ interface FooterComponent {
 type FooterFactory = (tui: FakeTui, theme: FakeTheme, footerData: FakeFooterData) => FooterComponent;
 function plain(line: string): string {
 	return line
+		// oxlint-disable-next-line no-control-regex -- Remove OSC hyperlinks from terminal output assertions.
 		.replace(/\x1b\]8;;[^\x1b]*\x1b\\/g, "")
+		// oxlint-disable-next-line no-control-regex -- Remove SGR styling from terminal output assertions.
 		.replace(/\x1b\[[0-9;]*m/g, "");
 }
 

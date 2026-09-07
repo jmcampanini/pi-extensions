@@ -69,7 +69,8 @@ export function agentEndWasNormal(event: unknown): boolean {
 }
 
 function retryDroppedDeliveries(pi: ExtensionAPI, settledRunStartIndex: number): void {
-	for (const record of [...deliveryRecords()]) {
+	const records = [...deliveryRecords()];
+	for (const record of records) {
 		if (!needsRedelivery(record, settledRunStartIndex)) continue;
 		record.sendAccepted = undefined;
 		record.sendAcceptedRunIndex = undefined;

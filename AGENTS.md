@@ -1,3 +1,10 @@
+# Build and verification
+
+- Run `make check` before handing off changes. It checks formatting, type-aware lint, TypeScript compilation, and tests without rewriting files.
+- Use `make fmt` to format tracked TypeScript files. Keep formatting out of `make check`.
+- Use the pinned project-local tools installed by `npm ci`; do not rely on global Prettier or Oxlint installations.
+- Keep Oxlint's correctness rules enabled. The Node test runner owns promises returned by imported `describe`, `it`, and `test` calls, so the test-only lint configuration permits those calls without awaiting them.
+
 # When writing tests
 
 - Tests are node:test files: `import { describe, it } from "node:test"` with `import assert from "node:assert/strict"`. One `describe` per unit under test, `it("behavior sentence", ...)` leaves with a few bare assertions; assertion messages appear only inside merged scenarios and loops.

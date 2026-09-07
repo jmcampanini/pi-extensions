@@ -340,8 +340,8 @@ export function registerSubagentResumeTool(pi: ExtensionAPI): void {
 			let launched: { paneId: string };
 			try {
 				launched = await runResumeLaunch(pi, spec);
-			} catch (error) {
-				error = resolveLaunchCancellation(id, error) ?? error;
+			} catch (cause) {
+				const error = resolveLaunchCancellation(id, cause) ?? cause;
 				releaseClaim(id);
 				// The failed launch freed its slot - without this, queued work
 				// behind it could sit forever with capacity free (nothing else

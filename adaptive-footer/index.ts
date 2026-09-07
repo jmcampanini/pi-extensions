@@ -254,7 +254,7 @@ export function registerAdaptiveFooter(
 			const session = {
 				refresh: () => refresher.refresh(),
 				refreshOnSettle: () => refresher.refreshIfStale(SETTLE_REFRESH_MIN_INTERVAL_MS),
-				dispose(): void {
+				dispose: (): void => {
 					if (disposed) return;
 					disposed = true;
 					unsubscribeBranch();

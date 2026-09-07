@@ -12,6 +12,7 @@ import { registerSubagentSpawnTool } from "../tool-spawn.ts";
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const wide = /^(?:\p{Extended_Pictographic}|\p{Script_Extensions=Han}|\p{Script_Extensions=Hiragana}|\p{Script_Extensions=Katakana}|\p{Script_Extensions=Hangul})$/u;
+// oxlint-disable-next-line no-control-regex -- Tokenize terminal escape sequences without counting them as visible text.
 const ansiAtStart = /^\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/;
 
 function graphemeWidth(grapheme: string): number {

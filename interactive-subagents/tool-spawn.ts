@@ -249,7 +249,7 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 						? {
 							...fallbackPresentation,
 							...args,
-							...(state.effectiveBehavior ?? {}),
+							...state.effectiveBehavior,
 							effectiveModel: state.effectiveModel === undefined
 								? fallbackPresentation.effectiveModel
 								: state.effectiveModel,
@@ -455,8 +455,8 @@ export function registerSubagentSpawnTool(pi: ExtensionAPI): void {
 			let launched: LaunchedSpawn;
 			try {
 				launched = await runSpawnLaunch(pi, spec);
-			} catch (error) {
-				error = resolveLaunchCancellation(id, error) ?? error;
+			} catch (cause) {
+				const error = resolveLaunchCancellation(id, cause) ?? cause;
 				releaseClaim(id);
 				// The failed launch freed its slot - without this, queued work
 				// behind it could sit forever with capacity free (nothing else

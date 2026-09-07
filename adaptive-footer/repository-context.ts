@@ -95,6 +95,7 @@ export function inferIssueNumber(
 }
 
 function canonicalHttpUrl(value: unknown): string | undefined {
+	// oxlint-disable-next-line no-control-regex -- Reject terminal control bytes before creating clickable URLs.
 	if (typeof value !== "string" || /[\u0000-\u001f\u007f]/.test(value)) return undefined;
 	try {
 		const parsed = new URL(value);

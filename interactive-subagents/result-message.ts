@@ -5,7 +5,6 @@ import { config } from "./config.ts";
 import { sanitizeDisplayText } from "./display-text.ts";
 import {
 	humanElapsed,
-	resultPresentation,
 	resultPreview,
 	type SubagentExpandedResultPresentation,
 	type SubagentResultContentRange,
@@ -467,7 +466,7 @@ function structuredExpandedResult(
 }
 
 export function registerSubagentResultRenderer(pi: ExtensionAPI): void {
-	pi.registerMessageRenderer(SUBAGENT_RESULT_CUSTOM_TYPE, (message, { expanded, outputPad = 1 }, theme) => {
+	pi.registerMessageRenderer(SUBAGENT_RESULT_CUSTOM_TYPE, (message, { expanded, outputPad }, theme) => {
 		const details = parseSubagentResultDetails(message.details);
 		if (details === undefined) return undefined;
 		// A stop the user or parent asked for is not a failure - red stays

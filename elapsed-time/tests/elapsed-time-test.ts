@@ -29,7 +29,8 @@ class FakeClock implements ElapsedTimeClock {
 	}
 
 	fireTimers() {
-		for (const callback of [...this.timers.values()]) callback();
+		const callbacks = [...this.timers.values()];
+		for (const callback of callbacks) callback();
 	}
 
 	activeTimerCount() {

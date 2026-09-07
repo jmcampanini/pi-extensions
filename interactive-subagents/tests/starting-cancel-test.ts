@@ -85,7 +85,7 @@ after(async () => {
 	// cannot leave its shell loop spinning after the fixture is removed.
 	writeFileSync(releaseMarker, "release\n");
 	writeFileSync(releaseFailureMarker, "release\n");
-	await Promise.allSettled([...inFlightLaunches]);
+	await Promise.allSettled(inFlightLaunches);
 	inFlightLaunches.clear();
 	capacity.clearQueueForShutdown();
 	state.resetForShutdown();

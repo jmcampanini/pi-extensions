@@ -27,8 +27,8 @@ export function configFilePath(env: Env = process.env): string {
 
 // Key validation mirrors Pi's KeyId: a base key with optional, non-repeated modifiers.
 const BASE_KEYS = new Set([
-	..."abcdefghijklmnopqrstuvwxyz",
-	..."0123456789",
+	..."abcdefghijklmnopqrstuvwxyz".split(""),
+	..."0123456789".split(""),
 	"escape",
 	"esc",
 	"enter",
@@ -59,7 +59,7 @@ const BASE_KEYS = new Set([
 	"f10",
 	"f11",
 	"f12",
-	..."`-=[]\\;',./!@#$%^&*()_|~{}:<>?",
+	..."`-=[]\\;',./!@#$%^&*()_|~{}:<>?".split(""),
 	"+",
 ]);
 const MODIFIERS = new Set(["ctrl", "shift", "alt", "super"]);

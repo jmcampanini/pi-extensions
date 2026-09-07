@@ -564,7 +564,8 @@ describe("registerSubagentResultRenderer", () => {
 		for (const status of ["completed", "failed", "stopped"] as const) {
 			const usedBackgrounds: string[] = [];
 			const statusTheme = {
-				...theme,
+				fg: (color: Parameters<Theme["fg"]>[0], text: string) => theme.fg(color, text),
+				bold: (text: string) => theme.bold(text),
 				bg: (color: string, text: string) => {
 					usedBackgrounds.push(color);
 					return text;
