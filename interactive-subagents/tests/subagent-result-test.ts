@@ -2,7 +2,10 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import type { ExtensionAPI, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { renderSubagentLaunchResult } from "../subagent-result.ts";
+import { registerSubagentSpawnTool } from "../tool-spawn.ts";
+import { registerSubagentResumeTool } from "../tool-resume.ts";
 
 describe("renderSubagentLaunchResult", () => {
 	it("successful launches render no result lines for either tool", () => {
@@ -51,18 +54,58 @@ describe("renderSubagentLaunchResult", () => {
 	});
 });
 
+describe("registered launch result renderers", () => {
+	const tools = new Map<string, ToolDefinition>();
+	const pi = {
+		registerTool(tool: ToolDefinition): void {
+			tools.set(tool.name, tool);
+		},
+	} as unknown as ExtensionAPI;
+	registerSubagentSpawnTool(pi);
+	registerSubagentResumeTool(pi);
+	const theme = { fg: (_color: string, text: string) => text } as unknown as Theme;
+
+	for (const name of ["subagent_spawn", "subagent_resume"]) {
+		it(`${name} hides success output and renders sanitized failures`, () => {
+			const tool = tools.get(name);
+			assert.ok(tool?.renderResult);
+			const context = {
+				args: {},
+				toolCallId: "launch-result",
+				invalidate(): void {},
+				lastComponent: undefined,
+				state: {},
+				cwd: process.cwd(),
+				executionStarted: true,
+				argsComplete: true,
+				isPartial: false,
+				expanded: false,
+				showImages: false,
+				isError: false,
+			};
+			const result = {
+				content: [{ type: "text" as const, text: "Launch failed\x1b]52;c;Zm9v\x07." }],
+				details: {},
+			};
+			const options = { expanded: false, isPartial: false };
+
+			const success = tool.renderResult(result, options, theme, context);
+			const failure = tool.renderResult(result, options, theme, { ...context, isError: true });
+
+			assert.deepStrictEqual(success?.render(80), [], "success leaves output to the delivered result message");
+			assert.deepStrictEqual(
+				failure?.render(80).map((line) => line.trimEnd()),
+				["Launch failed."],
+				"failure remains visible without terminal controls",
+			);
+		});
+	}
+});
+
 describe("tool-spawn and tool-resume sources", () => {
 	const directory = fileURLToPath(new URL("..", import.meta.url));
 	const spawnSource = readFileSync(`${directory}/tool-spawn.ts`, "utf8");
 	const resumeSource = readFileSync(`${directory}/tool-resume.ts`, "utf8");
-
-	it("subagent_spawn uses the shared result renderer", () => {
-		assert.strictEqual(spawnSource.includes("renderSubagentLaunchResult(result, context.isError"), true);
-	});
-
-	it("subagent_resume uses the shared result renderer", () => {
-		assert.strictEqual(resumeSource.includes("renderSubagentLaunchResult(result, context.isError"), true);
-	});
 
 	it("subagent_spawn limits parallel encouragement to independent bounded tasks", () => {
 		assert.strictEqual(spawnSource.includes("are independent, bounded, and able to proceed concurrently."), true);
