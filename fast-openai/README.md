@@ -8,7 +8,7 @@ The extension applies only to the `openai-codex` provider using ChatGPT OAuth.
 - `/fast off` disables Fast for the current model selection.
 - `/fast status` reports the model default, manual override, and request eligibility.
 
-Every model selection and session start restores the model's default. An override
+Switching to a different model or starting a session restores the model's default. An override
 applies only within that Pi instance, so enabling Fast on Astra does not enable it
 in another session. The footer shows Fast only when the current model is eligible.
 

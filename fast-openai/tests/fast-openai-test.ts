@@ -158,6 +158,7 @@ describe("fast-openai", () => {
 	it("headless requests use model defaults without publishing UI status", () => {
 		const harness = createHarness();
 		harness.context.hasUI = false;
+		Object.defineProperty(harness.context, "ui", { get: () => assert.fail("headless model changes must not read ui") });
 		harness.events.emit("session_start", { type: "session_start", reason: "startup" }, harness.context);
 		harness.events.emit("agent_start", { type: "agent_start" }, harness.context);
 
@@ -170,6 +171,10 @@ describe("fast-openai", () => {
 	});
 
 	it("status explains the default and override without changing request behavior", async () => {
+		const withoutOAuth = createHarness(sol, false);
+		await withoutOAuth.fast("status");
+		assert.match(withoutOAuth.notifications.at(-1)?.[0] ?? "", /model default: on[\s\S]*would inject: no/);
+
 		const harness = createHarness(astra);
 		await harness.fast("status");
 		assert.match(harness.notifications.at(-1)?.[0] ?? "", /model default: off/);

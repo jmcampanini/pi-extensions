@@ -64,9 +64,9 @@ export default function (pi: ExtensionAPI): void {
 		publishStatus(ctx);
 	});
 
-	pi.on("model_select", (event, ctx) => {
+	pi.on("model_select", (_event, ctx) => {
 		manualOverride = undefined;
-		publishStatus({ ...ctx, model: event.model });
+		publishStatus(ctx);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
@@ -150,7 +150,7 @@ function formatCurrentModelStatus(
 	if (!model) return { text: "current model: none\nwould inject: no", hasWarning: false };
 
 	const eligibility = getFastEligibility(ctx, manualOverride);
-	const defaultEnabled = getFastEligibility(ctx).eligible;
+	const defaultEnabled = DEFAULT_FAST_MODELS.has(model.id);
 	const override = manualOverride === undefined ? "none" : manualOverride ? "on" : "off";
 	const lines = [
 		`current model: ${model.provider}/${model.id}`,
