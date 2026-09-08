@@ -180,25 +180,30 @@ main {
 	align-items: center;
 	gap: 8px;
 }
-.assistant .message-meta > span:first-child::before {
-	content: "";
-	width: 6px;
-	height: 6px;
-	background: var(--accent);
-	border-radius: 50%;
+.message.assistant {
+	padding-right: 36px;
 }
 .message-status {
+	margin: 0 0 8px;
 	color: var(--error);
-	text-transform: none;
-	font-weight: 400;
-	letter-spacing: 0;
+	font-size: 12px;
+	line-height: 1.7;
 }
 .copy-message {
 	position: absolute;
-	right: -6px;
-	top: -7px;
+	right: 0;
+	top: 0;
 }
-.message.user {
+@media (hover: hover) and (pointer: fine) {
+	.assistant .copy-message {
+		opacity: 0;
+	}
+	.assistant:hover .copy-message,
+	.assistant:focus-within .copy-message {
+		opacity: 1;
+	}
+}
+.prompt-column .message.user {
 	position: sticky;
 	top: 24px;
 	max-height: calc(100vh - 48px);
@@ -223,6 +228,20 @@ main {
 }
 .markdown p {
 	margin: 0 0 1.1em;
+}
+.skill-card {
+	display: inline-block;
+	max-width: 100%;
+	padding: 4px 10px;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: var(--soft);
+	color: var(--accent);
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	font-size: 0.82em;
+	font-weight: 600;
+	line-height: 1.4;
+	vertical-align: middle;
 }
 .markdown h2,
 .markdown h3,
@@ -355,6 +374,21 @@ tr:last-child td {
 .user .markdown h2 {
 	font-size: 1.15em;
 }
+.inline-prompt {
+	margin: 8px 0 32px;
+	padding: 18px 20px;
+	border: 1px solid var(--line);
+	background: var(--surface);
+	border-radius: 8px;
+}
+.inline-prompt .message {
+	margin: 0;
+	padding-right: 36px;
+}
+.inline-prompt .markdown {
+	font-size: 16px;
+	line-height: 1.75;
+}
 .image-link {
 	display: inline-block;
 	padding: 8px 12px;
@@ -391,14 +425,15 @@ tr:last-child td {
 	font-size: 11px;
 }
 .activity-summary {
-	display: flex;
-	gap: 10px;
-	align-items: baseline;
+	cursor: pointer;
+	list-style-position: inside;
 	line-height: 1.7;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
-.activity-mark {
+.activity-summary::marker {
 	color: var(--accent);
-	font-size: 14px;
 }
 .activity ul {
 	list-style: none;
@@ -507,7 +542,7 @@ tr:last-child td {
 	color: var(--accent);
 	background: var(--soft);
 }
-:is(.outline, .outline-menu) a.toc-answer {
+:is(.outline, .outline-menu) a.toc-turn {
 	color: var(--ink);
 	font-weight: 600;
 	margin-top: 13px;
@@ -517,6 +552,12 @@ tr:last-child td {
 }
 :is(.outline, .outline-menu) a.toc-heading {
 	padding-left: calc(12px + var(--depth) * 10px);
+}
+
+:is(.outline, .outline-menu) a[aria-current="location"] {
+	color: var(--accent);
+	background: var(--soft);
+	box-shadow: inset 2px 0 var(--accent);
 }
 
 .outline-menu {
@@ -566,13 +607,8 @@ tr:last-child td {
 	.exchange {
 		display: block;
 	}
-	.message.user {
-		position: static;
-		max-height: none;
-		padding: 16px;
-		border: 0;
-		background: var(--soft);
-		border-radius: 8px;
+	.prompt-column {
+		display: none;
 	}
 	.tool-state {
 		white-space: normal;
@@ -597,6 +633,7 @@ tr:last-child td {
 @media print {
 	.reader-actions,
 	.outline,
+	.prompt-column,
 	button,
 	.copy-status {
 		display: none !important;
@@ -605,6 +642,13 @@ tr:last-child td {
 		display: block;
 		max-width: none;
 		padding: 0;
+	}
+	.exchange {
+		display: block;
+	}
+	.message.assistant,
+	.inline-prompt .message {
+		padding-right: 0;
 	}
 	body {
 		background: white;

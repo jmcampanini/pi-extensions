@@ -1,4 +1,28 @@
 (() => {
+	const outlineLinks = [...document.querySelectorAll("[data-outline-target]")];
+	const outlineTargets = [...new Set(outlineLinks.map((link) => link.getAttribute("href").slice(1)))]
+		.map((id) => document.getElementById(id))
+		.filter(Boolean);
+	const updateOutline = () => {
+		let active = outlineTargets[0];
+		for (const target of outlineTargets) {
+			if (Math.floor(target.getBoundingClientRect().top) > 24) break;
+			active = target;
+		}
+		for (const link of outlineLinks) {
+			if (link.getAttribute("href") === `#${active?.id}`) link.setAttribute("aria-current", "location");
+			else link.removeAttribute("aria-current");
+		}
+	};
+	let outlineFrame;
+	const scheduleOutlineUpdate = () => {
+		if (outlineFrame !== undefined) return;
+		outlineFrame = requestAnimationFrame(() => {
+			outlineFrame = undefined;
+			updateOutline();
+		});
+	};
+
 	const latestButton = document.getElementById("latest");
 	const updateLatestButton = () => {
 		latestButton.hidden = window.scrollY < 160;
@@ -13,10 +37,17 @@
 		if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
 		else scrollToLatest();
 		updateLatestButton();
+		scheduleOutlineUpdate();
 	};
 	window.addEventListener("load", () => requestAnimationFrame(initialPosition));
 	window.addEventListener("pageshow", initialPosition);
 	window.addEventListener("scroll", updateLatestButton, { passive: true });
+	window.addEventListener("scroll", scheduleOutlineUpdate, { passive: true });
+	window.addEventListener("resize", scheduleOutlineUpdate);
+	document.addEventListener("toggle", scheduleOutlineUpdate, true);
+	document.querySelector(".outline-menu").addEventListener("toggle", (event) => {
+		if (event.target.open) event.target.querySelector("a[aria-current]")?.scrollIntoView({ block: "nearest" });
+	});
 	latestButton.addEventListener("click", scrollToLatest);
 
 	let statusTimer;

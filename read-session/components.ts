@@ -14,7 +14,7 @@ export interface MessageView {
 }
 
 export interface OutlineView {
-	answers: {
+	turns: {
 		id: string;
 		number: number;
 		headings: { id: string; text: string; indent: number }[];
@@ -22,7 +22,9 @@ export interface OutlineView {
 }
 
 export interface ExchangeView {
+	id: string;
 	prompt: MessageView | null;
+	contextPrompt: MessageView | null;
 	answers: {
 		[Name in "message" | "tool-activity" | "failure"]: { component: Name; data: ComponentData[Name] };
 	}["message" | "tool-activity" | "failure"][];
@@ -36,6 +38,7 @@ export interface SessionView {
 
 export interface ComponentData {
 	message: MessageView;
+	"skill-card": { name: string };
 	"copy-button": { sourceId: string; variant: string; label: string; title: string };
 	"code-block": { sourceId: string; source: string; language: string; highlightedHtml: string };
 	table: { tableHtml: string };
@@ -69,6 +72,7 @@ export interface ComponentData {
 
 export const componentFiles = {
 	message: "components/message.html",
+	"skill-card": "components/skill-card.html",
 	"copy-button": "components/copy-button.html",
 	"code-block": "components/code-block.html",
 	table: "components/table.html",

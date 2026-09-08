@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { renderSession } from "../render.ts";
+import { prepareSession, renderSession } from "../render.ts";
 import { selectMessages, type ReaderSnapshot } from "../session.ts";
 import { entries } from "./fixture.ts";
 
@@ -18,7 +18,61 @@ describe("renderSession", () => {
 		assert.doesNotMatch(html, /PRIVATE_THINKING|RAW_TOOL_OUTPUT|RAW_FAILURE/);
 	});
 
-	it("provides working outline links and detailed tool calls with their recorded statuses", () => {
+	it("shows headerless prompt cards inline and labelled sidebar copies with distinct heading and copy targets", () => {
+		const text =
+			'## Request\n\nKeep **all** of this.\n\n```text\nfirst\n  second\n```\n\n<skill name="review">PRIVATE_SKILL</skill>';
+		const html = renderSession({
+			...snapshot,
+			blocks: [
+				{ kind: "message", role: "user", text },
+				{ kind: "message", role: "assistant", text: "The response." },
+			],
+		});
+		const columns = html.match(
+			/<div class="answer-column">([\s\S]*?)<div class="prompt-column">([\s\S]*?)<\/section>/,
+		)!;
+		const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
+		const copies = [...html.matchAll(/data-copy="([^"]+)"/g)].map((match) => match[1]);
+		const code = [...html.matchAll(/<textarea hidden id="[^"]+-code-1">([\s\S]*?)<\/textarea>/g)].map(
+			(match) => match[1],
+		);
+
+		assert.ok(columns[1]!.indexOf("The response.") < columns[1]!.indexOf('class="inline-prompt"'));
+		assert.doesNotMatch(columns[1]!, /class="message-meta"/);
+		assert.match(columns[2]!, /class="message-meta"><span>You<\/span>/);
+		for (const column of columns.slice(1)) {
+			assert.match(column!, /aria-label="Copy your message as Markdown"/);
+			assert.match(column!, /<strong>all<\/strong>/);
+			assert.match(column!, /class="skill-card">\$review<\/span>/);
+			assert.doesNotMatch(column!, /PRIVATE_SKILL/);
+		}
+		assert.equal(new Set(ids).size, ids.length);
+		for (const id of copies) assert.equal(ids.filter((target) => target === id).length, 1, id);
+		assert.deepEqual(code, ["first\n  second", "first\n  second"]);
+		assert.doesNotMatch(html, /class="toc-heading"/);
+	});
+
+	it("omits agent headers while retaining copy controls and interruption statuses", () => {
+		const html = renderSession({
+			...snapshot,
+			blocks: [
+				{ kind: "message", role: "assistant", text: "Complete response." },
+				{ kind: "message", role: "assistant", status: "aborted", text: "Partial response." },
+				{ kind: "message", role: "assistant", status: "error", text: "Interrupted response." },
+			],
+		});
+		const messages = [...html.matchAll(/<article class="message assistant"[^>]*>([\s\S]*?)<\/article>/g)];
+
+		assert.equal(messages.length, 3);
+		for (const message of messages) {
+			assert.doesNotMatch(message[1]!, /class="message-meta"|<span>Agent<\/span>/);
+			assert.match(message[1]!, /aria-label="Copy agent message as Markdown"/);
+		}
+		assert.match(html, /class="message-status">Aborted<\/p>/);
+		assert.match(html, /class="message-status">Interrupted by an error<\/p>/);
+	});
+
+	it("provides turn links and collapsed tool calls with their recorded statuses", () => {
 		const html = renderSession(snapshot);
 
 		assert.match(html, /<aside class="outline">/);
@@ -30,8 +84,16 @@ describe("renderSession", () => {
 		);
 		assert.match(html, /README\.md<\/span>\s*<span class="tool-state returned">returned/);
 		assert.match(html, /npm test<\/span>\s*<span class="tool-state pending">awaiting result/);
-		for (const link of html.matchAll(/class="toc-(?:answer|heading)"[^>]*href="#([^"]+)"/g)) {
+		for (const link of html.matchAll(/class="toc-(?:turn|heading)"[^>]*href="#([^"]+)"/g)) {
 			assert.ok(html.includes(`id="${link[1]}"`), link[1]);
+		}
+		assert.match(html, /class="toc-turn"[^>]*data-outline-target>Turn 1<\/a>/);
+		assert.doesNotMatch(html, />Answer \d+<\/a>/);
+		const activities = [...html.matchAll(/<details class="activity"([^>]*)>([\s\S]*?)<\/details>/g)];
+		assert.ok(activities.length > 0);
+		for (const activity of activities) {
+			assert.doesNotMatch(activity[1]!, /\bopen\b/, activity[0]);
+			assert.match(activity[2]!, /^\s*<summary class="activity-summary">[^<]+<\/summary>\s*<ul>/, activity[0]);
 		}
 	});
 
@@ -80,7 +142,7 @@ describe("renderSession", () => {
 		const sources = [...html.matchAll(/<textarea hidden id="message-\d+-source">([\s\S]*?)<\/textarea>/g)].map(
 			(match) => match[1],
 		);
-		const exchanges = [...html.matchAll(/<section class="exchange">([\s\S]*?)<\/section>/g)].map((match) =>
+		const exchanges = [...html.matchAll(/<section class="exchange"[^>]*>([\s\S]*?)<\/section>/g)].map((match) =>
 			[...match[1]!.matchAll(/<textarea hidden id="message-\d+-source">([\s\S]*?)<\/textarea>/g)].map(
 				(message) => message[1],
 			),
@@ -103,7 +165,7 @@ describe("renderSession", () => {
 		assert.deepEqual(tools, ["bash", "edit", "read"]);
 	});
 
-	it("shows failed turns with collapsed plain-text details and excludes them from the answer outline", () => {
+	it("keeps failed turns in the outline with collapsed plain-text details", () => {
 		const html = renderSession({
 			...snapshot,
 			messageCount: 0,
@@ -119,7 +181,8 @@ describe("renderSession", () => {
 		);
 		assert.match(html, /<p>Agent response aborted<\/p>/);
 		assert.ok(html.indexOf("Agent response failed") < html.indexOf("Agent response aborted"));
-		assert.doesNotMatch(html, /<script>bad\(\)<\/script>|class="toc-answer"|class="message assistant"/);
+		assert.match(html, /class="toc-turn"[^>]*>Turn 1<\/a>/);
+		assert.doesNotMatch(html, /<script>bad\(\)<\/script>|class="toc-heading"|class="message assistant"/);
 	});
 
 	it("escapes text after raw HTML start tags in paragraphs, headings, and tables", () => {
@@ -160,5 +223,94 @@ describe("renderSession", () => {
 		assert.match(html, /href="file:\/\/\/project\/docs\/guide\.md"/);
 		assert.match(html, /&lt;script&gt;bad\(\)&lt;\/script&gt;/);
 		assert.match(html, /<p>Literal \{\{styles\}\} and \{\{script\}\}\.<\/p>/);
+	});
+});
+
+describe("prepareSession", () => {
+	const snapshot: ReaderSnapshot = { title: "Reader test", cwd: "/project", messageCount: 1, blocks: [] };
+
+	it("groups progress and final responses under their prompt and includes a pending prompt", () => {
+		const view = prepareSession({
+			...snapshot,
+			blocks: [
+				{ kind: "message", role: "user", text: "First prompt." },
+				{ kind: "message", role: "assistant", text: "## Progress\n\nReading files." },
+				{ kind: "activity", calls: [{ name: "read", status: "returned" }] },
+				{ kind: "message", role: "assistant", text: "## Result\n\nDone." },
+				{ kind: "message", role: "user", text: "Next prompt." },
+			],
+		});
+
+		assert.deepEqual(
+			view.outline.turns.map((turn) => ({
+				number: turn.number,
+				headings: turn.headings.map((heading) => heading.text),
+			})),
+			[
+				{ number: 2, headings: [] },
+				{ number: 1, headings: ["Result", "Progress"] },
+			],
+		);
+	});
+
+	it("displays and copies every skill as a dollar reference while keeping surrounding text", () => {
+		const text =
+			'**Before**\n\n<skill name="first" location="/private/first">\n## HIDDEN_BODY\n</skill>\n\nBetween.\n\n<skill name="second" location="/private/second">HIDDEN_BODY</skill>\n\nAfter.';
+		const view = prepareSession({
+			...snapshot,
+			blocks: [
+				{ kind: "message", role: "user", text },
+				{ kind: "message", role: "assistant", text },
+			],
+		});
+		const exchange = view.exchanges[0]!;
+		const messages = [
+			exchange.prompt!,
+			...exchange.answers.flatMap((answer) => (answer.component === "message" ? [answer.data] : [])),
+		];
+
+		for (const message of messages) {
+			assert.equal(message.source, "**Before**\n\n$first\n\nBetween.\n\n$second\n\nAfter.", message.role);
+			assert.match(
+				message.markdownHtml,
+				/<strong>Before<\/strong>[\s\S]*class="skill-card">\$first<\/span>[\s\S]*Between\.[\s\S]*class="skill-card">\$second<\/span>[\s\S]*After\./,
+				message.role,
+			);
+			assert.doesNotMatch(message.markdownHtml, /HIDDEN_BODY|\/private\/|<details\b/, message.role);
+		}
+		assert.deepEqual(view.outline.turns[0]!.headings, []);
+	});
+
+	it("replaces skill blocks literally, including inside code examples", () => {
+		const wrapper = '<skill name="review" location="/private/SKILL.md">HIDDEN_BODY</skill>';
+		for (const text of [wrapper, `\`${wrapper}\``, `\`\`\`xml\n${wrapper}\n\`\`\``]) {
+			const view = prepareSession({ ...snapshot, blocks: [{ kind: "message", role: "user", text }] });
+			const message = view.exchanges[0]!.prompt!;
+
+			assert.equal(message.source, text.replace(wrapper, "$review"), text);
+			assert.match(message.markdownHtml, /class="skill-card">\$review<\/span>/, text);
+			assert.doesNotMatch(message.markdownHtml, /HIDDEN_BODY|\/private\//, text);
+		}
+	});
+
+	it("leaves a skill without a closing tag unchanged", () => {
+		const text = '<skill name="incomplete">Keep this body.';
+		const message = prepareSession({ ...snapshot, blocks: [{ kind: "message", role: "user", text }] }).exchanges[0]!
+			.prompt!;
+
+		assert.equal(message.source, text);
+		assert.match(message.markdownHtml, /Keep this body\./);
+		assert.doesNotMatch(message.markdownHtml, /class="skill-card"/);
+	});
+
+	it("escapes the skill name instead of interpreting it as HTML", () => {
+		const name = "<script>alert(1)</script>";
+		const text = `<skill name="${name}" location="/private/SKILL.md">HIDDEN_BODY</skill>`;
+		const message = prepareSession({ ...snapshot, blocks: [{ kind: "message", role: "user", text }] }).exchanges[0]!
+			.prompt!;
+
+		assert.equal(message.source, `$${name}`);
+		assert.match(message.markdownHtml, /class="skill-card">\$&lt;script&gt;alert\(1\)&lt;\/script&gt;<\/span>/);
+		assert.doesNotMatch(message.markdownHtml, /<script>|HIDDEN_BODY|\/private\//i);
 	});
 });
