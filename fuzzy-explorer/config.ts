@@ -73,7 +73,6 @@ const RESERVED_SHORTCUTS = new Set([
 	"ctrl+c",
 	"ctrl+d",
 	"ctrl+e",
-	"ctrl+f",
 	"ctrl+g",
 	"ctrl+h",
 	"ctrl+i",
@@ -122,7 +121,7 @@ function isKeyId(value: string): value is KeyId {
 
 function requireOpenShortcut(value: unknown, source: string): KeyId {
 	if (typeof value !== "string" || !isKeyId(value)) {
-		throw new Error(`${source}: invalid openShortcut ${JSON.stringify(value)} - use a Pi KeyId such as "ctrl+r"`);
+		throw new Error(`${source}: invalid openShortcut ${JSON.stringify(value)} - use a Pi KeyId such as "ctrl+f"`);
 	}
 	const normalized = value.toLowerCase();
 	const isBareFunctionKey = /^f(?:[1-9]|1[0-2])$/.test(normalized);

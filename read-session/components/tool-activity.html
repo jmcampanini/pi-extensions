@@ -1,0 +1,16 @@
+{{! Calls arrive newest first, with plain-text arguments and recorded result states. }}
+<aside class="activity" aria-label="Tool activity">
+	<div class="activity-summary">
+		<span class="activity-mark" aria-hidden="true">↳</span>
+		<span>{{summary}}</span>
+	</div>
+	<ul>
+		{{#each calls}}
+			<li>
+				<code>{{name}}</code>
+				<span class="tool-argument">{{argument}}</span>
+				<span class="tool-state {{status}}">{{statusLabel}}</span>
+			</li>
+		{{/each}}
+	</ul>
+</aside>

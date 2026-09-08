@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<title>{{title}} · Session reader</title>
+		<style>{{{stylesCss}}}</style>
+	</head>
+	<body>
+		<div class="workspace">
+			<aside class="outline">
+				<div class="outline-inner">
+					{{> outline outline}}
+				</div>
+			</aside>
+			<main id="main" aria-label="{{title}}">
+				<div class="transcript">
+					{{#each exchanges}}
+						{{> exchange this}}
+					{{/each}}
+				</div>
+			</main>
+		</div>
+		{{> controls outline=outline}}
+		<script>{{{scriptJs}}}</script>
+	</body>
+</html>

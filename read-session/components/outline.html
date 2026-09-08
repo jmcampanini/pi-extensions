@@ -1,0 +1,11 @@
+{{! Used by both the desktop sidebar and the floating outline menu. }}
+<nav aria-label="Answer outline">
+	{{#each answers}}
+		<a class="toc-answer" href="#{{id}}">Answer {{number}}</a>
+		{{#each headings}}
+			<a class="toc-heading" style="--depth:{{indent}}" href="#{{id}}">{{text}}</a>
+		{{/each}}
+	{{else}}
+		No agent answers yet.
+	{{/each}}
+</nav>
