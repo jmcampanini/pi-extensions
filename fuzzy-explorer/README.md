@@ -28,22 +28,16 @@ Subagent traffic gets structured treatment (via the shared envelope contract in 
 
 ## Configuration
 
-No keyboard shortcut is registered by default. To add one, create `$PI_CODING_AGENT_DIR/fuzzy-explorer.json` (normally `~/.pi/agent/fuzzy-explorer.json`) and run `/reload` after editing:
+No keyboard shortcut is registered by default. To use **Ctrl+Alt+F** (Ctrl+Option+F on macOS), create `$PI_CODING_AGENT_DIR/fuzzy-explorer.json` (normally `~/.pi/agent/fuzzy-explorer.json`) and run `/reload` after editing:
 
 ```json
 {
-  "openShortcut": "ctrl+r",
+  "openShortcut": "ctrl+alt+f",
   "openMode": "list"
 }
 ```
 
-Pi binds `Ctrl+R` to `app.session.rename` by default. To use it for fuzzy-explorer without a shortcut conflict, reassign or unbind that action in `~/.pi/agent/keybindings.json`:
-
-```json
-{
-  "app.session.rename": []
-}
-```
+Ctrl+Alt+F is free in Pi's default bindings and leaves Ctrl+R available for the [session reader](../read-session/README.md#configuring-the-shortcut).
 
 Environment variables override the file:
 

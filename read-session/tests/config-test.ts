@@ -12,16 +12,16 @@ const directory = mkdtempSync(join(sandbox, "read-session-config-test-"));
 after(() => rmSync(directory, { recursive: true, force: true }));
 
 describe("reader configuration", () => {
-	it("defaults to a working Ctrl+Alt+O binding that does not conflict with Pi defaults", () => {
+	it("uses Ctrl+R without conflicts when Pi session rename is unbound", () => {
 		const config = loadConfig({ PI_CODING_AGENT_DIR: directory });
-		const bindings = new KeybindingsManager().getEffectiveConfig();
+		const bindings = new KeybindingsManager({ "app.session.rename": [] }).getEffectiveConfig();
 		const keys = Object.values(bindings)
 			.flat()
 			.filter((key) => key !== undefined);
 
-		assert.equal(config.openShortcut, "ctrl+alt+o");
-		assert.ok(matchesKey("\u001b\u000f", config.openShortcut!));
-		assert.ok(keys.every((key) => key.split("+").sort().join("+") !== "alt+ctrl+o"));
+		assert.equal(config.openShortcut, "ctrl+r");
+		assert.ok(matchesKey("\u0012", config.openShortcut!));
+		assert.ok(keys.every((key) => key.split("+").sort().join("+") !== "ctrl+r"));
 	});
 
 	it("loads the shortcut from the config file and lets the environment override it", () => {

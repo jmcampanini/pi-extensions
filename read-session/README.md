@@ -2,7 +2,7 @@
 
 Run `/read-session` in Pi to open the current conversation in your browser. The page shows the newest messages first, with agent responses beside their matching prompts and an outline of the agent's headings. Read and copy text in the browser, then reply in Pi.
 
-Press **Ctrl+Alt+O** to open the same reader without typing the command. On macOS, Alt is the Option key. Ctrl+O is already Pi's tool-output toggle, so the reader uses Ctrl+Alt+O by default.
+The reader's default shortcut is **Ctrl+R**. Pi also assigns this key to session renaming; follow the [shortcut setup](#configuring-the-shortcut) to free it before use.
 
 ```text
 /reload
@@ -29,11 +29,21 @@ Run the reader's tests with `node --test read-session/tests/*-test.ts`. Run `mak
 
 ## Configuring the shortcut
 
+To use Ctrl+R without a conflict, reassign or unbind Pi's `app.session.rename` action in `~/.pi/agent/keybindings.json`:
+
+```json
+{
+  "app.session.rename": []
+}
+```
+
+If fuzzy explorer uses Ctrl+R, move it to Ctrl+Alt+F in [its configuration](../fuzzy-explorer/README.md#configuration).
+
 Create `$PI_CODING_AGENT_DIR/read-session.json` (normally `~/.pi/agent/read-session.json`) to choose a shortcut:
 
 ```json
 {
-  "openShortcut": "ctrl+alt+r"
+  "openShortcut": "f6"
 }
 ```
 

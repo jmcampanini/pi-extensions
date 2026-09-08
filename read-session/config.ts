@@ -15,7 +15,7 @@ const modifiers = new Set(["ctrl", "shift", "alt", "super"]);
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): ReaderConfig {
 	const filePath = join(env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"), "read-session.json");
-	const config: ReaderConfig = { openShortcut: "ctrl+alt+o" };
+	const config: ReaderConfig = { openShortcut: "ctrl+r" };
 	if (existsSync(filePath)) {
 		let raw: unknown;
 		try {
