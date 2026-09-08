@@ -24,6 +24,7 @@ export interface OutlineView {
 export interface ExchangeView {
 	id: string;
 	prompt: MessageView | null;
+	contextPrompt: MessageView | null;
 	answers: {
 		[Name in "message" | "tool-activity" | "failure"]: { component: Name; data: ComponentData[Name] };
 	}["message" | "tool-activity" | "failure"][];

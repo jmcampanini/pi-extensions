@@ -5,10 +5,13 @@
 			{{! component is message, tool-activity, or failure, chosen in prepareSession. }}
 			{{> (lookup this "component") data}}
 		{{/each}}
+		{{#if prompt}}
+			<div class="inline-prompt">{{> message prompt}}</div>
+		{{/if}}
 	</div>
 	<div class="prompt-column">
-		{{#if prompt}}
-			{{> message prompt}}
+		{{#if contextPrompt}}
+			{{> message contextPrompt}}
 		{{/if}}
 	</div>
 </section>

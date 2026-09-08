@@ -18,6 +18,59 @@ describe("renderSession", () => {
 		assert.doesNotMatch(html, /PRIVATE_THINKING|RAW_TOOL_OUTPUT|RAW_FAILURE/);
 	});
 
+	it("shows headerless prompt cards inline and labelled sidebar copies with distinct heading and copy targets", () => {
+		const text =
+			'## Request\n\nKeep **all** of this.\n\n```text\nfirst\n  second\n```\n\n<skill name="review">PRIVATE_SKILL</skill>';
+		const html = renderSession({
+			...snapshot,
+			blocks: [
+				{ kind: "message", role: "user", text },
+				{ kind: "message", role: "assistant", text: "The response." },
+			],
+		});
+		const columns = html.match(
+			/<div class="answer-column">([\s\S]*?)<div class="prompt-column">([\s\S]*?)<\/section>/,
+		)!;
+		const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
+		const copies = [...html.matchAll(/data-copy="([^"]+)"/g)].map((match) => match[1]);
+		const code = [...html.matchAll(/<textarea hidden id="[^"]+-code-1">([\s\S]*?)<\/textarea>/g)].map(
+			(match) => match[1],
+		);
+
+		assert.ok(columns[1]!.indexOf("The response.") < columns[1]!.indexOf('class="inline-prompt"'));
+		assert.doesNotMatch(columns[1]!, /class="message-meta"/);
+		assert.match(columns[2]!, /class="message-meta"><span>You<\/span>/);
+		for (const column of columns.slice(1)) {
+			assert.match(column!, /<strong>all<\/strong>/);
+			assert.match(column!, /class="skill-card">\$review<\/span>/);
+			assert.doesNotMatch(column!, /PRIVATE_SKILL/);
+		}
+		assert.equal(new Set(ids).size, ids.length);
+		for (const id of copies) assert.equal(ids.filter((target) => target === id).length, 1, id);
+		assert.deepEqual(code, ["first\n  second", "first\n  second"]);
+		assert.doesNotMatch(html, /class="toc-heading"/);
+	});
+
+	it("omits agent headers while retaining copy controls and interruption statuses", () => {
+		const html = renderSession({
+			...snapshot,
+			blocks: [
+				{ kind: "message", role: "assistant", text: "Complete response." },
+				{ kind: "message", role: "assistant", status: "aborted", text: "Partial response." },
+				{ kind: "message", role: "assistant", status: "error", text: "Interrupted response." },
+			],
+		});
+		const messages = [...html.matchAll(/<article class="message assistant"[^>]*>([\s\S]*?)<\/article>/g)];
+
+		assert.equal(messages.length, 3);
+		for (const message of messages) {
+			assert.doesNotMatch(message[1]!, /class="message-meta"|<span>Agent<\/span>/);
+			assert.match(message[1]!, /class="icon-button copy-message"/);
+		}
+		assert.match(html, /class="message-status">Aborted<\/p>/);
+		assert.match(html, /class="message-status">Interrupted by an error<\/p>/);
+	});
+
 	it("provides turn links and collapsed tool calls with their recorded statuses", () => {
 		const html = renderSession(snapshot);
 

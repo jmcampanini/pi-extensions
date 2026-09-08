@@ -9,7 +9,7 @@ import type { ReaderSnapshot } from "./session.ts";
 const snapshot: ReaderSnapshot = {
 	title: "Reader component examples",
 	cwd: process.cwd(),
-	messageCount: 5,
+	messageCount: 9,
 	blocks: [
 		{
 			kind: "message",
@@ -68,6 +68,18 @@ The exchange includes messages and tool activity. Messages and code blocks inclu
 
 Open [the editing guide](read-session/README.md). Images appear as links: ![example screenshot](example.png).`,
 		},
+		{
+			kind: "message",
+			role: "user",
+			text: "## Keep the full request\n\nShow my message in the reading thread and keep the sticky context beside it.\n\n- Preserve long paragraphs and lists.\n- Let wide code scroll inside the prompt.\n- Keep copy buttons usable in both places.\n\n```typescript\nconst request = { inline: true, context: true };\nconsole.log(request);\n```",
+		},
+		{
+			kind: "message",
+			role: "assistant",
+			text: "Both copies include the complete request, with their own copy controls.",
+		},
+		{ kind: "message", role: "user", text: "Use sentence case for the headings." },
+		{ kind: "message", role: "assistant", text: "I'll keep the headings in sentence case." },
 		{ kind: "message", role: "user", text: "What does an interrupted response look like?" },
 		{ kind: "failure", status: "aborted" },
 		{
@@ -117,11 +129,11 @@ for (const [index, exchange] of paired.exchanges.entries()) {
 	);
 }
 for (const [index, exchange] of isolated.exchanges.entries()) {
-	if (exchange.prompt && index === 1) {
+	if (exchange.prompt) {
 		addExample(
-			"prompt",
-			"User prompt",
-			"The same message template renders both roles.",
+			`prompt-${index}`,
+			"User prompt content",
+			"The exchange places this content inline and in the sticky context column.",
 			"message",
 			exchange.prompt,
 		);
@@ -133,7 +145,7 @@ for (const [index, exchange] of isolated.exchanges.entries()) {
 				addExample(
 					id,
 					index === 0 ? "Interrupted response" : "Agent response",
-					"Message metadata surrounds rendered Markdown. Copying preserves its original source.",
+					"Responses have no role header. Copy controls and interruption statuses remain available.",
 					"message",
 					answer.data,
 				);

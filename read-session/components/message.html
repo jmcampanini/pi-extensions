@@ -1,12 +1,12 @@
 {{! A user prompt or agent response. Markdown is rendered before it reaches this component. }}
 <article class="message {{role}}" id="{{id}}">
-	<div class="message-meta">
-		<span>{{label}}</span>
-		{{#if status}}
-			<span class="message-status">{{status}}</span>
-		{{/if}}
-		{{> copy-button sourceId=sourceId variant="copy-message" label=copyLabel title="Copy Markdown"}}
-	</div>
+	{{#if label}}
+		<div class="message-meta"><span>{{label}}</span></div>
+	{{/if}}
+	{{#if status}}
+		<p class="message-status">{{status}}</p>
+	{{/if}}
+	{{> copy-button sourceId=sourceId variant="copy-message" label=copyLabel title="Copy Markdown"}}
 	<div class="markdown">{{{markdownHtml}}}</div>
 	<textarea hidden id="{{sourceId}}">{{source}}</textarea>
 </article>

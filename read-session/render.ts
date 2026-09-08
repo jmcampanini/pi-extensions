@@ -24,14 +24,15 @@ export function prepareSession(snapshot: ReaderSnapshot, idPrefix = "message"): 
 		if (exchanges.length === 0 || (block.kind === "message" && block.role === "user")) {
 			const number = exchanges.length + 1;
 			const id = `${idPrefix}-turn-${number}`;
-			exchanges.push({ id, prompt: null, answers: [] });
+			exchanges.push({ id, prompt: null, contextPrompt: null, answers: [] });
 			outline.turns.push({ id, number, headings: [] });
 		}
 		const exchange = exchanges.at(-1)!;
 		if (block.kind === "message") {
 			const { message, headings } = prepareMessage(block, `${idPrefix}-${++messageIndex}`, snapshot.cwd);
 			if (block.role === "user") {
-				exchange.prompt = message;
+				exchange.prompt = { ...message, label: "" };
+				exchange.contextPrompt = prepareMessage(block, `${message.id}-context`, snapshot.cwd).message;
 				continue;
 			}
 			exchange.answers.push({ component: "message", data: message });
@@ -54,7 +55,7 @@ export function prepareSession(snapshot: ReaderSnapshot, idPrefix = "message"): 
 	return {
 		title: snapshot.title,
 		outline: { turns: outline.turns.reverse() },
-		exchanges: exchanges.reverse().map(({ id, prompt, answers }) => ({ id, prompt, answers: answers.reverse() })),
+		exchanges: exchanges.reverse().map((exchange) => ({ ...exchange, answers: exchange.answers.reverse() })),
 	};
 }
 
@@ -133,7 +134,7 @@ function prepareMessage(
 		message: {
 			id,
 			role: message.role,
-			label,
+			label: message.role === "user" ? label : "",
 			status: message.status ? (message.status === "error" ? "Interrupted by an error" : "Aborted") : null,
 			copyLabel: `Copy ${label.toLowerCase()} message as Markdown`,
 			sourceId: `${id}-source`,
