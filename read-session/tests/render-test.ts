@@ -35,6 +35,27 @@ describe("renderSession", () => {
 		}
 	});
 
+	it("preserves multiline copy sources through nested HTML components", () => {
+		const code = "first line\n  two spaces\n\tone tab\n\nlast line";
+		const markdown = `A paragraph.\n\n\`\`\`unknown-language\n${code}\n\`\`\`\n\nLiteral {{> message}} and $&.`;
+		const html = renderSession({
+			...snapshot,
+			blocks: [
+				{ kind: "message", role: "user", text: "Prompt.\n\n  Indented continuation." },
+				{ kind: "message", role: "assistant", text: markdown },
+			],
+		});
+		const source = html.match(/<textarea hidden id="message-2-code-1">([\s\S]*?)<\/textarea>/)?.[1];
+		const message = html.match(/<textarea hidden id="message-2-source">([\s\S]*?)<\/textarea>/)?.[1];
+
+		assert.equal(source, code);
+		assert.equal(
+			message,
+			`A paragraph.\n\n&#x60;&#x60;&#x60;unknown-language\n${code}\n&#x60;&#x60;&#x60;\n\nLiteral {{&gt; message}} and $&amp;.`,
+		);
+		assert.ok(html.includes(`<code class="hljs">${code}</code>`));
+	});
+
 	it("reverses complete messages and tool calls while preserving message contents and prompt pairing", () => {
 		const latestAnswer = "Latest answer.\n\n## Details\n\n1. First step\n2. Second step";
 		const html = renderSession({
@@ -127,10 +148,15 @@ describe("renderSession", () => {
 					role: "assistant",
 					text: "<script>bad()</script>\n\n[unsafe](javascript:alert%281%29)\n\n[local](docs/guide.md)\n\n```html\n</textarea><script>bad()</script>\n```\n\nLiteral {{styles}} and {{script}}.",
 				},
+				{
+					kind: "activity",
+					calls: [{ name: "<custom-tool>", argument: '"><svg onload=bad()>', status: "returned" }],
+				},
 			],
 		});
 
-		assert.doesNotMatch(html, /<script>bad\(\)<\/script>|href="javascript:/);
+		assert.doesNotMatch(html, /<script>bad\(\)<\/script>|href="javascript:|<svg onload/);
+		assert.match(html, /&lt;custom-tool&gt;/);
 		assert.match(html, /href="file:\/\/\/project\/docs\/guide\.md"/);
 		assert.match(html, /&lt;script&gt;bad\(\)&lt;\/script&gt;/);
 		assert.match(html, /<p>Literal \{\{styles\}\} and \{\{script\}\}\.<\/p>/);

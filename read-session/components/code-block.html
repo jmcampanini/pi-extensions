@@ -1,0 +1,6 @@
+{{! Keep content against code/textarea tags so displayed and copied indentation stays exact. }}
+<div class="code-block">
+	{{> copy-button sourceId=sourceId variant="copy-code" label="Copy code" title="Copy code"}}
+	<pre aria-label="{{language}} code"><code class="hljs">{{{highlightedHtml}}}</code></pre>
+	<textarea hidden id="{{sourceId}}">{{source}}</textarea>
+</div>

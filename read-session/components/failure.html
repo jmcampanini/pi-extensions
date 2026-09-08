@@ -1,0 +1,11 @@
+{{! A turn without response text. Error details stay plain text and start collapsed. }}
+<aside class="failure" aria-label="Agent turn failure">
+	{{#if details}}
+		<details>
+			<summary>{{label}}</summary>
+			<pre>{{details}}</pre>
+		</details>
+	{{else}}
+		<p>{{label}}</p>
+	{{/if}}
+</aside>

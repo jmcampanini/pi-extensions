@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<title>Session reader components</title>
+		<style>{{{stylesCss}}}</style>
+		<style>{{{galleryCss}}}</style>
+	</head>
+	<body class="gallery">
+		<header class="gallery-intro">
+			<p class="gallery-eyebrow">Session reader · Development</p>
+			<h1>Components and their HTML</h1>
+			<p>Each preview uses the same templates, styles, and browser behavior as <code>/read-session</code>.</p>
+			<p>Edit a template, rerun <code>node read-session/preview.ts</code>, then refresh this page.</p>
+			<a href="index.html">Open the complete sample session</a>
+			<nav aria-label="Component examples">
+				{{#each examples}}
+					<a href="#{{id}}">{{title}}</a>
+				{{/each}}
+			</nav>
+		</header>
+		<main class="gallery-examples">
+			{{#each examples}}
+				<section class="gallery-example" id="{{id}}">
+					<header>
+						<h2>{{title}}</h2>
+						<p>{{description}}</p>
+						<code>read-session/{{file}}</code>
+					</header>
+					<div class="gallery-comparison">
+						<div class="gallery-preview {{id}}">{{{previewHtml}}}</div>
+						<details class="gallery-source" open>
+							<summary>HTML template</summary>
+							<div class="code-block">
+								{{> copy-button sourceId=sourceId variant="copy-code" label="Copy HTML template" title="Copy HTML template"}}
+								<pre><code>{{source}}</code></pre>
+								<textarea hidden id="{{sourceId}}">{{source}}</textarea>
+							</div>
+						</details>
+					</div>
+				</section>
+			{{/each}}
+		</main>
+		{{> controls outline=outline}}
+		<script>{{{scriptJs}}}</script>
+	</body>
+</html>

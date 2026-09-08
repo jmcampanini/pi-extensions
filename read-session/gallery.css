@@ -1,0 +1,114 @@
+.gallery-intro,
+.gallery-examples {
+	max-width: 1480px;
+	margin: 0 auto;
+	padding: 40px;
+}
+.gallery-intro {
+	padding-bottom: 0;
+}
+.gallery-eyebrow {
+	color: var(--accent);
+	font-size: 12px;
+	letter-spacing: 1px;
+	text-transform: uppercase;
+}
+.gallery-intro h1 {
+	font-size: 32px;
+	letter-spacing: -1px;
+}
+.gallery-intro p,
+.gallery-example > header p {
+	line-height: 1.6;
+	color: var(--muted);
+}
+.gallery-intro nav {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px 24px;
+	margin-top: 32px;
+	font-size: 13px;
+}
+.gallery-example {
+	margin-bottom: 48px;
+	scroll-margin-top: 24px;
+}
+.gallery-example > header {
+	padding-bottom: 20px;
+}
+.gallery-example > header h2 {
+	font-size: 20px;
+	margin-bottom: 8px;
+}
+.gallery-example > header p {
+	margin: 8px 0;
+	font-size: 14px;
+}
+.gallery-example > header code {
+	color: var(--accent);
+	font-size: 12px;
+}
+.gallery-comparison {
+	display: grid;
+	grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	overflow: hidden;
+}
+.gallery-preview {
+	padding: 28px;
+	min-width: 0;
+}
+.gallery-preview.outline {
+	display: block;
+}
+.gallery-source {
+	min-width: 0;
+	padding: 20px;
+	border-left: 1px solid var(--line);
+	background: var(--soft);
+}
+.gallery-source summary {
+	cursor: pointer;
+	font-size: 12px;
+	color: var(--muted);
+}
+.gallery-source .code-block {
+	margin-bottom: 0;
+}
+.gallery-source pre {
+	max-height: 460px;
+	font-size: 12px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.gallery .message.user {
+	position: static;
+	max-height: none;
+}
+.gallery .exchange {
+	grid-template-columns: minmax(0, 1fr) minmax(140px, 190px);
+	gap: 20px;
+}
+.gallery .message:last-child,
+.gallery .exchange:last-child {
+	margin-bottom: 0;
+}
+@media (max-width: 1100px) {
+	.gallery-comparison {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.gallery-source {
+		border-left: 0;
+		border-top: 1px solid var(--line);
+	}
+}
+@media (max-width: 700px) {
+	.gallery-intro,
+	.gallery-examples {
+		padding: 24px 16px;
+	}
+	.gallery-preview {
+		padding: 20px;
+	}
+}

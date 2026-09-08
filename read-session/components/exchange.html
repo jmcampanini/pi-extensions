@@ -1,0 +1,14 @@
+{{! One prompt paired with its responses and activity. Data arrives newest first. }}
+<section class="exchange">
+	<div class="answer-column">
+		{{#each answers}}
+			{{! component is message, tool-activity, or failure, chosen in prepareSession. }}
+			{{> (lookup this "component") data}}
+		{{/each}}
+	</div>
+	<div class="prompt-column">
+		{{#if prompt}}
+			{{> message prompt}}
+		{{/if}}
+	</div>
+</section>
