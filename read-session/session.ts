@@ -18,7 +18,13 @@ export interface ReaderActivity {
 	calls: ReaderTool[];
 }
 
-export type ReaderBlock = ReaderMessage | ReaderActivity;
+export interface ReaderFailure {
+	kind: "failure";
+	status: "error" | "aborted";
+	details?: string;
+}
+
+export type ReaderBlock = ReaderMessage | ReaderActivity | ReaderFailure;
 
 export interface ReaderSnapshot {
 	title: string;
@@ -27,7 +33,7 @@ export interface ReaderSnapshot {
 	messageCount: number;
 }
 
-export function selectMessages(entries: readonly SessionEntry[], count: number): Omit<ReaderSnapshot, "title" | "cwd"> {
+export function selectMessages(entries: readonly SessionEntry[]): Omit<ReaderSnapshot, "title" | "cwd"> {
 	const results = new Map<string, boolean>();
 	for (const entry of entries) {
 		if (entry.type === "message" && entry.message.role === "toolResult") {
@@ -36,7 +42,6 @@ export function selectMessages(entries: readonly SessionEntry[], count: number):
 	}
 
 	const blocks: ReaderBlock[] = [];
-	const messageIndexes: number[] = [];
 	for (const entry of entries) {
 		if (entry.type !== "message") continue;
 		const message = entry.message;
@@ -48,13 +53,12 @@ export function selectMessages(entries: readonly SessionEntry[], count: number):
 						.flatMap((part) =>
 							part.type === "text" ? [part.text] : part.type === "image" ? ["[Image attachment]"] : [],
 						)
-						.join("\n");
+						.join("\n\n");
+		const status =
+			message.role === "assistant" && (message.stopReason === "error" || message.stopReason === "aborted")
+				? message.stopReason
+				: undefined;
 		if (text.trim()) {
-			messageIndexes.push(blocks.length);
-			const status =
-				message.role === "assistant" && (message.stopReason === "error" || message.stopReason === "aborted")
-					? message.stopReason
-					: undefined;
 			blocks.push({ kind: "message", role: message.role, text, status });
 		}
 
@@ -69,17 +73,17 @@ export function selectMessages(entries: readonly SessionEntry[], count: number):
 				},
 			];
 		});
-		if (calls.length === 0) continue;
-		const previous = blocks.at(-1);
-		if (previous?.kind === "activity") previous.calls.push(...calls);
-		else blocks.push({ kind: "activity", calls });
+		if (calls.length > 0) {
+			const previous = blocks.at(-1);
+			if (previous?.kind === "activity") previous.calls.push(...calls);
+			else blocks.push({ kind: "activity", calls });
+		}
+		if (!text.trim() && status) blocks.push({ kind: "failure", status, details: message.errorMessage });
 	}
 
-	const messageCount = Math.min(count, messageIndexes.length);
-	const start = messageIndexes[messageIndexes.length - messageCount];
 	return {
-		blocks: start === undefined ? [] : blocks.slice(start),
-		messageCount,
+		blocks,
+		messageCount: blocks.filter((block) => block.kind === "message").length,
 	};
 }
 

@@ -366,6 +366,25 @@ tr:last-child td {
 		"Segoe UI",
 		sans-serif;
 }
+.failure {
+	margin: 0 0 24px;
+	color: var(--error);
+	font-size: 12px;
+	line-height: 1.7;
+}
+.failure p {
+	margin: 0;
+}
+.failure summary {
+	cursor: pointer;
+}
+.failure pre {
+	padding: 12px 0 0;
+	color: var(--ink);
+	font-size: 12px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
 .activity {
 	margin: 0 0 24px;
 	color: var(--muted);

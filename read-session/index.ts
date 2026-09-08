@@ -16,14 +16,8 @@ export async function writeSessionPage(directory: string, snapshot: ReaderSnapsh
 export default function (pi: ExtensionAPI) {
 	let exporting = false;
 	pi.registerCommand("read-session", {
-		description: "Read recent session messages in your browser. Usage: /read-session [count] (default 20)",
-		handler: async (args, ctx) => {
-			const input = args.trim();
-			const count = input === "" ? 20 : Number(input);
-			if ((input !== "" && !/^\d+$/.test(input)) || !Number.isSafeInteger(count) || count < 1) {
-				ctx.ui.notify("Usage: /read-session [positive message count], for example /read-session 40", "error");
-				return;
-			}
+		description: "Read the whole current session in your browser. Usage: /read-session",
+		handler: async (_args, ctx) => {
 			if (exporting) {
 				ctx.ui.notify("The session reader is already being generated", "info");
 				return;
@@ -31,8 +25,8 @@ export default function (pi: ExtensionAPI) {
 
 			exporting = true;
 			try {
-				const selected = selectMessages(ctx.sessionManager.getBranch(), count);
-				if (selected.messageCount === 0) {
+				const snapshot = selectMessages(ctx.sessionManager.getBranch());
+				if (snapshot.blocks.length === 0) {
 					ctx.ui.notify("No user or agent messages to read on the current branch", "info");
 					return;
 				}
@@ -42,7 +36,7 @@ export default function (pi: ExtensionAPI) {
 					.slice(0, 16);
 				const directory = join(ctx.cwd, ".sandbox", "read-session", sessionKey);
 				const filePath = await writeSessionPage(directory, {
-					...selected,
+					...snapshot,
 					cwd: ctx.cwd,
 					title: ctx.sessionManager.getSessionName() || basename(ctx.cwd),
 				});
@@ -52,7 +46,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				ctx.ui.notify(
-					`Opened the session reader with ${selected.messageCount} messages. File: ${filePath}`,
+					`Opened the session reader with ${snapshot.messageCount} messages. File: ${filePath}`,
 					"info",
 				);
 			} catch (error) {

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<title>{{title}} · Session reader</title>
+		{{styles}}
+	</head>
+	<body>
+		<div class="workspace">
+			<aside class="outline">
+				<div class="outline-inner">{{outline}}</div>
+			</aside>
+			<main id="main" aria-label="{{title}}">
+				<div class="transcript">{{transcript}}</div>
+			</main>
+		</div>
+
+		<div class="reader-actions" role="group" aria-label="Reader controls">
+			<details class="outline-menu">
+				<summary class="icon-button" aria-label="Show conversation outline" title="Show conversation outline">
+					<svg viewBox="0 0 24 24" aria-hidden="true">
+						<path d="M8 5h13M8 12h13M8 19h13" />
+						<circle cx="3" cy="5" r=".6" />
+						<circle cx="3" cy="12" r=".6" />
+						<circle cx="3" cy="19" r=".6" />
+					</svg>
+				</summary>
+				{{outline}}
+			</details>
+			<button
+				id="latest"
+				class="icon-button"
+				type="button"
+				aria-label="Go to newest message"
+				title="Go to newest message"
+				hidden
+			>
+				<svg viewBox="0 0 24 24" aria-hidden="true">
+					<path d="m6 12 6-6 6 6M12 6v14M5 3h14" />
+				</svg>
+			</button>
+		</div>
+		<div id="copy-status" class="copy-status" role="status" aria-live="polite"></div>
+		{{script}}
+	</body>
+</html>

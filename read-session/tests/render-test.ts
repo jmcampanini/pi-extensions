@@ -5,7 +5,7 @@ import { selectMessages, type ReaderSnapshot } from "../session.ts";
 import { entries } from "./fixture.ts";
 
 describe("renderSession", () => {
-	const snapshot: ReaderSnapshot = { ...selectMessages(entries, 20), title: "Reader test", cwd: "/project" };
+	const snapshot: ReaderSnapshot = { ...selectMessages(entries), title: "Reader test", cwd: "/project" };
 
 	it("renders a deterministic document with formatted Markdown and original message sources", () => {
 		const html = renderSession(snapshot);
@@ -26,10 +26,10 @@ describe("renderSession", () => {
 		assert.match(html, /class="toc-heading"[^>]*>Next step<\/a>/);
 		assert.match(
 			html,
-			/<li><code>edit<\/code><span class="tool-argument">read-session\/index.ts<\/span><span class="tool-state failed">failed<\/span>/,
+			/<li>\s*<code>edit<\/code>\s*<span class="tool-argument">read-session\/index.ts<\/span>\s*<span class="tool-state failed">failed<\/span>/,
 		);
-		assert.match(html, /README\.md<\/span><span class="tool-state returned">returned/);
-		assert.match(html, /npm test<\/span><span class="tool-state pending">awaiting result/);
+		assert.match(html, /README\.md<\/span>\s*<span class="tool-state returned">returned/);
+		assert.match(html, /npm test<\/span>\s*<span class="tool-state pending">awaiting result/);
 		for (const link of html.matchAll(/class="toc-(?:answer|heading)"[^>]*href="#([^"]+)"/g)) {
 			assert.ok(html.includes(`id="${link[1]}"`), link[1]);
 		}
@@ -64,7 +64,7 @@ describe("renderSession", () => {
 				(message) => message[1],
 			),
 		);
-		const tools = [...html.matchAll(/<li><code>([^<]+)<\/code>/g)].map((match) => match[1]);
+		const tools = [...html.matchAll(/<li>\s*<code>([^<]+)<\/code>/g)].map((match) => match[1]);
 
 		assert.deepEqual(sources, [
 			"Follow-up question.",
@@ -82,6 +82,40 @@ describe("renderSession", () => {
 		assert.deepEqual(tools, ["bash", "edit", "read"]);
 	});
 
+	it("shows failed turns with collapsed plain-text details and excludes them from the answer outline", () => {
+		const html = renderSession({
+			...snapshot,
+			messageCount: 0,
+			blocks: [
+				{ kind: "failure", status: "aborted" },
+				{ kind: "failure", status: "error", details: "<script>bad()</script>\nTry again." },
+			],
+		});
+
+		assert.match(
+			html,
+			/<details>\s*<summary>Agent response failed<\/summary>\s*<pre>&lt;script&gt;bad\(\)&lt;\/script&gt;\nTry again\.<\/pre>\s*<\/details>/,
+		);
+		assert.match(html, /<p>Agent response aborted<\/p>/);
+		assert.ok(html.indexOf("Agent response failed") < html.indexOf("Agent response aborted"));
+		assert.doesNotMatch(html, /<script>bad\(\)<\/script>|class="toc-answer"|class="message assistant"/);
+	});
+
+	it("escapes text after raw HTML start tags in paragraphs, headings, and tables", () => {
+		const messages = [
+			"Use <code> <img/src=x onerror=alert(1)> here",
+			"Start <pre>\n\n## Later <svg/onload=alert(2)>",
+			"Start <kbd>\n\n| Content |\n| --- |\n| <img/src=x onerror=alert(3)> |",
+			"Start <script>\n\nLater paragraph with <svg/onload=alert(4)>",
+		];
+		for (const text of messages) {
+			const html = renderSession({ ...snapshot, blocks: [{ kind: "message", role: "assistant", text }] });
+
+			assert.doesNotMatch(html, /<(?:img|svg)\//i, text);
+			assert.match(html, /&lt;(?:img|svg)\//, text);
+		}
+	});
+
 	it("escapes session HTML and prevents executable Markdown links while preserving local file links", () => {
 		const html = renderSession({
 			title: "</title><script>bad()</script>",
@@ -91,7 +125,7 @@ describe("renderSession", () => {
 				{
 					kind: "message",
 					role: "assistant",
-					text: "<script>bad()</script>\n\n[unsafe](javascript:alert%281%29)\n\n[local](docs/guide.md)\n\n```html\n</textarea><script>bad()</script>\n```",
+					text: "<script>bad()</script>\n\n[unsafe](javascript:alert%281%29)\n\n[local](docs/guide.md)\n\n```html\n</textarea><script>bad()</script>\n```\n\nLiteral {{styles}} and {{script}}.",
 				},
 			],
 		});
@@ -99,5 +133,6 @@ describe("renderSession", () => {
 		assert.doesNotMatch(html, /<script>bad\(\)<\/script>|href="javascript:/);
 		assert.match(html, /href="file:\/\/\/project\/docs\/guide\.md"/);
 		assert.match(html, /&lt;script&gt;bad\(\)&lt;\/script&gt;/);
+		assert.match(html, /<p>Literal \{\{styles\}\} and \{\{script\}\}\.<\/p>/);
 	});
 });

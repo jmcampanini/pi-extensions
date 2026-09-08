@@ -25,8 +25,7 @@ The session reader gives the agent's response more room. **Your words and the ag
 Run the command from Pi after reloading the extensions:
 
 \`\`\`typescript
-const count = 20;
-const recentMessages = messages.slice(-count).reverse();
+const newestFirst = [...messages].reverse();
 \`\`\`
 
 ### How to read the session
@@ -50,18 +49,18 @@ The code block and table use their own horizontal scroll area on a small screen.
 
 ### Next step
 
-- [x] Open the recent session messages in one page.
+- [x] Open the whole session in one page.
 - [x] Keep generation deterministic.
 - [ ] Reply in Pi after reading the response.
 
 You can copy a passage from the response and paste it into your reply in Pi.`;
 
 const messages: SessionMessageEntry["message"][] = [
-	{ role: "user", content: "An older question outside the small test window.", timestamp: 0 },
+	{ role: "user", content: "The first question in this session.", timestamp: 0 },
 	{
 		...assistant,
 		role: "assistant",
-		content: [{ type: "text", text: "An older answer outside the small test window." }],
+		content: [{ type: "text", text: "The first answer in this session." }],
 		stopReason: "stop",
 	},
 	{
@@ -74,7 +73,7 @@ const messages: SessionMessageEntry["message"][] = [
 		...assistant,
 		role: "assistant",
 		content: [
-			{ type: "text", text: "I'll inspect the command registration and build a reader for the recent messages." },
+			{ type: "text", text: "I'll inspect the command registration and build a reader for the whole session." },
 			{ type: "thinking", thinking: "PRIVATE_THINKING_NOT_FOR_READER" },
 			{ type: "toolCall", id: "read-1", name: "read", arguments: { path: "README.md" } },
 		],
