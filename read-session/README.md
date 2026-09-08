@@ -37,7 +37,7 @@ To use Ctrl+R without a conflict, reassign or unbind Pi's `app.session.rename` a
 }
 ```
 
-If fuzzy explorer uses Ctrl+R, move it to Ctrl+Alt+F in [its configuration](../fuzzy-explorer/README.md#configuration).
+If fuzzy explorer uses Ctrl+R, follow [its Ctrl+F setup](../fuzzy-explorer/README.md#configuration), including the cursor-right override in `keybindings.json`.
 
 Create `$PI_CODING_AGENT_DIR/read-session.json` (normally `~/.pi/agent/read-session.json`) to choose a shortcut:
 

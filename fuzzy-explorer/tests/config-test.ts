@@ -93,6 +93,7 @@ describe("config", () => {
 		const validShortcuts = [
 			"f12",
 			"ctrl++",
+			"ctrl+f",
 			"ctrl+alt+f",
 			"ctrl+x",
 			"ctrl+n",
@@ -145,7 +146,6 @@ describe("config", () => {
 			"ctrl+a",
 			"ctrl+b",
 			"ctrl+e",
-			"ctrl+f",
 			"ctrl+u",
 			"ctrl+w",
 			"ctrl+y",

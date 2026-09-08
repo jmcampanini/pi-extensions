@@ -7,7 +7,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 const sandbox = join(process.cwd(), ".sandbox");
 mkdirSync(sandbox, { recursive: true });
 const agentDir = mkdtempSync(join(sandbox, "fuzzy-explorer-index-configured-"));
-writeFileSync(join(agentDir, "fuzzy-explorer.json"), '{"openShortcut":"ctrl+alt+f"}');
+writeFileSync(join(agentDir, "fuzzy-explorer.json"), '{"openShortcut":"ctrl+f"}');
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const { registerFuzzyExplorer } = await import("../index.ts");
 
@@ -32,7 +32,7 @@ describe("registerFuzzyExplorer", () => {
 		} as unknown as ExtensionAPI;
 		registerFuzzyExplorer(pi);
 
-		assert.strictEqual(shortcut, "ctrl+alt+f", "registers the configured shortcut");
+		assert.strictEqual(shortcut, "ctrl+f", "registers the configured shortcut");
 		assert.strictEqual(shortcutDescription.length > 0, true, "the shortcut has a discoverable description");
 
 		const notices: Array<[string, string]> = [];
