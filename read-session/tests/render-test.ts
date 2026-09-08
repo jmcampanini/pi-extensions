@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { renderSession } from "../render.ts";
+import { prepareSession, renderSession } from "../render.ts";
 import { selectMessages, type ReaderSnapshot } from "../session.ts";
 import { entries } from "./fixture.ts";
 
@@ -160,5 +160,70 @@ describe("renderSession", () => {
 		assert.match(html, /href="file:\/\/\/project\/docs\/guide\.md"/);
 		assert.match(html, /&lt;script&gt;bad\(\)&lt;\/script&gt;/);
 		assert.match(html, /<p>Literal \{\{styles\}\} and \{\{script\}\}\.<\/p>/);
+	});
+});
+
+describe("prepareSession", () => {
+	const snapshot: ReaderSnapshot = { title: "Skill cards", cwd: "/project", messageCount: 1, blocks: [] };
+
+	it("replaces every skill with a name-only card and a dollar reference while keeping surrounding text", () => {
+		const text =
+			'**Before**\n\n<skill name="first" location="/private/first">\n## HIDDEN_BODY\n</skill>\n\nBetween.\n\n<skill name="second" location="/private/second">HIDDEN_BODY</skill>\n\nAfter.';
+		const view = prepareSession({
+			...snapshot,
+			blocks: [
+				{ kind: "message", role: "user", text },
+				{ kind: "message", role: "assistant", text },
+			],
+		});
+		const exchange = view.exchanges[0]!;
+		const messages = [
+			exchange.prompt!,
+			...exchange.answers.flatMap((answer) => (answer.component === "message" ? [answer.data] : [])),
+		];
+
+		for (const message of messages) {
+			assert.equal(message.source, "**Before**\n\n$first\n\nBetween.\n\n$second\n\nAfter.", message.role);
+			assert.match(
+				message.markdownHtml,
+				/<strong>Before<\/strong>[\s\S]*class="skill-card">first<\/span>[\s\S]*Between\.[\s\S]*class="skill-card">second<\/span>[\s\S]*After\./,
+				message.role,
+			);
+			assert.doesNotMatch(message.markdownHtml, /HIDDEN_BODY|\/private\/|<details\b/, message.role);
+		}
+		assert.deepEqual(view.outline.answers[0]!.headings, []);
+	});
+
+	it("replaces skill blocks literally, including inside code examples", () => {
+		const wrapper = '<skill name="review" location="/private/SKILL.md">HIDDEN_BODY</skill>';
+		for (const text of [wrapper, `\`${wrapper}\``, `\`\`\`xml\n${wrapper}\n\`\`\``]) {
+			const view = prepareSession({ ...snapshot, blocks: [{ kind: "message", role: "user", text }] });
+			const message = view.exchanges[0]!.prompt!;
+
+			assert.equal(message.source, text.replace(wrapper, "$review"), text);
+			assert.match(message.markdownHtml, /class="skill-card">review<\/span>/, text);
+			assert.doesNotMatch(message.markdownHtml, /HIDDEN_BODY|\/private\//, text);
+		}
+	});
+
+	it("leaves a skill without a closing tag unchanged", () => {
+		const text = '<skill name="incomplete">Keep this body.';
+		const message = prepareSession({ ...snapshot, blocks: [{ kind: "message", role: "user", text }] }).exchanges[0]!
+			.prompt!;
+
+		assert.equal(message.source, text);
+		assert.match(message.markdownHtml, /Keep this body\./);
+		assert.doesNotMatch(message.markdownHtml, /class="skill-card"/);
+	});
+
+	it("escapes the skill name instead of interpreting it as HTML", () => {
+		const name = "<script>alert(1)</script>";
+		const text = `<skill name="${name}" location="/private/SKILL.md">HIDDEN_BODY</skill>`;
+		const message = prepareSession({ ...snapshot, blocks: [{ kind: "message", role: "user", text }] }).exchanges[0]!
+			.prompt!;
+
+		assert.equal(message.source, `$${name}`);
+		assert.match(message.markdownHtml, /class="skill-card">&lt;script&gt;alert\(1\)&lt;\/script&gt;<\/span>/);
+		assert.doesNotMatch(message.markdownHtml, /<script>|HIDDEN_BODY|\/private\//);
 	});
 });

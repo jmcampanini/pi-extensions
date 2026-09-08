@@ -109,6 +109,20 @@ function prepareMessage(
 			},
 		},
 	});
+	const html: string[] = [];
+	const source: string[] = [];
+	const skillBlocks = /<skill\s+(?:[^>]*?\s)?name="([^"]+)"[^>]*>[\s\S]*?<\/skill>/g;
+	let cursor = 0;
+	for (const match of message.text.matchAll(skillBlocks)) {
+		const before = message.text.slice(cursor, match.index);
+		html.push(parser.parse(before) as string, renderComponent("skill-card", { name: match[1]! }));
+		source.push(before, `$${match[1]}`);
+		cursor = match.index + match[0].length;
+	}
+	const after = message.text.slice(cursor);
+	html.push(parser.parse(after) as string);
+	source.push(after);
+
 	const label = message.role === "user" ? "You" : "Agent";
 	return {
 		message: {
@@ -118,8 +132,8 @@ function prepareMessage(
 			status: message.status ? (message.status === "error" ? "Interrupted by an error" : "Aborted") : null,
 			copyLabel: `Copy ${label.toLowerCase()} message as Markdown`,
 			sourceId: `${id}-source`,
-			source: message.text,
-			markdownHtml: parser.parse(message.text) as string,
+			source: source.join(""),
+			markdownHtml: html.join(""),
 		},
 		headings,
 	};

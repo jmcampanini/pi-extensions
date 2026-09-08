@@ -14,7 +14,17 @@ const snapshot: ReaderSnapshot = {
 		{
 			kind: "message",
 			role: "user",
-			text: "Keep my question beside your answer. Show the headings in an outline and let me copy the original Markdown.",
+			text: `<skill name="pivotal-questions" location="/example/skills/pivotal-questions/SKILL.md">
+Interview me about this topic until the design decisions are settled.
+</skill>
+
+Keep my question beside your answer. Show the headings in an outline and let me copy the Markdown.
+
+<skill name="when-designing-code" location="/example/skills/when-designing-code/SKILL.md">
+Choose the data structures before writing the logic.
+</skill>
+
+Preserve this text after both skills.`,
 		},
 		{
 			kind: "activity",
@@ -142,6 +152,9 @@ for (const [index, exchange] of isolated.exchanges.entries()) {
 		}
 	}
 }
+addExample("skill", "Skill card", "Only the skill name appears; message copying uses $skill-name.", "skill-card", {
+	name: "pivotal-questions",
+});
 const code = 'const theme = "system";\nconsole.log(theme);';
 addExample("code", "Code block", "Code blocks share the message's copy-button component.", "code-block", {
 	sourceId: "standalone-code",
