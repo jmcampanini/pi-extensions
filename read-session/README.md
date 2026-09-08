@@ -2,6 +2,8 @@
 
 Run `/read-session` in Pi to open the current conversation in your browser. The page shows the newest messages first, with agent responses beside their matching prompts and an outline of the agent's headings. Read and copy text in the browser, then reply in Pi.
 
+Each user message starts a numbered turn containing its agent messages and tool activity. This includes steering messages. Pending prompts and failed turns remain in the outline. Recorded content before the first user message gets its own turn.
+
 The reader's default shortcut is **Ctrl+R**. Pi also assigns this key to session renaming; follow the [shortcut setup](#configuring-the-shortcut) to free it before use.
 
 ```text
@@ -11,13 +13,15 @@ The reader's default shortcut is **Ctrl+R**. Pi also assigns this key to session
 
 The reader includes every stored user and agent message on the current session branch, including messages from before compaction. Agent progress text and recorded tool activity are included throughout the conversation.
 
-Failed or aborted turns without response text appear as compact notices. Expand a notice to read its recorded error details, when available. Notices do not appear in the answer outline. A session with no text messages can still show its failure notices.
+Failed or aborted turns without response text appear as compact notices. Expand a notice to read its recorded error details, when available. Their turn remains in the outline even without agent text. A session with no text messages can still show its failure notices.
 
 Messages and tool calls appear newest first. Paragraphs, lists, code, and headings keep their original order inside each message. On a large screen, the outline sits on the left, agent responses in the center, and their matching prompts on the right. A narrower screen moves the outline into a floating menu. Phone screens stack the messages in newest-first order.
 
-Tool activity stays between the corresponding messages. Each call shows its name, a short path or command, and its recorded result status. A call without a result is marked `awaiting result`. Raw tool output and agent thinking are omitted. Generation uses recorded fields only and never calls a model.
+Tool activity stays between the corresponding messages and starts collapsed to a one-line summary. Click the summary to reveal all calls. Each call shows its name, a short path or command, and its recorded result status. A call without a result is marked `awaiting result`. Raw tool output and agent thinking are omitted. Generation uses recorded fields only and never calls a model.
 
 Markdown includes headings, lists, checkboxes, blockquotes, links, tables, and syntax-highlighted fenced code. Complete `<skill name="..." location="...">...</skill>` blocks become non-expandable cards showing `$skill-name`. Multiple cards stay in their original positions among the message text. Copy icons preserve the Markdown or code, except that message copying replaces each compacted skill block with `$skill-name`. Replacement is literal, including inside code examples. A wrapper without a closing tag stays unchanged. Other raw HTML is shown as text. Image attachments get a placeholder, and Markdown images become links. Local Markdown links resolve relative to the session's working directory; browser rules still govern opening them.
+
+Both desktop and floating outlines highlight the heading at the top of the reading area, falling back to its Turn entry when no heading applies. The highlight updates when scrolling, resizing, or expanding tool activity.
 
 Light and dark colors follow the system preference automatically, including changes while the page is open. The page starts directly on the conversation. A floating return icon appears after scrolling down and returns to the newest message.
 
@@ -78,14 +82,14 @@ Message Markdown uses `heading.html`, `link.html`, `table.html`, `code-block.htm
 | `components/message.html` | Message metadata, copy control, and content placement |
 | `components/tool-activity.html` | Tool summary and individual call rows |
 | `components/failure.html` | Failed or aborted turns and expandable details |
-| `components/outline.html` | Answer and heading links, shared by both outline locations |
+| `components/outline.html` | Turn and heading links, shared by both outline locations |
 | `components/controls.html` | Floating outline and return controls |
 | `components/copy-button.html` | The shared copy icon, button, and accessibility labels |
 | `components/code-block.html` | Highlighted code and its copy control |
 | `components/skill-card.html` | A `$skill-name` card without its body or location |
 | `components/heading.html`, `components/link.html`, `components/table.html` | Markdown headings, links, and scrolling tables |
 | `reader.css` | Spacing, typography, responsive layouts, and system light/dark colors |
-| `reader.js` | Copying, scrolling, and closing the outline menu |
+| `reader.js` | Copying, scrolling, active-outline tracking, and closing the outline menu |
 | `render.ts` | Markdown conversion, URL policy, and preparing component data in newest-first order |
 | `components.ts` | Component input types, file registration, and template compilation |
 | `session.ts` | Which recorded messages and events appear in the reader |

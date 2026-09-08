@@ -9,7 +9,7 @@ import type { ReaderSnapshot } from "./session.ts";
 const snapshot: ReaderSnapshot = {
 	title: "Reader component examples",
 	cwd: process.cwd(),
-	messageCount: 4,
+	messageCount: 5,
 	blocks: [
 		{
 			kind: "message",
@@ -26,6 +26,7 @@ Choose the data structures before writing the logic.
 
 Preserve this text after both skills.`,
 		},
+		{ kind: "message", role: "assistant", text: "## Progress\n\nI'll inspect the reader components first." },
 		{
 			kind: "activity",
 			calls: [
@@ -162,9 +163,9 @@ addExample("code", "Code block", "Code blocks share the message's copy-button co
 	language: "typescript",
 	highlightedHtml: hljs.highlight(code, { language: "typescript" }).value,
 });
-addExample("outline", "Answer outline", "These links jump to the paired examples above.", "outline", paired.outline);
-addExample("empty-outline", "Empty outline", "Sessions with only failures have no answer links.", "outline", {
-	answers: [],
+addExample("outline", "Turn outline", "These links jump to the paired examples above.", "outline", paired.outline);
+addExample("empty-outline", "Empty outline", "A session with no exchanges has no turn links.", "outline", {
+	turns: [],
 });
 
 const directory = resolve(".sandbox/read-session-preview");

@@ -14,7 +14,7 @@ export interface MessageView {
 }
 
 export interface OutlineView {
-	answers: {
+	turns: {
 		id: string;
 		number: number;
 		headings: { id: string; text: string; indent: number }[];
@@ -22,6 +22,7 @@ export interface OutlineView {
 }
 
 export interface ExchangeView {
+	id: string;
 	prompt: MessageView | null;
 	answers: {
 		[Name in "message" | "tool-activity" | "failure"]: { component: Name; data: ComponentData[Name] };

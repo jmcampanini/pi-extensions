@@ -18,22 +18,27 @@ export function renderSession(snapshot: ReaderSnapshot): string {
 
 export function prepareSession(snapshot: ReaderSnapshot, idPrefix = "message"): SessionView {
 	const exchanges: ExchangeView[] = [];
-	const outline: OutlineView = { answers: [] };
+	const outline: OutlineView = { turns: [] };
 	let messageIndex = 0;
 	for (const block of snapshot.blocks) {
+		if (exchanges.length === 0 || (block.kind === "message" && block.role === "user")) {
+			const number = exchanges.length + 1;
+			const id = `${idPrefix}-turn-${number}`;
+			exchanges.push({ id, prompt: null, answers: [] });
+			outline.turns.push({ id, number, headings: [] });
+		}
+		const exchange = exchanges.at(-1)!;
 		if (block.kind === "message") {
 			const { message, headings } = prepareMessage(block, `${idPrefix}-${++messageIndex}`, snapshot.cwd);
 			if (block.role === "user") {
-				exchanges.push({ prompt: message, answers: [] });
+				exchange.prompt = message;
 				continue;
 			}
-			if (exchanges.length === 0) exchanges.push({ prompt: null, answers: [] });
-			exchanges.at(-1)!.answers.push({ component: "message", data: message });
-			outline.answers.push({ id: message.id, number: outline.answers.length + 1, headings });
+			exchange.answers.push({ component: "message", data: message });
+			outline.turns.at(-1)!.headings.unshift(...headings);
 			continue;
 		}
-		if (exchanges.length === 0) exchanges.push({ prompt: null, answers: [] });
-		const answer = exchanges.at(-1)!.answers;
+		const answer = exchange.answers;
 		if (block.kind === "activity") {
 			answer.push({ component: "tool-activity", data: prepareActivity([...block.calls].reverse()) });
 		} else {
@@ -48,8 +53,8 @@ export function prepareSession(snapshot: ReaderSnapshot, idPrefix = "message"): 
 	}
 	return {
 		title: snapshot.title,
-		outline: { answers: outline.answers.reverse() },
-		exchanges: exchanges.reverse().map(({ prompt, answers }) => ({ prompt, answers: answers.reverse() })),
+		outline: { turns: outline.turns.reverse() },
+		exchanges: exchanges.reverse().map(({ id, prompt, answers }) => ({ id, prompt, answers: answers.reverse() })),
 	};
 }
 
@@ -57,8 +62,8 @@ function prepareMessage(
 	message: ReaderMessage,
 	id: string,
 	cwd: string,
-): { message: MessageView; headings: OutlineView["answers"][number]["headings"] } {
-	const headings: OutlineView["answers"][number]["headings"] = [];
+): { message: MessageView; headings: OutlineView["turns"][number]["headings"] } {
+	const headings: OutlineView["turns"][number]["headings"] = [];
 	let codeIndex = 0;
 	const parser = new Marked({ gfm: true, breaks: true, async: false });
 	parser.use({

@@ -405,14 +405,15 @@ tr:last-child td {
 	font-size: 11px;
 }
 .activity-summary {
-	display: flex;
-	gap: 10px;
-	align-items: baseline;
+	cursor: pointer;
+	list-style-position: inside;
 	line-height: 1.7;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
-.activity-mark {
+.activity-summary::marker {
 	color: var(--accent);
-	font-size: 14px;
 }
 .activity ul {
 	list-style: none;
@@ -521,7 +522,7 @@ tr:last-child td {
 	color: var(--accent);
 	background: var(--soft);
 }
-:is(.outline, .outline-menu) a.toc-answer {
+:is(.outline, .outline-menu) a.toc-turn {
 	color: var(--ink);
 	font-weight: 600;
 	margin-top: 13px;
@@ -531,6 +532,12 @@ tr:last-child td {
 }
 :is(.outline, .outline-menu) a.toc-heading {
 	padding-left: calc(12px + var(--depth) * 10px);
+}
+
+:is(.outline, .outline-menu) a[aria-current="location"] {
+	color: var(--accent);
+	background: var(--soft);
+	box-shadow: inset 2px 0 var(--accent);
 }
 
 .outline-menu {

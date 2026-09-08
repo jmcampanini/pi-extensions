@@ -15,7 +15,7 @@ const { default: register } = await import("../index.ts");
 after(() => rm(directory, { recursive: true, force: true }));
 
 describe("read-session command", () => {
-	it("opens and refreshes the same page through the command and configured shortcut", async () => {
+	it("opens and refreshes one grouped reader through the command and configured shortcut", async () => {
 		let handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 		let shortcutHandler: (ctx: ExtensionContext) => Promise<void>;
 		let shortcut = "";
@@ -66,6 +66,7 @@ describe("read-session command", () => {
 		assert.equal(opened.length, 2);
 		assert.equal(opened[0]!.command, "open");
 		assert.equal(opened[0]!.paths.length, 1);
+		assert.match(opened[0]!.contents[0]!, /<title>Preview · Session reader<\/title>/);
 		assert.deepEqual(opened[0]!.paths, opened[1]!.paths);
 		assert.ok(opened[0]!.contents.every((html) => (html.match(/id="message-\d+-source"/g) ?? []).length === 6));
 		assert.ok(opened[1]!.contents.every((html) => (html.match(/id="message-\d+-source"/g) ?? []).length === 7));
@@ -78,14 +79,14 @@ describe("read-session command", () => {
 		const entry = entries[1]!;
 		assert.ok(entry.type === "message" && entry.message.role === "assistant");
 		let handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
-		let html = "";
+		let pages: string[] = [];
 		register({
 			registerShortcut() {},
 			registerCommand(_name: string, options: { handler: typeof handler }) {
 				handler = options.handler;
 			},
 			async exec(_command: string, paths: string[]) {
-				html = await readFile(paths[0]!, "utf8");
+				pages = await Promise.all(paths.map((path) => readFile(path, "utf8")));
 				return { code: 0, stdout: "", stderr: "", killed: false };
 			},
 		} as unknown as ExtensionAPI);
@@ -110,8 +111,11 @@ describe("read-session command", () => {
 			ui: { notify() {} },
 		} as unknown as ExtensionCommandContext);
 
-		assert.match(html, /<summary>Agent response failed<\/summary>\s*<pre>Provider unavailable<\/pre>/);
-		assert.doesNotMatch(html, /id="message-\d+-source"/);
+		assert.equal(pages.length, 1);
+		for (const html of pages) {
+			assert.match(html, /<summary>Agent response failed<\/summary>\s*<pre>Provider unavailable<\/pre>/);
+			assert.doesNotMatch(html, /id="message-\d+-source"/);
+		}
 	});
 
 	it("keeps the generated file available when the OS opener fails", async () => {
@@ -140,7 +144,10 @@ describe("read-session command", () => {
 		} as unknown as ExtensionCommandContext);
 
 		assert.equal(paths.length, 1);
-		assert.equal(((await readFile(paths[0]!, "utf8")).match(/id="message-\d+-source"/g) ?? []).length, 6);
+		for (const path of paths) {
+			assert.equal(((await readFile(path, "utf8")).match(/id="message-\d+-source"/g) ?? []).length, 6, path);
+			assert.ok(notices[0]!.includes(path), path);
+		}
 		assert.match(notices[0]!, /Generated .*index\.html.*open failed: No browser/);
 	});
 });

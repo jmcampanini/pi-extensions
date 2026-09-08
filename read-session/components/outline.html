@@ -1,11 +1,11 @@
 {{! Used by both the desktop sidebar and the floating outline menu. }}
-<nav aria-label="Answer outline">
-	{{#each answers}}
-		<a class="toc-answer" href="#{{id}}">Answer {{number}}</a>
+<nav aria-label="Turn outline">
+	{{#each turns}}
+		<a class="toc-turn" href="#{{id}}" data-outline-target>Turn {{number}}</a>
 		{{#each headings}}
-			<a class="toc-heading" style="--depth:{{indent}}" href="#{{id}}">{{text}}</a>
+			<a class="toc-heading" style="--depth:{{indent}}" href="#{{id}}" data-outline-target>{{text}}</a>
 		{{/each}}
 	{{else}}
-		No agent answers yet.
+		No turns yet.
 	{{/each}}
 </nav>

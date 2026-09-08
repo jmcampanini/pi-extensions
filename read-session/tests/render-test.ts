@@ -18,7 +18,7 @@ describe("renderSession", () => {
 		assert.doesNotMatch(html, /PRIVATE_THINKING|RAW_TOOL_OUTPUT|RAW_FAILURE/);
 	});
 
-	it("provides working outline links and detailed tool calls with their recorded statuses", () => {
+	it("provides turn links and collapsed tool calls with their recorded statuses", () => {
 		const html = renderSession(snapshot);
 
 		assert.match(html, /<aside class="outline">/);
@@ -30,8 +30,16 @@ describe("renderSession", () => {
 		);
 		assert.match(html, /README\.md<\/span>\s*<span class="tool-state returned">returned/);
 		assert.match(html, /npm test<\/span>\s*<span class="tool-state pending">awaiting result/);
-		for (const link of html.matchAll(/class="toc-(?:answer|heading)"[^>]*href="#([^"]+)"/g)) {
+		for (const link of html.matchAll(/class="toc-(?:turn|heading)"[^>]*href="#([^"]+)"/g)) {
 			assert.ok(html.includes(`id="${link[1]}"`), link[1]);
+		}
+		assert.match(html, /class="toc-turn"[^>]*data-outline-target>Turn 1<\/a>/);
+		assert.doesNotMatch(html, />Answer \d+<\/a>/);
+		const activities = [...html.matchAll(/<details class="activity"([^>]*)>([\s\S]*?)<\/details>/g)];
+		assert.ok(activities.length > 0);
+		for (const activity of activities) {
+			assert.doesNotMatch(activity[1]!, /\bopen\b/, activity[0]);
+			assert.match(activity[2]!, /^\s*<summary class="activity-summary">[^<]+<\/summary>\s*<ul>/, activity[0]);
 		}
 	});
 
@@ -80,7 +88,7 @@ describe("renderSession", () => {
 		const sources = [...html.matchAll(/<textarea hidden id="message-\d+-source">([\s\S]*?)<\/textarea>/g)].map(
 			(match) => match[1],
 		);
-		const exchanges = [...html.matchAll(/<section class="exchange">([\s\S]*?)<\/section>/g)].map((match) =>
+		const exchanges = [...html.matchAll(/<section class="exchange"[^>]*>([\s\S]*?)<\/section>/g)].map((match) =>
 			[...match[1]!.matchAll(/<textarea hidden id="message-\d+-source">([\s\S]*?)<\/textarea>/g)].map(
 				(message) => message[1],
 			),
@@ -103,7 +111,7 @@ describe("renderSession", () => {
 		assert.deepEqual(tools, ["bash", "edit", "read"]);
 	});
 
-	it("shows failed turns with collapsed plain-text details and excludes them from the answer outline", () => {
+	it("keeps failed turns in the outline with collapsed plain-text details", () => {
 		const html = renderSession({
 			...snapshot,
 			messageCount: 0,
@@ -119,7 +127,8 @@ describe("renderSession", () => {
 		);
 		assert.match(html, /<p>Agent response aborted<\/p>/);
 		assert.ok(html.indexOf("Agent response failed") < html.indexOf("Agent response aborted"));
-		assert.doesNotMatch(html, /<script>bad\(\)<\/script>|class="toc-answer"|class="message assistant"/);
+		assert.match(html, /class="toc-turn"[^>]*>Turn 1<\/a>/);
+		assert.doesNotMatch(html, /<script>bad\(\)<\/script>|class="toc-heading"|class="message assistant"/);
 	});
 
 	it("escapes text after raw HTML start tags in paragraphs, headings, and tables", () => {
@@ -164,7 +173,31 @@ describe("renderSession", () => {
 });
 
 describe("prepareSession", () => {
-	const snapshot: ReaderSnapshot = { title: "Skill cards", cwd: "/project", messageCount: 1, blocks: [] };
+	const snapshot: ReaderSnapshot = { title: "Reader test", cwd: "/project", messageCount: 1, blocks: [] };
+
+	it("groups progress and final responses under their prompt and includes a pending prompt", () => {
+		const view = prepareSession({
+			...snapshot,
+			blocks: [
+				{ kind: "message", role: "user", text: "First prompt." },
+				{ kind: "message", role: "assistant", text: "## Progress\n\nReading files." },
+				{ kind: "activity", calls: [{ name: "read", status: "returned" }] },
+				{ kind: "message", role: "assistant", text: "## Result\n\nDone." },
+				{ kind: "message", role: "user", text: "Next prompt." },
+			],
+		});
+
+		assert.deepEqual(
+			view.outline.turns.map((turn) => ({
+				number: turn.number,
+				headings: turn.headings.map((heading) => heading.text),
+			})),
+			[
+				{ number: 2, headings: [] },
+				{ number: 1, headings: ["Result", "Progress"] },
+			],
+		);
+	});
 
 	it("displays and copies every skill as a dollar reference while keeping surrounding text", () => {
 		const text =
@@ -191,7 +224,7 @@ describe("prepareSession", () => {
 			);
 			assert.doesNotMatch(message.markdownHtml, /HIDDEN_BODY|\/private\/|<details\b/, message.role);
 		}
-		assert.deepEqual(view.outline.answers[0]!.headings, []);
+		assert.deepEqual(view.outline.turns[0]!.headings, []);
 	});
 
 	it("replaces skill blocks literally, including inside code examples", () => {
