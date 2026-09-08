@@ -41,6 +41,7 @@ describe("renderSession", () => {
 		assert.doesNotMatch(columns[1]!, /class="message-meta"/);
 		assert.match(columns[2]!, /class="message-meta"><span>You<\/span>/);
 		for (const column of columns.slice(1)) {
+			assert.match(column!, /aria-label="Copy your message as Markdown"/);
 			assert.match(column!, /<strong>all<\/strong>/);
 			assert.match(column!, /class="skill-card">\$review<\/span>/);
 			assert.doesNotMatch(column!, /PRIVATE_SKILL/);
@@ -65,7 +66,7 @@ describe("renderSession", () => {
 		assert.equal(messages.length, 3);
 		for (const message of messages) {
 			assert.doesNotMatch(message[1]!, /class="message-meta"|<span>Agent<\/span>/);
-			assert.match(message[1]!, /class="icon-button copy-message"/);
+			assert.match(message[1]!, /aria-label="Copy agent message as Markdown"/);
 		}
 		assert.match(html, /class="message-status">Aborted<\/p>/);
 		assert.match(html, /class="message-status">Interrupted by an error<\/p>/);
@@ -310,6 +311,6 @@ describe("prepareSession", () => {
 
 		assert.equal(message.source, `$${name}`);
 		assert.match(message.markdownHtml, /class="skill-card">\$&lt;script&gt;alert\(1\)&lt;\/script&gt;<\/span>/);
-		assert.doesNotMatch(message.markdownHtml, /<script>|HIDDEN_BODY|\/private\//);
+		assert.doesNotMatch(message.markdownHtml, /<script>|HIDDEN_BODY|\/private\//i);
 	});
 });

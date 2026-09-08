@@ -136,7 +136,7 @@ function prepareMessage(
 			role: message.role,
 			label: message.role === "user" ? label : "",
 			status: message.status ? (message.status === "error" ? "Interrupted by an error" : "Aborted") : null,
-			copyLabel: `Copy ${label.toLowerCase()} message as Markdown`,
+			copyLabel: `Copy ${message.role === "user" ? "your" : "agent"} message as Markdown`,
 			sourceId: `${id}-source`,
 			source: source.join(""),
 			markdownHtml: html.join(""),

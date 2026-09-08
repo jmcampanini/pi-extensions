@@ -6,7 +6,7 @@
 	const updateOutline = () => {
 		let active = outlineTargets[0];
 		for (const target of outlineTargets) {
-			if (target.getBoundingClientRect().top > 24) break;
+			if (Math.floor(target.getBoundingClientRect().top) > 24) break;
 			active = target;
 		}
 		for (const link of outlineLinks) {
@@ -45,6 +45,9 @@
 	window.addEventListener("scroll", scheduleOutlineUpdate, { passive: true });
 	window.addEventListener("resize", scheduleOutlineUpdate);
 	document.addEventListener("toggle", scheduleOutlineUpdate, true);
+	document.querySelector(".outline-menu").addEventListener("toggle", (event) => {
+		if (event.target.open) event.target.querySelector("a[aria-current]")?.scrollIntoView({ block: "nearest" });
+	});
 	latestButton.addEventListener("click", scrollToLatest);
 
 	let statusTimer;
