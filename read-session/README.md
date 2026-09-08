@@ -2,6 +2,8 @@
 
 Run `/read-session` in Pi to open the current conversation in your browser. The page shows the newest messages first, with agent responses beside their matching prompts and an outline of the agent's headings. Read and copy text in the browser, then reply in Pi.
 
+Press **Ctrl+Alt+O** to open the same reader without typing the command. On macOS, Alt is the Option key. Ctrl+O is already Pi's tool-output toggle, so the reader uses Ctrl+Alt+O by default.
+
 ```text
 /reload
 /read-session
@@ -24,6 +26,22 @@ The reader is one standalone HTML file with embedded styles and browser code. It
 This extension is discovered by the package's existing `./*/index.ts` glob. Browser opening requires macOS. If opening fails, the generated file remains at the path reported in Pi.
 
 Run the reader's tests with `node --test read-session/tests/*-test.ts`. Run `make check` for repository formatting, lint, typechecking, and tests.
+
+## Configuring the shortcut
+
+Create `$PI_CODING_AGENT_DIR/read-session.json` (normally `~/.pi/agent/read-session.json`) to choose a shortcut:
+
+```json
+{
+  "openShortcut": "ctrl+alt+r"
+}
+```
+
+Run `/reload` after editing. Set `openShortcut` to `null` to disable the hotkey while keeping `/read-session`. Shortcuts accept Pi key names with `ctrl`, `alt`, or `super` modifiers, or function keys such as `f6`.
+
+`PI_READ_SESSION_OPEN_SHORTCUT` overrides the file. An empty value disables the hotkey. For example, `PI_READ_SESSION_OPEN_SHORTCUT=f6 pi` uses F6 for that Pi process.
+
+Choose a key that is free in your Pi bindings and other extensions. Pi reports shortcut conflicts when loading extensions and skips bindings reserved by its editor. The reader does not change `keybindings.json`.
 
 ## Editing the reader
 

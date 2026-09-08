@@ -1,25 +1,34 @@
 import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import register from "../index.ts";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { entries } from "./fixture.ts";
 
 const sandbox = join(process.cwd(), ".sandbox");
 await mkdir(sandbox, { recursive: true });
 const directory = await mkdtemp(join(sandbox, "read-session-test-"));
+await writeFile(join(directory, "read-session.json"), '{"openShortcut":"ctrl+alt+r"}');
+process.env.PI_CODING_AGENT_DIR = directory;
+delete process.env.PI_READ_SESSION_OPEN_SHORTCUT;
+const { default: register } = await import("../index.ts");
 after(() => rm(directory, { recursive: true, force: true }));
 
 describe("read-session command", () => {
-	it("writes one page before opening it and replaces the same session's prior snapshot", async () => {
+	it("opens and refreshes the same page through the command and configured shortcut", async () => {
 		let handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
+		let shortcutHandler: (ctx: ExtensionContext) => Promise<void>;
+		let shortcut = "";
 		const notices: string[] = [];
 		const opened: { command: string; paths: string[]; contents: string[] }[] = [];
 		let branch = entries;
 		register({
 			registerCommand(_name: string, options: { handler: typeof handler }) {
 				handler = options.handler;
+			},
+			registerShortcut(key: string, options: { handler: typeof shortcutHandler }) {
+				shortcut = key;
+				shortcutHandler = options.handler;
 			},
 			async exec(command: string, paths: string[]) {
 				opened.push({
@@ -51,8 +60,9 @@ describe("read-session command", () => {
 				message: { role: "user", content: "One more question.", timestamp: 1 },
 			},
 		];
-		await handler!("", ctx);
+		await shortcutHandler!(ctx);
 
+		assert.equal(shortcut, "ctrl+alt+r");
 		assert.equal(opened.length, 2);
 		assert.equal(opened[0]!.command, "open");
 		assert.equal(opened[0]!.paths.length, 1);
@@ -70,6 +80,7 @@ describe("read-session command", () => {
 		let handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 		let html = "";
 		register({
+			registerShortcut() {},
 			registerCommand(_name: string, options: { handler: typeof handler }) {
 				handler = options.handler;
 			},
@@ -108,6 +119,7 @@ describe("read-session command", () => {
 		let paths: string[] = [];
 		const notices: string[] = [];
 		register({
+			registerShortcut() {},
 			registerCommand(_name: string, options: { handler: typeof handler }) {
 				handler = options.handler;
 			},
