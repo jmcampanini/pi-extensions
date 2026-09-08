@@ -152,7 +152,7 @@ for (const [index, exchange] of isolated.exchanges.entries()) {
 		}
 	}
 }
-addExample("skill", "Skill card", "Only the skill name appears; message copying uses $skill-name.", "skill-card", {
+addExample("skill", "Skill card", "Display and message copying both use $skill-name.", "skill-card", {
 	name: "pivotal-questions",
 });
 const code = 'const theme = "system";\nconsole.log(theme);';

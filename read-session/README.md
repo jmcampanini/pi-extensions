@@ -17,7 +17,7 @@ Messages and tool calls appear newest first. Paragraphs, lists, code, and headin
 
 Tool activity stays between the corresponding messages. Each call shows its name, a short path or command, and its recorded result status. A call without a result is marked `awaiting result`. Raw tool output and agent thinking are omitted. Generation uses recorded fields only and never calls a model.
 
-Markdown includes headings, lists, checkboxes, blockquotes, links, tables, and syntax-highlighted fenced code. Complete `<skill name="..." location="...">...</skill>` blocks become non-expandable cards showing only the skill name. Multiple cards stay in their original positions among the message text. Copy icons preserve the Markdown or code, except that message copying replaces each compacted skill block with `$skill-name`. Replacement is literal, including inside code examples. A wrapper without a closing tag stays unchanged. Other raw HTML is shown as text. Image attachments get a placeholder, and Markdown images become links. Local Markdown links resolve relative to the session's working directory; browser rules still govern opening them.
+Markdown includes headings, lists, checkboxes, blockquotes, links, tables, and syntax-highlighted fenced code. Complete `<skill name="..." location="...">...</skill>` blocks become non-expandable cards showing `$skill-name`. Multiple cards stay in their original positions among the message text. Copy icons preserve the Markdown or code, except that message copying replaces each compacted skill block with `$skill-name`. Replacement is literal, including inside code examples. A wrapper without a closing tag stays unchanged. Other raw HTML is shown as text. Image attachments get a placeholder, and Markdown images become links. Local Markdown links resolve relative to the session's working directory; browser rules still govern opening them.
 
 Light and dark colors follow the system preference automatically, including changes while the page is open. The page starts directly on the conversation. A floating return icon appears after scrolling down and returns to the newest message.
 
@@ -82,7 +82,7 @@ Message Markdown uses `heading.html`, `link.html`, `table.html`, `code-block.htm
 | `components/controls.html` | Floating outline and return controls |
 | `components/copy-button.html` | The shared copy icon, button, and accessibility labels |
 | `components/code-block.html` | Highlighted code and its copy control |
-| `components/skill-card.html` | A compact skill name without its body or location |
+| `components/skill-card.html` | A `$skill-name` card without its body or location |
 | `components/heading.html`, `components/link.html`, `components/table.html` | Markdown headings, links, and scrolling tables |
 | `reader.css` | Spacing, typography, responsive layouts, and system light/dark colors |
 | `reader.js` | Copying, scrolling, and closing the outline menu |

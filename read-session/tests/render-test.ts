@@ -166,7 +166,7 @@ describe("renderSession", () => {
 describe("prepareSession", () => {
 	const snapshot: ReaderSnapshot = { title: "Skill cards", cwd: "/project", messageCount: 1, blocks: [] };
 
-	it("replaces every skill with a name-only card and a dollar reference while keeping surrounding text", () => {
+	it("displays and copies every skill as a dollar reference while keeping surrounding text", () => {
 		const text =
 			'**Before**\n\n<skill name="first" location="/private/first">\n## HIDDEN_BODY\n</skill>\n\nBetween.\n\n<skill name="second" location="/private/second">HIDDEN_BODY</skill>\n\nAfter.';
 		const view = prepareSession({
@@ -186,7 +186,7 @@ describe("prepareSession", () => {
 			assert.equal(message.source, "**Before**\n\n$first\n\nBetween.\n\n$second\n\nAfter.", message.role);
 			assert.match(
 				message.markdownHtml,
-				/<strong>Before<\/strong>[\s\S]*class="skill-card">first<\/span>[\s\S]*Between\.[\s\S]*class="skill-card">second<\/span>[\s\S]*After\./,
+				/<strong>Before<\/strong>[\s\S]*class="skill-card">\$first<\/span>[\s\S]*Between\.[\s\S]*class="skill-card">\$second<\/span>[\s\S]*After\./,
 				message.role,
 			);
 			assert.doesNotMatch(message.markdownHtml, /HIDDEN_BODY|\/private\/|<details\b/, message.role);
@@ -201,7 +201,7 @@ describe("prepareSession", () => {
 			const message = view.exchanges[0]!.prompt!;
 
 			assert.equal(message.source, text.replace(wrapper, "$review"), text);
-			assert.match(message.markdownHtml, /class="skill-card">review<\/span>/, text);
+			assert.match(message.markdownHtml, /class="skill-card">\$review<\/span>/, text);
 			assert.doesNotMatch(message.markdownHtml, /HIDDEN_BODY|\/private\//, text);
 		}
 	});
@@ -223,7 +223,7 @@ describe("prepareSession", () => {
 			.prompt!;
 
 		assert.equal(message.source, `$${name}`);
-		assert.match(message.markdownHtml, /class="skill-card">&lt;script&gt;alert\(1\)&lt;\/script&gt;<\/span>/);
+		assert.match(message.markdownHtml, /class="skill-card">\$&lt;script&gt;alert\(1\)&lt;\/script&gt;<\/span>/);
 		assert.doesNotMatch(message.markdownHtml, /<script>|HIDDEN_BODY|\/private\//);
 	});
 });
