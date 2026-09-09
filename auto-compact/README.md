@@ -1,13 +1,13 @@
 # Auto Compact
 
-Requests Pi's standard compaction when context usage reaches a per-model threshold derived from the model's context window size. Models are matched into weight classes, and each class expresses its threshold as either a fixed token count or a percentage of the window.
+Requests Pi's standard compaction after a completed workflow if known context usage is at or above the configured threshold. The model's context window size selects a threshold expressed as either a fixed token count or a percentage of the window.
 
 ## Threshold resolution
 
-The active model's `contextWindow` is matched against the ordered `classes` list: the first class with `contextWindow <= windowMax` applies; when none matches, `default` applies. Each class and the default set exactly one of:
+The active model's `contextWindow` is matched against the ordered `classes` list. The first class with `contextWindow <= windowMax` applies; when none matches, `default` applies. `windowMax` selects models by their full context window size. Each class and the default set exactly one threshold for current context usage:
 
-- `thresholdTokens`: compact when estimated context tokens reach this count
-- `thresholdPercent`: compact when context usage reaches this percentage of the window
+- `thresholdTokens`: a fixed token count
+- `thresholdPercent`: a percentage of the context window, converted to a token count and rounded to the nearest integer
 
 Defaults:
 
@@ -22,22 +22,38 @@ Defaults:
 }
 ```
 
-Effect of the defaults across common context windows:
+The defaults apply to these context window ranges:
 
-| Context window | Compacts at | Rule |
+| Model context window | Configured compaction threshold |
+| --- | --- |
+| Up to and including 300k | 90% of the window |
+| Above 300k, up to and including 500k | 70% of the window |
+| Above 500k | 400k tokens |
+
+The fixed 400k threshold applies to every window above 500k. A model with a 400k window instead matches the 70% class, giving a 280k threshold. A model with a 1M window uses the 400k default, equivalent to 40% of its window.
+
+Configured thresholds for example windows:
+
+| Context window | Configured threshold | Rule |
 | --- | --- | --- |
 | 128k | 115.2k | 90% class |
 | 200k | 180k | 90% class |
 | 272k | 244.8k | 90% class |
 | 372k | 260.4k | 70% class |
 | 400k | 280k | 70% class |
-| 1M+ | 400k | default |
+| 500k | 350k | 70% class |
+| 512k | 400k | default |
+| 1M | 400k | default |
+
+The extension checks these thresholds after the workflow settles, so a workflow can cross its threshold before compaction begins.
 
 ## Interplay with Pi's native compaction
 
-Pi performs its native compaction check before the extension evaluates usage at `agent_settled`. Native compaction can be disabled and its reserved-token setting is configurable, but those effective settings are not exposed to extensions. Auto Compact therefore does not predict Pi's threshold: when native compaction runs, the resulting unknown or reduced usage prevents a duplicate request; when usage remains at or above the configured Auto Compact threshold, the extension compacts it.
+Pi performs its native compaction check before the extension evaluates usage at `agent_settled`. Native compaction can be disabled and its reserved-token setting is configurable, but those effective settings are not exposed to extensions. Auto Compact therefore does not predict Pi's threshold. At settlement, unknown usage or usage below the Auto Compact threshold prevents another request. If known usage remains at or above that threshold, the extension can still request compaction under the conditions described below.
 
-When Pi reports an actual native threshold compaction, the extension posts a one-time warning for that model. A single large run can cross both thresholds, so repeated warnings-not one occurrence-suggest that the configured threshold is at or past Pi's native point. The adaptive-footer `compact @` chip shows the configured Auto Compact threshold followed by current progress toward it, and its context color bands also follow that target. Pi may compact earlier according to its own settings.
+When Pi reports an actual native threshold compaction, the extension warns at most once per provider/model pair while the extension is loaded. Switching models does not reset that warning history. A single large run can cross both thresholds, so one warning does not establish that the configured threshold is at or past Pi's native point.
+
+The adaptive-footer `compact @` chip shows the configured Auto Compact threshold followed by current progress toward it, and its context color bands also follow that target. Pi may compact earlier according to its own settings.
 
 ## When compaction runs
 
