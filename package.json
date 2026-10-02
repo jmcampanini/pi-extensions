@@ -32,13 +32,13 @@
     "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.87.1",
-    "@earendil-works/pi-coding-agent": "^0.87.1",
-    "@earendil-works/pi-tui": "^0.87.1",
-    "@types/node": "26.6.2",
-    "oxlint": "1.85.0",
-    "oxlint-tsgolint": "7.0.2002",
-    "prettier": "3.9.8",
+    "@earendil-works/pi-ai": "^0.99.1",
+    "@earendil-works/pi-coding-agent": "^0.99.1",
+    "@earendil-works/pi-tui": "^0.99.1",
+    "@types/node": "26.6.3",
+    "oxlint": "1.86.0",
+    "oxlint-tsgolint": "7.0.2003",
+    "prettier": "3.9.9",
     "typescript": "^7.0.2"
   }
 }
