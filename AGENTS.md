@@ -1,15 +1,18 @@
 # Build and verification
 
-- Run `make check` before handing off changes. It checks formatting, type-aware lint, TypeScript compilation, and tests without rewriting files.
-- Use `make fmt` to format tracked TypeScript files. Keep formatting out of `make check`.
-- Use the pinned project-local tools installed by `npm ci`; do not rely on global Prettier or Oxlint installations.
+- This repository uses mise for tool versions and task execution. Run tasks with `mise run <task>`; do not call `node`, `npm`, `tsc`, `prettier`, or `oxlint` directly. `mise tasks` lists every task.
+- Install local prerequisites with `brew install mise`, then run `mise trust` and `mise install` in this checkout.
+- `mise.toml` pins Node; `mise.lock` records its checksums. Bump it with `mise upgrade --bump node`, run `mise lock` and `mise run check`, set `engines.node` in `package.json` to the same version, and commit all three files.
+- `package.json` and `package-lock.json` pin the project tools (TypeScript, Prettier, Oxlint). `mise run install` runs `npm ci`; every other task depends on it, and mise skips it while `node_modules` is newer than the lockfile. Do not rely on global Prettier or Oxlint installations.
+- Run `mise run check` before handing off changes. It checks formatting, type-aware lint, TypeScript compilation, and tests without rewriting files.
+- Use `mise run fmt` to format tracked TypeScript files. Keep formatting out of `mise run check`.
 - Keep Oxlint's correctness rules enabled. The Node test runner owns promises returned by imported `describe`, `it`, and `test` calls, so the test-only lint configuration permits those calls without awaiting them.
 
 # When writing tests
 
 - Tests are node:test files: `import { describe, it } from "node:test"` with `import assert from "node:assert/strict"`. One `describe` per unit under test, `it("behavior sentence", ...)` leaves with a few bare assertions; assertion messages appear only inside merged scenarios and loops.
 - Never hand-roll assertion helpers, pass/fail counters, or `process.exit` - a top-level `process.exit(0)` makes `node --test` report a file as passing even when its tests fail. Skip unavailable-dependency tests with the `skip` option instead.
-- Test files live at `<extension>/tests/<name>-test.ts` and stay standalone: both `node <file>` and `node --test <file>` work. `make test` runs `node --test "*/tests/*-test.ts"` with one process per file, in parallel - mutate `process.env` before a dynamic `await import(...)` only at module top, and clean up in `after()` hooks.
+- Test files live at `<extension>/tests/<name>-test.ts` and stay standalone: both `mise exec -- node <file>` and `mise exec -- node --test <file>` work. `mise run test` runs `node --test "*/tests/*-test.ts"` with one process per file, in parallel - mutate `process.env` before a dynamic `await import(...)` only at module top, and clean up in `after()` hooks.
 
 # When designing Pi TUI surfaces
 
