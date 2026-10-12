@@ -1,0 +1,57 @@
+min_version = "2026.1.0"
+
+[settings]
+lockfile = true
+lockfile_platforms = ["linux-x64", "macos-arm64"]
+
+[tools]
+node = "22.23.3"
+
+# package.json and package-lock.json pin the project tools (tsc, prettier,
+# oxlint); npm ci installs them into node_modules. mise supplies Node and
+# skips this task while node_modules is newer than the lockfile.
+[tasks.install]
+description = "Install the pinned npm dependencies with npm ci."
+sources = ["package.json", "package-lock.json"]
+outputs = ["node_modules/.package-lock.json"]
+run = "npm ci"
+
+[tasks.typecheck]
+description = "Type-check all TypeScript without emitting files."
+depends = ["install"]
+run = "./node_modules/.bin/tsc --noEmit"
+
+[tasks.build]
+description = "Verify the TypeScript extensions compile."
+depends = ["typecheck"]
+
+[tasks.fmt]
+description = "Format tracked TypeScript source files."
+depends = ["install"]
+run = "git ls-files -z -- '*.ts' | xargs -0 ./node_modules/.bin/prettier --write"
+
+[tasks.fmt-check]
+description = "Verify tracked TypeScript formatting without changing files."
+depends = ["install"]
+run = "git ls-files -z -- '*.ts' | xargs -0 ./node_modules/.bin/prettier --check"
+
+[tasks.lint]
+description = "Run type-aware correctness checks on tracked TypeScript."
+depends = ["install"]
+run = "git ls-files -z -- '*.ts' | xargs -0 ./node_modules/.bin/oxlint"
+
+[tasks.test]
+description = "Run the TypeScript tests."
+depends = ["install"]
+run = "node --test */tests/*-test.ts"
+
+# check is read-only: it must leave the tracked tree unchanged and create
+# nothing outside ignored paths. CI diffs `git status` before and after it.
+# Add report-only tasks here; fmt stays out.
+[tasks.check]
+description = "Run all non-mutating checks."
+depends = ["fmt-check", "lint", "typecheck", "test"]
+
+[tasks.clean]
+description = "Remove generated TypeScript metadata."
+run = "rm -f *.tsbuildinfo"
