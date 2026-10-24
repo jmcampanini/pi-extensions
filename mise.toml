@@ -1,0 +1,52 @@
+min_version = "2026.1.0"
+
+[settings]
+lockfile = true
+lockfile_platforms = ["linux-x64", "macos-arm64"]
+
+[tools]
+node = "22.19.0"
+
+[env]
+_.path = ["{{config_root}}/node_modules/.bin"]
+
+[tasks.install-dependencies]
+hide = true
+run = "npm ci"
+
+[tasks.build]
+description = "Verify the TypeScript extensions compile."
+depends = ["typecheck"]
+
+[tasks.typecheck]
+description = "Type-check all TypeScript without emitting files."
+depends = ["install-dependencies"]
+run = "tsc --noEmit"
+
+[tasks.fmt]
+description = "Format tracked TypeScript source files."
+depends = ["install-dependencies"]
+run = "git ls-files -z -- '*.ts' | xargs -0 prettier --write"
+
+[tasks.fmt-check]
+description = "Verify tracked TypeScript formatting without changing files."
+depends = ["install-dependencies"]
+run = "git ls-files -z -- '*.ts' | xargs -0 prettier --check"
+
+[tasks.lint]
+description = "Run type-aware correctness checks on tracked TypeScript."
+depends = ["install-dependencies"]
+run = "git ls-files -z -- '*.ts' | xargs -0 oxlint"
+
+[tasks.test]
+description = "Run the TypeScript tests."
+depends = ["install-dependencies"]
+run = "node --test */tests/*-test.ts"
+
+[tasks.check]
+description = "Run all non-mutating checks."
+depends = ["fmt-check", "lint", "typecheck", "test"]
+
+[tasks.clean]
+description = "Remove generated TypeScript metadata."
+run = "rm -f *.tsbuildinfo"

@@ -1,15 +1,17 @@
 # Build and verification
 
-- Run `make check` before handing off changes. It checks formatting, type-aware lint, TypeScript compilation, and tests without rewriting files.
-- Use `make fmt` to format tracked TypeScript files. Keep formatting out of `make check`.
-- Use the pinned project-local tools installed by `npm ci`; do not rely on global Prettier or Oxlint installations.
+- Install prerequisites with `brew install git mise`, then run `mise trust` and `mise install`.
+- Bump a tool pin with `mise upgrade --bump <tool>`, then run `mise lock` and `mise run check`.
+- Run `mise run check` before handing off changes. It checks formatting, type-aware lint, TypeScript compilation, and tests without rewriting files.
+- Use `mise run fmt` to format tracked TypeScript files. Keep formatting out of `mise run check`.
+- Run tools through mise tasks. Their hidden dependency task runs `npm ci` to install the pinned project-local tools.
 - Keep Oxlint's correctness rules enabled. The Node test runner owns promises returned by imported `describe`, `it`, and `test` calls, so the test-only lint configuration permits those calls without awaiting them.
 
 # When writing tests
 
 - Tests are node:test files: `import { describe, it } from "node:test"` with `import assert from "node:assert/strict"`. One `describe` per unit under test, `it("behavior sentence", ...)` leaves with a few bare assertions; assertion messages appear only inside merged scenarios and loops.
 - Never hand-roll assertion helpers, pass/fail counters, or `process.exit` - a top-level `process.exit(0)` makes `node --test` report a file as passing even when its tests fail. Skip unavailable-dependency tests with the `skip` option instead.
-- Test files live at `<extension>/tests/<name>-test.ts` and stay standalone: both `node <file>` and `node --test <file>` work. `make test` runs `node --test "*/tests/*-test.ts"` with one process per file, in parallel - mutate `process.env` before a dynamic `await import(...)` only at module top, and clean up in `after()` hooks.
+- Test files live at `<extension>/tests/<name>-test.ts` and stay standalone: both `node <file>` and `node --test <file>` work. `mise run test` runs `node --test "*/tests/*-test.ts"` with one process per file, in parallel - mutate `process.env` before a dynamic `await import(...)` only at module top, and clean up in `after()` hooks.
 
 # When designing Pi TUI surfaces
 

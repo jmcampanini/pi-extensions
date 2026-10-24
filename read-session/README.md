@@ -31,7 +31,7 @@ The reader is one standalone HTML file with embedded styles and browser code. It
 
 This extension is discovered by the package's existing `./*/index.ts` glob. Browser opening requires macOS. If opening fails, the generated file remains at the path reported in Pi.
 
-Run the reader's tests with `node --test read-session/tests/*-test.ts`. Run `make check` for repository formatting, lint, typechecking, and tests.
+Run the tests with `mise run test`. Run `mise run check` for repository formatting, lint, typechecking, and tests.
 
 ## Configuring the shortcut
 

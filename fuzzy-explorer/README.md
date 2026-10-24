@@ -68,4 +68,4 @@ Future extractors can add those excluded content kinds without changing the pick
 node fuzzy-explorer/tests/fixture-session.ts .sandbox/fuzzy-explorer-fixture 5000
 ```
 
-Run the full non-mutating suite with `make check`.
+Run the full non-mutating suite with `mise run check`.

@@ -32,7 +32,7 @@ Preserve this text after both skills.`,
 			calls: [
 				{ name: "read", argument: "read-session/components/message.html", status: "returned" },
 				{ name: "edit", argument: "read-session/reader.css", status: "failed" },
-				{ name: "bash", argument: "make check", status: "pending" },
+				{ name: "bash", argument: "mise run check", status: "pending" },
 			],
 		},
 		{
