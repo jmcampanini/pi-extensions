@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.52",
-    "handlebars": "4.7.9",
+    "handlebars": "4.7.10",
     "highlight.js": "11.12.0",
     "marked": "18.0.14"
   },
