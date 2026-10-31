@@ -136,7 +136,9 @@ export default function subagentExtension(pi: ExtensionAPI) {
 				selfDir: SELF_DIR,
 				onProgress: (line) => {
 					registry.addProgress(id, line);
-					if (mode === "foreground") onUpdate?.({ content: [{ type: "text", text: registry.get(id)?.progress.join("\n") ?? line }], details: detailsFor(registry.get(id)) });
+					if (mode !== "foreground") return;
+					const child = registry.get(id);
+					onUpdate?.({ content: [{ type: "text", text: child?.progress.join("\n") ?? line }], details: detailsFor(child) });
 				},
 			});
 

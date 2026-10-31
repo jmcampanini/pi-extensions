@@ -91,7 +91,9 @@ export function createWorktree(input: CreateWorktreeInput): Promise<CreatedWorkt
 }
 
 async function createWorktreeNow(input: CreateWorktreeInput): Promise<CreatedWorktree> {
-	const repoPath = await gitStdout(input.exec, input.cwd, ["rev-parse", "--show-toplevel"], "not inside a git repository");
+	const toplevel = await input.exec("git", ["rev-parse", "--show-toplevel"], { cwd: input.cwd });
+	if (toplevel.code !== 0) throw new Error(`not inside a git repository (${input.cwd}): ${toplevel.stderr.trim()}`);
+	const repoPath = toplevel.stdout.trim();
 	const remote = await input.exec("git", ["remote", "get-url", "origin"], { cwd: repoPath });
 	const parsed = remote.code === 0 ? parseRemoteUrl(remote.stdout) : undefined;
 	const repo = repoPath.split("/").filter((s) => s.length > 0).pop() ?? "repo";
@@ -109,10 +111,4 @@ async function createWorktreeNow(input: CreateWorktreeInput): Promise<CreatedWor
 	}
 
 	throw new Error(`could not find a free worktree name for "${input.slug}" after 20 attempts`);
-}
-
-async function gitStdout(exec: ExecLike, cwd: string, args: string[], failure: string): Promise<string> {
-	const result = await exec("git", args, { cwd });
-	if (result.code !== 0) throw new Error(`${failure} (${cwd}): ${result.stderr.trim()}`);
-	return result.stdout.trim();
 }

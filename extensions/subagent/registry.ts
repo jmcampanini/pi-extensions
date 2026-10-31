@@ -25,12 +25,10 @@ export interface ChildRecord {
 	abort: () => void;
 }
 
-export type RegistryListener = (children: readonly ChildRecord[]) => void;
-
 /** Owns every child started by this extension runtime and tells the UI when any of them changes. */
 export class SubagentRegistry {
 	private readonly children = new Map<string, ChildRecord>();
-	private readonly listeners = new Set<RegistryListener>();
+	private readonly listeners = new Set<() => void>();
 
 	add(record: ChildRecord): void {
 		this.children.set(record.id, record);
@@ -65,21 +63,17 @@ export class SubagentRegistry {
 		return this.list().filter((child) => child.status === "running");
 	}
 
-	subscribe(listener: RegistryListener): () => void {
+	subscribe(listener: () => void): () => void {
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);
 	}
 
-	/** Aborts every running child; returns how many were running. */
-	abortAll(): number {
-		const running = this.running();
-		for (const child of running) child.abort();
-		return running.length;
+	abortAll(): void {
+		for (const child of this.running()) child.abort();
 	}
 
 	private notify(): void {
-		const snapshot = this.list();
-		for (const listener of this.listeners) listener(snapshot);
+		for (const listener of this.listeners) listener();
 	}
 }
 

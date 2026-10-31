@@ -1,3 +1,4 @@
+import type { ToolCall } from "@earendil-works/pi-ai";
 import type { FileEntry, SessionEntry, SessionHeader } from "@earendil-works/pi-coding-agent";
 
 export interface ForkSource {
@@ -55,7 +56,7 @@ export function buildForkEntries(input: ForkInput): FileEntry[] {
 				isError: false,
 				timestamp: input.now.getTime(),
 			},
-		} as SessionEntry);
+		});
 		leafId = id;
 	}
 
@@ -73,17 +74,18 @@ function pendingToolCalls(entries: SessionEntry[]): PendingCall[] {
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i]!;
 		if (entry.type !== "message") continue;
-		const message = entry.message as { role: string; toolCallId?: string; content?: unknown };
+		const message = entry.message;
 		if (message.role === "toolResult" && message.toolCallId) {
 			answered.add(message.toolCallId);
 			continue;
 		}
 		if (message.role !== "assistant") continue;
 
-		const content = Array.isArray(message.content) ? (message.content as Array<{ type: string; id?: string; name?: string }>) : [];
+		const content = Array.isArray(message.content) ? message.content : [];
 		return content
-			.filter((block) => block.type === "toolCall" && block.id && block.name && !answered.has(block.id))
-			.map((block) => ({ id: block.id!, name: block.name! }));
+			.filter((block): block is ToolCall => block.type === "toolCall")
+			.filter((block) => block.id && block.name && !answered.has(block.id))
+			.map((block) => ({ id: block.id, name: block.name }));
 	}
 	return [];
 }

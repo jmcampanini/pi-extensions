@@ -8,8 +8,8 @@ import { formatDuration } from "./result.ts";
 export interface SubagentToolDetails {
 	id: string;
 	title: string;
-	mode: "background" | "foreground";
-	context: "fresh" | "fork";
+	mode: ChildRecord["mode"];
+	context: ChildRecord["context"];
 	status: ChildRecord["status"];
 	model: string;
 	effort: string;
@@ -59,7 +59,7 @@ export function installSubagentUi(pi: ExtensionAPI, registry: SubagentRegistry):
 				return;
 			}
 
-			const labels = children.map((child) => describeChild(child));
+			const labels = children.map(describeChild);
 			const picked = await ctx.ui.select("Subagents", labels);
 			const child = picked ? children[labels.indexOf(picked)] : undefined;
 			if (!child) return;
