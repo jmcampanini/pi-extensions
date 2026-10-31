@@ -1,6 +1,6 @@
 # subagent
 
-Delegate a task to a separate Pi agent session that runs inside the same Pi process. The child has its own context window and its own session file. It loads the extensions, skills, and project instructions for the directory it runs in, mirrors the parent's `-e` and `--no-extensions` flags, and declares exactly the parent's active tools minus `subagent`, so a child never has more than its parent (codemode and MCP tools included). Pi's built-in codemode, tool search, and MCP extensions are loaded the way the CLI loads them, so `-builtin:<name>` and replacement extensions apply to children too. Pi runs at most two codemode workers per process, so a parent and several children all using codemode take turns.
+Delegate a task to a separate Pi agent session that runs inside the same Pi process. The child has its own context window and its own session file. It loads the extensions, skills, and project instructions for the directory it runs in, mirrors the parent's `-e` and `--no-extensions` flags, shares the parent's model credentials, and declares exactly the parent's active tools minus `subagent`, so a child never has more than its parent (codemode and MCP tools included). Pi's built-in codemode, tool search, and MCP extensions are loaded the way the CLI loads them, so `-builtin:<name>` and replacement extensions apply to children too. Pi runs at most two codemode workers per process, so a parent and several children all using codemode take turns.
 
 Tested against Pi 1.4.0.
 
@@ -22,7 +22,7 @@ The extension registers one tool, `subagent`, declared to the model only (codemo
 
 Background reports are queued as steering messages: when the parent is idle one starts a new turn, when a turn is running it is injected at the next tool boundary, and reports that finish together arrive in one message. While Pi compacts it accepts no prompts, so reports wait and are retried; after five minutes of waiting they are parked for the next turn and a notice says so.
 
-A child in the parent's project, or in a worktree created from it, inherits the parent's project trust. A child elsewhere follows the trust decision stored for that directory, and is trusted only when nothing there needs trust.
+A child in the parent's project inherits the parent's project trust. A child elsewhere follows the trust decision stored for that directory, and is trusted only when nothing there needs trust. A worktree takes the trust of the directory it was created from.
 
 ## Command and footer
 

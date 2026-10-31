@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
-import { resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Model } from "@earendil-works/pi-ai";
+import type { CredentialStore, Model } from "@earendil-works/pi-ai";
 import {
 	type AgentSession,
 	type AgentSessionEvent,
@@ -13,11 +13,12 @@ import {
 	type Extension,
 	getAgentDir,
 	type InlineExtension,
+	ModelRuntime,
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { ChildStatus } from "./child.ts";
-import type { ParentExtensionFlags } from "./environment.ts";
+import type { ParentFlags } from "./environment.ts";
 import { type ForkInput, forkSessionManager } from "./fork.ts";
 
 export interface ChildOutcome {
@@ -41,7 +42,9 @@ export interface StartChildInput {
 	/** The tools the child declares to its model; normally the parent's active tools minus `subagent`. */
 	tools: string[];
 	projectTrusted: boolean;
-	extensions: ParentExtensionFlags;
+	flags: ParentFlags;
+	/** The parent's credential store, so the child resolves credentials exactly as the parent does. */
+	credentials: CredentialStore | undefined;
 	parentSessionFile: string | undefined;
 	/** Present for fork mode. */
 	fork?: Omit<ForkInput, "childCwd" | "now"> | undefined;
@@ -64,18 +67,23 @@ export async function startChild(input: StartChildInput): Promise<ChildHandle> {
 		cwd: input.cwd,
 		agentDir,
 		settingsManager,
-		additionalExtensionPaths: input.extensions.paths,
-		noExtensions: input.extensions.noExtensions,
+		additionalExtensionPaths: input.flags.extensions,
+		noExtensions: input.flags.noExtensions,
 		extensionFactories: builtinExtensions(),
 		extensionsOverride: (base) => ({ ...base, extensions: base.extensions.filter((ext) => !isThisExtension(ext, input.selfDir)) }),
 		appendSystemPromptOverride: (base) => [...base, CHILD_NOTE],
 	});
 	await resourceLoader.reload();
 
+	// The child gets its own runtime, so provider and virtual-model registrations by its extensions
+	// stay session-local, while credentials come from the parent's store.
+	const modelRuntime = await ModelRuntime.create({ ...(input.credentials ? { credentials: input.credentials } : {}), authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") });
+
 	const sessionManager = input.fork ? forkSessionManager({ ...input.fork, childCwd: input.cwd, now: new Date() }) : SessionManager.create(input.cwd, undefined, input.parentSessionFile ? { parentSession: input.parentSessionFile } : {});
 	const { session } = await createAgentSession({
 		cwd: input.cwd,
 		agentDir,
+		modelRuntime,
 		model: input.model,
 		thinkingLevel: input.thinkingLevel,
 		resourceLoader,

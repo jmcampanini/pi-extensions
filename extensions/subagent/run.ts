@@ -2,11 +2,11 @@ import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { type Model, StringEnum } from "@earendil-works/pi-ai";
+import { type CredentialStore, type Model, StringEnum } from "@earendil-works/pi-ai";
 import type { AgentToolResult, AgentToolUpdateCallback, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import type { ChildContext, ChildMode, ChildSummary, Worktree } from "./child.ts";
-import { type ChildTrustInput, childToolNames, type ParentExtensionFlags, resolveChildTrust } from "./environment.ts";
+import { type ChildTrustInput, childToolNames, type ParentFlags, resolveChildTrust } from "./environment.ts";
 import type { ChildHandle, StartChildInput } from "./launch.ts";
 import { describeModel, formatModelMatchError, matchModel } from "./models.ts";
 import { type ChildRecord, newChildId, type SubagentRegistry, summarize } from "./registry.ts";
@@ -42,6 +42,8 @@ export interface SubagentToolDetails extends ChildSummary {
 export interface ParentSession {
 	cwd: string;
 	model: Model<any> | undefined;
+	/** The parent's credential store, which includes what Pi keeps only in memory, such as --api-key. */
+	credentials: CredentialStore | undefined;
 	thinkingLevel: ThinkingLevel | undefined;
 	scopedModels: Model<any>[];
 	availableModels: Model<any>[];
@@ -60,7 +62,7 @@ export interface WorktreeRequest {
 
 export interface RunDeps {
 	settings: SubagentSettings;
-	extensions: ParentExtensionFlags;
+	flags: ParentFlags;
 	registry: SubagentRegistry;
 	startChild: (input: StartChildInput) => Promise<ChildHandle>;
 	createWorktree: (request: WorktreeRequest) => Promise<Worktree>;
@@ -97,6 +99,7 @@ export async function runSubagent(input: RunInput, deps: RunDeps): Promise<Agent
 	const cancellation = watchCancellation(input.signal);
 	try {
 		let cwd = resolveDirectory(params.cwd, parent.cwd);
+		const projectTrusted = resolveChildTrust({ childCwd: cwd, parentCwd: parent.cwd, parentTrusted: parent.projectTrusted, ...deps.trust });
 		let worktree: Worktree | undefined;
 		if (params.isolation === "worktree") {
 			worktree = await deps.createWorktree({ cwd, slug: slugify(title), from: params.from ?? "HEAD" });
@@ -110,8 +113,9 @@ export async function runSubagent(input: RunInput, deps: RunDeps): Promise<Agent
 			model,
 			thinkingLevel: effort,
 			tools: childToolNames(parent.activeTools),
-			projectTrusted: resolveChildTrust({ childCwd: cwd, parentCwd: parent.cwd, parentTrusted: parent.projectTrusted, createdWorktree: worktree !== undefined, ...deps.trust }),
-			extensions: deps.extensions,
+			projectTrusted,
+			flags: deps.flags,
+			credentials: parent.credentials,
 			parentSessionFile: parent.sessionFile,
 			fork: context === "fork" ? { source: { parentSessionFile: parent.sessionFile, leafId: parent.leafId, branch: parent.branch }, toolCallId: input.toolCallId } : undefined,
 			selfDir: deps.selfDir,

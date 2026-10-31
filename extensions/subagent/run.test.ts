@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import type { Model } from "@earendil-works/pi-ai";
 import { describe, expect, it, vi } from "vitest";
 import type { ChildHandle, ChildOutcome, StartChildInput } from "./launch.ts";
@@ -20,6 +21,7 @@ function parentSession(overrides: Partial<ParentSession> = {}): ParentSession {
 	return {
 		cwd: process.cwd(),
 		model: { provider: "openai-codex", id: "gpt-6-luna", name: "GPT-6 Luna" } as Model<any>,
+		credentials: undefined,
 		thinkingLevel: "low",
 		scopedModels: [],
 		availableModels: [],
@@ -36,7 +38,7 @@ function fakeDeps(handle: ChildHandle, overrides: Partial<RunDeps> = {}) {
 	const started: StartChildInput[] = [];
 	const deps: RunDeps = {
 		settings: DEFAULT_SUBAGENT_SETTINGS,
-		extensions: { paths: [], noExtensions: false },
+		flags: { extensions: [], noExtensions: false },
 		registry: new SubagentRegistry(),
 		startChild: async (input) => {
 			started.push(input);
@@ -157,6 +159,16 @@ describe("what the child is started with", () => {
 		});
 	});
 
+	it("hands the parent's credential store to the child", async () => {
+		const child = fakeChild();
+		const { deps, started } = fakeDeps(child.handle);
+		const credentials = { shared: true } as unknown as NonNullable<ParentSession["credentials"]>;
+
+		await runSubagent({ params: { task: "t" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: parentSession({ credentials }) }, deps);
+
+		expect(started[0]?.credentials).toBe(credentials);
+	});
+
 	it("resolves a model reference against scoped models first and fails clearly when it is ambiguous", async () => {
 		const child = fakeChild();
 		const luna = { provider: "openai-codex", id: "gpt-6-luna", name: "GPT-6 Luna" } as Model<any>;
@@ -169,6 +181,16 @@ describe("what the child is started with", () => {
 
 		const unscoped = parentSession({ scopedModels: [], availableModels: [luna, sol] });
 		await expect(runSubagent({ params: { task: "t", model: "gpt-6" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: unscoped }, deps)).rejects.toThrow(/matches/);
+	});
+
+	it("gives a worktree the trust of the directory it was created from, not the parent's", async () => {
+		const child = fakeChild();
+		const { deps, started } = fakeDeps(child.handle, { trust: { storedDecision: () => false, requiresTrust: () => true } });
+
+		await runSubagent({ params: { task: "t", cwd: tmpdir(), isolation: "worktree" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: parentSession({ projectTrusted: true }) }, deps);
+
+		expect(started[0]?.cwd).toBe("/wt/t");
+		expect(started[0]?.projectTrusted).toBe(false);
 	});
 
 	it("runs the child in a new worktree and records it", async () => {

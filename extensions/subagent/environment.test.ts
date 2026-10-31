@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { childToolNames, parentExtensionFlags, resolveChildTrust } from "./environment.ts";
+import { childToolNames, parentFlags, resolveChildTrust } from "./environment.ts";
 
-describe("parentExtensionFlags", () => {
+describe("parentFlags", () => {
 	it("collects the parent's -e entries and --no-extensions, ignoring its other flags", () => {
-		const flags = parentExtensionFlags(["--mode", "rpc", "-e", "./extensions/subagent", "--extension", "builtin:mcp", "--no-extensions", "--model", "x", "--thinking", "low"]);
-		expect(flags).toEqual({ paths: ["./extensions/subagent", "builtin:mcp"], noExtensions: true });
+		const flags = parentFlags(["--mode", "rpc", "-e", "./extensions/subagent", "--extension", "builtin:mcp", "-e", "/abs/ext.ts", "--no-extensions", "--api-key", "sk-test", "--model", "x"], "/code/app");
+		expect(flags).toEqual({ extensions: ["/code/app/extensions/subagent", "builtin:mcp", "/abs/ext.ts"], noExtensions: true });
 	});
 
-	it("reports nothing for a parent started without extension flags", () => {
-		expect(parentExtensionFlags(["--mode", "rpc"])).toEqual({ paths: [], noExtensions: false });
+	it("reports nothing for a parent started without those flags", () => {
+		expect(parentFlags(["--mode", "rpc"], "/code/app")).toEqual({ extensions: [], noExtensions: false });
 	});
 });
 
@@ -19,12 +19,11 @@ describe("childToolNames", () => {
 });
 
 describe("resolveChildTrust", () => {
-	const base = { parentCwd: "/code/app", parentTrusted: true, createdWorktree: false, storedDecision: () => null, requiresTrust: () => true };
+	const base = { parentCwd: "/code/app", parentTrusted: true, storedDecision: () => null, requiresTrust: () => true };
 
-	it("inherits the parent's trust inside the parent's project or in a worktree made from it", () => {
+	it("inherits the parent's trust inside the parent's project", () => {
 		expect(resolveChildTrust({ ...base, childCwd: "/code/app/src" })).toBe(true);
 		expect(resolveChildTrust({ ...base, childCwd: "/code/app", parentTrusted: false })).toBe(false);
-		expect(resolveChildTrust({ ...base, childCwd: "/wt/app/x", createdWorktree: true })).toBe(true);
 		expect(resolveChildTrust({ ...base, childCwd: "/code/app-other" })).toBe(false);
 	});
 

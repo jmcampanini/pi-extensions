@@ -2,9 +2,10 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type ExtensionAPI, type ExtensionContext, getAgentDir, hasTrustRequiringProjectResources, ProjectTrustStore } from "@earendil-works/pi-coding-agent";
+import type { CredentialStore } from "@earendil-works/pi-ai";
+import { type ExtensionAPI, type ExtensionContext, getAgentDir, hasTrustRequiringProjectResources, type ModelRegistry, ProjectTrustStore } from "@earendil-works/pi-coding-agent";
 import { canAcceptPrompt, createOutbox } from "./delivery.ts";
-import { parentExtensionFlags } from "./environment.ts";
+import { parentFlags } from "./environment.ts";
 import { startChild } from "./launch.ts";
 import { SubagentRegistry } from "./registry.ts";
 import { completionPrefix } from "./result.ts";
@@ -25,6 +26,7 @@ Model: "model" accepts provider/id, an id, or a unique substring such as "opus",
 export default function subagentExtension(pi: ExtensionAPI) {
 	const registry = new SubagentRegistry();
 	const trustStore = new ProjectTrustStore(getAgentDir());
+	const flags = parentFlags(process.argv.slice(2), process.cwd());
 	let parentCtx: ExtensionContext | undefined;
 	// Set when this session is being replaced or Pi quits. Children that settle afterwards must not
 	// touch the stale context or deliver messages.
@@ -81,6 +83,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
 			const parent = {
 				cwd: ctx.cwd,
 				model: ctx.model,
+				credentials: parentCredentials(ctx.modelRegistry),
 				thinkingLevel: ctx.thinkingLevel,
 				scopedModels: ctx.scopedModels.map((entry) => entry.model),
 				availableModels: ctx.modelRegistry.getAvailable(),
@@ -94,7 +97,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
 				{ params, toolCallId, signal, onUpdate, parent },
 				{
 					settings,
-					extensions: parentExtensionFlags(process.argv.slice(2)),
+					flags,
 					registry,
 					startChild,
 					createWorktree: (request) =>
@@ -118,4 +121,15 @@ export default function subagentExtension(pi: ExtensionAPI) {
 			);
 		},
 	});
+}
+
+/**
+ * The parent's credential store holds what Pi keeps only in memory: a --api-key and refreshed OAuth
+ * tokens. Neither ModelRegistry nor ModelRuntime exposes it, so it is read through the fields that
+ * wrap it; when a Pi version changes them, the child reads credentials from the agent dir instead.
+ */
+function parentCredentials(registry: ModelRegistry): CredentialStore | undefined {
+	const runtime = (registry as unknown as { runtime?: { credentials?: unknown } }).runtime;
+	const credentials = runtime?.credentials as Partial<CredentialStore> | undefined;
+	return typeof credentials?.read === "function" && typeof credentials.modify === "function" ? (credentials as CredentialStore) : undefined;
 }
