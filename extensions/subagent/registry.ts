@@ -1,31 +1,34 @@
 import { randomBytes } from "node:crypto";
+import type { ChildSummary } from "./child.ts";
 
-export type ChildStatus = "running" | "completed" | "failed" | "cancelled";
-export type ChildMode = "background" | "foreground";
-export type ChildContext = "fresh" | "fork";
-
-export interface ChildRecord {
-	id: string;
-	title: string;
+export interface ChildRecord extends ChildSummary {
 	task: string;
-	mode: ChildMode;
-	context: ChildContext;
-	cwd: string;
-	model: string;
-	effort: string;
 	startedAt: number;
-	finishedAt?: number;
-	status: ChildStatus;
+	finishedAt?: number | undefined;
 	/** Recent progress lines, newest last. */
 	progress: string[];
-	result?: string;
-	error?: string;
-	sessionFile?: string;
-	worktree?: { path: string; branch: string };
+	result?: string | undefined;
 	abort: () => void;
 }
 
-/** Owns every child started by this extension runtime and tells the UI when any of them changes. */
+/** The persisted and displayed view of a record, without the task text, result, and abort handle. */
+export function summarize(record: ChildRecord): ChildSummary {
+	return {
+		id: record.id,
+		title: record.title,
+		mode: record.mode,
+		context: record.context,
+		status: record.status,
+		model: record.model,
+		effort: record.effort,
+		cwd: record.cwd,
+		worktree: record.worktree,
+		sessionFile: record.sessionFile,
+		error: record.error,
+	};
+}
+
+/** Owns every child started by this extension runtime and tells the UI when the running set changes. */
 export class SubagentRegistry {
 	private readonly children = new Map<string, ChildRecord>();
 	private readonly listeners = new Set<() => void>();
@@ -45,10 +48,11 @@ export class SubagentRegistry {
 		return next;
 	}
 
+	/** Progress does not change the running set, so listeners are not told. */
 	addProgress(id: string, line: string, keep = 20): void {
 		const current = this.children.get(id);
 		if (!current) return;
-		this.update(id, { progress: [...current.progress, line].slice(-keep) });
+		this.children.set(id, { ...current, progress: [...current.progress, line].slice(-keep) });
 	}
 
 	get(id: string): ChildRecord | undefined {

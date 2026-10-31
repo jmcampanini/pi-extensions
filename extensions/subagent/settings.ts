@@ -1,6 +1,8 @@
 export interface SubagentSettings {
 	/** Template for the directory a worktree child runs in. See expandWorktreePath for placeholders. */
 	worktreePath: string;
+	/** Template for the worktree branch name; `{slug}` and `{repo}` are replaced. */
+	worktreeBranch: string;
 	/** Result text longer than this is cut before it reaches the parent. */
 	resultMaxChars: number;
 	/** Result text with more lines than this is cut before it reaches the parent. */
@@ -9,6 +11,7 @@ export interface SubagentSettings {
 
 export const DEFAULT_SUBAGENT_SETTINGS: SubagentSettings = {
 	worktreePath: "~/.pi/worktrees/{repo}/{slug}",
+	worktreeBranch: "pi/{slug}",
 	resultMaxChars: 50_000,
 	resultMaxLines: 2_000,
 };
@@ -21,6 +24,7 @@ export function readSubagentSettings(settings: Record<string, unknown>): Subagen
 	const section = raw as Record<string, unknown>;
 	return {
 		worktreePath: stringOr(section.worktreePath, DEFAULT_SUBAGENT_SETTINGS.worktreePath),
+		worktreeBranch: stringOr(section.worktreeBranch, DEFAULT_SUBAGENT_SETTINGS.worktreeBranch),
 		resultMaxChars: positiveIntegerOr(section.resultMaxChars, DEFAULT_SUBAGENT_SETTINGS.resultMaxChars),
 		resultMaxLines: positiveIntegerOr(section.resultMaxLines, DEFAULT_SUBAGENT_SETTINGS.resultMaxLines),
 	};

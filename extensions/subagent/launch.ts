@@ -1,7 +1,7 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { resolve, sep } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Model, Usage } from "@earendil-works/pi-ai";
+import type { Model } from "@earendil-works/pi-ai";
 import {
 	type AgentSession,
 	type AgentSessionEvent,
@@ -11,18 +11,19 @@ import {
 	createToolSearchExtension,
 	DefaultResourceLoader,
 	type Extension,
-	type FileEntry,
 	getAgentDir,
+	type InlineExtension,
 	SessionManager,
-	type SessionStats,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import type { ChildStatus } from "./child.ts";
+import type { ParentExtensionFlags } from "./environment.ts";
+import { type ForkInput, forkSessionManager } from "./fork.ts";
 
 export interface ChildOutcome {
-	status: "completed" | "failed" | "cancelled";
+	status: Exclude<ChildStatus, "running">;
 	text: string;
-	error?: string;
-	usage: Usage;
+	error?: string | undefined;
 	durationMs: number;
 }
 
@@ -37,12 +38,16 @@ export interface StartChildInput {
 	task: string;
 	model: Model<any>;
 	thinkingLevel: ThinkingLevel;
+	/** The tools the child declares to its model; normally the parent's active tools minus `subagent`. */
+	tools: string[];
+	projectTrusted: boolean;
+	extensions: ParentExtensionFlags;
 	parentSessionFile: string | undefined;
-	/** Present for fork mode: the complete child session file, header first. */
-	forkEntries?: (childSessionId: string) => FileEntry[];
+	/** Present for fork mode. */
+	fork?: Omit<ForkInput, "childCwd" | "now"> | undefined;
 	/** Directory of this extension, so the child does not load it and cannot start grandchildren. */
 	selfDir: string;
-	onProgress?: (line: string) => void;
+	onProgress?: ((line: string) => void) | undefined;
 }
 
 const CHILD_NOTE =
@@ -54,18 +59,20 @@ const CHILD_NOTE =
 /** Starts a child Pi session in this process and runs the task to completion. */
 export async function startChild(input: StartChildInput): Promise<ChildHandle> {
 	const agentDir = getAgentDir();
-	const settingsManager = SettingsManager.create(input.cwd, agentDir);
+	const settingsManager = SettingsManager.create(input.cwd, agentDir, { projectTrusted: input.projectTrusted });
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: input.cwd,
 		agentDir,
 		settingsManager,
-		extensionFactories: [createCodemodeExtension({ mode: "on" }), createToolSearchExtension(), createMcpExtension()],
+		additionalExtensionPaths: input.extensions.paths,
+		noExtensions: input.extensions.noExtensions,
+		extensionFactories: builtinExtensions(),
 		extensionsOverride: (base) => ({ ...base, extensions: base.extensions.filter((ext) => !isThisExtension(ext, input.selfDir)) }),
 		appendSystemPromptOverride: (base) => [...base, CHILD_NOTE],
 	});
 	await resourceLoader.reload();
 
-	const sessionManager = input.forkEntries ? forkedSessionManager(input.cwd, input.parentSessionFile, input.forkEntries) : SessionManager.create(input.cwd, undefined, parentOptions(input.parentSessionFile));
+	const sessionManager = input.fork ? forkSessionManager({ ...input.fork, childCwd: input.cwd, now: new Date() }) : SessionManager.create(input.cwd, undefined, input.parentSessionFile ? { parentSession: input.parentSessionFile } : {});
 	const { session } = await createAgentSession({
 		cwd: input.cwd,
 		agentDir,
@@ -74,8 +81,7 @@ export async function startChild(input: StartChildInput): Promise<ChildHandle> {
 		resourceLoader,
 		settingsManager,
 		sessionManager,
-		// codemode registers inactive; a "+name" modifier adds it to the child's default loadout.
-		tools: ["+codemode"],
+		tools: input.tools,
 	});
 	try {
 		await session.bindExtensions({ mode: "print" });
@@ -86,8 +92,6 @@ export async function startChild(input: StartChildInput): Promise<ChildHandle> {
 
 	let aborted = false;
 	const startedAt = Date.now();
-	// A fork inherits the parent's transcript, whose usage the parent already paid for.
-	const baseline = session.getSessionStats();
 	const unsubscribe = session.subscribe((event) => {
 		// Pi drops an abort that arrives while prompt() is still preparing the run; apply it again
 		// once the run exists.
@@ -96,8 +100,8 @@ export async function startChild(input: StartChildInput): Promise<ChildHandle> {
 	});
 	const done = session
 		.prompt(input.task, { expandPromptTemplates: false })
-		.then(() => finish(session, aborted ? "cancelled" : "completed", undefined, startedAt, baseline))
-		.catch((error: unknown) => finish(session, aborted ? "cancelled" : "failed", errorMessage(error), startedAt, baseline))
+		.then(() => childOutcome(session, aborted ? "cancelled" : "completed", undefined, Date.now() - startedAt))
+		.catch((error: unknown) => childOutcome(session, aborted ? "cancelled" : "failed", errorMessage(error), Date.now() - startedAt))
 		.finally(() => {
 			unsubscribe();
 			return teardown(session);
@@ -113,6 +117,15 @@ export async function startChild(input: StartChildInput): Promise<ChildHandle> {
 	};
 }
 
+/** The same built-ins the CLI loads, in the named form that `-builtin:<name>` and replacements respect. */
+function builtinExtensions(): InlineExtension[] {
+	return [
+		{ name: "codemode", factory: createCodemodeExtension(), replaceable: true, builtin: true },
+		{ name: "tool-search", factory: createToolSearchExtension(), replaceable: true, builtin: true },
+		{ name: "mcp", factory: createMcpExtension(), replaceable: true, builtin: true },
+	];
+}
+
 /** dispose() alone skips session_shutdown, which is where the MCP extension closes its servers. */
 async function teardown(session: AgentSession): Promise<void> {
 	try {
@@ -122,67 +135,46 @@ async function teardown(session: AgentSession): Promise<void> {
 	}
 }
 
-function finish(session: AgentSession, status: ChildOutcome["status"], error: string | undefined, startedAt: number, baseline: SessionStats): ChildOutcome {
-	const stats = session.getSessionStats();
-	const failure = status === "completed" ? providerFailure(session) : undefined;
-	if (failure) {
-		status = failure.status;
-		error = failure.error;
-	}
-	const outcome: ChildOutcome = {
-		status,
-		text: session.getLastAssistantText() ?? "",
-		usage: {
-			input: stats.tokens.input - baseline.tokens.input,
-			output: stats.tokens.output - baseline.tokens.output,
-			cacheRead: stats.tokens.cacheRead - baseline.tokens.cacheRead,
-			cacheWrite: stats.tokens.cacheWrite - baseline.tokens.cacheWrite,
-			totalTokens: stats.tokens.total - baseline.tokens.total,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: stats.cost - baseline.cost },
-		},
-		durationMs: Date.now() - startedAt,
-	};
-	if (error !== undefined) outcome.error = error;
-	return outcome;
+export interface OutcomeSource {
+	messages: ReadonlyArray<{ role: string; stopReason?: string | undefined; errorMessage?: string | undefined }>;
+	getLastAssistantText(): string | undefined;
 }
 
 /**
  * Pi resolves prompt() even when the provider request failed or was aborted; the outcome is recorded
- * on the last assistant message instead, so read it from there.
+ * on the last assistant message instead, so a completed run is checked there.
  */
-function providerFailure(session: AgentSession): { status: "failed" | "cancelled"; error: string } | undefined {
-	for (let i = session.messages.length - 1; i >= 0; i--) {
-		const message = session.messages[i];
-		if (message?.role !== "assistant") continue;
-		if (message.stopReason === "error") return { status: "failed", error: message.errorMessage ?? "the model request failed" };
-		if (message.stopReason === "aborted") return { status: "cancelled", error: "the subagent was aborted" };
-		return undefined;
-	}
+export function childOutcome(source: OutcomeSource, status: ChildOutcome["status"], error: string | undefined, durationMs: number): ChildOutcome {
+	const failure = status === "completed" ? providerFailure(source.messages) : undefined;
+	return {
+		status: failure?.status ?? status,
+		error: failure?.error ?? error,
+		text: source.getLastAssistantText() ?? "",
+		durationMs,
+	};
+}
+
+function providerFailure(messages: OutcomeSource["messages"]): { status: "failed" | "cancelled"; error: string } | undefined {
+	const last = [...messages].reverse().find((message) => message.role === "assistant");
+	if (last?.stopReason === "error") return { status: "failed", error: last.errorMessage ?? "the model request failed" };
+	if (last?.stopReason === "aborted") return { status: "cancelled", error: "the subagent was aborted" };
 	return undefined;
 }
 
-function parentOptions(parentSessionFile: string | undefined): { parentSession?: string } {
-	return parentSessionFile ? { parentSession: parentSessionFile } : {};
-}
-
-/**
- * Writes the fork entries as the child's session file and opens it, so the child is persisted and
- * resumable like any other session. SessionManager.create picks the file location and id for us.
- */
-function forkedSessionManager(cwd: string, parentSessionFile: string | undefined, forkEntries: (childSessionId: string) => FileEntry[]): SessionManager {
-	const placeholder = SessionManager.create(cwd, undefined, parentOptions(parentSessionFile));
-	const file = placeholder.getSessionFile();
-	if (!file) throw new Error("fork needs a persisted session file, but Pi did not create one");
-
-	mkdirSync(dirname(file), { recursive: true });
-	const lines = forkEntries(placeholder.getSessionId()).map((entry) => JSON.stringify(entry));
-	writeFileSync(file, `${lines.join("\n")}\n`, "utf8");
-	return SessionManager.open(file, undefined, cwd);
-}
-
+/** Matches by tool as well as by path, because a symlinked install resolves to a different path. */
 function isThisExtension(extension: Extension, selfDir: string): boolean {
-	const resolved = resolve(extension.resolvedPath);
-	return resolved === selfDir || resolved.startsWith(`${selfDir}/`);
+	if (extension.tools.has("subagent")) return true;
+	const resolved = realpathOr(extension.resolvedPath);
+	const self = realpathOr(selfDir);
+	return resolved === self || resolved.startsWith(self + sep);
+}
+
+function realpathOr(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		return resolve(path);
+	}
 }
 
 function reportProgress(event: AgentSessionEvent, onProgress: ((line: string) => void) | undefined): void {
@@ -201,7 +193,7 @@ function reportProgress(event: AgentSessionEvent, onProgress: ((line: string) =>
 	}
 }
 
-function summarizeArgs(args: unknown): string {
+export function summarizeArgs(args: unknown): string {
 	if (typeof args !== "object" || args === null) return "";
 	const record = args as Record<string, unknown>;
 	const key = ["command", "path", "file_path", "pattern", "task", "query"].find((k) => typeof record[k] === "string");

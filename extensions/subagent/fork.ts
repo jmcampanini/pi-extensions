@@ -1,16 +1,16 @@
-import type { ToolCall } from "@earendil-works/pi-ai";
-import type { FileEntry, SessionEntry, SessionHeader } from "@earendil-works/pi-coding-agent";
+import type { ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
+import { type FileEntry, type SessionEntry, SessionManager } from "@earendil-works/pi-coding-agent";
 
 export interface ForkSource {
-	header: SessionHeader | null;
-	branch: SessionEntry[];
 	parentSessionFile: string | undefined;
+	leafId: string | null;
+	branch: SessionEntry[];
 }
 
 export interface ForkInput {
 	source: ForkSource;
+	/** The parent's `subagent` call that is creating this child. */
 	toolCallId: string;
-	childSessionId: string;
 	childCwd: string;
 	now: Date;
 }
@@ -22,57 +22,36 @@ const FORK_NOTICE =
 const SIBLING_NOTICE = "Not executed in this fork; the parent conversation handles this call.";
 
 /**
- * Builds the child session file for fork mode: the parent's active branch, then a tool result for
- * every call in the delegating assistant message so the transcript stays valid for providers.
- * The delegating call's result tells the child what it is; sibling calls are marked as the parent's.
+ * A session manager for a child that continues the parent's current branch. Pi copies the branch
+ * into a new session file and assigns ids and parent links. A parent without a session file gets an
+ * in-memory copy. Every tool call of the delegating message that has no result yet gets one, so the
+ * transcript stays valid for providers: the delegating call's result tells the child what it is.
  */
-export function buildForkEntries(input: ForkInput): FileEntry[] {
-	const { source, toolCallId, childCwd } = input;
-	const header: SessionHeader = {
-		type: "session",
-		version: source.header?.version ?? 3,
-		id: input.childSessionId,
-		timestamp: input.now.toISOString(),
-		cwd: childCwd,
-		...(source.parentSessionFile ? { parentSession: source.parentSessionFile } : {}),
-	};
-
-	const entries: SessionEntry[] = [...source.branch];
-	const pending = pendingToolCalls(entries);
-	let leafId = entries.length > 0 ? entries[entries.length - 1]!.id : null;
-	for (const [index, call] of pending.entries()) {
-		const id = `fork${index.toString(16).padStart(4, "0")}`;
-		const text = call.id === toolCallId ? FORK_NOTICE.replace("{cwd}", childCwd) : SIBLING_NOTICE;
-		entries.push({
-			type: "message",
-			id,
-			parentId: leafId,
-			timestamp: input.now.toISOString(),
-			message: {
-				role: "toolResult",
-				toolCallId: call.id,
-				toolName: call.name,
-				content: [{ type: "text", text }],
-				isError: false,
-				timestamp: input.now.getTime(),
-			},
-		});
-		leafId = id;
-	}
-
-	return [header, ...entries];
+export function forkSessionManager(input: ForkInput): SessionManager {
+	const manager = copyBranch(input.source, input.childCwd);
+	for (const call of pendingToolCalls(input.source.branch)) manager.appendMessage(forkToolResult(call, input));
+	return manager;
 }
 
-interface PendingCall {
+function copyBranch(source: ForkSource, childCwd: string): SessionManager {
+	if (!source.parentSessionFile) return SessionManager.inMemory(childCwd, undefined, source.branch as FileEntry[]);
+	if (!source.leafId) return SessionManager.create(childCwd, undefined, { parentSession: source.parentSessionFile });
+
+	const manager = SessionManager.open(source.parentSessionFile, undefined, childCwd);
+	manager.createBranchedSession(source.leafId);
+	return manager;
+}
+
+export interface PendingCall {
 	id: string;
 	name: string;
 }
 
-/** Tool calls in the last assistant message that have no result yet on the branch. */
-function pendingToolCalls(entries: SessionEntry[]): PendingCall[] {
+/** Tool calls in the branch's last assistant message that have no result yet. */
+export function pendingToolCalls(branch: readonly SessionEntry[]): PendingCall[] {
 	const answered = new Set<string>();
-	for (let i = entries.length - 1; i >= 0; i--) {
-		const entry = entries[i]!;
+	for (let i = branch.length - 1; i >= 0; i--) {
+		const entry = branch[i]!;
 		if (entry.type !== "message") continue;
 		const message = entry.message;
 		if (message.role === "toolResult" && message.toolCallId) {
@@ -88,4 +67,16 @@ function pendingToolCalls(entries: SessionEntry[]): PendingCall[] {
 			.map((block) => ({ id: block.id, name: block.name }));
 	}
 	return [];
+}
+
+export function forkToolResult(call: PendingCall, input: Pick<ForkInput, "toolCallId" | "childCwd" | "now">): ToolResultMessage {
+	const text = call.id === input.toolCallId ? FORK_NOTICE.replace("{cwd}", input.childCwd) : SIBLING_NOTICE;
+	return {
+		role: "toolResult",
+		toolCallId: call.id,
+		toolName: call.name,
+		content: [{ type: "text", text }],
+		isError: false,
+		timestamp: input.now.getTime(),
+	};
 }

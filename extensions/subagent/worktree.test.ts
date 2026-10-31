@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWorktree, expandWorktreePath, parseRemoteUrl, slugify } from "./worktree.ts";
+import { createWorktree, expandBranchName, expandWorktreePath, parseRemoteUrl, slugify } from "./worktree.ts";
 
 const values = { repo: "pi-extensions", repoPath: "/code/pi-extensions", host: "github.com", owner: "jmcampanini", slug: "add-tests", branch: "pi/add-tests" };
 
@@ -15,6 +15,20 @@ describe("expandWorktreePath", () => {
 	it("rejects an unset variable instead of producing a relative path", () => {
 		expect(() => expandWorktreePath("$CODE_DIR/{slug}", values, {}, "/Users/me")).toThrow(/CODE_DIR/);
 		expect(() => expandWorktreePath("relative/{slug}", values, {}, "/Users/me")).toThrow(/absolute/);
+	});
+});
+
+describe("expandBranchName", () => {
+	const names = { repo: "app", repoPath: "/code/app", host: "github.com", owner: "acme", slug: "fix-tests" };
+
+	it("fills the slug and repo placeholders", () => {
+		expect(expandBranchName("pi/{slug}", names)).toBe("pi/fix-tests");
+		expect(expandBranchName("me/{repo}/{slug}", names)).toBe("me/app/fix-tests");
+	});
+
+	it("rejects templates that produce an empty or malformed branch", () => {
+		expect(() => expandBranchName("{host}", { ...names, host: "" })).toThrow(/invalid branch name/);
+		expect(() => expandBranchName("bad name/{slug}", names)).toThrow(/invalid branch name/);
 	});
 });
 
@@ -47,7 +61,7 @@ describe("createWorktree", () => {
 			throw new Error(`unexpected git ${args.join(" ")}`);
 		};
 
-		const created = await createWorktree({ exec, cwd: "/code/app/src", slug: "fix", from: "origin/main", template: "/wt/{owner}/{repo}/{slug}", env: {}, home: "/home", exists: (path) => path === "/wt/acme/app/fix-2" });
+		const created = await createWorktree({ exec, cwd: "/code/app/src", slug: "fix", from: "origin/main", template: "/wt/{owner}/{repo}/{slug}", branchTemplate: "pi/{slug}", env: {}, home: "/home", exists: (path) => path === "/wt/acme/app/fix-2" });
 
 		expect(created).toEqual({ path: "/wt/acme/app/fix-3", branch: "pi/fix-3", repoPath: "/code/app" });
 		expect(calls.at(-1)).toEqual(["worktree", "add", "-b", "pi/fix-3", "/wt/acme/app/fix-3", "origin/main"]);
@@ -63,7 +77,7 @@ describe("createWorktree", () => {
 			branches.add(`refs/heads/${args[3]}`);
 			return { stdout: "", stderr: "", code: 0 };
 		};
-		const launch = () => createWorktree({ exec, cwd: "/code/app", slug: "audit", from: "HEAD", template: "/wt/{slug}", env: {}, home: "/home", exists: () => false });
+		const launch = () => createWorktree({ exec, cwd: "/code/app", slug: "audit", from: "HEAD", template: "/wt/{slug}", branchTemplate: "pi/{slug}", env: {}, home: "/home", exists: () => false });
 
 		const [first, second] = await Promise.all([launch(), launch()]);
 
@@ -79,6 +93,6 @@ describe("createWorktree", () => {
 			return { stdout: "", stderr: "fatal: invalid reference: nope", code: 128 };
 		};
 
-		await expect(createWorktree({ exec, cwd: "/code/app", slug: "x", from: "nope", template: "/wt/{slug}", env: {}, home: "/home", exists: () => false })).rejects.toThrow(/invalid reference: nope/);
+		await expect(createWorktree({ exec, cwd: "/code/app", slug: "x", from: "nope", template: "/wt/{slug}", branchTemplate: "pi/{slug}", env: {}, home: "/home", exists: () => false })).rejects.toThrow(/invalid reference: nope/);
 	});
 });

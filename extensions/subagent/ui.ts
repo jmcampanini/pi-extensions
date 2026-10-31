@@ -1,57 +1,34 @@
 import type { ExtensionAPI, ExtensionContext, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Text } from "@earendil-works/pi-tui";
+import type { ChildStatus } from "./child.ts";
 import type { ChildRecord, SubagentRegistry } from "./registry.ts";
-import { formatDuration } from "./result.ts";
-
-/** Details every `subagent` tool result carries, for rendering only. */
-export interface SubagentToolDetails {
-	id: string;
-	title: string;
-	mode: ChildRecord["mode"];
-	context: ChildRecord["context"];
-	status: ChildRecord["status"];
-	model: string;
-	effort: string;
-	cwd: string;
-	worktree?: { path: string; branch: string };
-	sessionFile?: string;
-	durationMs?: number;
-	error?: string;
-	progress?: string[];
-}
+import { deriveTitle, formatDuration } from "./result.ts";
+import { DEFAULT_CONTEXT, DEFAULT_MODE, type SubagentParams, type SubagentToolDetails } from "./run.ts";
 
 /**
  * All terminal UI for the extension: the footer count, the /subagents command, and the tool
  * renderers. Everything here reacts to the registry; nothing in the core depends on this module.
  */
-export function installSubagentUi(pi: ExtensionAPI, registry: SubagentRegistry): void {
-	let uiCtx: ExtensionContext | undefined;
-
+export function installSubagentUi(pi: ExtensionAPI, registry: SubagentRegistry, currentCtx: () => ExtensionContext | undefined): void {
 	const renderStatus = () => {
-		if (!uiCtx?.hasUI) return;
+		const ctx = currentCtx();
+		if (!ctx?.hasUI) return;
 		const running = registry.running();
 		if (running.length === 0) {
-			uiCtx.ui.setStatus("subagent", undefined);
+			ctx.ui.setStatus("subagent", undefined);
 			return;
 		}
-		const theme = uiCtx.ui.theme;
+		const theme = ctx.ui.theme;
 		const names = running.map((child) => child.title).join(", ");
-		uiCtx.ui.setStatus("subagent", theme.fg("accent", "◐ ") + theme.fg("dim", `${running.length} subagent${running.length === 1 ? "" : "s"}: ${names}`));
+		ctx.ui.setStatus("subagent", theme.fg("accent", "◐ ") + theme.fg("dim", `${running.length} subagent${running.length === 1 ? "" : "s"}: ${names}`));
 	};
 
-	pi.on("session_start", (_event, ctx) => {
-		uiCtx = ctx;
-		renderStatus();
-	});
-	pi.on("session_shutdown", () => {
-		// The context is stale from here on; children still settling must not render into it.
-		uiCtx = undefined;
-	});
+	pi.on("session_start", () => renderStatus());
 	registry.subscribe(renderStatus);
 
 	pi.registerCommand("subagents", {
-		description: "List subagents started in this session; pick a running one to cancel it",
+		description: "List subagents started in this session; cancel a running one or read a finished one's report",
 		handler: async (_args, ctx) => {
 			const children = registry.list();
 			if (children.length === 0) {
@@ -63,23 +40,25 @@ export function installSubagentUi(pi: ExtensionAPI, registry: SubagentRegistry):
 			const picked = await ctx.ui.select("Subagents", labels);
 			const child = picked ? children[labels.indexOf(picked)] : undefined;
 			if (!child) return;
-			if (child.status !== "running") {
-				ctx.ui.notify(`${child.title}: ${child.status}${child.sessionFile ? ` (session ${child.sessionFile})` : ""}`, "info");
+
+			if (child.status === "running") {
+				const confirmed = await ctx.ui.confirm("Cancel subagent", `Cancel "${child.title}" (${child.model})?`);
+				if (confirmed) child.abort();
 				return;
 			}
-
-			const confirmed = await ctx.ui.confirm("Cancel subagent", `Cancel "${child.title}" (${child.model})?`);
-			if (confirmed) child.abort();
+			const report = [child.error ? `Error: ${child.error}` : "", child.result ?? "(no report)", child.sessionFile ? `\nSession file: ${child.sessionFile}` : ""].filter((line) => line.length > 0).join("\n");
+			await ctx.ui.editor(`Subagent "${child.title}" ${child.status} (read-only copy; close to return)`, report);
 		},
 	});
 }
 
 function describeChild(child: ChildRecord): string {
 	const elapsed = formatDuration((child.finishedAt ?? Date.now()) - child.startedAt);
-	return `${statusGlyph(child.status)} ${child.title} · ${child.model} · ${child.mode} · ${elapsed}`;
+	const latest = child.status === "running" && child.progress.length > 0 ? ` · ${child.progress[child.progress.length - 1]}` : "";
+	return `${statusGlyph(child.status)} ${child.title} [${child.id}] · ${child.model} · ${child.mode} · ${elapsed}${latest}`;
 }
 
-function statusGlyph(status: ChildRecord["status"]): string {
+function statusGlyph(status: ChildStatus): string {
 	switch (status) {
 		case "running":
 			return "◐";
@@ -94,9 +73,9 @@ function statusGlyph(status: ChildRecord["status"]): string {
 
 export const subagentToolRenderers: ToolRenderers = {
 	renderCall(args, theme) {
-		const params = args as { task?: string; title?: string; mode?: string; model?: string; isolation?: string; context?: string };
-		const title = params.title ?? firstLine(params.task ?? "");
-		const tags = [params.mode ?? "background", params.context ?? "fresh", params.isolation === "worktree" ? "worktree" : undefined, params.model].filter(Boolean).join(" · ");
+		const params = args as Partial<SubagentParams>;
+		const title = deriveTitle(params.task ?? "", params.title);
+		const tags = [params.mode ?? DEFAULT_MODE, params.context ?? DEFAULT_CONTEXT, params.isolation === "worktree" ? "worktree" : undefined, params.model].filter(Boolean).join(" · ");
 		return new Text(theme.fg("toolTitle", theme.bold("subagent ")) + theme.fg("accent", title) + "  " + theme.fg("dim", tags), 0, 0);
 	},
 
@@ -127,16 +106,11 @@ export const subagentToolRenderers: ToolRenderers = {
 	},
 };
 
-function statusColor(status: ChildRecord["status"], isPartial: boolean): "accent" | "success" | "error" | "warning" {
+function statusColor(status: ChildStatus, isPartial: boolean): "accent" | "success" | "error" | "warning" {
 	if (isPartial || status === "running") return "accent";
 	if (status === "completed") return "success";
 	if (status === "failed") return "error";
 	return "warning";
-}
-
-function firstLine(text: string): string {
-	const line = text.trim().split("\n")[0] ?? "";
-	return line.length > 60 ? `${line.slice(0, 57)}...` : line;
 }
 
 function clipLines(text: string, max: number): string {
