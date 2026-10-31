@@ -29,11 +29,29 @@ Model: "model" accepts provider/id, an id, or a unique substring such as "opus",
 export default function subagentExtension(pi: ExtensionAPI) {
 	const registry = new SubagentRegistry();
 	let parentCtx: ExtensionContext | undefined;
+	// Set when this session is being replaced or Pi quits. Children that settle afterwards must not
+	// touch the stale context or deliver messages.
+	let closed = false;
+
+	/** Delivers a child's report to the parent as a user message, retrying while Pi cannot accept it. */
+	const deliver = (message: string) => {
+		if (closed) return;
+		// Pi rejects prompts while it compacts, and nothing streams then. Once a turn is streaming
+		// the guard is clear and the message is queued as a steer.
+		if (parentCtx && !parentCtx.isIdle() && parentCtx.signal === undefined) {
+			setTimeout(() => deliver(message), 50);
+			return;
+		}
+		// Always steer: Pi starts a new turn when idle, and queues when another report just did.
+		pi.sendUserMessage(message, { deliverAs: "steer" });
+	};
 
 	pi.on("session_start", (_event, ctx) => {
 		parentCtx = ctx;
 	});
 	pi.on("session_shutdown", () => {
+		closed = true;
+		parentCtx = undefined;
 		registry.abortAll();
 	});
 	installSubagentUi(pi, registry);
@@ -72,6 +90,17 @@ export default function subagentExtension(pi: ExtensionAPI) {
 			if (!model) throw new Error("No model is selected in this session and none was given.");
 			const effort: ThinkingLevel = params.effort ?? ctx.thinkingLevel ?? "medium";
 
+			// Startup can take a while (worktree creation, extension loading), so watch for
+			// cancellation from the start. Background children outlive the turn, so they only
+			// honour it until they are running.
+			let abortRequested = signal?.aborted ?? false;
+			let abortChild: (() => void) | undefined;
+			const onAbort = () => {
+				abortRequested = true;
+				abortChild?.();
+			};
+			signal?.addEventListener("abort", onAbort, { once: true });
+
 			let cwd = resolveDirectory(params.cwd, ctx.cwd);
 			let worktree: { path: string; branch: string } | undefined;
 			if (params.isolation === "worktree") {
@@ -87,6 +116,9 @@ export default function subagentExtension(pi: ExtensionAPI) {
 				});
 				worktree = { path: created.path, branch: created.branch };
 				cwd = created.path;
+			}
+			if (abortRequested) {
+				throw new Error(worktree ? `cancelled before the subagent started; worktree ${worktree.path} on branch ${worktree.branch} was left in place` : "cancelled before the subagent started");
 			}
 
 			const forkSource: ForkSource = {
@@ -107,6 +139,10 @@ export default function subagentExtension(pi: ExtensionAPI) {
 					if (mode === "foreground") onUpdate?.({ content: [{ type: "text", text: registry.get(id)?.progress.join("\n") ?? line }], details: detailsFor(registry.get(id)) });
 				},
 			});
+
+			abortChild = handle.abort;
+			if (abortRequested) handle.abort();
+			if (mode === "background") signal?.removeEventListener("abort", onAbort);
 
 			const record: ChildRecord = {
 				id,
@@ -133,30 +169,33 @@ export default function subagentExtension(pi: ExtensionAPI) {
 			});
 
 			if (mode === "background") {
-				void settle.then(({ outcome, text, truncated, finished }) => {
-					const message = formatCompletionMessage({
-						id,
-						title,
-						status: outcome.status,
-						model: finished.model,
-						cwd,
-						durationMs: outcome.durationMs,
-						result: text,
-						truncated,
-						...(outcome.error ? { error: outcome.error } : {}),
-						...(finished.sessionFile ? { sessionFile: finished.sessionFile } : {}),
-						...(worktree ? { worktree } : {}),
+				settle
+					.then(({ outcome, text, truncated, finished }) => {
+						const message = formatCompletionMessage({
+							id,
+							title,
+							status: outcome.status,
+							model: finished.model,
+							cwd,
+							durationMs: outcome.durationMs,
+							result: text,
+							truncated,
+							...(outcome.error ? { error: outcome.error } : {}),
+							...(finished.sessionFile ? { sessionFile: finished.sessionFile } : {}),
+							...(worktree ? { worktree } : {}),
+						});
+						deliver(message);
+					})
+					.catch((error: unknown) => {
+						if (closed || !parentCtx?.hasUI) return;
+						parentCtx.ui.notify(`Subagent "${title}" (id ${id}) could not report back: ${error instanceof Error ? error.message : String(error)}`, "error");
 					});
-					const busy = parentCtx ? !parentCtx.isIdle() : false;
-					pi.sendUserMessage(message, busy ? { deliverAs: "steer" } : undefined);
-				});
 				return {
 					content: [{ type: "text", text: backgroundStartedText(record) }],
 					details: detailsFor(record),
 				};
 			}
 
-			signal?.addEventListener("abort", handle.abort, { once: true });
 			const { outcome, text, truncated, finished } = await settle;
 			const report = [text.length > 0 ? text : "(the subagent produced no final text)"];
 			if (outcome.error) report.unshift(`Subagent ${outcome.status}: ${outcome.error}`);

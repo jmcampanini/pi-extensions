@@ -14,6 +14,7 @@ import {
 	type FileEntry,
 	getAgentDir,
 	SessionManager,
+	type SessionStats,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
@@ -76,18 +77,30 @@ export async function startChild(input: StartChildInput): Promise<ChildHandle> {
 		// codemode registers inactive; a "+name" modifier adds it to the child's default loadout.
 		tools: ["+codemode"],
 	});
-	await session.bindExtensions({ mode: "print" });
+	try {
+		await session.bindExtensions({ mode: "print" });
+	} catch (error) {
+		await teardown(session);
+		throw error;
+	}
 
 	let aborted = false;
 	const startedAt = Date.now();
-	const unsubscribe = session.subscribe((event) => reportProgress(event, input.onProgress));
+	// A fork inherits the parent's transcript, whose usage the parent already paid for.
+	const baseline = session.getSessionStats();
+	const unsubscribe = session.subscribe((event) => {
+		// Pi drops an abort that arrives while prompt() is still preparing the run; apply it again
+		// once the run exists.
+		if (event.type === "agent_start" && aborted) void session.abort();
+		reportProgress(event, input.onProgress);
+	});
 	const done = session
 		.prompt(input.task, { expandPromptTemplates: false })
-		.then(() => finish(session, aborted ? "cancelled" : "completed", undefined, startedAt))
-		.catch((error: unknown) => finish(session, aborted ? "cancelled" : "failed", errorMessage(error), startedAt))
+		.then(() => finish(session, aborted ? "cancelled" : "completed", undefined, startedAt, baseline))
+		.catch((error: unknown) => finish(session, aborted ? "cancelled" : "failed", errorMessage(error), startedAt, baseline))
 		.finally(() => {
 			unsubscribe();
-			session.dispose();
+			return teardown(session);
 		});
 
 	return {
@@ -100,7 +113,16 @@ export async function startChild(input: StartChildInput): Promise<ChildHandle> {
 	};
 }
 
-function finish(session: AgentSession, status: ChildOutcome["status"], error: string | undefined, startedAt: number): ChildOutcome {
+/** dispose() alone skips session_shutdown, which is where the MCP extension closes its servers. */
+async function teardown(session: AgentSession): Promise<void> {
+	try {
+		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+	} finally {
+		session.dispose();
+	}
+}
+
+function finish(session: AgentSession, status: ChildOutcome["status"], error: string | undefined, startedAt: number, baseline: SessionStats): ChildOutcome {
 	const stats = session.getSessionStats();
 	const failure = status === "completed" ? providerFailure(session) : undefined;
 	if (failure) {
@@ -111,12 +133,12 @@ function finish(session: AgentSession, status: ChildOutcome["status"], error: st
 		status,
 		text: session.getLastAssistantText() ?? "",
 		usage: {
-			input: stats.tokens.input,
-			output: stats.tokens.output,
-			cacheRead: stats.tokens.cacheRead,
-			cacheWrite: stats.tokens.cacheWrite,
-			totalTokens: stats.tokens.total,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: stats.cost },
+			input: stats.tokens.input - baseline.tokens.input,
+			output: stats.tokens.output - baseline.tokens.output,
+			cacheRead: stats.tokens.cacheRead - baseline.tokens.cacheRead,
+			cacheWrite: stats.tokens.cacheWrite - baseline.tokens.cacheWrite,
+			totalTokens: stats.tokens.total - baseline.tokens.total,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: stats.cost - baseline.cost },
 		},
 		durationMs: Date.now() - startedAt,
 	};

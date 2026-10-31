@@ -53,6 +53,24 @@ describe("createWorktree", () => {
 		expect(calls.at(-1)).toEqual(["worktree", "add", "-b", "pi/fix-3", "/wt/acme/app/fix-3", "origin/main"]);
 	});
 
+	it("gives parallel launches with the same slug distinct names", async () => {
+		const branches = new Set<string>();
+		const exec = async (_command: string, args: string[]) => {
+			if (args[0] === "rev-parse" && args[1] === "--show-toplevel") return { stdout: "/code/app\n", stderr: "", code: 0 };
+			if (args[0] === "remote") return { stdout: "", stderr: "no origin", code: 2 };
+			if (args[0] === "rev-parse") return { stdout: "", stderr: "", code: branches.has(args[3] ?? "") ? 0 : 1 };
+			await new Promise((resolve) => setTimeout(resolve, 5));
+			branches.add(`refs/heads/${args[3]}`);
+			return { stdout: "", stderr: "", code: 0 };
+		};
+		const launch = () => createWorktree({ exec, cwd: "/code/app", slug: "audit", from: "HEAD", template: "/wt/{slug}", env: {}, home: "/home", exists: () => false });
+
+		const [first, second] = await Promise.all([launch(), launch()]);
+
+		expect(first.branch).toBe("pi/audit");
+		expect(second).toEqual({ path: "/wt/audit-2", branch: "pi/audit-2", repoPath: "/code/app" });
+	});
+
 	it("surfaces git's error when the worktree cannot be added", async () => {
 		const exec = async (_command: string, args: string[]) => {
 			if (args[0] === "rev-parse" && args[1] === "--show-toplevel") return { stdout: "/code/app\n", stderr: "", code: 0 };

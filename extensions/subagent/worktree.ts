@@ -79,8 +79,18 @@ export interface CreatedWorktree {
 	repoPath: string;
 }
 
+// Pi runs a turn's tool calls in parallel, so two launches can pick the same name unless creation
+// is serialized. Collisions with other processes surface as git's own error.
+let creating: Promise<unknown> = Promise.resolve();
+
 /** Creates a branch and worktree with plain git, picking a unique slug when the first choice is taken. */
-export async function createWorktree(input: CreateWorktreeInput): Promise<CreatedWorktree> {
+export function createWorktree(input: CreateWorktreeInput): Promise<CreatedWorktree> {
+	const result = creating.then(() => createWorktreeNow(input));
+	creating = result.catch(() => undefined);
+	return result;
+}
+
+async function createWorktreeNow(input: CreateWorktreeInput): Promise<CreatedWorktree> {
 	const repoPath = await gitStdout(input.exec, input.cwd, ["rev-parse", "--show-toplevel"], "not inside a git repository");
 	const remote = await input.exec("git", ["remote", "get-url", "origin"], { cwd: repoPath });
 	const parsed = remote.code === 0 ? parseRemoteUrl(remote.stdout) : undefined;

@@ -44,6 +44,10 @@ export function installSubagentUi(pi: ExtensionAPI, registry: SubagentRegistry):
 		uiCtx = ctx;
 		renderStatus();
 	});
+	pi.on("session_shutdown", () => {
+		// The context is stale from here on; children still settling must not render into it.
+		uiCtx = undefined;
+	});
 	registry.subscribe(renderStatus);
 
 	pi.registerCommand("subagents", {
