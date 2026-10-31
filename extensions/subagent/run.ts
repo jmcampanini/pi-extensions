@@ -107,7 +107,7 @@ export async function runSubagent(input: RunInput, deps: RunDeps): Promise<Agent
 		}
 		if (cancellation.requested) throw new Error(worktree ? `cancelled before the subagent started; worktree ${worktree.path} on branch ${worktree.branch} was left in place` : "cancelled before the subagent started");
 
-		const handle = await deps.startChild({
+		const handle = await startOrExplain(worktree, () => deps.startChild({
 			cwd,
 			task: params.task,
 			model,
@@ -125,7 +125,7 @@ export async function runSubagent(input: RunInput, deps: RunDeps): Promise<Agent
 				if (mode !== "foreground" || !child) return;
 				input.onUpdate?.({ content: [{ type: "text", text: child.progress.join("\n") }], details: detailsFor(child) });
 			},
-		});
+		}));
 		cancellation.attach(handle.abort);
 
 		const record: ChildRecord = {
@@ -167,6 +167,17 @@ export async function runSubagent(input: RunInput, deps: RunDeps): Promise<Agent
 		};
 	} finally {
 		cancellation.dispose();
+	}
+}
+
+/** A launch failure after the worktree exists must still tell the caller where the worktree is. */
+async function startOrExplain(worktree: Worktree | undefined, start: () => Promise<ChildHandle>): Promise<ChildHandle> {
+	try {
+		return await start();
+	} catch (error) {
+		if (!worktree) throw error;
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`${message} (worktree ${worktree.path} on branch ${worktree.branch} was left in place)`, { cause: error });
 	}
 }
 

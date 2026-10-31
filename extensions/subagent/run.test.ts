@@ -201,6 +201,15 @@ describe("what the child is started with", () => {
 	});
 });
 
+describe("launch failures", () => {
+	it("names a worktree it had created when the child fails to start", async () => {
+		const child = fakeChild();
+		const { deps } = fakeDeps(child.handle, { startChild: async () => Promise.reject(new Error("bindExtensions failed")) });
+
+		await expect(runSubagent({ params: { task: "t", isolation: "worktree" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: parentSession() }, deps)).rejects.toThrow("bindExtensions failed (worktree /wt/t on branch pi/t was left in place)");
+	});
+});
+
 describe("cancellation", () => {
 	it("does not start a child when the call is already cancelled, and names a worktree it had created", async () => {
 		const child = fakeChild();

@@ -16,6 +16,11 @@ import { createWorktree } from "./worktree.ts";
 
 const SELF_DIR = dirname(fileURLToPath(import.meta.url));
 
+// A notice sent during session_shutdown is wiped when Pi draws the next session, and /reload
+// re-evaluates this module, so the handoff lives on the process instead.
+const SHUTDOWN_NOTICE = Symbol.for("pi-extensions.subagent.shutdown-notice");
+const handoff = globalThis as { [SHUTDOWN_NOTICE]?: string };
+
 const DESCRIPTION = `Delegate a task to a subagent: a separate Pi agent session with its own context window, running in this process with the same tools, skills, and project instructions.
 
 Modes: "background" (default) returns at once and the result arrives later as a user message beginning ${completionPrefix("<title>")}; reports that finish together arrive in one message. Keep working or end your turn, never poll. "foreground" blocks until the child finishes and returns its report here.
@@ -45,17 +50,22 @@ export default function subagentExtension(pi: ExtensionAPI) {
 
 	pi.on("session_start", (_event, ctx) => {
 		parentCtx = ctx;
+		const notice = handoff[SHUTDOWN_NOTICE];
+		if (notice && ctx.hasUI) {
+			delete handoff[SHUTDOWN_NOTICE];
+			ctx.ui.notify(notice, "warning");
+		}
 	});
 	// Pi clears its compaction guard only after these handlers return, so each flush re-checks.
 	pi.on("session_compact", () => outbox.flush());
 	pi.on("session_compact_failed", () => outbox.flush());
 	pi.on("session_tree", () => outbox.flush());
 	pi.on("agent_settled", () => outbox.flush());
-	pi.on("session_shutdown", (_event, ctx) => {
+	pi.on("session_shutdown", (event) => {
 		const running = registry.running();
-		if (running.length > 0 && ctx.hasUI) {
+		if (running.length > 0 && event.reason !== "quit") {
 			const names = running.map((child) => (child.sessionFile ? `${child.title} (${child.sessionFile})` : child.title)).join("; ");
-			ctx.ui.notify(`Cancelled ${running.length} running subagent${running.length === 1 ? "" : "s"}: ${names}`, "warning");
+			handoff[SHUTDOWN_NOTICE] = `Cancelled ${running.length} running subagent${running.length === 1 ? "" : "s"} when the previous session ended: ${names}`;
 		}
 		closed = true;
 		parentCtx = undefined;

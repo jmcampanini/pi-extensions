@@ -22,11 +22,13 @@ The extension registers one tool, `subagent`, declared to the model only (codemo
 
 Background reports are queued as steering messages: when the parent is idle one starts a new turn, when a turn is running it is injected at the next tool boundary, and reports that finish together arrive in one message. While Pi compacts it accepts no prompts, so reports wait and are retried; after five minutes of waiting they are parked for the next turn and a notice says so.
 
+In print mode (`pi -p`) the process exits when the parent's turn ends, so only foreground children can report there.
+
 A child in the parent's project inherits the parent's project trust. A child elsewhere follows the trust decision stored for that directory, and is trusted only when nothing there needs trust. A worktree takes the trust of the directory it was created from.
 
 ## Command and footer
 
-`/subagents` lists every child started in this session with its id, model, elapsed time, and latest progress. Pick a running child to cancel it, or a finished one to read its report. The footer shows how many children are running. Starting a new session, resuming another, reloading, or quitting cancels running children and says which ones.
+`/subagents` lists every child started in this session with its id, model, elapsed time, and latest progress. Pick a running child to cancel it, or a finished one to read its report. The footer shows how many children are running. Starting a new session, resuming another, reloading, or quitting cancels running children; the next session starts with a notice naming them.
 
 ## Settings
 
