@@ -1,7 +1,7 @@
 export interface SubagentSettings {
 	/** Template for the directory a worktree child runs in. See expandWorktreePath for placeholders. */
 	worktreePath: string;
-	/** Template for the worktree branch name; `{slug}` and `{repo}` are replaced. */
+	/** Template for the worktree branch name. See expandBranchName for placeholders. */
 	worktreeBranch: string;
 	/** Result text longer than this is cut before it reaches the parent. */
 	resultMaxChars: number;

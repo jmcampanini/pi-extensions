@@ -14,7 +14,7 @@ import { backgroundStartedText, type CompletionSummary, deriveTitle, formatCompl
 import type { SubagentSettings } from "./settings.ts";
 import { slugify } from "./worktree.ts";
 
-export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export const DEFAULT_MODE: ChildMode = "background";
 export const DEFAULT_CONTEXT: ChildContext = "fresh";
 
@@ -207,7 +207,7 @@ function resolveDirectory(requested: string | undefined, base: string): string {
 	return path;
 }
 
-export function detailsFor(record: ChildRecord): SubagentToolDetails {
+function detailsFor(record: ChildRecord): SubagentToolDetails {
 	return {
 		...summarize(record),
 		progress: record.progress,

@@ -99,14 +99,9 @@ describe("runSubagent in the foreground", () => {
 	it("waits for the child and returns its report with the final details", async () => {
 		const child = fakeChild();
 		const { deps } = fakeDeps(child.handle);
-		const updates: string[] = [];
 
-		const pending = runSubagent({ params: { task: "t", mode: "foreground" }, toolCallId: "c", signal: undefined, onUpdate: (partial) => {
-			const block = partial.content[0];
-			if (block?.type === "text") updates.push(block.text);
-		}, parent: parentSession() }, deps);
+		const pending = runSubagent({ params: { task: "t", mode: "foreground" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: parentSession() }, deps);
 		await flush();
-		deps.registry.get(deps.registry.list()[0]!.id);
 		child.finish(completed("Report body"));
 		const result = await pending;
 

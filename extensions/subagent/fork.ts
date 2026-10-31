@@ -69,7 +69,7 @@ export function pendingToolCalls(branch: readonly SessionEntry[]): PendingCall[]
 	return [];
 }
 
-export function forkToolResult(call: PendingCall, input: Pick<ForkInput, "toolCallId" | "childCwd" | "now">): ToolResultMessage {
+function forkToolResult(call: PendingCall, input: Pick<ForkInput, "toolCallId" | "childCwd" | "now">): ToolResultMessage {
 	const text = call.id === input.toolCallId ? FORK_NOTICE.replace("{cwd}", input.childCwd) : SIBLING_NOTICE;
 	return {
 		role: "toolResult",
