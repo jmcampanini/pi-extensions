@@ -1,6 +1,8 @@
 import type { Provider } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agent";
 
+import { guardSnapshots } from "./snapshot.ts";
+
 type OriginalProvider = {
 	provider: Provider;
 	config: ReturnType<ModelRegistry["getRegisteredProviderConfig"]>;
@@ -51,7 +53,7 @@ export default function modelAllowlist(pi: ExtensionAPI) {
 			}
 
 			const filterAllModels = provider.filterAllModels?.bind(provider);
-			pi.registerProvider({
+			const filteredProvider: Provider = {
 				...provider,
 				getModels: () => provider.getModels().filter(keep),
 				getAllModels: () => (provider.getAllModels?.() ?? provider.getModels()).filter(keep),
@@ -59,7 +61,9 @@ export default function modelAllowlist(pi: ExtensionAPI) {
 				...(filterAllModels ? {
 					filterAllModels: (models, credential) => filterAllModels(models, credential).filter(keep),
 				} : {}),
-			});
+			};
+			guardSnapshots(filteredProvider, allowed);
+			pi.registerProvider(filteredProvider);
 		}
 
 		await ctx.modelRegistry.refresh({ allowNetwork: false });
@@ -67,12 +71,12 @@ export default function modelAllowlist(pi: ExtensionAPI) {
 }
 
 function readAllowlist(settings: ReturnType<ExtensionAPI["getSettings"]>): Set<string> | undefined {
-	const entries = "modelAllowlist" in settings ? settings.modelAllowlist : undefined;
-	if (entries === undefined) return undefined;
+	const entries = settings.enabledModels;
+	if (entries === undefined || (Array.isArray(entries) && entries.length === 0)) return undefined;
 
-	const isExactIdList = Array.isArray(entries) && entries.length > 0 &&
+	const isExactIdList = Array.isArray(entries) &&
 		entries.every((entry) => typeof entry === "string" && /^[^/\s*?]+\/[^\s*?]+$/.test(entry));
-	if (!isExactIdList) throw new Error("modelAllowlist must be a nonempty array of exact provider/model IDs");
+	if (!isExactIdList) throw new Error("enabledModels must contain exact provider/model IDs");
 
 	return new Set(entries);
 }
