@@ -2,8 +2,6 @@
 
 Delegate a task to a separate Pi agent session that runs inside the same Pi process. The child has its own context window and its own session file. It loads the extensions, skills, and project instructions for the directory it runs in, mirrors the parent's `-e` and `--no-extensions` flags, shares the parent's model credentials, and declares exactly the parent's active tools minus `subagent`, so a child never has more than its parent (codemode and MCP tools included). Pi's built-in codemode, tool search, and MCP extensions are loaded the way the CLI loads them, so `-builtin:<name>` and replacement extensions apply to children too. Pi runs at most two codemode workers per process, so a parent and several children all using codemode take turns.
 
-Tested against Pi 1.4.0.
-
 ## Tool
 
 The extension registers one tool, `subagent`, declared to the model only (codemode scripts cannot call it).

@@ -29,4 +29,4 @@ Pi 1.4 can briefly rebuild availability snapshots without applying provider filt
 
 T3 discovers models through Pi's RPC interface, so it receives the filtered catalog. Its separate "Pi default" entry is added by T3 and can be hidden in T3 settings.
 
-This filters model discovery; it is not an authorization boundary. Built-in providers, custom `models.json` entries, and legacy provider headers are covered by the tests. Tested with Pi 1.4.0.
+This filters model discovery; it is not an authorization boundary.
