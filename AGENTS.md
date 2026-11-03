@@ -1,0 +1,3 @@
+- Keep a README.md in each extension directory explaining what the extension does, how to configure it, and any limits.
+- Keep the root README.md extension list up to date when adding, renaming, removing, or changing an extension; use a bold extension name followed by one concise sentence.
+- Do not add test-run results or "Tested with/against" version notes to READMEs.
