@@ -1,8 +1,6 @@
 import type { Provider } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ModelRegistry } from "@earendil-works/pi-coding-agent";
 
-import { guardSnapshots } from "./snapshot.ts";
-
 type OriginalProvider = {
 	provider: Provider;
 	config: ReturnType<ModelRegistry["getRegisteredProviderConfig"]>;
@@ -52,18 +50,11 @@ export default function modelAllowlist(pi: ExtensionAPI) {
 				continue;
 			}
 
-			const filterAllModels = provider.filterAllModels?.bind(provider);
-			const filteredProvider: Provider = {
+			pi.registerProvider({
 				...provider,
 				getModels: () => provider.getModels().filter(keep),
 				getAllModels: () => (provider.getAllModels?.() ?? provider.getModels()).filter(keep),
-				filterModels: (models, credential) => (provider.filterModels?.(models, credential) ?? models).filter(keep),
-				...(filterAllModels ? {
-					filterAllModels: (models, credential) => filterAllModels(models, credential).filter(keep),
-				} : {}),
-			};
-			guardSnapshots(filteredProvider, allowed);
-			pi.registerProvider(filteredProvider);
+			});
 		}
 
 		await ctx.modelRegistry.refresh({ allowNetwork: false });

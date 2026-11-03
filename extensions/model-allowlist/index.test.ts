@@ -82,23 +82,24 @@ describe("model allowlist", () => {
 			.toMatchObject({ headers: { "X-Model": "one" } });
 	});
 
-	it("filters models.json entries after Pi recomposes the provider", async () => {
+	it("keeps endpoint-only builtin providers filtered during re-registration and refresh", async () => {
 		mkdirSync(".sandbox", { recursive: true });
 		const directory = mkdtempSync(join(".sandbox", "model-allowlist-test-"));
 		try {
 			const path = join(directory, "models.json");
-			writeFileSync(path, JSON.stringify({ providers: { fixture: {
-				baseUrl: "http://example.invalid/v1", api: "openai-responses", apiKey: "fixture-key",
-				models: [{ id: "one" }, { id: "two" }],
+			writeFileSync(path, JSON.stringify({ providers: { openai: {
+				baseUrl: "http://example.invalid/v1", apiKey: "fixture-key",
 			} } }));
-			const test = await setup(["fixture/one"], path);
+			const test = await setup(["openai/gpt-4.1"], path);
 			await test.start();
-			expect(test.registry.getAvailable().map((model) => `${model.provider}/${model.id}`)).toEqual(["fixture/one"]);
-			const native = test.registry.getRegisteredNativeProvider("fixture")!;
+			expect(test.registry.getAvailable().map((model) => `${model.provider}/${model.id}`)).toEqual(["openai/gpt-4.1"]);
+			expect(test.registry.find("openai", "gpt-4.1")?.baseUrl).toBe("http://example.invalid/v1");
+			expect(await test.registry.getApiKeyForProvider("openai")).toBe("fixture-key");
+			const native = test.registry.getRegisteredNativeProvider("openai")!;
 			test.registry.registerProvider(native);
-			expect(test.registry.getAvailable().map((model) => `${model.provider}/${model.id}`)).toEqual(["fixture/one"]);
+			expect(test.registry.getAvailable().map((model) => `${model.provider}/${model.id}`)).toEqual(["openai/gpt-4.1"]);
 			await test.registry.refresh({ allowNetwork: false });
-			expect(test.registry.getAvailable().map((model) => `${model.provider}/${model.id}`)).toEqual(["fixture/one"]);
+			expect(test.registry.getAvailable().map((model) => `${model.provider}/${model.id}`)).toEqual(["openai/gpt-4.1"]);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
