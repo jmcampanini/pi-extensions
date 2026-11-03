@@ -6,4 +6,4 @@ T3 Code starts Pi in RPC mode with its own extension (`pi-t3-mcp-extension.ts`) 
 
 When the variable is absent, Pi was not started by T3 Code and nothing is changed.
 
-T3 Code still shows the mode the thread was given; only its effect on Pi is gone. Tested against T3 Code 0.1.7-nightly.20261031 and Pi 1.4.0.
+T3 Code still shows the mode the thread was given; only its effect on Pi is gone.
