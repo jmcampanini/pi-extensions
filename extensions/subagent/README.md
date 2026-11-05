@@ -28,6 +28,12 @@ A child in the parent's project inherits the parent's project trust. A child els
 
 `/subagents` lists every child started in this session with its id, model, elapsed time, and latest progress. Pick a running child to cancel it, or a finished one to read its report. The footer shows how many children are running. Starting a new session, resuming another, reloading, or quitting cancels running children; the next session starts with a notice naming them.
 
+## Under T3 Code
+
+When [T3 Code](https://t3.gg/code) runs Pi for a thread, this extension registers nothing: no `subagent` tool, no `/subagents` command, and no footer. T3 records only the turns it starts. A background report starts its own turn, so its result never reaches the T3 thread, and a later handoff can report the work as still running. Use T3's `delegate_task` there instead; T3 keeps the child and its result attached to the thread.
+
+The extension recognizes T3 by its bridge extension: T3 sets `T3_PI_MCP_EXTENSION_PATH` to the bridge's path and loads the same path with `--extension`. Both must be present. A Pi started from a T3 thread's bash tool inherits the variable but is not run by T3, so it keeps `subagent`. The check runs once, when the extension loads, and does not depend on T3's MCP connection: if T3 runs a thread without its MCP tools, that thread has no delegation tool at all.
+
 ## Settings
 
 Under a `subagent` key in `~/.pi/agent/settings.json` or `.pi/settings.json`:

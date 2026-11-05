@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { CredentialStore } from "@earendil-works/pi-ai";
 import { type ExtensionAPI, type ExtensionContext, getAgentDir, hasTrustRequiringProjectResources, type ModelRegistry, ProjectTrustStore } from "@earendil-works/pi-coding-agent";
 import { canAcceptPrompt, createOutbox } from "./delivery.ts";
-import { parentFlags } from "./environment.ts";
+import { launchedByT3Code, parentFlags } from "./environment.ts";
 import { startChild } from "./launch.ts";
 import { SubagentRegistry } from "./registry.ts";
 import { completionPrefix } from "./result.ts";
@@ -29,9 +29,11 @@ Location: "cwd" runs the child in another directory. "isolation": "worktree" cre
 Model: "model" accepts provider/id, an id, or a unique substring such as "opus", "sonnet", "luna"; "effort" is the thinking level. Both default to this session's.`;
 
 export default function subagentExtension(pi: ExtensionAPI) {
+	const flags = parentFlags(process.argv.slice(2), process.cwd());
+	if (launchedByT3Code(process.env, flags)) return;
+
 	const registry = new SubagentRegistry();
 	const trustStore = new ProjectTrustStore(getAgentDir());
-	const flags = parentFlags(process.argv.slice(2), process.cwd());
 	let parentCtx: ExtensionContext | undefined;
 	// Set when this session is being replaced or Pi quits. Children that settle afterwards must not
 	// touch the stale context or deliver messages.
