@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { type ExtensionAPI, formatSize, type InputSource, truncateHead } from "@earendil-works/pi-coding-agent";
-import { type Static, Type } from "typebox";
+import { Type } from "typebox";
 
 export const TOOL_NAME = "web_search";
 export const OUTPUT_DIR = ".codex-web-search";
@@ -62,8 +62,6 @@ const searchSchema = Type.Object({
 	})),
 });
 
-type SearchInput = Static<typeof searchSchema>;
-
 export default function codexWebSearch(pi: ExtensionAPI) {
 	let isOverridden = false;
 	const extensionOverrideTexts: string[] = [];
@@ -95,7 +93,7 @@ export default function codexWebSearch(pi: ExtensionAPI) {
 		promptSnippet: "Fetch cited source data from the public web",
 		parameters: searchSchema,
 
-		async execute(_toolCallId, params: SearchInput, signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const query = withoutOverride(params.query);
 			const extract = withoutOverride(params.extract ?? "");
 			if (!query) throw new Error(`${TOOL_NAME} needs a non-empty query.`);
@@ -107,12 +105,13 @@ export default function codexWebSearch(pi: ExtensionAPI) {
 				);
 			}
 
-			const prefix = join(ctx.cwd, OUTPUT_DIR, runPrefix());
+			const outputDir = join(ctx.cwd, OUTPUT_DIR);
+			const prefix = join(outputDir, runPrefix());
 			const responsePath = `${prefix}-response.md`;
 			const prompt = extract
 				? `${RESEARCH_PROMPT}\n\nSearch query:\n${query}\n\nExtraction instruction:\n${extract}`
 				: `${RESEARCH_PROMPT}\n\nSearch query:\n${query}`;
-			await mkdir(join(ctx.cwd, OUTPUT_DIR), { recursive: true });
+			await mkdir(outputDir, { recursive: true });
 			await writeFile(`${prefix}-prompt.md`, `${prompt}\n`);
 
 			const run = await pi.exec("codex", [
