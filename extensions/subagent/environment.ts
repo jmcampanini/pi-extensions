@@ -21,6 +21,25 @@ export function parentFlags(argv: readonly string[], parentCwd: string): ParentF
 	return { extensions, noExtensions: args.noExtensions ?? false };
 }
 
+/**
+ * T3 Code sets this to the path of the bridge extension it injects into the Pi processes that run
+ * its threads, and passes the same path with --extension.
+ */
+const T3_BRIDGE_ENV = "T3_PI_MCP_EXTENSION_PATH";
+
+/**
+ * Whether T3 Code launched this process to run one of its threads. T3 records only the turns it
+ * starts, so a background report, which starts its own turn, never reaches the thread; under T3,
+ * delegation belongs to its delegate_task tool. The variable alone is not enough: a Pi started from
+ * a T3 thread's bash tool inherits it without being run by T3.
+ */
+export function launchedByT3Code(env: NodeJS.ProcessEnv, flags: ParentFlags): boolean {
+	const bridge = env[T3_BRIDGE_ENV];
+	if (!bridge) return false;
+
+	return flags.extensions.some((entry) => resolve(entry) === resolve(bridge));
+}
+
 /** A child declares exactly the parent's active tools, minus this extension's own tool. */
 export function childToolNames(parentActiveTools: readonly string[]): string[] {
 	return parentActiveTools.filter((name) => name !== "subagent");

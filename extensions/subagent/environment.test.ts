@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { childToolNames, parentFlags, resolveChildTrust } from "./environment.ts";
+import { childToolNames, launchedByT3Code, parentFlags, resolveChildTrust } from "./environment.ts";
 
 describe("parentFlags", () => {
 	it("collects the parent's -e entries and --no-extensions, ignoring its other flags", () => {
@@ -9,6 +9,31 @@ describe("parentFlags", () => {
 
 	it("reports nothing for a parent started without those flags", () => {
 		expect(parentFlags(["--mode", "rpc"], "/code/app")).toEqual({ extensions: [], noExtensions: false });
+	});
+});
+
+describe("launchedByT3Code", () => {
+	const bridge = "/home/x/.t3/caches/pi-t3-mcp-extension.ts";
+	const t3Env = { T3_PI_MCP_EXTENSION_PATH: bridge, T3_MCP_URL: "http://127.0.0.1:3773/mcp" };
+
+	it("is true when T3 named its bridge extension and the process loaded it", () => {
+		const flags = parentFlags(["--mode", "rpc", "--extension", bridge], "/code/app");
+
+		expect(launchedByT3Code(t3Env, flags)).toBe(true);
+		expect(launchedByT3Code({ T3_PI_MCP_EXTENSION_PATH: bridge }, flags)).toBe(true);
+	});
+
+	it("is false for a Pi that only inherited T3's environment, as one started from a T3 thread's bash tool does", () => {
+		const flags = parentFlags(["-e", "./extensions/subagent"], "/code/app");
+
+		expect(launchedByT3Code(t3Env, flags)).toBe(false);
+	});
+
+	it("is false without the variable, whatever the process loaded", () => {
+		const flags = parentFlags(["--extension", bridge], "/code/app");
+
+		expect(launchedByT3Code({ T3_MCP_URL: "http://127.0.0.1:3773/mcp" }, flags)).toBe(false);
+		expect(launchedByT3Code({ T3_PI_MCP_EXTENSION_PATH: "" }, flags)).toBe(false);
 	});
 });
 
