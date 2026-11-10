@@ -59,6 +59,6 @@ Under a `subagent` key in `~/.pi/agent/settings.json` or `.pi/settings.json`:
 ## Development
 
 ```sh
-mise run check       # lint, typecheck, and test the whole repository
+mise run check  # lint, typecheck, and test the whole repository
 pi -e ./extensions/subagent
 ```
