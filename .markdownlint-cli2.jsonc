@@ -1,0 +1,40 @@
+{
+  "config": {
+    // Headings use # markers in every file, so one style reads the same everywhere.
+    "MD003": { "style": "atx" },
+    // Two blank lines above a heading and one below separate sections at a glance.
+    "MD022": { "lines_above": 2, "lines_below": 1 },
+    // Sibling headings stay unique while a section name such as Examples repeats under different parents.
+    "MD024": { "siblings_only": true },
+    // Notes and wiki pages carry several top-level headings.
+    "MD025": false,
+    // AGENTS.md opens with a sentence, not a heading.
+    "MD041": false,
+    // Bullets use a dash in every file, so one marker reads the same everywhere.
+    "MD004": { "style": "dash" },
+    // Nested bullets indent two spaces, the width a dash and a space take.
+    "MD007": { "indent": 2 },
+    // A list may follow its lead sentence without a blank line.
+    "MD032": false,
+    // The two blank lines above a heading would otherwise count as multiple blank lines.
+    "MD012": false,
+    // Each paragraph is one source line, so lines have no length limit.
+    "MD013": false,
+    // A fenced block may sit directly under the sentence or list item that introduces it.
+    "MD031": false,
+    // A fenced block that holds plain output names no language.
+    "MD040": false,
+    // Fences use backticks in every file, so one fence style reads the same everywhere.
+    "MD048": { "style": "backtick" },
+    // Inline HTML is allowed where Markdown has no equivalent.
+    "MD033": false,
+    // Bare URLs and email addresses are allowed as written.
+    "MD034": false,
+    // Tables may be compact, with no space around the pipes.
+    "MD060": false,
+    // Emphasis uses asterisks in every file, so one style reads the same everywhere.
+    "MD049": { "style": "asterisk" },
+    // Strong emphasis uses asterisks for the same reason.
+    "MD050": { "style": "asterisk" }
+  }
+}

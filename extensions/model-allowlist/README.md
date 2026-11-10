@@ -2,6 +2,7 @@
 
 Make Pi's `enabledModels` list also limit the model catalog exposed to Pi and T3.
 
+
 ## Configuration
 
 Load this package in Pi and set `enabledModels` in `~/.pi/agent/settings.json` or trusted project settings:
@@ -20,6 +21,7 @@ Load this package in Pi and set `enabledModels` in `~/.pi/agent/settings.json` o
 Use exact `provider/model` IDs. Pi itself accepts patterns, fuzzy names, and thinking-level suffixes in this setting; this extension treats entries as literal IDs, so those forms are unsupported. Configure thinking separately with `defaultThinkingLevel` or `modelThinkingLevels`.
 
 An unset or empty list leaves the catalog unrestricted, matching Pi's normal setting behavior. The list still controls Pi's startup selection and model cycling. Keep your default model in the list, and restart Pi after editing the settings. Refresh the Pi provider in T3 to discover the updated catalog.
+
 
 ## How it works
 

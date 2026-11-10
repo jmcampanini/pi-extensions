@@ -25,7 +25,7 @@ function setup(codex: Codex = { answer: "## Answer\nNode 24 shipped.\n\n## Sourc
 			runs.push({ command, args });
 			const outputPath = args[args.indexOf("--output-last-message") + 1]!;
 			if (codex.answer !== undefined) writeFileSync(outputPath, codex.answer);
-			return { stdout: "", stderr: codex.stderr ?? "", code: codex.code ?? 0, killed: false };
+			return { stdout: "", stderr: codex.stderr ?? "", code: codex.code ?? 0, killed: false, truncated: false };
 		},
 	} as unknown as ExtensionAPI;
 	codexWebSearch(api);

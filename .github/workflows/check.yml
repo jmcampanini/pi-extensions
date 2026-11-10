@@ -1,0 +1,54 @@
+name: check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up mise
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+
+      - name: Verify the checkout is clean
+        run: |
+          changes=$(git status --porcelain --untracked-files=all)
+          if [ -n "$changes" ]; then
+            printf '%s\n' "$changes"
+            echo "Tool installation must leave tracked and untracked files unchanged."
+            exit 1
+          fi
+
+      - name: Check
+        id: check
+        run: mise run check
+
+      - name: Verify check left the checkout unchanged
+        if: ${{ always() && steps.check.outcome != 'skipped' }}
+        run: |
+          changes=$(git status --porcelain --untracked-files=all)
+          if [ -n "$changes" ]; then
+            printf '%s\n' "$changes"
+            git diff
+            echo "check must leave tracked and untracked files unchanged."
+            exit 1
+          fi
