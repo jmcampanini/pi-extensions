@@ -10,7 +10,11 @@
     "exactOptionalPropertyTypes": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    // Pi loads an extension's "@earendil-works/pi-ai" import from this module, whose StringEnum is typed for TypeBox.
+    "paths": {
+      "@earendil-works/pi-ai": ["./node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/pi-ai-extension-view.d.ts"]
+    }
   },
   "include": ["extensions/**/*.ts"]
 }

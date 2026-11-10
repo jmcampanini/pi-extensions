@@ -4,6 +4,7 @@ Same Pi. Fresh slice.
 
 Rebuilding my Pi experience, one deliberate extension at a time.
 
+
 ## Extensions
 
 - **[codex-web-search](extensions/codex-web-search/README.md)** adds a `web_search` tool that fetches cited source data from the web with `codex exec`.
