@@ -9,7 +9,7 @@ lockfile_platforms = ["linux-x64", "macos-arm64"]
 # package-lock.json locks tsc and vitest, so they have no pin here.
 [tools]
 jactionlint = { version = "2.5.0", workflow = "release.yaml" }
-node = "24.22.2"
+node = "26.13.0"
 "npm:markdownlint-cli2" = "0.24.0"
 
 [env]
