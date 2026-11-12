@@ -8,16 +8,28 @@ const source = (last: { stopReason?: string; errorMessage?: string } | undefined
 
 describe("childOutcome", () => {
 	it("reports a provider error recorded on the last assistant message as a failure", () => {
-		expect(childOutcome(source({ stopReason: "error", errorMessage: "401 unauthorized" }), "completed", undefined, 5)).toEqual({ status: "failed", error: "401 unauthorized", text: "done", durationMs: 5 });
+		expect(
+			childOutcome(source({ stopReason: "error", errorMessage: "401 unauthorized" }), "completed", undefined, 5),
+		).toEqual({ status: "failed", error: "401 unauthorized", text: "done", durationMs: 5 });
 	});
 
 	it("reports an aborted last message as cancelled and a clean stop as completed", () => {
 		expect(childOutcome(source({ stopReason: "aborted" }), "completed", undefined, 5).status).toBe("cancelled");
-		expect(childOutcome(source({ stopReason: "stop" }), "completed", undefined, 5)).toEqual({ status: "completed", error: undefined, text: "done", durationMs: 5 });
+		expect(childOutcome(source({ stopReason: "stop" }), "completed", undefined, 5)).toEqual({
+			status: "completed",
+			error: undefined,
+			text: "done",
+			durationMs: 5,
+		});
 	});
 
 	it("keeps a thrown failure's status and message", () => {
-		expect(childOutcome(source(undefined, ""), "failed", "boom", 1)).toEqual({ status: "failed", error: "boom", text: "", durationMs: 1 });
+		expect(childOutcome(source(undefined, ""), "failed", "boom", 1)).toEqual({
+			status: "failed",
+			error: "boom",
+			text: "",
+			durationMs: 1,
+		});
 	});
 });
 

@@ -21,12 +21,18 @@ const ENV_VAR = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g;
  * `${VAR}` expand from the environment. An unset variable or a relative result is an error, so a
  * misconfigured template never lands a worktree somewhere unexpected.
  */
-export function expandWorktreePath(template: string, values: WorktreeValues, env: Record<string, string | undefined>, home: string): string {
+export function expandWorktreePath(
+	template: string,
+	values: WorktreeValues,
+	env: Record<string, string | undefined>,
+	home: string,
+): string {
 	let path = fillPlaceholders(template, values);
 	path = path.replace(ENV_VAR, (_, braced: string | undefined, bare: string | undefined) => {
 		const name = braced ?? bare ?? "";
 		const value = env[name];
-		if (value === undefined || value.length === 0) throw new Error(`worktreePath references $${name}, which is not set`);
+		if (value === undefined || value.length === 0)
+			throw new Error(`worktreePath references $${name}, which is not set`);
 		return value;
 	});
 	if (path === "~" || path.startsWith("~/")) path = home + path.slice(1);
@@ -36,9 +42,13 @@ export function expandWorktreePath(template: string, values: WorktreeValues, env
 }
 
 /** Renders the branch name template; `{slug}` and `{repo}` are the useful placeholders. */
-export function expandBranchName(template: string, values: Pick<WorktreeValues, "repo" | "repoPath" | "host" | "owner" | "slug">): string {
+export function expandBranchName(
+	template: string,
+	values: Pick<WorktreeValues, "repo" | "repoPath" | "host" | "owner" | "slug">,
+): string {
 	const branch = fillPlaceholders(template, { ...values, branch: "" }).trim();
-	if (branch.length === 0 || /\s/.test(branch) || branch.startsWith("-") || branch.includes("..")) throw new Error(`worktreeBranch "${template}" produced an invalid branch name "${branch}"`);
+	if (branch.length === 0 || /\s/.test(branch) || branch.startsWith("-") || branch.includes(".."))
+		throw new Error(`worktreeBranch "${template}" produced an invalid branch name "${branch}"`);
 	return branch;
 }
 
@@ -66,13 +76,20 @@ export function parseRemoteUrl(url: string): { host: string; owner: string; repo
 	if (!match) return undefined;
 
 	const host = match[1]!;
-	const segments = match[2]!.replace(/\.git$/, "").split("/").filter((s) => s.length > 0);
+	const segments = match[2]!
+		.replace(/\.git$/, "")
+		.split("/")
+		.filter((s) => s.length > 0);
 	if (segments.length < 2) return undefined;
 	return { host, owner: segments.slice(0, -1).join("/"), repo: segments[segments.length - 1]! };
 }
 
 export interface ExecLike {
-	(command: string, args: string[], options?: { cwd?: string; timeout?: number }): Promise<{ stdout: string; stderr: string; code: number }>;
+	(
+		command: string,
+		args: string[],
+		options?: { cwd?: string; timeout?: number },
+	): Promise<{ stdout: string; stderr: string; code: number }>;
 }
 
 export interface CreateWorktreeInput {
@@ -109,7 +126,10 @@ export function createWorktree(input: CreateWorktreeInput): Promise<CreatedWorkt
 }
 
 async function createWorktreeNow(input: CreateWorktreeInput): Promise<CreatedWorktree> {
-	const toplevel = await input.exec("git", ["rev-parse", "--show-toplevel"], { cwd: input.cwd, timeout: PROBE_TIMEOUT_MS });
+	const toplevel = await input.exec("git", ["rev-parse", "--show-toplevel"], {
+		cwd: input.cwd,
+		timeout: PROBE_TIMEOUT_MS,
+	});
 	if (toplevel.code !== 0) throw new Error(`not inside a git repository (${input.cwd}): ${toplevel.stderr.trim()}`);
 	const repoPath = toplevel.stdout.trim();
 	const remote = await input.exec("git", ["remote", "get-url", "origin"], { cwd: repoPath, timeout: PROBE_TIMEOUT_MS });
@@ -120,10 +140,19 @@ async function createWorktreeNow(input: CreateWorktreeInput): Promise<CreatedWor
 		const slug = attempt === 0 ? input.slug : `${input.slug}-${attempt + 1}`;
 		const branch = expandBranchName(input.branchTemplate, { ...names, slug });
 		const path = expandWorktreePath(input.template, { ...names, slug, branch }, input.env, input.home);
-		const branchExists = (await input.exec("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: repoPath, timeout: PROBE_TIMEOUT_MS })).code === 0;
+		const branchExists =
+			(
+				await input.exec("git", ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], {
+					cwd: repoPath,
+					timeout: PROBE_TIMEOUT_MS,
+				})
+			).code === 0;
 		if (branchExists || input.exists(path)) continue;
 
-		const added = await input.exec("git", ["worktree", "add", "-b", branch, path, input.from], { cwd: repoPath, timeout: 120_000 });
+		const added = await input.exec("git", ["worktree", "add", "-b", branch, path, input.from], {
+			cwd: repoPath,
+			timeout: 120_000,
+		});
 		if (added.code !== 0) throw new Error(`git worktree add failed: ${added.stderr.trim() || added.stdout.trim()}`);
 		return { path, branch, repoPath };
 	}

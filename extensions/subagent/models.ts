@@ -15,7 +15,11 @@ export type ModelMatch<M extends ModelRef> =
  * substring of an id or display name. Scoped models (the session's enabledModels) are searched
  * before every available model, so a short name like "luna" prefers what the user already chose.
  */
-export function matchModel<M extends ModelRef>(reference: string, scoped: readonly M[], available: readonly M[]): ModelMatch<M> {
+export function matchModel<M extends ModelRef>(
+	reference: string,
+	scoped: readonly M[],
+	available: readonly M[],
+): ModelMatch<M> {
 	const text = reference.trim();
 	const lower = text.toLowerCase();
 
@@ -41,7 +45,10 @@ export function describeModel(model: ModelRef): string {
 	return `${model.provider}/${model.id}`;
 }
 
-export function formatModelMatchError<M extends ModelRef>(reference: string, match: Exclude<ModelMatch<M>, { status: "resolved" }>): string {
+export function formatModelMatchError<M extends ModelRef>(
+	reference: string,
+	match: Exclude<ModelMatch<M>, { status: "resolved" }>,
+): string {
 	if (match.status === "ambiguous") {
 		const list = match.candidates.map(describeModel).join(", ");
 		return `Model "${reference}" matches several models: ${list}. Use provider/id or a longer substring.`;

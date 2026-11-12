@@ -17,7 +17,9 @@ const SOURCE_PREFIX = /^[a-z][a-z0-9+.-]*:/i;
  */
 export function parentFlags(argv: readonly string[], parentCwd: string): ParentFlags {
 	const args = parseArgs([...argv]);
-	const extensions = (args.extensions ?? []).map((entry) => (SOURCE_PREFIX.test(entry) || entry.startsWith("~") || isAbsolute(entry) ? entry : resolve(parentCwd, entry)));
+	const extensions = (args.extensions ?? []).map((entry) =>
+		SOURCE_PREFIX.test(entry) || entry.startsWith("~") || isAbsolute(entry) ? entry : resolve(parentCwd, entry),
+	);
 	return { extensions, noExtensions: args.noExtensions ?? false };
 }
 

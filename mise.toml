@@ -6,7 +6,7 @@ lockfile = true
 lockfile_platforms = ["linux-x64", "macos-arm64"]
 
 # Each tool a task runs is pinned to an exact version, the latest release of its supported line, so every machine runs the same build.
-# package-lock.json locks tsc and vitest, so they have no pin here.
+# package-lock.json locks tsc, vitest, oxlint, oxlint-tsgolint, and oxfmt, so they have no pin here.
 [tools]
 jactionlint = { version = "2.5.0", workflow = "release.yaml" }
 node = "26.13.0"
@@ -27,6 +27,26 @@ description = "Typecheck the extensions."
 depends = ["install"]
 run = "tsc --noEmit"
 
+[tasks.lint-typescript]
+description = "Lint TypeScript with type-aware Oxlint rules."
+depends = ["install"]
+run = "oxlint extensions vitest.config.ts"
+
+[tasks.lint-fix]
+description = "Apply safe Oxlint fixes to TypeScript."
+depends = ["install"]
+run = "oxlint --fix extensions vitest.config.ts"
+
+[tasks.format-check]
+description = "Check TypeScript formatting without changing files."
+depends = ["install"]
+run = "oxfmt --check 'extensions/**/*.ts' vitest.config.ts"
+
+[tasks.format]
+description = "Format TypeScript with Oxfmt."
+depends = ["install"]
+run = "oxfmt --write 'extensions/**/*.ts' vitest.config.ts"
+
 [tasks.test]
 description = "Run the extension tests."
 depends = ["install"]
@@ -43,4 +63,4 @@ run = "git ls-files -z -- '*.md' '*.markdown' | xargs -0 markdownlint-cli2"
 # check runs every report-only task and writes only under ignored paths, so CI can assert a clean checkout after it.
 [tasks.check]
 description = "Run the complete local verification contract."
-depends = ["lint-markdown", "lint-workflows", "test", "typecheck"]
+depends = ["format-check", "lint-markdown", "lint-typescript", "lint-workflows", "test", "typecheck"]

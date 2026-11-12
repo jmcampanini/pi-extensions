@@ -12,7 +12,7 @@ function fakeChild(sessionFile: string | undefined = "/sessions/child.jsonl") {
 	const done = new Promise<ChildOutcome>((resolve) => {
 		finish = resolve;
 	});
-	const abort = vi.fn();
+	const abort = vi.fn<ChildHandle["abort"]>();
 	const handle: ChildHandle = { sessionFile, done, abort };
 	return { handle, finish, abort };
 }
@@ -45,8 +45,8 @@ function fakeDeps(handle: ChildHandle, overrides: Partial<RunDeps> = {}) {
 			return handle;
 		},
 		createWorktree: async (request) => ({ path: `/wt/${request.slug}`, branch: `pi/${request.slug}` }),
-		deliver: vi.fn(),
-		notify: vi.fn(),
+		deliver: vi.fn<RunDeps["deliver"]>(),
+		notify: vi.fn<RunDeps["notify"]>(),
 		trust: { storedDecision: () => null, requiresTrust: () => false },
 		selfDir: "/ext/subagent",
 		now: () => 1_000,
@@ -63,7 +63,16 @@ describe("runSubagent in the background", () => {
 		const child = fakeChild();
 		const { deps } = fakeDeps(child.handle);
 
-		const result = await runSubagent({ params: { task: "Summarize the repo", title: "Summary" }, toolCallId: "call-1", signal: undefined, onUpdate: undefined, parent: parentSession() }, deps);
+		const result = await runSubagent(
+			{
+				params: { task: "Summarize the repo", title: "Summary" },
+				toolCallId: "call-1",
+				signal: undefined,
+				onUpdate: undefined,
+				parent: parentSession(),
+			},
+			deps,
+		);
 
 		expect(result.content[0]).toEqual({ type: "text", text: expect.stringContaining('Started subagent "Summary"') });
 		expect(result.details?.status).toBe("running");
@@ -73,7 +82,7 @@ describe("runSubagent in the background", () => {
 		child.finish(completed("All good."));
 		await flush();
 
-		const message = (deps.deliver as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+		const message = vi.mocked(deps.deliver).mock.calls[0]![0];
 		expect(message.startsWith(`${completionPrefix("Summary")} completed`)).toBe(true);
 		expect(message).toContain("All good.");
 		expect(deps.registry.get(result.details!.id)?.status).toBe("completed");
@@ -87,7 +96,16 @@ describe("runSubagent in the background", () => {
 			},
 		});
 
-		await runSubagent({ params: { task: "t", title: "Flaky" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: parentSession() }, deps);
+		await runSubagent(
+			{
+				params: { task: "t", title: "Flaky" },
+				toolCallId: "c",
+				signal: undefined,
+				onUpdate: undefined,
+				parent: parentSession(),
+			},
+			deps,
+		);
 		child.finish(completed("x"));
 		await flush();
 
@@ -100,7 +118,16 @@ describe("runSubagent in the foreground", () => {
 		const child = fakeChild();
 		const { deps } = fakeDeps(child.handle);
 
-		const pending = runSubagent({ params: { task: "t", mode: "foreground" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: parentSession() }, deps);
+		const pending = runSubagent(
+			{
+				params: { task: "t", mode: "foreground" },
+				toolCallId: "c",
+				signal: undefined,
+				onUpdate: undefined,
+				parent: parentSession(),
+			},
+			deps,
+		);
 		await flush();
 		child.finish(completed("Report body"));
 		const result = await pending;
@@ -115,23 +142,49 @@ describe("runSubagent in the foreground", () => {
 		const child = fakeChild();
 		const { deps } = fakeDeps(child.handle);
 
-		const pending = runSubagent({ params: { task: "t", mode: "foreground" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: parentSession() }, deps);
+		const pending = runSubagent(
+			{
+				params: { task: "t", mode: "foreground" },
+				toolCallId: "c",
+				signal: undefined,
+				onUpdate: undefined,
+				parent: parentSession(),
+			},
+			deps,
+		);
 		child.finish({ status: "failed", text: "", error: "401 unauthorized", durationMs: 10 });
 		const result = await pending;
 
 		expect(result.isError).toBe(true);
-		expect(result.content[0]).toEqual({ type: "text", text: expect.stringMatching(/^Subagent failed: 401 unauthorized/) });
+		expect(result.content[0]).toEqual({
+			type: "text",
+			text: expect.stringMatching(/^Subagent failed: 401 unauthorized/),
+		});
 	});
 
 	it("truncates a long report and says where the rest is", async () => {
 		const child = fakeChild();
 		const { deps } = fakeDeps(child.handle, { settings: { ...DEFAULT_SUBAGENT_SETTINGS, resultMaxChars: 5 } });
 
-		const pending = runSubagent({ params: { task: "t", mode: "foreground" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: parentSession() }, deps);
+		const pending = runSubagent(
+			{
+				params: { task: "t", mode: "foreground" },
+				toolCallId: "c",
+				signal: undefined,
+				onUpdate: undefined,
+				parent: parentSession(),
+			},
+			deps,
+		);
 		child.finish(completed("0123456789"));
 		const result = await pending;
 
-		expect(result.content[0]).toEqual({ type: "text", text: expect.stringContaining("01234\n\n[Result truncated. The full transcript is in the child session file: /sessions/child.jsonl.]") });
+		expect(result.content[0]).toEqual({
+			type: "text",
+			text: expect.stringContaining(
+				"01234\n\n[Result truncated. The full transcript is in the child session file: /sessions/child.jsonl.]",
+			),
+		});
 	});
 });
 
@@ -140,7 +193,16 @@ describe("what the child is started with", () => {
 		const child = fakeChild();
 		const { deps, started } = fakeDeps(child.handle);
 
-		await runSubagent({ params: { task: "t", context: "fork", effort: "high" }, toolCallId: "call-7", signal: undefined, onUpdate: undefined, parent: parentSession({ projectTrusted: false }) }, deps);
+		await runSubagent(
+			{
+				params: { task: "t", context: "fork", effort: "high" },
+				toolCallId: "call-7",
+				signal: undefined,
+				onUpdate: undefined,
+				parent: parentSession({ projectTrusted: false }),
+			},
+			deps,
+		);
 
 		expect(started[0]).toMatchObject({
 			cwd: process.cwd(),
@@ -149,7 +211,10 @@ describe("what the child is started with", () => {
 			tools: ["read", "bash", "codemode"],
 			projectTrusted: false,
 			parentSessionFile: "/sessions/parent.jsonl",
-			fork: { source: { parentSessionFile: "/sessions/parent.jsonl", leafId: "leaf", branch: [] }, toolCallId: "call-7" },
+			fork: {
+				source: { parentSessionFile: "/sessions/parent.jsonl", leafId: "leaf", branch: [] },
+				toolCallId: "call-7",
+			},
 			selfDir: "/ext/subagent",
 		});
 	});
@@ -159,7 +224,16 @@ describe("what the child is started with", () => {
 		const { deps, started } = fakeDeps(child.handle);
 		const credentials = { shared: true } as unknown as NonNullable<ParentSession["credentials"]>;
 
-		await runSubagent({ params: { task: "t" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: parentSession({ credentials }) }, deps);
+		await runSubagent(
+			{
+				params: { task: "t" },
+				toolCallId: "c",
+				signal: undefined,
+				onUpdate: undefined,
+				parent: parentSession({ credentials }),
+			},
+			deps,
+		);
 
 		expect(started[0]?.credentials).toBe(credentials);
 	});
@@ -171,18 +245,43 @@ describe("what the child is started with", () => {
 		const { deps, started } = fakeDeps(child.handle);
 		const parent = parentSession({ scopedModels: [luna], availableModels: [luna, sol] });
 
-		await runSubagent({ params: { task: "t", model: "sol" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent }, deps);
+		await runSubagent(
+			{ params: { task: "t", model: "sol" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent },
+			deps,
+		);
 		expect(started[0]?.model).toBe(sol);
 
 		const unscoped = parentSession({ scopedModels: [], availableModels: [luna, sol] });
-		await expect(runSubagent({ params: { task: "t", model: "gpt-6" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: unscoped }, deps)).rejects.toThrow(/matches/);
+		await expect(
+			runSubagent(
+				{
+					params: { task: "t", model: "gpt-6" },
+					toolCallId: "c",
+					signal: undefined,
+					onUpdate: undefined,
+					parent: unscoped,
+				},
+				deps,
+			),
+		).rejects.toThrow(/matches/);
 	});
 
 	it("gives a worktree the trust of the directory it was created from, not the parent's", async () => {
 		const child = fakeChild();
-		const { deps, started } = fakeDeps(child.handle, { trust: { storedDecision: () => false, requiresTrust: () => true } });
+		const { deps, started } = fakeDeps(child.handle, {
+			trust: { storedDecision: () => false, requiresTrust: () => true },
+		});
 
-		await runSubagent({ params: { task: "t", cwd: tmpdir(), isolation: "worktree" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: parentSession({ projectTrusted: true }) }, deps);
+		await runSubagent(
+			{
+				params: { task: "t", cwd: tmpdir(), isolation: "worktree" },
+				toolCallId: "c",
+				signal: undefined,
+				onUpdate: undefined,
+				parent: parentSession({ projectTrusted: true }),
+			},
+			deps,
+		);
 
 		expect(started[0]?.cwd).toBe("/wt/t");
 		expect(started[0]?.projectTrusted).toBe(false);
@@ -192,21 +291,46 @@ describe("what the child is started with", () => {
 		const child = fakeChild();
 		const { deps, started } = fakeDeps(child.handle);
 
-		const result = await runSubagent({ params: { task: "Fix the tests", isolation: "worktree", from: "main" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: parentSession() }, deps);
+		const result = await runSubagent(
+			{
+				params: { task: "Fix the tests", isolation: "worktree", from: "main" },
+				toolCallId: "c",
+				signal: undefined,
+				onUpdate: undefined,
+				parent: parentSession(),
+			},
+			deps,
+		);
 
 		expect(started[0]?.cwd).toBe("/wt/fix-the-tests");
 		expect(started[0]?.projectTrusted).toBe(true);
 		expect(result.details?.worktree).toEqual({ path: "/wt/fix-the-tests", branch: "pi/fix-the-tests" });
-		expect(result.content[0]).toEqual({ type: "text", text: expect.stringContaining("worktree /wt/fix-the-tests on branch pi/fix-the-tests") });
+		expect(result.content[0]).toEqual({
+			type: "text",
+			text: expect.stringContaining("worktree /wt/fix-the-tests on branch pi/fix-the-tests"),
+		});
 	});
 });
 
 describe("launch failures", () => {
 	it("names a worktree it had created when the child fails to start", async () => {
 		const child = fakeChild();
-		const { deps } = fakeDeps(child.handle, { startChild: async () => Promise.reject(new Error("bindExtensions failed")) });
+		const { deps } = fakeDeps(child.handle, {
+			startChild: async () => Promise.reject(new Error("bindExtensions failed")),
+		});
 
-		await expect(runSubagent({ params: { task: "t", isolation: "worktree" }, toolCallId: "c", signal: undefined, onUpdate: undefined, parent: parentSession() }, deps)).rejects.toThrow("bindExtensions failed (worktree /wt/t on branch pi/t was left in place)");
+		await expect(
+			runSubagent(
+				{
+					params: { task: "t", isolation: "worktree" },
+					toolCallId: "c",
+					signal: undefined,
+					onUpdate: undefined,
+					parent: parentSession(),
+				},
+				deps,
+			),
+		).rejects.toThrow("bindExtensions failed (worktree /wt/t on branch pi/t was left in place)");
 	});
 });
 
@@ -217,7 +341,18 @@ describe("cancellation", () => {
 		const controller = new AbortController();
 		controller.abort();
 
-		await expect(runSubagent({ params: { task: "t", isolation: "worktree" }, toolCallId: "c", signal: controller.signal, onUpdate: undefined, parent: parentSession() }, deps)).rejects.toThrow(/cancelled before the subagent started; worktree \/wt\/t on branch pi\/t was left in place/);
+		await expect(
+			runSubagent(
+				{
+					params: { task: "t", isolation: "worktree" },
+					toolCallId: "c",
+					signal: controller.signal,
+					onUpdate: undefined,
+					parent: parentSession(),
+				},
+				deps,
+			),
+		).rejects.toThrow(/cancelled before the subagent started; worktree \/wt\/t on branch pi\/t was left in place/);
 		expect(started).toHaveLength(0);
 	});
 
@@ -232,7 +367,16 @@ describe("cancellation", () => {
 		});
 		const controller = new AbortController();
 
-		const pending = runSubagent({ params: { task: "t", mode: "foreground" }, toolCallId: "c", signal: controller.signal, onUpdate: undefined, parent: parentSession() }, deps);
+		const pending = runSubagent(
+			{
+				params: { task: "t", mode: "foreground" },
+				toolCallId: "c",
+				signal: controller.signal,
+				onUpdate: undefined,
+				parent: parentSession(),
+			},
+			deps,
+		);
 		await flush();
 		controller.abort();
 		release();
@@ -250,8 +394,26 @@ describe("cancellation", () => {
 		const { deps: backgroundDeps } = fakeDeps(background.handle);
 		const { deps: foregroundDeps } = fakeDeps(foreground.handle);
 
-		await runSubagent({ params: { task: "t" }, toolCallId: "c", signal: controller.signal, onUpdate: undefined, parent: parentSession() }, backgroundDeps);
-		const pending = runSubagent({ params: { task: "t", mode: "foreground" }, toolCallId: "c", signal: controller.signal, onUpdate: undefined, parent: parentSession() }, foregroundDeps);
+		await runSubagent(
+			{
+				params: { task: "t" },
+				toolCallId: "c",
+				signal: controller.signal,
+				onUpdate: undefined,
+				parent: parentSession(),
+			},
+			backgroundDeps,
+		);
+		const pending = runSubagent(
+			{
+				params: { task: "t", mode: "foreground" },
+				toolCallId: "c",
+				signal: controller.signal,
+				onUpdate: undefined,
+				parent: parentSession(),
+			},
+			foregroundDeps,
+		);
 		foreground.finish(completed("done"));
 		await pending;
 		controller.abort();

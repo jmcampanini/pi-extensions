@@ -1,5 +1,6 @@
 - Run `mise run check` to verify a change.
-- Run every tool through `mise run <task>`, never by calling `tsc`, `vitest`, `markdownlint-cli2`, or `jactionlint` directly; `mise tasks` lists the tasks.
+- Run every tool through `mise run <task>`, never by calling `tsc`, `vitest`, `oxlint`, `oxfmt`, `markdownlint-cli2`, or `jactionlint` directly; `mise tasks` lists the tasks.
+- Run `mise run lint-fix` for safe TypeScript lint fixes, then `mise run format` for TypeScript formatting.
 - Keep a README.md in each extension directory explaining what the extension does, how to configure it, and any limits.
 - Keep the root README.md extension list up to date when adding, renaming, removing, or changing an extension; use a bold extension name followed by one concise sentence.
 - Do not add test-run results or "Tested with/against" version notes to READMEs.

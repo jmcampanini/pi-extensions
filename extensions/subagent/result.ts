@@ -32,7 +32,10 @@ export function completionPrefix(title: string): string {
 
 /** The user message the parent receives when a background subagent finishes. */
 export function formatCompletionMessage(summary: CompletionSummary): string {
-	const lines = [`${completionPrefix(summary.title)} ${summary.status} (id ${summary.id}, ${summary.model}, ${formatDuration(summary.durationMs)}).`, `Worked in ${summary.cwd}.`];
+	const lines = [
+		`${completionPrefix(summary.title)} ${summary.status} (id ${summary.id}, ${summary.model}, ${formatDuration(summary.durationMs)}).`,
+		`Worked in ${summary.cwd}.`,
+	];
 	if (summary.sessionFile) lines.push(`Child session: ${summary.sessionFile}`);
 	if (summary.error) lines.push(`Error: ${summary.error}`);
 	lines.push("", ...reportBody(summary));
@@ -48,7 +51,11 @@ export function formatForegroundReport(summary: CompletionSummary): string {
 
 function reportBody(summary: CompletionSummary): string[] {
 	const lines = [summary.result.length > 0 ? summary.result : "(the subagent produced no final text)"];
-	if (summary.truncated) lines.push("", `[Result truncated. The full transcript is in the child session file${summary.sessionFile ? `: ${summary.sessionFile}` : ""}.]`);
+	if (summary.truncated)
+		lines.push(
+			"",
+			`[Result truncated. The full transcript is in the child session file${summary.sessionFile ? `: ${summary.sessionFile}` : ""}.]`,
+		);
 	if (summary.worktree) lines.push("", worktreeNote(summary.worktree));
 	return lines;
 }
@@ -59,7 +66,9 @@ function worktreeNote(worktree: Worktree): string {
 
 /** The tool result text returned as soon as a background subagent is running. */
 export function backgroundStartedText(summary: ChildSummary): string {
-	const where = summary.worktree ? `worktree ${summary.worktree.path} on branch ${summary.worktree.branch}` : summary.cwd;
+	const where = summary.worktree
+		? `worktree ${summary.worktree.path} on branch ${summary.worktree.branch}`
+		: summary.cwd;
 	return `Started subagent "${summary.title}" (id ${summary.id}) in the background with ${summary.model} at effort ${summary.effort}, working in ${where}. Its report will arrive as a user message beginning ${completionPrefix(summary.title)}. Do not wait or poll for it.`;
 }
 

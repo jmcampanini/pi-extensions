@@ -40,12 +40,19 @@ export default function modelAllowlist(pi: ExtensionAPI) {
 				ctx.modelRegistry.registerProvider(id, {
 					...config,
 					models: (config.models ?? provider.getAllModels?.() ?? provider.getModels()).filter(keep),
-					...(refreshModels ? {
-						refreshModels: async (context) => (await refreshModels(context)).filter(keep),
-					} : {}),
-					...(config.oauth && modifyModels ? {
-						oauth: { ...config.oauth, modifyModels: (models, credentials) => modifyModels(models, credentials).filter(keep) },
-					} : {}),
+					...(refreshModels
+						? {
+								refreshModels: async (context) => (await refreshModels(context)).filter(keep),
+							}
+						: {}),
+					...(config.oauth && modifyModels
+						? {
+								oauth: {
+									...config.oauth,
+									modifyModels: (models, credentials) => modifyModels(models, credentials).filter(keep),
+								},
+							}
+						: {}),
 				});
 				continue;
 			}
@@ -65,7 +72,8 @@ function readAllowlist(settings: ReturnType<ExtensionAPI["getSettings"]>): Set<s
 	const entries = settings.enabledModels;
 	if (entries === undefined || (Array.isArray(entries) && entries.length === 0)) return undefined;
 
-	const isExactIdList = Array.isArray(entries) &&
+	const isExactIdList =
+		Array.isArray(entries) &&
 		entries.every((entry) => typeof entry === "string" && /^[^/\s*?]+\/[^\s*?]+$/.test(entry));
 	if (!isExactIdList) throw new Error("enabledModels must contain exact provider/model IDs");
 

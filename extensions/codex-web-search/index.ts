@@ -51,15 +51,19 @@ const searchSchema = Type.Object({
 	query: Type.String({
 		description: "What to search for: a short, focused phrase with product names, versions, or exact error text.",
 	}),
-	extract: Type.Optional(Type.String({
-		description:
-			"Optional. What to return from what is found, only when the request asks for a specific subset or " +
-			"shape (e.g. \"just the version numbers\", \"a migration checklist\"); use the user's own terms and " +
-			"add nothing they did not ask for. Omit it for a plain question. Keep it out of the query.",
-	})),
-	effort: Type.Optional(StringEnum(["low", "medium", "high", "xhigh"] as const, {
-		description: "Optional Codex reasoning effort. Leave unset (medium) unless the user asks for another.",
-	})),
+	extract: Type.Optional(
+		Type.String({
+			description:
+				"Optional. What to return from what is found, only when the request asks for a specific subset or " +
+				'shape (e.g. "just the version numbers", "a migration checklist"); use the user\'s own terms and ' +
+				"add nothing they did not ask for. Omit it for a plain question. Keep it out of the query.",
+		}),
+	),
+	effort: Type.Optional(
+		StringEnum(["low", "medium", "high", "xhigh"] as const, {
+			description: "Optional Codex reasoning effort. Leave unset (medium) unless the user asks for another.",
+		}),
+	),
 });
 
 export default function codexWebSearch(pi: ExtensionAPI) {
@@ -74,9 +78,10 @@ export default function codexWebSearch(pi: ExtensionAPI) {
 		if (event.message.role !== "user") return;
 
 		const { content } = event.message;
-		const text = typeof content === "string"
-			? content
-			: content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
+		const text =
+			typeof content === "string"
+				? content
+				: content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
 		const extensionIndex = extensionOverrideTexts.indexOf(text);
 		if (extensionIndex !== -1) extensionOverrideTexts.splice(extensionIndex, 1);
 		isOverridden = hasOverride(text) && extensionIndex === -1;
@@ -100,8 +105,8 @@ export default function codexWebSearch(pi: ExtensionAPI) {
 			if (GITHUB_ISSUE_OR_PR.some((pattern) => pattern.test(query)) && !isOverridden) {
 				throw new Error(
 					"This query looks up a specific GitHub issue or pull request; use gh for that instead. " +
-					`If the user wants a web search anyway, ask them to include ${OVERRIDE_PHRASE} in their next message. ` +
-					"Only the user can add it.",
+						`If the user wants a web search anyway, ask them to include ${OVERRIDE_PHRASE} in their next message. ` +
+						"Only the user can add it.",
 				);
 			}
 
@@ -114,19 +119,31 @@ export default function codexWebSearch(pi: ExtensionAPI) {
 			await mkdir(outputDir, { recursive: true });
 			await writeFile(`${prefix}-prompt.md`, `${prompt}\n`);
 
-			const run = await pi.exec("codex", [
-				"exec",
-				"--model", "gpt-6-luna",
-				"--config", "features.fast_mode=true",
-				"--config", "service_tier=\"fast\"",
-				"--sandbox", "workspace-write",
-				"--config", "sandbox_workspace_write.network_access=true",
-				"--config", "approval_policy=\"never\"",
-				"--config", `model_reasoning_effort="${params.effort ?? "medium"}"`,
-				"--skip-git-repo-check",
-				"--output-last-message", responsePath,
-				prompt,
-			], { cwd: ctx.cwd, timeout: SEARCH_TIMEOUT_MS, ...(signal ? { signal } : {}) });
+			const run = await pi.exec(
+				"codex",
+				[
+					"exec",
+					"--model",
+					"gpt-6-luna",
+					"--config",
+					"features.fast_mode=true",
+					"--config",
+					'service_tier="fast"',
+					"--sandbox",
+					"workspace-write",
+					"--config",
+					"sandbox_workspace_write.network_access=true",
+					"--config",
+					'approval_policy="never"',
+					"--config",
+					`model_reasoning_effort="${params.effort ?? "medium"}"`,
+					"--skip-git-repo-check",
+					"--output-last-message",
+					responsePath,
+					prompt,
+				],
+				{ cwd: ctx.cwd, timeout: SEARCH_TIMEOUT_MS, ...(signal ? { signal } : {}) },
+			);
 			if (run.code !== 0) {
 				throw new Error(`codex exec failed (exit ${run.code}): ${run.stderr.trim().slice(-2000)}`);
 			}
@@ -150,7 +167,11 @@ export default function codexWebSearch(pi: ExtensionAPI) {
 
 const isOverrideWord = (word: string) => word.toLowerCase() === OVERRIDE_PHRASE;
 const hasOverride = (text: string) => text.split(/\s+/).some(isOverrideWord);
-const withoutOverride = (text: string) => text.split(/\s+/).filter((word) => word && !isOverrideWord(word)).join(" ");
+const withoutOverride = (text: string) =>
+	text
+		.split(/\s+/)
+		.filter((word) => word && !isOverrideWord(word))
+		.join(" ");
 
 // A sortable, unique file prefix like 261023195504-a3f9.
 function runPrefix(): string {

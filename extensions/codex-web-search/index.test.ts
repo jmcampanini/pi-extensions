@@ -19,8 +19,12 @@ function setup(codex: Codex = { answer: "## Answer\nNode 24 shipped.\n\n## Sourc
 	let tool: ToolDefinition | undefined;
 	const handlers = new Map<string, (event: unknown) => void>();
 	const api = {
-		on: (event: string, handler: (event: unknown) => void) => { handlers.set(event, handler); },
-		registerTool: (definition: ToolDefinition) => { tool = definition; },
+		on: (event: string, handler: (event: unknown) => void) => {
+			handlers.set(event, handler);
+		},
+		registerTool: (definition: ToolDefinition) => {
+			tool = definition;
+		},
 		exec: async (command: string, args: string[]): Promise<ExecResult> => {
 			runs.push({ command, args });
 			const outputPath = args[args.indexOf("--output-last-message") + 1]!;
@@ -36,10 +40,16 @@ function setup(codex: Codex = { answer: "## Answer\nNode 24 shipped.\n\n## Sourc
 		queue: (text: string, source: InputSource = "interactive") =>
 			handlers.get("input")?.({ type: "input", text, source, streamingBehavior: "followUp" }),
 		deliver: (text: string) =>
-			handlers.get("message_start")?.({ type: "message_start", message: { role: "user", content: [{ type: "text", text }], timestamp: 0 } }),
+			handlers.get("message_start")?.({
+				type: "message_start",
+				message: { role: "user", content: [{ type: "text", text }], timestamp: 0 },
+			}),
 		prompt: (text: string, source: InputSource = "interactive") => {
 			handlers.get("input")?.({ type: "input", text, source });
-			handlers.get("message_start")?.({ type: "message_start", message: { role: "user", content: text, timestamp: 0 } });
+			handlers.get("message_start")?.({
+				type: "message_start",
+				message: { role: "user", content: text, timestamp: 0 },
+			});
 		},
 		search: async (params: { query: string; extract?: string; effort?: string }) => {
 			const result = await tool!.execute("call-1", params as never, undefined, undefined, { cwd } as never);
@@ -63,13 +73,15 @@ describe("web_search", () => {
 		expect(command).toBe("codex");
 		expect(args[0]).toBe("exec");
 		expect(flagValues(args, "--model")).toEqual(["gpt-6-luna"]);
-		expect(flagValues(args, "--config")).toEqual(expect.arrayContaining([
-			"features.fast_mode=true",
-			"service_tier=\"fast\"",
-			"sandbox_workspace_write.network_access=true",
-			"approval_policy=\"never\"",
-			"model_reasoning_effort=\"medium\"",
-		]));
+		expect(flagValues(args, "--config")).toEqual(
+			expect.arrayContaining([
+				"features.fast_mode=true",
+				'service_tier="fast"',
+				"sandbox_workspace_write.network_access=true",
+				'approval_policy="never"',
+				'model_reasoning_effort="medium"',
+			]),
+		);
 		expect(prompt(args)).toMatch(/Search query:\nnode 24 release date$/);
 		expect(prompt(args)).not.toContain("Extraction instruction:\n");
 
@@ -80,7 +92,9 @@ describe("web_search", () => {
 		const responsePath = join(test.cwd, ".codex-web-search", saved[1]!);
 		expect(flagValues(args, "--output-last-message")).toEqual([responsePath]);
 		expect(readFileSync(join(test.cwd, ".codex-web-search", saved[0]!), "utf8")).toBe(`${prompt(args)}\n`);
-		expect(text).toBe(`Saved path: ${responsePath}\n\n## Answer\nNode 24 shipped.\n\n## Sources\n- [Node](https://nodejs.org)`);
+		expect(text).toBe(
+			`Saved path: ${responsePath}\n\n## Answer\nNode 24 shipped.\n\n## Sources\n- [Node](https://nodejs.org)`,
+		);
 	});
 
 	it("passes the extraction instruction and reasoning effort to codex", async () => {
@@ -89,8 +103,10 @@ describe("web_search", () => {
 		await test.search({ query: "vitest releases", extract: "just the version numbers", effort: "high" });
 
 		const { args } = test.runs[0]!;
-		expect(prompt(args)).toMatch(/Search query:\nvitest releases\n\nExtraction instruction:\njust the version numbers$/);
-		expect(flagValues(args, "--config")).toContain("model_reasoning_effort=\"high\"");
+		expect(prompt(args)).toMatch(
+			/Search query:\nvitest releases\n\nExtraction instruction:\njust the version numbers$/,
+		);
+		expect(flagValues(args, "--config")).toContain('model_reasoning_effort="high"');
 	});
 
 	it.each([

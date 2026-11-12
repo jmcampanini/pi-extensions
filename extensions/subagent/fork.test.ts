@@ -17,13 +17,28 @@ const delegating: AssistantMessage = {
 	api: "openai-responses",
 	provider: "test",
 	model: "test-model",
-	usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+	usage: {
+		input: 1,
+		output: 1,
+		cacheRead: 0,
+		cacheWrite: 0,
+		totalTokens: 2,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	},
 	stopReason: "toolUse",
 	timestamp: now.getTime(),
 };
-const readResult: ToolResultMessage = { role: "toolResult", toolCallId: "call-read", toolName: "read", content: [{ type: "text", text: "ok" }], isError: false, timestamp: now.getTime() };
+const readResult: ToolResultMessage = {
+	role: "toolResult",
+	toolCallId: "call-read",
+	toolName: "read",
+	content: [{ type: "text", text: "ok" }],
+	isError: false,
+	timestamp: now.getTime(),
+};
 
-const messagesOf = (manager: SessionManager) => manager.getBranch().flatMap((entry) => (entry.type === "message" ? [entry.message] : []));
+const messagesOf = (manager: SessionManager) =>
+	manager.getBranch().flatMap((entry) => (entry.type === "message" ? [entry.message] : []));
 
 describe("forkSessionManager", () => {
 	let dir: string;
@@ -40,7 +55,12 @@ describe("forkSessionManager", () => {
 		const parentFile = parent.getSessionFile()!;
 		const parentBytes = readFileSync(parentFile, "utf8");
 
-		const child = forkSessionManager({ source: { parentSessionFile: parentFile, leafId: parent.getLeafId(), branch: parent.getBranch() }, toolCallId: "call-sub", childCwd: join(dir, "wt"), now });
+		const child = forkSessionManager({
+			source: { parentSessionFile: parentFile, leafId: parent.getLeafId(), branch: parent.getBranch() },
+			toolCallId: "call-sub",
+			childCwd: join(dir, "wt"),
+			now,
+		});
 
 		const reopened = SessionManager.open(child.getSessionFile()!);
 		const messages = messagesOf(reopened);
@@ -61,7 +81,12 @@ describe("forkSessionManager", () => {
 		parent.appendMessage(user);
 		parent.appendMessage(delegating);
 
-		const child = forkSessionManager({ source: { parentSessionFile: undefined, leafId: parent.getLeafId(), branch: parent.getBranch() }, toolCallId: "call-sub", childCwd: dir, now });
+		const child = forkSessionManager({
+			source: { parentSessionFile: undefined, leafId: parent.getLeafId(), branch: parent.getBranch() },
+			toolCallId: "call-sub",
+			childCwd: dir,
+			now,
+		});
 
 		expect(child.getSessionFile()).toBeUndefined();
 		const results = messagesOf(child).filter((message): message is ToolResultMessage => message.role === "toolResult");
