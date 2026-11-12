@@ -21,7 +21,7 @@
     "oxfmt": "0.76.0",
     "oxlint": "1.91.0",
     "oxlint-tsgolint": "7.0.2005",
-    "typebox": "1.4.5",
+    "typebox": "1.4.6",
     "typescript": "^7.0.2",
     "vite": "7.3.7",
     "vitest": "^5.1.0"
