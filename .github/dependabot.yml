@@ -14,6 +14,13 @@ updates:
     commit-message:
       prefix: "deps(npm)"
     groups:
+      oxc:
+        applies-to: "version-updates"
+        patterns:
+          - "oxlint"
+          - "oxlint-tsgolint"
+          - "oxfmt"
+          - "typescript"
       npm-minor-and-patch:
         applies-to: "version-updates"
         patterns:

@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "useTabs": true,
+  "tabWidth": 2,
+  "printWidth": 120,
+  "sortImports": false,
+  "sortPackageJson": false,
+  "embeddedLanguageFormatting": "off",
+  "ignorePatterns": [
+    "**/*.md",
+    "**/*.markdown",
+    "**/*.mdx",
+    "**/*.json",
+    "**/*.jsonc",
+    "**/*.yml",
+    "**/*.yaml",
+    "**/*.toml",
+    "**/*.lock",
+    ".mise/**",
+    ".sandbox/**",
+    ".codex-web-search/**"
+  ]
+}

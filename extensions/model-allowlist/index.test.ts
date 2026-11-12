@@ -18,9 +18,14 @@ async function setup(initial: unknown = ["allowlist-test/one"], modelsPath: stri
 		api: "openai-responses",
 		apiKey: "fixture-key",
 		models: ["one", "two", "three"].map((id) => ({
-			id, name: id, headers: { "X-Model": id }, reasoning: false, input: ["text"],
+			id,
+			name: id,
+			headers: { "X-Model": id },
+			reasoning: false,
+			input: ["text"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 1000, maxTokens: 100,
+			contextWindow: 1000,
+			maxTokens: 100,
 		})),
 	});
 	await registry.refresh({ allowNetwork: false });
@@ -42,7 +47,9 @@ async function setup(initial: unknown = ["allowlist-test/one"], modelsPath: stri
 			if (!start) throw new Error("session_start handler missing");
 			await start({ type: "session_start" }, { modelRegistry: registry } as ExtensionContext);
 		},
-		set: (value: unknown) => { settings = value === undefined ? {} : { enabledModels: value }; },
+		set: (value: unknown) => {
+			settings = value === undefined ? {} : { enabledModels: value };
+		},
 	};
 }
 
@@ -76,10 +83,15 @@ describe("model allowlist", () => {
 
 		test.set(undefined);
 		await test.start();
-		expect(test.registry.getAll().filter((model) => model.provider === "allowlist-test").map((model) => model.id))
-			.toEqual(["one", "two", "three"]);
-		expect(await test.registry.getApiKeyAndHeaders(test.registry.find("allowlist-test", "one")!))
-			.toMatchObject({ headers: { "X-Model": "one" } });
+		expect(
+			test.registry
+				.getAll()
+				.filter((model) => model.provider === "allowlist-test")
+				.map((model) => model.id),
+		).toEqual(["one", "two", "three"]);
+		expect(await test.registry.getApiKeyAndHeaders(test.registry.find("allowlist-test", "one")!)).toMatchObject({
+			headers: { "X-Model": "one" },
+		});
 	});
 
 	it("keeps endpoint-only builtin providers filtered during re-registration and refresh", async () => {
@@ -87,9 +99,17 @@ describe("model allowlist", () => {
 		const directory = mkdtempSync(join(".sandbox", "model-allowlist-test-"));
 		try {
 			const path = join(directory, "models.json");
-			writeFileSync(path, JSON.stringify({ providers: { openai: {
-				baseUrl: "http://example.invalid/v1", apiKey: "fixture-key",
-			} } }));
+			writeFileSync(
+				path,
+				JSON.stringify({
+					providers: {
+						openai: {
+							baseUrl: "http://example.invalid/v1",
+							apiKey: "fixture-key",
+						},
+					},
+				}),
+			);
 			const test = await setup(["openai/gpt-4.1"], path);
 			await test.start();
 			expect(test.registry.getAvailable().map((model) => `${model.provider}/${model.id}`)).toEqual(["openai/gpt-4.1"]);
@@ -113,13 +133,17 @@ describe("model allowlist", () => {
 		expect(test.registry.getAll()).toEqual(before);
 	});
 
-	it.each([{ value: "allowlist-test/one" }, { value: [null] }, { value: ["one"] }, { value: ["allowlist-test/*"] }, { value: [42] }])(
-		"rejects invalid configuration before filtering: $value", async ({ value }) => {
-			const test = await setup();
-			test.set(value);
-			const before = test.registry.getAll();
-			await expect(test.start()).rejects.toThrow("enabledModels must contain exact provider/model IDs");
-			expect(test.registry.getAll()).toEqual(before);
-		},
-	);
+	it.each([
+		{ value: "allowlist-test/one" },
+		{ value: [null] },
+		{ value: ["one"] },
+		{ value: ["allowlist-test/*"] },
+		{ value: [42] },
+	])("rejects invalid configuration before filtering: $value", async ({ value }) => {
+		const test = await setup();
+		test.set(value);
+		const before = test.registry.getAll();
+		await expect(test.start()).rejects.toThrow("enabledModels must contain exact provider/model IDs");
+		expect(test.registry.getAll()).toEqual(before);
+	});
 });

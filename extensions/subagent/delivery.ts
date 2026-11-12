@@ -47,7 +47,12 @@ export function createOutbox(deps: OutboxDeps): Outbox {
 		if (closed || pending.length === 0) return;
 
 		if (deps.canAccept()) {
-			deps.send(pending.splice(0).map((report) => report.text).join("\n\n"));
+			deps.send(
+				pending
+					.splice(0)
+					.map((report) => report.text)
+					.join("\n\n"),
+			);
 			return;
 		}
 		if (now() - pending[0]!.since >= deadlineMs) {

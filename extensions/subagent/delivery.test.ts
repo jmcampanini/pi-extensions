@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { canAcceptPrompt, createOutbox } from "./delivery.ts";
+import { canAcceptPrompt, createOutbox, type OutboxDeps } from "./delivery.ts";
 
 describe("canAcceptPrompt", () => {
 	it("accepts when idle, or when a turn is streaming with a live signal", () => {
@@ -19,7 +19,15 @@ describe("createOutbox", () => {
 	beforeEach(() => vi.useFakeTimers());
 	afterEach(() => vi.useRealTimers());
 
-	const deps = (acceptable: () => boolean) => ({ canAccept: acceptable, send: vi.fn(), park: vi.fn(), notifyStuck: vi.fn(), pollMs: 50, deadlineMs: 1_000, now: () => Date.now() });
+	const deps = (acceptable: () => boolean) => ({
+		canAccept: acceptable,
+		send: vi.fn<OutboxDeps["send"]>(),
+		park: vi.fn<OutboxDeps["park"]>(),
+		notifyStuck: vi.fn<OutboxDeps["notifyStuck"]>(),
+		pollMs: 50,
+		deadlineMs: 1_000,
+		now: () => Date.now(),
+	});
 
 	it("sends a report at once when the parent accepts prompts", () => {
 		const d = deps(() => true);

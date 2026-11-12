@@ -3,8 +3,28 @@ import { childToolNames, launchedByT3Code, parentFlags, resolveChildTrust } from
 
 describe("parentFlags", () => {
 	it("collects the parent's -e entries and --no-extensions, ignoring its other flags", () => {
-		const flags = parentFlags(["--mode", "rpc", "-e", "./extensions/subagent", "--extension", "builtin:mcp", "-e", "/abs/ext.ts", "--no-extensions", "--api-key", "sk-test", "--model", "x"], "/code/app");
-		expect(flags).toEqual({ extensions: ["/code/app/extensions/subagent", "builtin:mcp", "/abs/ext.ts"], noExtensions: true });
+		const flags = parentFlags(
+			[
+				"--mode",
+				"rpc",
+				"-e",
+				"./extensions/subagent",
+				"--extension",
+				"builtin:mcp",
+				"-e",
+				"/abs/ext.ts",
+				"--no-extensions",
+				"--api-key",
+				"sk-test",
+				"--model",
+				"x",
+			],
+			"/code/app",
+		);
+		expect(flags).toEqual({
+			extensions: ["/code/app/extensions/subagent", "builtin:mcp", "/abs/ext.ts"],
+			noExtensions: true,
+		});
 	});
 
 	it("reports nothing for a parent started without those flags", () => {
@@ -54,7 +74,9 @@ describe("resolveChildTrust", () => {
 
 	it("follows the stored decision elsewhere, and trusts only when nothing there needs trust", () => {
 		expect(resolveChildTrust({ ...base, childCwd: "/other", storedDecision: () => true })).toBe(true);
-		expect(resolveChildTrust({ ...base, childCwd: "/other", storedDecision: () => false, requiresTrust: () => false })).toBe(false);
+		expect(
+			resolveChildTrust({ ...base, childCwd: "/other", storedDecision: () => false, requiresTrust: () => false }),
+		).toBe(false);
 		expect(resolveChildTrust({ ...base, childCwd: "/other", requiresTrust: () => false })).toBe(true);
 		expect(resolveChildTrust({ ...base, childCwd: "/other" })).toBe(false);
 	});

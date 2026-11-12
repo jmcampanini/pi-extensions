@@ -10,7 +10,11 @@ import { DEFAULT_CONTEXT, DEFAULT_MODE, type SubagentParams, type SubagentToolDe
  * All terminal UI for the extension: the footer count, the /subagents command, and the tool
  * renderers. Everything here reacts to the registry; nothing in the core depends on this module.
  */
-export function installSubagentUi(pi: ExtensionAPI, registry: SubagentRegistry, currentCtx: () => ExtensionContext | undefined): void {
+export function installSubagentUi(
+	pi: ExtensionAPI,
+	registry: SubagentRegistry,
+	currentCtx: () => ExtensionContext | undefined,
+): void {
 	const renderStatus = () => {
 		const ctx = currentCtx();
 		if (!ctx?.hasUI) return;
@@ -21,7 +25,11 @@ export function installSubagentUi(pi: ExtensionAPI, registry: SubagentRegistry, 
 		}
 		const theme = ctx.ui.theme;
 		const names = running.map((child) => child.title).join(", ");
-		ctx.ui.setStatus("subagent", theme.fg("accent", "◐ ") + theme.fg("dim", `${running.length} subagent${running.length === 1 ? "" : "s"}: ${names}`));
+		ctx.ui.setStatus(
+			"subagent",
+			theme.fg("accent", "◐ ") +
+				theme.fg("dim", `${running.length} subagent${running.length === 1 ? "" : "s"}: ${names}`),
+		);
 	};
 
 	pi.on("session_start", () => renderStatus());
@@ -46,7 +54,13 @@ export function installSubagentUi(pi: ExtensionAPI, registry: SubagentRegistry, 
 				if (confirmed) child.abort();
 				return;
 			}
-			const report = [child.error ? `Error: ${child.error}` : "", child.result ?? "(no report)", child.sessionFile ? `\nSession file: ${child.sessionFile}` : ""].filter((line) => line.length > 0).join("\n");
+			const report = [
+				child.error ? `Error: ${child.error}` : "",
+				child.result ?? "(no report)",
+				child.sessionFile ? `\nSession file: ${child.sessionFile}` : "",
+			]
+				.filter((line) => line.length > 0)
+				.join("\n");
 			await ctx.ui.editor(`Subagent "${child.title}" ${child.status} (read-only copy; close to return)`, report);
 		},
 	});
@@ -54,7 +68,8 @@ export function installSubagentUi(pi: ExtensionAPI, registry: SubagentRegistry, 
 
 function describeChild(child: ChildRecord): string {
 	const elapsed = formatDuration((child.finishedAt ?? Date.now()) - child.startedAt);
-	const latest = child.status === "running" && child.progress.length > 0 ? ` · ${child.progress[child.progress.length - 1]}` : "";
+	const latest =
+		child.status === "running" && child.progress.length > 0 ? ` · ${child.progress[child.progress.length - 1]}` : "";
 	return `${statusGlyph(child.status)} ${child.title} [${child.id}] · ${child.model} · ${child.mode} · ${elapsed}${latest}`;
 }
 
@@ -75,19 +90,38 @@ export const subagentToolRenderers: ToolRenderers = {
 	renderCall(args, theme) {
 		const params = args as Partial<SubagentParams>;
 		const title = deriveTitle(params.task ?? "", params.title);
-		const tags = [params.mode ?? DEFAULT_MODE, params.context ?? DEFAULT_CONTEXT, params.isolation === "worktree" ? "worktree" : undefined, params.model].filter(Boolean).join(" · ");
-		return new Text(theme.fg("toolTitle", theme.bold("subagent ")) + theme.fg("accent", title) + "  " + theme.fg("dim", tags), 0, 0);
+		const tags = [
+			params.mode ?? DEFAULT_MODE,
+			params.context ?? DEFAULT_CONTEXT,
+			params.isolation === "worktree" ? "worktree" : undefined,
+			params.model,
+		]
+			.filter(Boolean)
+			.join(" · ");
+		return new Text(
+			theme.fg("toolTitle", theme.bold("subagent ")) + theme.fg("accent", title) + "  " + theme.fg("dim", tags),
+			0,
+			0,
+		);
 	},
 
 	renderResult(result, { expanded, isPartial }, theme) {
 		const details = result.details as SubagentToolDetails | undefined;
-		const text = result.content.find((block): block is { type: "text"; text: string } => block.type === "text")?.text ?? "";
+		const text =
+			result.content.find((block): block is { type: "text"; text: string } => block.type === "text")?.text ?? "";
 		if (!details) return new Text(text, 0, 0);
 
 		const container = new Container();
 		const elapsed = details.durationMs !== undefined ? ` · ${formatDuration(details.durationMs)}` : "";
 		const where = details.worktree ? `${details.worktree.path} (${details.worktree.branch})` : details.cwd;
-		container.addChild(new Text(theme.fg(statusColor(details.status, isPartial), `${statusGlyph(details.status)} ${details.status}`) + theme.fg("dim", ` · ${details.model} · ${details.effort}${elapsed} · ${where}`), 0, 0));
+		container.addChild(
+			new Text(
+				theme.fg(statusColor(details.status, isPartial), `${statusGlyph(details.status)} ${details.status}`) +
+					theme.fg("dim", ` · ${details.model} · ${details.effort}${elapsed} · ${where}`),
+				0,
+				0,
+			),
+		);
 		if (details.error) container.addChild(new Text(theme.fg("error", details.error), 0, 0));
 
 		if (isPartial && details.progress && details.progress.length > 0) {
@@ -96,7 +130,9 @@ export const subagentToolRenderers: ToolRenderers = {
 			return container;
 		}
 		if (details.mode === "background" && details.status === "running") {
-			container.addChild(new Text(theme.fg("dim", "  running in the background; the result arrives as a user message"), 0, 0));
+			container.addChild(
+				new Text(theme.fg("dim", "  running in the background; the result arrives as a user message"), 0, 0),
+			);
 			return container;
 		}
 

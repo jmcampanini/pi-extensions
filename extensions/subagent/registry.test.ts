@@ -13,7 +13,7 @@ const record = (id: string, startedAt: number, status: ChildRecord["status"] = "
 	cwd: "/repo",
 	startedAt,
 	progress: [],
-	abort: vi.fn(),
+	abort: vi.fn<ChildRecord["abort"]>(),
 });
 
 describe("SubagentRegistry", () => {
@@ -28,7 +28,7 @@ describe("SubagentRegistry", () => {
 
 	it("tells listeners when a child is added or updated, but not on progress", () => {
 		const registry = new SubagentRegistry();
-		const listener = vi.fn();
+		const listener = vi.fn<() => void>();
 		registry.subscribe(listener);
 
 		registry.add(record("a", 1));
@@ -70,6 +70,18 @@ describe("summarize", () => {
 	it("leaves the task, result, progress, timestamps, and abort handle out of the summary", () => {
 		const summary = summarize({ ...record("a", 1), result: "long", worktree: { path: "/wt", branch: "pi/x" } });
 
-		expect(summary).toEqual({ id: "a", title: "child a", mode: "background", context: "fresh", status: "running", model: "p/m", effort: "low", cwd: "/repo", worktree: { path: "/wt", branch: "pi/x" }, sessionFile: undefined, error: undefined });
+		expect(summary).toEqual({
+			id: "a",
+			title: "child a",
+			mode: "background",
+			context: "fresh",
+			status: "running",
+			model: "p/m",
+			effort: "low",
+			cwd: "/repo",
+			worktree: { path: "/wt", branch: "pi/x" },
+			sessionFile: undefined,
+			error: undefined,
+		});
 	});
 });

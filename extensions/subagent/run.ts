@@ -10,7 +10,14 @@ import { type ChildTrustInput, childToolNames, type ParentFlags, resolveChildTru
 import type { ChildHandle, StartChildInput } from "./launch.ts";
 import { describeModel, formatModelMatchError, matchModel } from "./models.ts";
 import { type ChildRecord, newChildId, type SubagentRegistry, summarize } from "./registry.ts";
-import { backgroundStartedText, type CompletionSummary, deriveTitle, formatCompletionMessage, formatForegroundReport, truncateResult } from "./result.ts";
+import {
+	backgroundStartedText,
+	type CompletionSummary,
+	deriveTitle,
+	formatCompletionMessage,
+	formatForegroundReport,
+	truncateResult,
+} from "./result.ts";
 import type { SubagentSettings } from "./settings.ts";
 import { slugify } from "./worktree.ts";
 
@@ -20,14 +27,44 @@ export const DEFAULT_CONTEXT: ChildContext = "fresh";
 
 export const subagentParams = Type.Object({
 	task: Type.String({ description: "The complete brief for the child. Its first and only user message." }),
-	title: Type.Optional(Type.String({ description: "Short label shown in the UI and used for the worktree name. Defaults to the first line of task." })),
-	mode: Type.Optional(StringEnum(["background", "foreground"] as const, { description: "background (default): return now, result arrives later as a user message. foreground: wait and return the result here." })),
-	context: Type.Optional(StringEnum(["fresh", "fork"] as const, { description: "fresh (default): child starts with only the task. fork: child starts with this conversation so far." })),
-	cwd: Type.Optional(Type.String({ description: "Directory the child runs in. Defaults to the current working directory." })),
-	isolation: Type.Optional(StringEnum(["none", "worktree"] as const, { description: "none (default): run in cwd. worktree: create a git worktree and branch from `from` and run there." })),
-	from: Type.Optional(Type.String({ description: "Git ref the worktree branch starts from. Default HEAD. Only with isolation worktree." })),
-	model: Type.Optional(Type.String({ description: "Model for the child: provider/id, id, or a unique substring. Defaults to this session's model." })),
-	effort: Type.Optional(StringEnum(THINKING_LEVELS, { description: "Thinking level for the child. Defaults to this session's level." })),
+	title: Type.Optional(
+		Type.String({
+			description: "Short label shown in the UI and used for the worktree name. Defaults to the first line of task.",
+		}),
+	),
+	mode: Type.Optional(
+		StringEnum(["background", "foreground"] as const, {
+			description:
+				"background (default): return now, result arrives later as a user message. foreground: wait and return the result here.",
+		}),
+	),
+	context: Type.Optional(
+		StringEnum(["fresh", "fork"] as const, {
+			description:
+				"fresh (default): child starts with only the task. fork: child starts with this conversation so far.",
+		}),
+	),
+	cwd: Type.Optional(
+		Type.String({ description: "Directory the child runs in. Defaults to the current working directory." }),
+	),
+	isolation: Type.Optional(
+		StringEnum(["none", "worktree"] as const, {
+			description: "none (default): run in cwd. worktree: create a git worktree and branch from `from` and run there.",
+		}),
+	),
+	from: Type.Optional(
+		Type.String({
+			description: "Git ref the worktree branch starts from. Default HEAD. Only with isolation worktree.",
+		}),
+	),
+	model: Type.Optional(
+		Type.String({
+			description: "Model for the child: provider/id, id, or a unique substring. Defaults to this session's model.",
+		}),
+	),
+	effort: Type.Optional(
+		StringEnum(THINKING_LEVELS, { description: "Thinking level for the child. Defaults to this session's level." }),
+	),
 });
 
 export type SubagentParams = Static<typeof subagentParams>;
@@ -99,33 +136,54 @@ export async function runSubagent(input: RunInput, deps: RunDeps): Promise<Agent
 	const cancellation = watchCancellation(input.signal);
 	try {
 		let cwd = resolveDirectory(params.cwd, parent.cwd);
-		const projectTrusted = resolveChildTrust({ childCwd: cwd, parentCwd: parent.cwd, parentTrusted: parent.projectTrusted, ...deps.trust });
+		const projectTrusted = resolveChildTrust({
+			childCwd: cwd,
+			parentCwd: parent.cwd,
+			parentTrusted: parent.projectTrusted,
+			...deps.trust,
+		});
 		let worktree: Worktree | undefined;
 		if (params.isolation === "worktree") {
 			worktree = await deps.createWorktree({ cwd, slug: slugify(title), from: params.from ?? "HEAD" });
 			cwd = worktree.path;
 		}
-		if (cancellation.requested) throw new Error(worktree ? `cancelled before the subagent started; worktree ${worktree.path} on branch ${worktree.branch} was left in place` : "cancelled before the subagent started");
+		if (cancellation.requested)
+			throw new Error(
+				worktree
+					? `cancelled before the subagent started; worktree ${worktree.path} on branch ${worktree.branch} was left in place`
+					: "cancelled before the subagent started",
+			);
 
-		const handle = await startOrExplain(worktree, () => deps.startChild({
-			cwd,
-			task: params.task,
-			model,
-			thinkingLevel: effort,
-			tools: childToolNames(parent.activeTools),
-			projectTrusted,
-			flags: deps.flags,
-			credentials: parent.credentials,
-			parentSessionFile: parent.sessionFile,
-			fork: context === "fork" ? { source: { parentSessionFile: parent.sessionFile, leafId: parent.leafId, branch: parent.branch }, toolCallId: input.toolCallId } : undefined,
-			selfDir: deps.selfDir,
-			onProgress: (line) => {
-				deps.registry.addProgress(id, line);
-				const child = deps.registry.get(id);
-				if (mode !== "foreground" || !child) return;
-				input.onUpdate?.({ content: [{ type: "text", text: child.progress.join("\n") }], details: detailsFor(child) });
-			},
-		}));
+		const handle = await startOrExplain(worktree, () =>
+			deps.startChild({
+				cwd,
+				task: params.task,
+				model,
+				thinkingLevel: effort,
+				tools: childToolNames(parent.activeTools),
+				projectTrusted,
+				flags: deps.flags,
+				credentials: parent.credentials,
+				parentSessionFile: parent.sessionFile,
+				fork:
+					context === "fork"
+						? {
+								source: { parentSessionFile: parent.sessionFile, leafId: parent.leafId, branch: parent.branch },
+								toolCallId: input.toolCallId,
+							}
+						: undefined,
+				selfDir: deps.selfDir,
+				onProgress: (line) => {
+					deps.registry.addProgress(id, line);
+					const child = deps.registry.get(id);
+					if (mode !== "foreground" || !child) return;
+					input.onUpdate?.({
+						content: [{ type: "text", text: child.progress.join("\n") }],
+						details: detailsFor(child),
+					});
+				},
+			}),
+		);
 		cancellation.attach(handle.abort);
 
 		const record: ChildRecord = {
@@ -147,15 +205,28 @@ export async function runSubagent(input: RunInput, deps: RunDeps): Promise<Agent
 		deps.registry.add(record);
 
 		const settled = handle.done.then((outcome): CompletionSummary => {
-			const { text, truncated } = truncateResult(outcome.text, { maxChars: deps.settings.resultMaxChars, maxLines: deps.settings.resultMaxLines });
-			const finished = deps.registry.update(id, { status: outcome.status, finishedAt: deps.now(), result: text, error: outcome.error }) ?? record;
+			const { text, truncated } = truncateResult(outcome.text, {
+				maxChars: deps.settings.resultMaxChars,
+				maxLines: deps.settings.resultMaxLines,
+			});
+			const finished =
+				deps.registry.update(id, {
+					status: outcome.status,
+					finishedAt: deps.now(),
+					result: text,
+					error: outcome.error,
+				}) ?? record;
 			return { ...summarize(finished), durationMs: outcome.durationMs, result: text, truncated };
 		});
 
 		if (mode === "background") {
 			settled
 				.then((summary) => deps.deliver(formatCompletionMessage(summary)))
-				.catch((error: unknown) => deps.notify(`Subagent "${title}" (id ${id}) could not report back: ${error instanceof Error ? error.message : String(error)}`));
+				.catch((error: unknown) =>
+					deps.notify(
+						`Subagent "${title}" (id ${id}) could not report back: ${error instanceof Error ? error.message : String(error)}`,
+					),
+				);
 			return { content: [{ type: "text", text: backgroundStartedText(record) }], details: detailsFor(record) };
 		}
 
@@ -177,7 +248,9 @@ async function startOrExplain(worktree: Worktree | undefined, start: () => Promi
 	} catch (error) {
 		if (!worktree) throw error;
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`${message} (worktree ${worktree.path} on branch ${worktree.branch} was left in place)`, { cause: error });
+		throw new Error(`${message} (worktree ${worktree.path} on branch ${worktree.branch} was left in place)`, {
+			cause: error,
+		});
 	}
 }
 

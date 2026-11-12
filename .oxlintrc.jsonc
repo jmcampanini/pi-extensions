@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "vitest"],
+  "categories": { "correctness": "error" },
+  "env": { "node": true },
+  "options": {
+    "typeAware": true,
+    "denyWarnings": true,
+    "reportUnusedDisableDirectives": "error"
+  },
+  "ignorePatterns": [".sandbox/**", ".mise/**", ".codex-web-search/**"],
+  "rules": {
+    "typescript/no-misused-promises": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "vitest/no-focused-tests": "error"
+  },
+  "overrides": [
+    {
+      "files": ["extensions/**/*.test.ts"],
+      // Vitest's asymmetric matchers return any, so object assertions trigger this rule.
+      "rules": { "typescript/no-unsafe-assignment": "off" }
+    }
+  ]
+}

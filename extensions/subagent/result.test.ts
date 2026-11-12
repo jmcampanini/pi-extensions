@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { backgroundStartedText, type CompletionSummary, completionPrefix, deriveTitle, formatCompletionMessage, formatForegroundReport, truncateResult } from "./result.ts";
+import {
+	backgroundStartedText,
+	type CompletionSummary,
+	completionPrefix,
+	deriveTitle,
+	formatCompletionMessage,
+	formatForegroundReport,
+	truncateResult,
+} from "./result.ts";
 
 const completed: CompletionSummary = {
 	id: "ab12cd",
@@ -17,7 +25,15 @@ const completed: CompletionSummary = {
 	worktree: { path: "/wt/app", branch: "pi/audit-tests" },
 };
 
-const failed: CompletionSummary = { ...completed, status: "failed", result: "", truncated: false, error: "boom", sessionFile: undefined, worktree: undefined };
+const failed: CompletionSummary = {
+	...completed,
+	status: "failed",
+	result: "",
+	truncated: false,
+	error: "boom",
+	sessionFile: undefined,
+	worktree: undefined,
+};
 
 describe("truncateResult", () => {
 	it("keeps text within both limits unchanged", () => {
@@ -34,11 +50,15 @@ describe("formatCompletionMessage", () => {
 	it("starts with the prefix the model is told to expect, then where it worked, the body, and the notes", () => {
 		const message = formatCompletionMessage(completed);
 
-		expect(message.startsWith(`${completionPrefix("Audit tests")} completed (id ab12cd, openai-codex/gpt-6-luna, 1m 5s).`)).toBe(true);
+		expect(
+			message.startsWith(`${completionPrefix("Audit tests")} completed (id ab12cd, openai-codex/gpt-6-luna, 1m 5s).`),
+		).toBe(true);
 		expect(message).toContain("Worked in /wt/app.");
 		expect(message).toContain("Child session: /sessions/child.jsonl");
 		expect(message).toContain("# Findings\n- one");
-		expect(message).toContain("[Result truncated. The full transcript is in the child session file: /sessions/child.jsonl.]");
+		expect(message).toContain(
+			"[Result truncated. The full transcript is in the child session file: /sessions/child.jsonl.]",
+		);
 		expect(message).toContain("Worktree /wt/app on branch pi/audit-tests was left in place.");
 	});
 
@@ -54,7 +74,9 @@ describe("formatForegroundReport", () => {
 		const report = formatForegroundReport(completed);
 
 		expect(report.startsWith("# Findings\n- one")).toBe(true);
-		expect(report).toContain("[Result truncated. The full transcript is in the child session file: /sessions/child.jsonl.]");
+		expect(report).toContain(
+			"[Result truncated. The full transcript is in the child session file: /sessions/child.jsonl.]",
+		);
 		expect(report).toContain("Worktree /wt/app on branch pi/audit-tests was left in place.");
 		expect(report).not.toContain("Worked in");
 	});

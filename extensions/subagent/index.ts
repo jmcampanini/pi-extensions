@@ -3,7 +3,14 @@ import { homedir } from "node:os";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CredentialStore } from "@earendil-works/pi-ai";
-import { type ExtensionAPI, type ExtensionContext, getAgentDir, hasTrustRequiringProjectResources, type ModelRegistry, ProjectTrustStore } from "@earendil-works/pi-coding-agent";
+import {
+	type ExtensionAPI,
+	type ExtensionContext,
+	getAgentDir,
+	hasTrustRequiringProjectResources,
+	type ModelRegistry,
+	ProjectTrustStore,
+} from "@earendil-works/pi-coding-agent";
 import { canAcceptPrompt, createOutbox } from "./delivery.ts";
 import { launchedByT3Code, parentFlags } from "./environment.ts";
 import { startChild } from "./launch.ts";
@@ -46,8 +53,13 @@ export default function subagentExtension(pi: ExtensionAPI) {
 		canAccept: () => parentCtx === undefined || canAcceptPrompt(parentCtx),
 		// Always steer: Pi starts a new turn when idle, and queues when a turn is already running.
 		send: (text) => pi.sendUserMessage(text, { deliverAs: "steer" }),
-		park: (text) => pi.sendMessage({ customType: "subagent-report", content: text, display: true }, { deliverAs: "nextTurn" }),
-		notifyStuck: (count) => notify(`${count} subagent report${count === 1 ? "" : "s"} could not be delivered while the session stayed busy; included in the next turn instead.`, "warning"),
+		park: (text) =>
+			pi.sendMessage({ customType: "subagent-report", content: text, display: true }, { deliverAs: "nextTurn" }),
+		notifyStuck: (count) =>
+			notify(
+				`${count} subagent report${count === 1 ? "" : "s"} could not be delivered while the session stayed busy; included in the next turn instead.`,
+				"warning",
+			),
 	});
 
 	pi.on("session_start", (_event, ctx) => {
@@ -66,8 +78,11 @@ export default function subagentExtension(pi: ExtensionAPI) {
 	pi.on("session_shutdown", (event) => {
 		const running = registry.running();
 		if (running.length > 0 && event.reason !== "quit") {
-			const names = running.map((child) => (child.sessionFile ? `${child.title} (${child.sessionFile})` : child.title)).join("; ");
-			handoff[SHUTDOWN_NOTICE] = `Cancelled ${running.length} running subagent${running.length === 1 ? "" : "s"} when the previous session ended: ${names}`;
+			const names = running
+				.map((child) => (child.sessionFile ? `${child.title} (${child.sessionFile})` : child.title))
+				.join("; ");
+			handoff[SHUTDOWN_NOTICE] =
+				`Cancelled ${running.length} running subagent${running.length === 1 ? "" : "s"} when the previous session ended: ${names}`;
 		}
 		closed = true;
 		parentCtx = undefined;
@@ -81,7 +96,8 @@ export default function subagentExtension(pi: ExtensionAPI) {
 		label: "Subagent",
 		description: DESCRIPTION,
 		exposure: "model-only",
-		promptSnippet: "subagent: delegate a task to a separate agent session (background by default, optional worktree, fork, model, effort)",
+		promptSnippet:
+			"subagent: delegate a task to a separate agent session (background by default, optional worktree, fork, model, effort)",
 		promptGuidelines: [
 			"Delegate self-contained work with the subagent tool; a fresh child cannot see this conversation, so put every path, constraint, and acceptance criterion in the task.",
 			"A background subagent reports back as a user message; do not poll or wait for it, continue with other work or end your turn.",
@@ -143,5 +159,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
 function parentCredentials(registry: ModelRegistry): CredentialStore | undefined {
 	const runtime = (registry as unknown as { runtime?: { credentials?: unknown } }).runtime;
 	const credentials = runtime?.credentials as Partial<CredentialStore> | undefined;
-	return typeof credentials?.read === "function" && typeof credentials.modify === "function" ? (credentials as CredentialStore) : undefined;
+	return typeof credentials?.read === "function" && typeof credentials.modify === "function"
+		? (credentials as CredentialStore)
+		: undefined;
 }

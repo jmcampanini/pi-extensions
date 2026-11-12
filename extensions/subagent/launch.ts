@@ -70,16 +70,29 @@ export async function startChild(input: StartChildInput): Promise<ChildHandle> {
 		additionalExtensionPaths: input.flags.extensions,
 		noExtensions: input.flags.noExtensions,
 		extensionFactories: builtinExtensions(),
-		extensionsOverride: (base) => ({ ...base, extensions: base.extensions.filter((ext) => !isThisExtension(ext, input.selfDir)) }),
+		extensionsOverride: (base) => ({
+			...base,
+			extensions: base.extensions.filter((ext) => !isThisExtension(ext, input.selfDir)),
+		}),
 		appendSystemPromptOverride: (base) => [...base, CHILD_NOTE],
 	});
 	await resourceLoader.reload();
 
 	// The child gets its own runtime, so provider and virtual-model registrations by its extensions
 	// stay session-local, while credentials come from the parent's store.
-	const modelRuntime = await ModelRuntime.create({ ...(input.credentials ? { credentials: input.credentials } : {}), authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") });
+	const modelRuntime = await ModelRuntime.create({
+		...(input.credentials ? { credentials: input.credentials } : {}),
+		authPath: join(agentDir, "auth.json"),
+		modelsPath: join(agentDir, "models.json"),
+	});
 
-	const sessionManager = input.fork ? forkSessionManager({ ...input.fork, childCwd: input.cwd, now: new Date() }) : SessionManager.create(input.cwd, undefined, input.parentSessionFile ? { parentSession: input.parentSessionFile } : {});
+	const sessionManager = input.fork
+		? forkSessionManager({ ...input.fork, childCwd: input.cwd, now: new Date() })
+		: SessionManager.create(
+				input.cwd,
+				undefined,
+				input.parentSessionFile ? { parentSession: input.parentSessionFile } : {},
+			);
 	const { session } = await createAgentSession({
 		cwd: input.cwd,
 		agentDir,
@@ -109,7 +122,10 @@ export async function startChild(input: StartChildInput): Promise<ChildHandle> {
 	const done = session
 		.prompt(input.task, { expandPromptTemplates: false })
 		.then(() => childOutcome(session, aborted ? "cancelled" : "completed", undefined, Date.now() - startedAt))
-		.catch((error: unknown) => childOutcome(session, aborted ? "cancelled" : "failed", errorMessage(error), Date.now() - startedAt))
+		.catch((error: unknown) =>
+			childOutcome(session, aborted ? "cancelled" : "failed", errorMessage(error), Date.now() - startedAt),
+		)
+		// oxlint-disable-next-line typescript/no-misused-promises -- Promise.finally awaits cleanup despite TypeScript's void callback type.
 		.finally(() => {
 			unsubscribe();
 			return teardown(session);
@@ -152,7 +168,12 @@ export interface OutcomeSource {
  * Pi resolves prompt() even when the provider request failed or was aborted; the outcome is recorded
  * on the last assistant message instead, so a completed run is checked there.
  */
-export function childOutcome(source: OutcomeSource, status: ChildOutcome["status"], error: string | undefined, durationMs: number): ChildOutcome {
+export function childOutcome(
+	source: OutcomeSource,
+	status: ChildOutcome["status"],
+	error: string | undefined,
+	durationMs: number,
+): ChildOutcome {
 	const failure = status === "completed" ? providerFailure(source.messages) : undefined;
 	return {
 		status: failure?.status ?? status,
@@ -162,7 +183,9 @@ export function childOutcome(source: OutcomeSource, status: ChildOutcome["status
 	};
 }
 
-function providerFailure(messages: OutcomeSource["messages"]): { status: "failed" | "cancelled"; error: string } | undefined {
+function providerFailure(
+	messages: OutcomeSource["messages"],
+): { status: "failed" | "cancelled"; error: string } | undefined {
 	const last = [...messages].reverse().find((message) => message.role === "assistant");
 	if (last?.stopReason === "error") return { status: "failed", error: last.errorMessage ?? "the model request failed" };
 	if (last?.stopReason === "aborted") return { status: "cancelled", error: "the subagent was aborted" };

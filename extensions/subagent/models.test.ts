@@ -31,7 +31,10 @@ describe("matchModel", () => {
 	it("reports every candidate when a substring is ambiguous", () => {
 		const match = matchModel("sonnet", [], available);
 		expect(match.status).toBe("ambiguous");
-		expect(match.status === "ambiguous" && match.candidates.map((c) => c.id)).toEqual(["claude-sonnet-4-6", "claude-sonnet-5"]);
+		expect(match.status === "ambiguous" && match.candidates.map((c) => c.id)).toEqual([
+			"claude-sonnet-4-6",
+			"claude-sonnet-5",
+		]);
 	});
 
 	it("matches case-insensitively against display names", () => {
