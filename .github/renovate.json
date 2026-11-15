@@ -1,0 +1,58 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices", ":disableDependencyDashboard"],
+  "enabledManagers": ["mise", "npm", "github-actions"],
+  "prConcurrentLimit": 0,
+  "prHourlyLimit": 0,
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchManagers": ["npm"],
+      "addLabels": ["npm"]
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "npm minor and patch"
+    },
+    {
+      "description": "The pi packages are released together at one version, so they move in one pull request of their own.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["@earendil-works/**"],
+      "groupName": "pi",
+      "separateMajorMinor": false
+    },
+    {
+      "description": "oxlint-tsgolint embeds its own TypeScript compiler, so the Oxc tools and typescript move in one pull request of their own.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["oxlint", "oxlint-tsgolint", "oxfmt", "typescript"],
+      "groupName": "oxc",
+      "separateMajorMinor": false
+    },
+    {
+      "description": "mise lock owns the files under .mise/locks, so the npm manager leaves the package.json there alone.",
+      "matchFileNames": [".mise/locks/**"],
+      "enabled": false
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "addLabels": ["github-actions"],
+      "groupName": "actions"
+    },
+    {
+      "matchManagers": ["mise"],
+      "addLabels": ["mise"]
+    },
+    {
+      "matchManagers": ["mise"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "mise minor and patch"
+    },
+    {
+      "description": "jactionlint release tags start with v and the pin in mise.toml does not.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["jactionlint"],
+      "extractVersion": "^v(?<version>.+)$"
+    }
+  ]
+}
