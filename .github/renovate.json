@@ -48,8 +48,8 @@
     },
     {
       "matchManagers": ["mise"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "mise minor and patch"
+      "matchUpdateTypes": ["minor"],
+      "groupName": "mise minor"
     },
     {
       "description": "jactionlint release tags start with v and the pin in mise.toml does not.",
@@ -58,15 +58,16 @@
       "extractVersion": "^v(?<version>.+)$"
     },
     {
-      "description": "GitHub Actions updates below a major only change CI, so a bad one fails the required checks.",
+      "description": "GitHub Actions updates below a major only change CI, so a bad one fails the required checks. Majors have their own branch, so this rule covers everything on the actions branch and no manual update can join a pull request that is set to merge.",
       "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "matchUpdateTypes": ["!major"],
       "automerge": true
     },
     {
-      "description": "mise pins the development tools, and node here only runs them, so a patch update merges on its own once the required checks pass.",
+      "description": "mise pins the development tools, and node here only runs them, so patch updates automerge. They have a group of their own so that no minor update can join a pull request that is set to merge.",
       "matchManagers": ["mise"],
       "matchUpdateTypes": ["patch"],
+      "groupName": "mise patch",
       "automerge": true
     }
   ]
