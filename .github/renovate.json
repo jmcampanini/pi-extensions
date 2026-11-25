@@ -40,13 +40,19 @@
       "groupName": "actions"
     },
     {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["!major"],
+      "automerge": true
+    },
+    {
       "matchManagers": ["mise"],
       "addLabels": ["mise"]
     },
     {
       "matchManagers": ["mise"],
       "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "mise minor and patch"
+      "groupName": "mise minor and patch",
+      "automerge": true
     },
     {
       "description": "jactionlint release tags start with v and the pin in mise.toml does not.",
