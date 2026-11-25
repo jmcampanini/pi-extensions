@@ -5,6 +5,9 @@
   "prConcurrentLimit": 0,
   "prHourlyLimit": 0,
   "labels": ["dependencies"],
+  "lockFileMaintenance": {
+    "automerge": true
+  },
   "packageRules": [
     {
       "matchManagers": ["npm"],
@@ -53,6 +56,18 @@
       "matchManagers": ["mise"],
       "matchDepNames": ["jactionlint"],
       "extractVersion": "^v(?<version>.+)$"
+    },
+    {
+      "description": "GitHub Actions updates below a major only change CI, so a bad one fails the required checks. They merge on their own once the checks pass.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "automerge": true
+    },
+    {
+      "description": "mise pins the development tools, and node here only runs them, so a patch update merges on its own once the required checks pass.",
+      "matchManagers": ["mise"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
     }
   ]
 }
