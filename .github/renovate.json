@@ -58,7 +58,7 @@
       "extractVersion": "^v(?<version>.+)$"
     },
     {
-      "description": "GitHub Actions updates below a major only change CI, so a bad one fails the required checks. They merge on their own once the checks pass.",
+      "description": "GitHub Actions updates below a major only change CI, so a bad one fails the required checks.",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
       "automerge": true
