@@ -8,7 +8,7 @@ lockfile_platforms = ["linux-x64", "macos-arm64"]
 # Each tool a task runs is pinned to an exact version, the latest release of its supported line, so every machine runs the same build.
 # package-lock.json locks tsc, vitest, oxlint, oxlint-tsgolint, and oxfmt, so they have no pin here.
 [tools]
-jactionlint = { version = "2.6.0", workflow = "release.yaml" }
+jactionlint = { version = "2.7.0", workflow = "release.yaml" }
 node = "26.13.1"
 "npm:markdownlint-cli2" = "0.24.2"
 
